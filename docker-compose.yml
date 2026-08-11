@@ -1,5 +1,58 @@
 name: kalshi-production-v3
 services:
+  caddy:
+    image: caddy:2-alpine
+    ports: ["80:80", "443:443"]
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    networks: [web]
+    depends_on: [web]
+    security_opt: [no-new-privileges:true]
+  web:
+    build: .
+    environment: [KPV3_STATE_DIR=/state]
+    volumes: ["${KPV3_STATE_DIR:-/var/lib/kalshi-v3}:/state"]
+    networks: [web]
+    read_only: true
+    tmpfs: [/tmp]
+    security_opt: [no-new-privileges:true]
+    cap_drop: [ALL]
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/healthz')"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+  account-worker:
+    build: .
+    command: ["python", "-m", "services.kalshi_account_gateway.worker"]
+    environment: [KPV3_STATE_DIR=/state]
+    volumes: ["${KPV3_STATE_DIR:-/var/lib/kalshi-v3}:/state"]
+    networks: [web]
+    read_only: true
+    tmpfs: [/tmp]
+    security_opt: [no-new-privileges:true]
+    cap_drop: [ALL]
+    restart: unless-stopped
+  production-signer:
+    build: .
+    command: ["python", "-m", "services.production_execution.run"]
+    user: "65532:65532"
+    networks: [signer_internal]
+    read_only: true
+    tmpfs: ["/run/signer:rw,noexec,nosuid,size=4m"]
+    security_opt: [no-new-privileges:true]
+    cap_drop: [ALL]
+    environment: [PRODUCTION_STATE=DISARMED]
+    healthcheck:
+      test: ["CMD", "python", "-m", "services.production_execution.health"]
+      interval: 30s
+      timeout: 3s
+      retries: 3
+    deploy:
+      resources:
+        limits: {cpus: "0.50", memory: 128M}
   postgres:
     image: postgres:16-alpine
     environment:
@@ -27,11 +80,16 @@ secrets:
   postgres_password:
     file: ./secrets/postgres_password
 volumes:
+  caddy_data:
+  caddy_config:
   postgres_data:
   redis_data:
   nats_data:
 networks:
+  web:
   data:
     internal: true
   events:
+    internal: true
+  signer_internal:
     internal: true
