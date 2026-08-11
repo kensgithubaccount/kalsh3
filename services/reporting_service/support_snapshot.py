@@ -18,8 +18,19 @@ SENSITIVE_FRAGMENTS = (
     "recovery",
     "order_id",
     "fill_id",
+    "account_id",
+    "account_number",
+    "client_order_id",
+    "authorization",
+    "auth_header",
 )
-SENSITIVE_VALUES = ("-----BEGIN ", "-----END ")
+SENSITIVE_VALUES = (
+    "-----BEGIN ",
+    "-----END ",
+    "KALSHI-ACCESS-KEY",
+    "KALSHI-ACCESS-SIGNATURE",
+    "Bearer ",
+)
 
 
 def redact(value: Any) -> Any:
@@ -51,12 +62,16 @@ def support_snapshot_markdown(snapshot: Any) -> str:
         (
             "# Kalshi Production v3 support snapshot",
             "",
-            "- Release: M1 read-only",
+            "- Release: M18 operations hardening (offline verified)",
             f"- Account gateway status: {redact(getattr(snapshot, 'status', 'unknown'))}",
             f"- Last attempt: {getattr(snapshot, 'last_attempt', None) or 'never'}",
             f"- Last success: {getattr(snapshot, 'last_success', None) or 'never'}",
             f"- Failure: {redact(getattr(snapshot, 'failure_reason', None)) or 'none'}",
-            "- Real trading: OFF (no mutation capability)",
+            "- Operational readiness: NOT VERIFIED",
+            "- Production state: DISARMED",
+            "- Autonomy: OFF",
+            "- Production write credential: NONE",
+            "- Real-money execution: NONE",
             "",
         )
     )

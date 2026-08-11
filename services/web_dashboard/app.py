@@ -88,7 +88,19 @@ class DashboardApp:
     def __call__(self, environ: dict[str, Any], start: StartResponse) -> Iterable[bytes]:
         path, method = str(environ.get("PATH_INFO", "/")), str(environ.get("REQUEST_METHOD", "GET"))
         if path == "/healthz":
-            return self._respond(start, "200 OK", b'{"status":"ok"}', "application/json")
+            return self._respond(
+                start,
+                "200 OK",
+                b'{"autonomy":"OFF","production_state":"DISARMED","production_write_credential":"NONE","status":"ok"}',
+                "application/json",
+            )
+        if path == "/readyz":
+            return self._respond(
+                start,
+                "503 Service Unavailable",
+                b'{"ready":false,"reason":"LIVE_DEPENDENCIES_NOT_VERIFIED","production_state":"DISARMED"}',
+                "application/json",
+            )
         if path == "/static/app.css":
             return self._respond(start, "200 OK", CSS.encode(), "text/css")
         if path == "/login":
@@ -250,6 +262,16 @@ class DashboardApp:
                                 "signer_state": "DISARMED",
                                 "real_money_order_executed": False,
                             },
+                        },
+                        "operations": {
+                            "readiness": "NOT VERIFIED",
+                            "backup": "NOT VERIFIED",
+                            "restore_drill": "NOT VERIFIED",
+                            "monthly_cost": "NOT VERIFIED",
+                            "monthly_target_usd": "25.00",
+                            "monthly_hard_cap_usd": "50.00",
+                            "production_state": "DISARMED",
+                            "autonomy": "OFF",
                         },
                     },
                 )
@@ -707,7 +729,7 @@ class DashboardApp:
         historical: dict[str, Any],
         llm: dict[str, Any],
     ) -> str:
-        connection = f"<section><p class=eyebrow>OPERATIONS &amp; COMPATIBILITY</p><h1>System</h1><div class=columns><article><h2>Release</h2><dl><dt>Git SHA</dt><dd>{html.escape(str(data.get('git_sha', 'Not recorded')))}</dd><dt>API compatibility</dt><dd>{html.escape(str(data.get('api_compatibility', 'NOT VERIFIED')))}</dd><dt>Spec checksum</dt><dd>{html.escape(str(data.get('spec_checksum', 'Not recorded')))}</dd><dt>Database</dt><dd>{html.escape(str(data.get('database_health', 'Local state available')))}</dd></dl></article><article><h2>Connection health</h2><dl><dt>Account gateway</dt><dd>{html.escape(state.status)}</dd><dt>Credential</dt><dd>Exactly read-only; required for live WebSocket handshake. No write key.</dd><dt>API tier</dt><dd>{html.escape(str(data.get('api_tier', 'Unknown')))}</dd><dt>Universe worker</dt><dd>{html.escape(str(universe['status']))}</dd><dt>WebSocket</dt><dd>{html.escape(str(realtime['state']))}</dd><dt>Gaps / unresolved</dt><dd>{realtime['gap_count']} / {realtime['unresolved_gaps']}</dd></dl></article><article><h2>Continuity</h2><dl><dt>Raw archive</dt><dd>{html.escape(str(realtime['archive_state']))}</dd><dt>Historical cutoff</dt><dd>{html.escape(str(universe['historical_cutoff'] or 'Unknown'))}</dd><dt>Backup</dt><dd>{html.escape(str(data.get('backup_status', 'NOT VERIFIED')))}</dd><dt>Restore drill</dt><dd>{html.escape(str(data.get('restore_status', 'NOT VERIFIED')))}</dd></dl></article><article><h2>Workers &amp; budgets</h2><dl><dt>Queue depth</dt><dd>{realtime['queue_depth']}</dd><dt>Processing lag</dt><dd>{realtime['processing_lag_ms']} ms</dd><dt>Rate budget</dt><dd>{html.escape(str(data.get('rate_budget', 'Not reported')))}</dd><dt>Last successful sync</dt><dd>{html.escape(str(state.last_success or 'Never'))}</dd></dl></article></div></section>"
+        connection = f"<section><p class=eyebrow>OPERATIONS &amp; COMPATIBILITY</p><h1>System</h1><div class=warning><strong>LIVE OPERATIONS NOT VERIFIED</strong><p>Missing or stale operational evidence fails closed. Production remains DISARMED and autonomy remains OFF.</p></div><div class=columns><article><h2>Release</h2><dl><dt>Git SHA</dt><dd>{html.escape(str(data.get('git_sha', 'Not recorded')))}</dd><dt>API compatibility</dt><dd>{html.escape(str(data.get('api_compatibility', 'NOT VERIFIED')))}</dd><dt>Spec checksum</dt><dd>{html.escape(str(data.get('spec_checksum', 'Not recorded')))}</dd><dt>Database</dt><dd>{html.escape(str(data.get('database_health', 'Local state available')))}</dd></dl></article><article><h2>Connection health</h2><dl><dt>Account gateway</dt><dd>{html.escape(state.status)}</dd><dt>Credential</dt><dd>Exactly read-only; required for live WebSocket handshake. No write key.</dd><dt>API tier</dt><dd>{html.escape(str(data.get('api_tier', 'Unknown')))}</dd><dt>Universe worker</dt><dd>{html.escape(str(universe['status']))}</dd><dt>WebSocket</dt><dd>{html.escape(str(realtime['state']))}</dd><dt>Gaps / unresolved</dt><dd>{realtime['gap_count']} / {realtime['unresolved_gaps']}</dd></dl></article><article><h2>Continuity</h2><dl><dt>Raw archive</dt><dd>{html.escape(str(realtime['archive_state']))}</dd><dt>Historical cutoff</dt><dd>{html.escape(str(universe['historical_cutoff'] or 'Unknown'))}</dd><dt>Backup</dt><dd>{html.escape(str(data.get('backup_status', 'NOT VERIFIED')))}</dd><dt>Restore drill</dt><dd>{html.escape(str(data.get('restore_status', 'NOT VERIFIED')))}</dd></dl></article><article><h2>Workers &amp; budgets</h2><dl><dt>Queue depth</dt><dd>{realtime['queue_depth']}</dd><dt>Processing lag</dt><dd>{realtime['processing_lag_ms']} ms</dd><dt>Rate budget</dt><dd>{html.escape(str(data.get('rate_budget', 'Not reported')))}</dd><dt>Monthly operations target / hard cap</dt><dd>$25.00 / $50.00 · observed NOT VERIFIED</dd><dt>Last successful sync</dt><dd>{html.escape(str(state.last_success or 'Never'))}</dd></dl></article></div></section>"
         research = f"<section><h2>Research data</h2><p>Historical coverage: <strong>{html.escape(str(historical['coverage']))}</strong></p><p>Market / trade / account coverage: {html.escape(str(historical['market_coverage']))} / {html.escape(str(historical['trade_coverage']))} / {html.escape(str(historical['account_coverage']))}.</p><p>Replay datasets / known gaps: {historical['dataset_count']} / {historical['gap_count']}.</p><p>Availability / rules / fee reconstruction: {html.escape(str(historical['availability_quality']))} / {html.escape(str(historical['rules_quality']))} / {html.escape(str(historical['fee_quality']))}.</p><p>Partial coverage is excluded when a strategy requires stronger point-in-time fidelity. Candle data is never presented as order-book replay.</p></section>"
         evidence = f"<section><h2>Document evidence</h2><p>Provider state: {html.escape(llm['state'])} · {html.escape(llm['provider'])} / {html.escape(llm['model'])}</p><p>Prompt: {html.escape(llm['prompt_version'])} · Requests: {llm['request_count']} · Schema/citation failures: {llm['schema_failures']} / {llm['citation_failures']} · Abstentions: {llm['abstentions']}</p><p>Tokens input/output: {llm['input_tokens']} / {llm['output_tokens']} · Estimated monthly cost: {html.escape(str(llm['estimated_monthly_cost'] or 'UNKNOWN'))}</p><p>Eval: {html.escape(llm['eval_status'])}. No provider key, private account data, probability, or trading authority is displayed or sent.</p></section>"
         production = """<section><p class=eyebrow>PRODUCTION EXECUTION SECURITY</p><h2>Production write path</h2><dl><dt>Execution path</dt><dd>IMPLEMENTED / OFFLINE VERIFIED</dd><dt>Production write credential</dt><dd>NOT INSTALLED — it is not needed yet.</dd><dt>Production signer</dt><dd>DISARMED</dd><dt>Production orders</dt><dd>DISABLED</dd><dt>Real-money order executed</dt><dd>NO</dd></dl><div class=warning>The technical sign-and-send path exists, but it cannot transmit a production order until later supervised activation requirements are satisfied.</div></section>"""

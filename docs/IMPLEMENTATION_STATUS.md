@@ -31,7 +31,8 @@
 | M15 Production Execution Path | Complete (offline verified) | Sign-and-send ADR, typed canonical envelopes, RSA-PSS fixtures, exact M13 binding, one-use journals, fixed host/routes, hardened service and truthful UI; credential NONE, DISARMED |
 | M16 Supervised Production Canary | Complete (offline verified) | Exact one-contract previews, live-evidence readiness, strong one-use approval, fresh final gates, one-session locking, partial fills, unknown recovery, auto-disarm and UI; live gates absent |
 | M17 Bounded Autonomy | Complete (offline verified) | Off-only policy, evidence snapshots, governance proposals, durable restart constraints and truthful UI; autonomy OFF |
-| M18–M19 | Not started | Work intentionally stops after M17 |
+| M18 Operations Hardening | Complete (offline verified) | Fail-closed observability, recovery, encrypted backup/restore design, hardened Compose, CI supply-chain gates and runbooks; live operations pending |
+| M19 Final Audit | Not started | Work intentionally stops before M19 |
 
 ## Runtime truth
 
@@ -154,3 +155,14 @@
   official API compatibility, strategy evidence, and human governance: NOT VERIFIED.
 - Autonomy: OFF. Production state: DISARMED. Production write credential: NONE. Production influence: NONE.
   Live production execution: NONE. Real-money order: NONE. Human acceptance: PENDING.
+## M18 acceptance
+
+- Dependency/readiness evaluation, structured redacted events, allowlisted metrics, safe tracing and health,
+  queue/backpressure controls, restart recovery, API drift detection, cost caps, backup manifests, isolated
+  restore tooling, deployment hardening, operational migration, incident/runbook coverage, support redaction,
+  CI configuration, adversarial tests, and owner operational status: OFFLINE VERIFIED.
+- Docker Compose runtime, Oracle host/TLS/firewall, live PostgreSQL concurrency, Redis/NATS/object storage,
+  actual backup and restore drill, live alert delivery, SBOM/Trivy CI execution, browser review, live providers,
+  and human acceptance: NOT VERIFIED / PENDING as applicable.
+- Production state: DISARMED. Autonomy: OFF. Production write credential: NONE. Live production mutation:
+  NONE. Real-money order: NONE.
