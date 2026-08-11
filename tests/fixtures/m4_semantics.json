@@ -1,0 +1,177 @@
+[
+  {
+    "id": "simple_exceed",
+    "category": "structural",
+    "expected_fail_closed": false
+  },
+  {
+    "id": "inclusive_higher",
+    "category": "structural",
+    "expected_fail_closed": false
+  },
+  {
+    "id": "exclusive_greater",
+    "category": "structural",
+    "expected_fail_closed": false
+  },
+  {
+    "id": "upper_under",
+    "category": "structural",
+    "expected_fail_closed": false
+  },
+  {
+    "id": "inclusive_upper",
+    "category": "structural",
+    "expected_fail_closed": false
+  },
+  {
+    "id": "range_between",
+    "category": "structural",
+    "expected_fail_closed": false
+  },
+  {
+    "id": "time_by_et",
+    "category": "structural",
+    "expected_fail_closed": false
+  },
+  {
+    "id": "time_before_et",
+    "category": "structural",
+    "expected_fail_closed": false
+  },
+  {
+    "id": "missing_timezone",
+    "category": "structural",
+    "expected_fail_closed": true
+  },
+  {
+    "id": "title_rules_contradiction",
+    "category": "structural",
+    "expected_fail_closed": true
+  },
+  {
+    "id": "strike_rules_contradiction",
+    "category": "structural",
+    "expected_fail_closed": true
+  },
+  {
+    "id": "source_agreement",
+    "category": "structural",
+    "expected_fail_closed": false
+  },
+  {
+    "id": "source_conflict",
+    "category": "structural",
+    "expected_fail_closed": true
+  },
+  {
+    "id": "secondary_narrowing",
+    "category": "structural",
+    "expected_fail_closed": false
+  },
+  {
+    "id": "early_close",
+    "category": "structural",
+    "expected_fail_closed": false
+  },
+  {
+    "id": "cancellation",
+    "category": "structural",
+    "expected_fail_closed": false
+  },
+  {
+    "id": "sports_postponed",
+    "category": "sports",
+    "expected_fail_closed": false
+  },
+  {
+    "id": "weather_station_explicit",
+    "category": "weather",
+    "expected_fail_closed": false
+  },
+  {
+    "id": "weather_station_missing",
+    "category": "weather",
+    "expected_fail_closed": true
+  },
+  {
+    "id": "weather_rounding",
+    "category": "weather",
+    "expected_fail_closed": false
+  },
+  {
+    "id": "weather_corrections",
+    "category": "weather",
+    "expected_fail_closed": false
+  },
+  {
+    "id": "cpi_initial_release",
+    "category": "macro",
+    "expected_fail_closed": false
+  },
+  {
+    "id": "cpi_revision_controls",
+    "category": "macro",
+    "expected_fail_closed": false
+  },
+  {
+    "id": "cpi_revision_not_control",
+    "category": "macro",
+    "expected_fail_closed": false
+  },
+  {
+    "id": "bins_complete",
+    "category": "structural",
+    "expected_fail_closed": false
+  },
+  {
+    "id": "bins_gap",
+    "category": "structural",
+    "expected_fail_closed": true
+  },
+  {
+    "id": "bins_overlap",
+    "category": "structural",
+    "expected_fail_closed": true
+  },
+  {
+    "id": "mve",
+    "category": "structural",
+    "expected_fail_closed": true
+  },
+  {
+    "id": "provisional",
+    "category": "structural",
+    "expected_fail_closed": false
+  },
+  {
+    "id": "scalar_subcent",
+    "category": "structural",
+    "expected_fail_closed": true
+  },
+  {
+    "id": "contract_terms_change",
+    "category": "structural",
+    "expected_fail_closed": false
+  },
+  {
+    "id": "price_only_nonmaterial",
+    "category": "structural",
+    "expected_fail_closed": false
+  },
+  {
+    "id": "semantic_metadata_change",
+    "category": "structural",
+    "expected_fail_closed": false
+  },
+  {
+    "id": "amended_determination",
+    "category": "structural",
+    "expected_fail_closed": false
+  },
+  {
+    "id": "finalized_settlement",
+    "category": "structural",
+    "expected_fail_closed": false
+  }
+]
