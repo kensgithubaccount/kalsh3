@@ -1,0 +1,157 @@
+name: kalshi-production-v3
+services:
+  caddy:
+    image: caddy:2-alpine
+    ports: ["80:80", "443:443"]
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    networks: [web]
+    depends_on: [web]
+    security_opt: [no-new-privileges:true]
+    cap_drop: [ALL]
+    cap_add: [NET_BIND_SERVICE]
+    restart: unless-stopped
+    logging: &bounded-logs
+      driver: json-file
+      options: {max-size: "10m", max-file: "3"}
+    deploy:
+      resources:
+        limits: {cpus: "0.50", memory: 128M}
+  web:
+    build: .
+    environment: [KPV3_STATE_DIR=/state]
+    volumes: ["${KPV3_STATE_DIR:-/var/lib/kalshi-v3}:/state"]
+    networks: [web]
+    read_only: true
+    tmpfs: [/tmp]
+    security_opt: [no-new-privileges:true]
+    cap_drop: [ALL]
+    restart: unless-stopped
+    init: true
+    logging: *bounded-logs
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/healthz')"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    deploy:
+      resources:
+        limits: {cpus: "1.00", memory: 384M}
+  account-worker:
+    build: .
+    command: ["python", "-m", "services.kalshi_account_gateway.worker"]
+    environment: [KPV3_STATE_DIR=/state]
+    volumes: ["${KPV3_STATE_DIR:-/var/lib/kalshi-v3}:/state"]
+    networks: [worker_egress, data, events]
+    read_only: true
+    tmpfs: [/tmp]
+    security_opt: [no-new-privileges:true]
+    cap_drop: [ALL]
+    restart: unless-stopped
+    init: true
+    logging: *bounded-logs
+    depends_on:
+      postgres: {condition: service_healthy}
+      redis: {condition: service_healthy}
+      nats: {condition: service_healthy}
+    deploy:
+      resources:
+        limits: {cpus: "0.75", memory: 256M}
+  production-signer:
+    build: .
+    command: ["python", "-m", "services.production_execution.run"]
+    user: "65532:65532"
+    networks: [signer_internal]
+    read_only: true
+    tmpfs: ["/run/signer:rw,noexec,nosuid,size=4m"]
+    security_opt: [no-new-privileges:true]
+    cap_drop: [ALL]
+    environment: [PRODUCTION_STATE=DISARMED]
+    restart: unless-stopped
+    init: true
+    logging: *bounded-logs
+    healthcheck:
+      test: ["CMD", "python", "-m", "services.production_execution.health"]
+      interval: 30s
+      timeout: 3s
+      retries: 3
+    deploy:
+      resources:
+        limits: {cpus: "0.50", memory: 128M}
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: kalshi
+      POSTGRES_USER: kalshi
+      POSTGRES_PASSWORD_FILE: /run/secrets/postgres_password
+    secrets: [postgres_password]
+    volumes: [postgres_data:/var/lib/postgresql/data]
+    networks: [data]
+    security_opt: [no-new-privileges:true]
+    restart: unless-stopped
+    shm_size: 128mb
+    logging: *bounded-logs
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U kalshi -d kalshi"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    deploy:
+      resources:
+        limits: {cpus: "1.00", memory: 512M}
+  redis:
+    image: redis:7-alpine
+    command: ["redis-server", "--save", "60", "1", "--appendonly", "yes", "--maxmemory", "128mb", "--maxmemory-policy", "noeviction"]
+    volumes: [redis_data:/data]
+    networks: [data]
+    security_opt: [no-new-privileges:true]
+    cap_drop: [ALL]
+    restart: unless-stopped
+    logging: *bounded-logs
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 10
+    deploy:
+      resources:
+        limits: {cpus: "0.25", memory: 192M}
+  nats:
+    image: nats:2-alpine
+    command: ["-js", "-sd", "/data"]
+    volumes: [nats_data:/data]
+    networks: [events]
+    security_opt: [no-new-privileges:true]
+    cap_drop: [ALL]
+    restart: unless-stopped
+    logging: *bounded-logs
+    healthcheck:
+      test: ["CMD", "nats-server", "--signal", "ldm"]
+      interval: 15s
+      timeout: 3s
+      retries: 5
+    deploy:
+      resources:
+        limits: {cpus: "0.25", memory: 128M}
+
+secrets:
+  postgres_password:
+    file: ./secrets/postgres_password
+volumes:
+  caddy_data:
+  caddy_config:
+  postgres_data:
+  redis_data:
+  nats_data:
+networks:
+  web:
+  worker_egress:
+  data:
+    internal: true
+  events:
+    internal: true
+  signer_internal:
+    internal: true
