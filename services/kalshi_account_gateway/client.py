@@ -10,11 +10,27 @@ from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any, Protocol
+from urllib.parse import unquote, urlsplit
 
 from .auth import RequestSigner
 from .models import AccountSnapshot
 
 BASE_URL = "https://external-api.kalshi.com"
+MAX_RESPONSE_BYTES = 2_000_000
+
+
+class _NoRedirect(urllib.request.HTTPRedirectHandler):
+    def redirect_request(
+        self,
+        request: urllib.request.Request,
+        file_pointer: Any,
+        code: int,
+        message: str,
+        headers: Any,
+        new_url: str,
+    ) -> None:
+        del request, file_pointer, code, message, headers, new_url
+        return None
 
 
 @dataclass(frozen=True, slots=True)
@@ -33,16 +49,38 @@ class UrllibReadTransport:
     """Production HTTPS transport with a fixed origin and no mutation interface."""
 
     def get(self, path: str, headers: Mapping[str, str], *, timeout_seconds: float) -> HttpResponse:
+        parsed = urlsplit(path)
+        decoded_path = unquote(parsed.path)
+        if (
+            parsed.scheme
+            or parsed.netloc
+            or parsed.fragment
+            or not parsed.path.startswith("/trade-api/v2/")
+            or ".." in decoded_path.split("/")
+            or "//" in decoded_path
+        ):
+            raise AccountGatewayError("non-canonical read path rejected")
         request = urllib.request.Request(  # noqa: S310 - fixed HTTPS production origin
             BASE_URL + path, headers=dict(headers), method="GET"
         )
+        opener = urllib.request.build_opener(_NoRedirect())
         try:
-            with urllib.request.urlopen(request, timeout=timeout_seconds) as response:  # noqa: S310
-                raw, status = response.read(2_000_000), response.status
+            with opener.open(request, timeout=timeout_seconds) as response:
+                content_type = response.headers.get_content_type()
+                declared_length = response.headers.get("Content-Length")
+                if declared_length is not None and int(declared_length) > MAX_RESPONSE_BYTES:
+                    raise AccountGatewayError("upstream response exceeds size limit")
+                raw, status = response.read(MAX_RESPONSE_BYTES + 1), response.status
         except urllib.error.HTTPError as exc:
             return HttpResponse(exc.code, {})
         except (urllib.error.URLError, TimeoutError) as exc:
             raise TimeoutError("account API request timed out or failed") from exc
+        except ValueError as exc:
+            raise AccountGatewayError("invalid upstream response metadata") from exc
+        if len(raw) > MAX_RESPONSE_BYTES:
+            raise AccountGatewayError("upstream response exceeds size limit")
+        if content_type != "application/json":
+            raise AccountGatewayError("upstream response content type is not JSON")
         try:
             payload = json.loads(raw)
         except (json.JSONDecodeError, UnicodeDecodeError) as exc:

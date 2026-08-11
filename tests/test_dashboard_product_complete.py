@@ -149,7 +149,7 @@ def test_every_primary_surface_renders_honest_empty_state(tmp_path: Path) -> Non
         "/portfolio": (b"Unresolved exposure", b"Unavailable"),
         "/orders": (b"No order can be proposed", b"Unknown / reconciliation required"),
         "/reports": (b"Daily operating brief", b"NOT SCHEDULED"),
-        "/risk": (b"Arm trading", b"Disabled:", b"No write key"),
+        "/risk": (b"Production activation", b"UNAVAILABLE", b"No production-write credential"),
         "/system": (b"API compatibility", b"NOT VERIFIED"),
         "/advanced": (b"ADVANCED RESEARCH DIAGNOSTICS", b"Raw JSON"),
     }
@@ -161,14 +161,15 @@ def test_every_primary_surface_renders_honest_empty_state(tmp_path: Path) -> Non
         assert b'aria-current="page"' in body
 
 
-def test_disabled_dangerous_controls_explain_why(tmp_path: Path) -> None:
+def test_unavailable_activation_is_status_not_a_dead_control(tmp_path: Path) -> None:
     _, app, token = configured(tmp_path)
     _, body = call(app, "/risk", token)
     page = body.decode()
     audit = AuditParser()
     audit.feed(page)
-    assert audit.disabled_buttons == 2
-    assert "aria-describedby=arm-reason" in page
+    assert audit.disabled_buttons == 1
+    assert "Arm trading" not in page
+    assert "Production activation</h2><strong>UNAVAILABLE" in page
     assert "aria-describedby=reset-reason" in page
 
 

@@ -32,7 +32,7 @@
 | M16 Supervised Production Canary | Complete (offline verified) | Exact one-contract previews, live-evidence readiness, strong one-use approval, fresh final gates, one-session locking, partial fills, unknown recovery, auto-disarm and UI; live gates absent |
 | M17 Bounded Autonomy | Complete (offline verified) | Off-only policy, evidence snapshots, governance proposals, durable restart constraints and truthful UI; autonomy OFF |
 | M18 Operations Hardening | Complete (offline verified) | Fail-closed observability, recovery, encrypted backup/restore design, hardened Compose, CI supply-chain gates and runbooks; live operations pending |
-| M19 Final Audit | Not started | Work intentionally stops before M19 |
+| M19 Final Audit | Complete (offline verified) | Repository-wide audit corrected redirect, exact-fill, signer-oracle, nested-float, XML, auth-DoS, and UI defects; all live/human gates remain pending |
 
 ## Runtime truth
 
@@ -155,6 +155,7 @@
   official API compatibility, strategy evidence, and human governance: NOT VERIFIED.
 - Autonomy: OFF. Production state: DISARMED. Production write credential: NONE. Production influence: NONE.
   Live production execution: NONE. Real-money order: NONE. Human acceptance: PENDING.
+
 ## M18 acceptance
 
 - Dependency/readiness evaluation, structured redacted events, allowlisted metrics, safe tracing and health,
@@ -166,3 +167,14 @@
   and human acceptance: NOT VERIFIED / PENDING as applicable.
 - Production state: DISARMED. Autonomy: OFF. Production write credential: NONE. Live production mutation:
   NONE. Real-money order: NONE.
+
+## M19 final acceptance
+
+- Architecture/safety, deterministic risk, financial/quant/data/model governance, execution/reconciliation,
+  security, operations/deployment, UI truthfulness, documentation hygiene, and adversarial re-audit after
+  material fixes: OFFLINE VERIFIED / MOCK VERIFIED as detailed in `reviews/M19_FINAL_AUDIT.md`.
+- Official current Kalshi API compatibility, GitHub CI for the final commit, live Oracle/Docker/PostgreSQL/
+  Redis/NATS/object-storage behavior, production reads/reconciliation, live Demo, backup restore, alerts,
+  security scanners/SBOM, browser review, strategy evidence, and human acceptance: NOT VERIFIED / PENDING.
+- Production: DISARMED. Bounded autonomy: OFF. Production-write credential: NONE. Live mutation: NONE.
+  Real-money order: NONE. No M13 limit was weakened.

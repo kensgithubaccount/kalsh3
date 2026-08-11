@@ -383,7 +383,8 @@ def test_public_path_is_unconditionally_disarmed_despite_environment(
         monkeypatch.setenv(name, "true")
     boundary = ProductionExecutionBoundary()
     assert boundary.arm_state == ProductionArmState.DISARMED
-    assert not boundary.production_write_credential_present and boundary.signer is None
+    assert not boundary.credential.installed
+    assert not hasattr(boundary, "signer")
     with pytest.raises(PermissionError, match="DISARMED"):
         boundary.preflight()
 

@@ -28,4 +28,4 @@ Authoritative requirements are in `MASTER_SPEC.md`; durable engineering guidance
 
 ## Current limitations
 
-The repository is under milestone-driven implementation. External account access, demo verification, production read verification, and any production-write acceptance require later owner-controlled credential setup. No real-money verification is performed by development automation.
+M0–M19 are complete at their documented offline/mock engineering gates. External account access, Demo verification, production-read reconciliation, deployment acceptance, and any production-write acceptance remain explicitly unverified and owner-controlled. Production is DISARMED, bounded autonomy is OFF, no production-write credential is installed, and development automation never performs real-money verification.

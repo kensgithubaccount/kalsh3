@@ -20,3 +20,9 @@ exact-read credential, validate HTTPS setup/account reads, complete REST univers
 handshake, automatic Ping/Pong, subscriptions/SIDs/sequences, reconnect/new epoch, snapshot recovery, ticker,
 trade, both lifecycle channels, selective depth bandwidth, archive upload, and UI stale/gap states. Do not
 provide a write key. This acceptance can run in parallel with later offline milestones.
+
+## M19 prioritized final blockers
+
+The authoritative prioritized list, readiness matrix, non-executing activation checklist, and residual risk
+register are in [`docs/reviews/M19_FINAL_AUDIT.md`](reviews/M19_FINAL_AUDIT.md). Every HIGH risk there blocks
+activation. M19 does not authorize credential enrollment, arming, autonomy, a canary, or a real-money order.

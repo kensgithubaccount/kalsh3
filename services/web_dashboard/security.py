@@ -29,19 +29,23 @@ def hash_password(password: str) -> str:
 def verify_password(password: str, encoded: str) -> bool:
     try:
         algorithm, n, r, p, salt, expected = encoded.split("$")
-        if algorithm != "scrypt":
+        if algorithm != "scrypt" or (n, r, p) != ("32768", "8", "1"):
+            return False
+        decoded_salt = base64.b64decode(salt, validate=True)
+        decoded_expected = base64.b64decode(expected, validate=True)
+        if len(decoded_salt) != 16 or len(decoded_expected) != 32:
             return False
         actual = hashlib.scrypt(
             password.encode(),
-            salt=base64.b64decode(salt),
-            n=int(n),
-            r=int(r),
-            p=int(p),
+            salt=decoded_salt,
+            n=32768,
+            r=8,
+            p=1,
             dklen=32,
             maxmem=64 * 1024 * 1024,
         )
-        return hmac.compare_digest(actual, base64.b64decode(expected))
-    except (ValueError, TypeError):
+        return hmac.compare_digest(actual, decoded_expected)
+    except (ValueError, TypeError, MemoryError):
         return False
 
 
@@ -60,8 +64,13 @@ def totp(secret: str, when: int | None = None) -> str:
 
 
 def verify_totp(secret: str, code: str, when: int | None = None) -> bool:
+    if len(code) != 6 or not code.isascii() or not code.isdigit():
+        return False
     now = int(time.time()) if when is None else when
-    return any(hmac.compare_digest(totp(secret, now + offset), code) for offset in (-30, 0, 30))
+    try:
+        return any(hmac.compare_digest(totp(secret, now + offset), code) for offset in (-30, 0, 30))
+    except (ValueError, TypeError):
+        return False
 
 
 @dataclass(frozen=True, slots=True)

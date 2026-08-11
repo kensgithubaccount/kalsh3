@@ -41,10 +41,11 @@ class CanaryStore:
               CREATE TABLE IF NOT EXISTS canary_sessions(
                 session_id TEXT PRIMARY KEY, preview_id TEXT NOT NULL UNIQUE,
                 approval_id TEXT NOT NULL UNIQUE, client_order_id TEXT NOT NULL UNIQUE,
-                state TEXT NOT NULL, filled_quantity TEXT NOT NULL DEFAULT '0',
-                remaining_quantity TEXT NOT NULL DEFAULT '1.00', reconciliation_version TEXT,
+                state TEXT NOT NULL, filled_atoms INTEGER NOT NULL DEFAULT 0,
+                remaining_atoms INTEGER NOT NULL DEFAULT 1000000, reconciliation_version TEXT,
                 possibly_submitted INTEGER NOT NULL DEFAULT 0, created_at TEXT NOT NULL,
-                resolved_at TEXT, CHECK(CAST(filled_quantity AS REAL)+CAST(remaining_quantity AS REAL)=1.0));
+                resolved_at TEXT, CHECK(filled_atoms>=0 AND remaining_atoms>=0
+                  AND filled_atoms+remaining_atoms=1000000));
               CREATE UNIQUE INDEX IF NOT EXISTS one_unresolved_canary ON canary_sessions((1))
                 WHERE state IN ('READY_FOR_APPROVAL','AWAITING_REAUTH','HUMAN_APPROVED','FINAL_REVALIDATION','CANARY_AUTHORIZED','SUBMISSION_PENDING','SUBMITTED_OR_UNKNOWN','RECONCILING');
               CREATE TABLE IF NOT EXISTS production_fill_counter(
@@ -54,7 +55,54 @@ class CanaryStore:
                 event_id INTEGER PRIMARY KEY AUTOINCREMENT, happened_at TEXT NOT NULL,
                 event_type TEXT NOT NULL, reference_hash TEXT NOT NULL, actor TEXT NOT NULL);
             """)
+            self._migrate_legacy_fill_columns(db)
         path.chmod(0o600)
+
+    @staticmethod
+    def _migrate_legacy_fill_columns(db: sqlite3.Connection) -> None:
+        columns = {
+            str(row[1]) for row in db.execute("PRAGMA table_info(canary_sessions)").fetchall()
+        }
+        if "filled_quantity" not in columns:
+            return
+        rows = db.execute(
+            "SELECT session_id,preview_id,approval_id,client_order_id,state,filled_quantity,"
+            "remaining_quantity,reconciliation_version,possibly_submitted,created_at,resolved_at "
+            "FROM canary_sessions"
+        ).fetchall()
+        converted: list[tuple[object, ...]] = []
+        for row in rows:
+            filled = Decimal(str(row[5]))
+            remaining = Decimal(str(row[6]))
+            filled_atoms = filled * Decimal(1_000_000)
+            remaining_atoms = remaining * Decimal(1_000_000)
+            if (
+                not filled.is_finite()
+                or not remaining.is_finite()
+                or filled_atoms != filled_atoms.to_integral_value()
+                or remaining_atoms != remaining_atoms.to_integral_value()
+                or filled_atoms + remaining_atoms != 1_000_000
+            ):
+                raise RuntimeError("legacy canary quantities cannot be migrated exactly")
+            converted.append((*row[:5], int(filled_atoms), int(remaining_atoms), *row[7:]))
+        db.execute("BEGIN IMMEDIATE")
+        db.execute("DROP INDEX IF EXISTS one_unresolved_canary")
+        db.execute("ALTER TABLE canary_sessions RENAME TO canary_sessions_legacy")
+        db.execute("""CREATE TABLE canary_sessions(
+            session_id TEXT PRIMARY KEY, preview_id TEXT NOT NULL UNIQUE,
+            approval_id TEXT NOT NULL UNIQUE, client_order_id TEXT NOT NULL UNIQUE,
+            state TEXT NOT NULL, filled_atoms INTEGER NOT NULL DEFAULT 0,
+            remaining_atoms INTEGER NOT NULL DEFAULT 1000000, reconciliation_version TEXT,
+            possibly_submitted INTEGER NOT NULL DEFAULT 0, created_at TEXT NOT NULL,
+            resolved_at TEXT, CHECK(filled_atoms>=0 AND remaining_atoms>=0
+              AND filled_atoms+remaining_atoms=1000000))""")
+        db.executemany("INSERT INTO canary_sessions VALUES(?,?,?,?,?,?,?,?,?,?,?)", converted)
+        db.execute("DROP TABLE canary_sessions_legacy")
+        db.execute("""CREATE UNIQUE INDEX one_unresolved_canary ON canary_sessions((1))
+            WHERE state IN ('READY_FOR_APPROVAL','AWAITING_REAUTH','HUMAN_APPROVED',
+              'FINAL_REVALIDATION','CANARY_AUTHORIZED','SUBMISSION_PENDING',
+              'SUBMITTED_OR_UNKNOWN','RECONCILING');
+        """)
 
     def _connect(self) -> sqlite3.Connection:
         db = sqlite3.connect(self.path, timeout=10)
@@ -161,18 +209,30 @@ class CanaryStore:
             return False
 
     def record_fill(self, session_id: str, *, filled: Decimal, mode: str) -> None:
-        if mode != "REAL_PRODUCTION" or not Decimal(0) <= filled <= Decimal("1.00"):
-            if mode != "REAL_PRODUCTION":
-                return
+        if mode != "REAL_PRODUCTION":
+            return
+        if not filled.is_finite() or not Decimal(0) <= filled <= Decimal("1.00"):
             raise ValueError("fill exceeds one-contract canary")
-        remaining = Decimal("1.00") - filled
+        atoms_value = filled * Decimal(1_000_000)
+        if atoms_value != atoms_value.to_integral_value():
+            raise ValueError("fill quantity exceeds six-decimal fixed-point precision")
+        filled_atoms = int(atoms_value)
+        remaining_atoms = 1_000_000 - filled_atoms
         with self._connect() as db:
             db.execute("BEGIN IMMEDIATE")
+            row = db.execute(
+                "SELECT filled_atoms FROM canary_sessions WHERE session_id=?", (session_id,)
+            ).fetchone()
+            if row is None:
+                raise ValueError("unknown canary session")
+            previous_atoms = int(row[0])
+            if filled_atoms < previous_atoms:
+                raise ValueError("cumulative fill quantity cannot decrease")
             db.execute(
-                "UPDATE canary_sessions SET filled_quantity=?,remaining_quantity=?,state=? WHERE session_id=?",
-                (str(filled), str(remaining), CanaryState.RECONCILING, session_id),
+                "UPDATE canary_sessions SET filled_atoms=?,remaining_atoms=?,state=? WHERE session_id=?",
+                (filled_atoms, remaining_atoms, CanaryState.RECONCILING, session_id),
             )
-            if filled > 0:
+            if filled_atoms > previous_atoms:
                 db.execute(
                     "UPDATE production_fill_counter SET real_fill_count=MIN(50,real_fill_count+1) WHERE singleton=1"
                 )

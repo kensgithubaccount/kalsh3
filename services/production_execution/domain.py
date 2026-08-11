@@ -38,7 +38,16 @@ _ORDER_ID = re.compile(r"[A-Za-z0-9_-]{1,128}")
 
 
 def canonical_json(body: dict[str, object]) -> bytes:
-    if any(isinstance(value, float) for value in body.values()):
+    def contains_float(value: object) -> bool:
+        if isinstance(value, float):
+            return True
+        if isinstance(value, dict):
+            return any(contains_float(key) or contains_float(item) for key, item in value.items())
+        if isinstance(value, (list, tuple)):
+            return any(contains_float(item) for item in value)
+        return False
+
+    if contains_float(body):
         raise TypeError("floats are forbidden in production order bodies")
     return json.dumps(body, sort_keys=True, separators=(",", ":"), ensure_ascii=True).encode()
 

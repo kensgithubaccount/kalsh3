@@ -297,8 +297,11 @@ class OfficialFeedAdapter:
             "text/xml",
         }:
             raise AdapterError("feed content type rejected")
+        lowered = response.content.lower()
+        if b"<!doctype" in lowered or b"<!entity" in lowered:
+            raise AdapterError("feed XML declarations are not permitted")
         try:
-            root = ElementTree.fromstring(response.content)  # noqa: S314 - no external entity resolution in stdlib parser
+            root = ElementTree.fromstring(response.content)  # noqa: S314 - DTD/entity rejected above
         except ElementTree.ParseError as exc:
             raise AdapterError("malformed feed XML") from exc
         self.etag, self.last_modified = response.etag, response.last_modified
