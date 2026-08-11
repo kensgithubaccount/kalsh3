@@ -30,8 +30,8 @@
 | M14 Demo / Paper Execution | Complete (offline/mock verified) | Shared state machine, demo-only transport/vault, journals, unknown recovery, lifecycle/fills/WS/queue/calibration, 20k fault load, UI; live demo and PostgreSQL integration pending |
 | M15 Production Execution Path | Complete (offline verified) | Sign-and-send ADR, typed canonical envelopes, RSA-PSS fixtures, exact M13 binding, one-use journals, fixed host/routes, hardened service and truthful UI; credential NONE, DISARMED |
 | M16 Supervised Production Canary | Complete (offline verified) | Exact one-contract previews, live-evidence readiness, strong one-use approval, fresh final gates, one-session locking, partial fills, unknown recovery, auto-disarm and UI; live gates absent |
-| M17 Bounded Autonomy | In progress | Non-active evidence/state architecture only; autonomy OFF |
-| M18–M19 | Not started | — |
+| M17 Bounded Autonomy | Complete (offline verified) | Off-only policy, evidence snapshots, governance proposals, durable restart constraints and truthful UI; autonomy OFF |
+| M18–M19 | Not started | Work intentionally stops after M17 |
 
 ## Runtime truth
 
@@ -145,3 +145,12 @@
   first-50-real-fill counter, automatic DISARM, acceptance report, and owner UI: OFFLINE/MOCK VERIFIED.
 - Live demo acceptance and production reads: NOT VERIFIED. Production write credential: NONE. Live canary:
   NONE. Real-money order: NONE. Production state: DISARMED. Human/browser acceptance: PENDING.
+## M17 acceptance
+
+- Off-only state model, immutable one-contract/one-market ceiling, explicit evidence classification,
+  content-addressed snapshots and proposals, SQLite/PostgreSQL constraints, restart recovery, malicious
+  environment resistance, signer/transport isolation, static red-team checks, and owner UI: OFFLINE VERIFIED.
+- Live supervised canary, production reads/reconciliation, PostgreSQL concurrency, signer runtime, current
+  official API compatibility, strategy evidence, and human governance: NOT VERIFIED.
+- Autonomy: OFF. Production state: DISARMED. Production write credential: NONE. Production influence: NONE.
+  Live production execution: NONE. Real-money order: NONE. Human acceptance: PENDING.

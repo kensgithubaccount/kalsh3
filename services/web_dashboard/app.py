@@ -202,6 +202,8 @@ class DashboardApp:
             )
         elif path == "/canary":
             body = self._supervised_canary()
+        elif path == "/autonomy":
+            body = self._bounded_autonomy()
         elif path == "/advanced":
             body = self._advanced(
                 self.store.forecasting_summary(),
@@ -675,7 +677,26 @@ class DashboardApp:
             f"<div class=row><strong>{html.escape(name)}</strong><span>{state}</span></div>"
             for name, state in gates
         )
-        return f"""<section><p class=eyebrow>REAL PRODUCTION · REAL MONEY</p><h1>Supervised canary</h1><div class=warning><strong>NOT AVAILABLE</strong><p>Production write credential has not been installed. This is expected during offline implementation.</p></div><p>The workflow authorizes exactly one immutable one-contract order only after every live gate and a separate future owner instruction. It never turns trading on.</p><h2>Readiness</h2>{rows}<section><h2>ONE-CONTRACT REAL-MONEY CANARY</h2><p>Market, resolution rule, BUY YES / BUY NO, exact $0.xxxx limit, quantity 1.00, maximum fee/loss, forecast, after-cost evidence, uncertainty, risk, reserve, reconciliation, exchange status, and freshness will be frozen into one preview.</p><p><strong>APPROVE THIS ONE-CONTRACT CANARY</strong> requires password, TOTP, CSRF, a recent session, and a fresh M13 authorization. No approval control is available while live gates are missing.</p></section><div class=warning><strong>PRODUCTION ORDER STATE UNKNOWN</strong><p>If a future request may have reached Kalshi, no second order will be submitted and new risk remains blocked during reconciliation.</p></div><p><a class=button href=/risk>Return to Risk &amp; Safety</a></p></section>"""
+        return f"""<section><p class=eyebrow>REAL PRODUCTION · REAL MONEY</p><h1>Supervised canary</h1><div class=warning><strong>NOT AVAILABLE</strong><p>Production write credential has not been installed. This is expected during offline implementation.</p></div><p>The workflow authorizes exactly one immutable one-contract order only after every live gate and a separate future owner instruction. It never turns trading on.</p><h2>Readiness</h2>{rows}<section><h2>ONE-CONTRACT REAL-MONEY CANARY</h2><p>Market, resolution rule, BUY YES / BUY NO, exact $0.xxxx limit, quantity 1.00, maximum fee/loss, forecast, after-cost evidence, uncertainty, risk, reserve, reconciliation, exchange status, and freshness will be frozen into one preview.</p><p><strong>APPROVE THIS ONE-CONTRACT CANARY</strong> requires password, TOTP, CSRF, a recent session, and a fresh M13 authorization. No approval control is available while live gates are missing.</p></section><div class=warning><strong>PRODUCTION ORDER STATE UNKNOWN</strong><p>If a future request may have reached Kalshi, no second order will be submitted and new risk remains blocked during reconciliation.</p></div><div class=actions><a class=button href=/risk>Return to Risk &amp; Safety</a><a class=button href=/autonomy>Review bounded-autonomy governance</a></div></section>"""
+
+    @staticmethod
+    def _bounded_autonomy() -> str:
+        gates = (
+            "Supervised production canary completed",
+            "Real account reconciliation current",
+            "No unknown orders or positions",
+            "Strategy evidence sufficient",
+            "Drawdown and concentration acceptable",
+            "Signer runtime and PostgreSQL concurrency live verified",
+            "Official API compatibility and production reads current",
+            "Compliance, global halt, and kill states clear",
+            "Independent human governance approval",
+        )
+        rows = "".join(
+            f"<div class=row><span>{html.escape(gate)}</span><strong>NOT VERIFIED</strong></div>"
+            for gate in gates
+        )
+        return f"""<section><p class=eyebrow>M17 · NON-ACTIVE ARCHITECTURE</p><h1>Bounded autonomy</h1><div class=warning><strong>AUTONOMY OFF</strong><p>This release contains governance and evidence-state architecture only. It cannot activate production or authorize an order.</p></div><div class=metric-grid><article><small>Autonomy</small><strong>OFF</strong></article><article><small>Production state</small><strong>DISARMED</strong></article><article><small>Production write credential</small><strong>NONE</strong></article><article><small>Production influence</small><strong>NONE</strong></article></div><h2>Promotion evidence</h2>{rows}<section><h2>Structural ceiling</h2><p>At most one 1.00-contract order in one market would remain subject to exact human approval. Automatic scaling, activation, and execution are structurally unavailable in M17.</p><p>Even complete evidence cannot turn autonomy on. A later milestone and separate human governance decision would be required.</p></section><p><a class=button href=/canary>Review supervised canary readiness</a></p></section>"""
 
     @staticmethod
     def _system(
