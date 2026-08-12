@@ -11,6 +11,8 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+ACCOUNT_VALUE_HISTORY_LIMIT = 200
+
 
 @dataclass(frozen=True, slots=True)
 class RefreshState:
@@ -231,6 +233,9 @@ class StateStore:
                     setup_requirement TEXT, production_influence TEXT NOT NULL,
                     integration_note TEXT NOT NULL
                 );
+                CREATE TABLE IF NOT EXISTS account_snapshot_history (
+                    observed_at TEXT PRIMARY KEY, cash TEXT NOT NULL, portfolio_value TEXT NOT NULL
+                );
                 CREATE TABLE IF NOT EXISTS breaking_signal_ui (
                     signal_id TEXT PRIMARY KEY, detected_at TEXT NOT NULL, headline TEXT NOT NULL,
                     source_name TEXT NOT NULL, source_class TEXT NOT NULL, age_label TEXT NOT NULL,
@@ -394,6 +399,48 @@ class StateStore:
                 "UPDATE refresh_state SET last_attempt=?,last_success=?,status='healthy',failure_reason=NULL,snapshot=? WHERE singleton=1",
                 (now, now, json.dumps(snapshot, default=str)),
             )
+            self._record_account_value_point(db, snapshot)
+
+    def _record_account_value_point(self, db: sqlite3.Connection, snapshot: dict[str, Any]) -> None:
+        """Append a point to the real, read-only account-value history for charting.
+
+        Best-effort: a snapshot missing usable cash/equity values simply is not
+        plotted; it never blocks the refresh it was reconciled from.
+        """
+        observed_at, cash, portfolio_value = (
+            snapshot.get("observed_at"),
+            snapshot.get("cash"),
+            snapshot.get("portfolio_value"),
+        )
+        if observed_at is None or cash is None or portfolio_value is None:
+            return
+        db.execute(
+            "INSERT OR REPLACE INTO account_snapshot_history VALUES(?,?,?)",
+            (str(observed_at), str(cash), str(portfolio_value)),
+        )
+        db.execute(
+            "DELETE FROM account_snapshot_history WHERE observed_at NOT IN ("
+            "SELECT observed_at FROM account_snapshot_history "
+            "ORDER BY observed_at DESC LIMIT ?)",
+            (ACCOUNT_VALUE_HISTORY_LIMIT,),
+        )
+
+    def account_value_history(
+        self, limit: int = ACCOUNT_VALUE_HISTORY_LIMIT
+    ) -> list[dict[str, Any]]:
+        """Return the most recent `limit` observations, oldest-to-newest for charting.
+
+        Selects the newest `limit` rows first (ORDER BY ... DESC LIMIT), then
+        reverses them into chronological display order — selecting ASC LIMIT
+        would instead return the *oldest* observations whenever more history
+        exists than `limit`.
+        """
+        with self._connect() as db:
+            rows = db.execute(
+                "SELECT * FROM account_snapshot_history ORDER BY observed_at DESC LIMIT ?",
+                (min(max(limit, 1), ACCOUNT_VALUE_HISTORY_LIMIT),),
+            ).fetchall()
+        return [dict(row) for row in reversed(rows)]
 
     def refresh_failed(self, reason: str) -> None:
         now = datetime.now(UTC).isoformat()

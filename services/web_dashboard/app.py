@@ -7,6 +7,7 @@ import json
 import time
 from collections.abc import Callable, Iterable
 from datetime import datetime
+from decimal import Decimal, InvalidOperation
 from email import policy
 from email.parser import BytesParser
 from http import cookies
@@ -27,7 +28,22 @@ from services.reporting_service.support_snapshot import (
 from services.risk_engine.authorization import AuthorizationError, AuthorizationStore, SystemClock
 from services.risk_engine.policy import RiskPolicy
 
-from .product import SURFACES, GlobalProductState, ProductSurface, derive_global_state, dollars
+from .charts import chart_empty_state, limit_bars, sparkline
+from .product import (
+    GlobalProductState,
+    ProductSurface,
+    derive_global_state,
+    dollars,
+    grouped_navigation,
+    status_pill,
+)
+from .readiness import (
+    ReadinessCategory,
+    ReadinessCheck,
+    build_readiness,
+    primary_action,
+    readiness_summary_text,
+)
 from .security import SecretBox, SecurityError, consume_recovery_code, verify_password, verify_totp
 from .setup import SetupError, SetupService
 from .store import StateStore
@@ -64,12 +80,46 @@ def _risk_kill_labels(summary: dict[str, object]) -> dict[str, str]:
     }
 
 
+def _decimal_or_none(value: Any) -> Decimal | None:
+    """Parse a real reconciled value into Decimal, or None if it is absent/invalid.
+
+    Never fabricates a number: unparsable input stays None so callers show an
+    honest empty state instead of a guessed figure.
+    """
+    if value is None:
+        return None
+    try:
+        return Decimal(str(value))
+    except (InvalidOperation, ValueError, TypeError):
+        return None
+
+
+_CONNECTED_STATUSES = frozenset({"healthy", "connected"})
+
+
+def _connection_headline(account_status: str, stale: bool) -> str:
+    """State-derived Overview eyebrow text; never claims connection that isn't real.
+
+    Only a connected, fresh account may say "connected" without qualification.
+    A connected-but-stale account says so explicitly; anything else (error,
+    disconnected, not yet configured) never uses the word "connected" at all.
+    """
+    if account_status in _CONNECTED_STATUSES:
+        return (
+            "REAL ACCOUNT CONNECTED · DATA STALE" if stale else "REAL ACCOUNT CONNECTED · READ ONLY"
+        )
+    if account_status == "error":
+        return "ACCOUNT CONNECTION NEEDS ATTENTION"
+    return "READ-ONLY ACCOUNT STATUS UNKNOWN"
+
+
 def _layout(
     title: str,
     body: str,
     csrf: str = "",
     current_path: str = "/",
     global_state: GlobalProductState = GlobalProductState.LEARNING,
+    state_explanation: str = "Production writes OFF · Research influence NONE",
 ) -> bytes:
     def nav_link(surface: ProductSurface) -> str:
         active = current_path == surface.path or (
@@ -78,9 +128,15 @@ def _layout(
         current = ' aria-current="page"' if active else ""
         return f'<a href="{surface.path}"{current}>{html.escape(surface.label)}</a>'
 
-    nav = "".join(nav_link(surface) for surface in SURFACES)
+    def nav_group(label: str | None, surfaces: tuple[ProductSurface, ...]) -> str:
+        links = "".join(nav_link(surface) for surface in surfaces)
+        if label is None:
+            return f"<span class=nav-primary>{links}</span>"
+        return f"<span class=nav-group><span class=nav-group-label>{html.escape(label)}</span>{links}</span>"
+
+    nav = "".join(nav_group(label, surfaces) for label, surfaces in grouped_navigation())
     state_class = global_state.lower().replace(" ", "-")
-    return f"""<!doctype html><html lang=en><head><meta charset=utf-8><meta name=viewport content="width=device-width,initial-scale=1"><title>{html.escape(title)}</title><link rel=stylesheet href=/static/app.css></head><body><a class=skip-link href=#main-content>Skip to main content</a><header><a class=brand href=/ aria-label="Kalshi Control Center home">Kalshi Control Center</a><nav aria-label="Primary product navigation">{nav}</nav></header><div class="global-state {state_class}" role=status aria-label="Global system state"><span>System state</span><strong>{html.escape(global_state)}</strong><span>Production writes OFF</span><span>Research influence NONE</span></div><main id=main-content tabindex=-1>{body}</main><footer><strong>Safety boundary</strong><span>PRODUCTION WRITES: <strong>OFF</strong></span><span>RESEARCH INFLUENCE: NONE</span><span>Simulations are not orders</span></footer></body></html>""".encode()
+    return f"""<!doctype html><html lang=en><head><meta charset=utf-8><meta name=viewport content="width=device-width,initial-scale=1"><title>{html.escape(title)}</title><link rel=stylesheet href=/static/app.css></head><body><a class=skip-link href=#main-content>Skip to main content</a><header><a class=brand href=/ aria-label="Kalshi Control Center home">Kalshi Control Center</a><nav aria-label="Primary product navigation">{nav}</nav></header><div class="global-state {state_class}" role=status aria-label="Global system state"><span>System state</span><strong>{html.escape(global_state)}</strong><span class=state-explainer>{html.escape(state_explanation)}</span></div><main id=main-content tabindex=-1>{body}</main><footer><strong>Safety boundary</strong><span>PRODUCTION WRITES: <strong>OFF</strong></span><span>RESEARCH INFLUENCE: NONE</span><span>Simulations are not orders</span></footer></body></html>""".encode()
 
 
 class DashboardApp:
@@ -166,6 +222,7 @@ class DashboardApp:
         semantics = self.store.semantic_summary()
         external = self.store.external_intelligence_summary()
         risk_summary = self.risk_store.safety_summary()
+        learning = self.store.learning_summary()
         global_state = derive_global_state(
             account_status=state.status,
             stale=stale,
@@ -173,6 +230,18 @@ class DashboardApp:
             compliance_hold=risk_summary["compliance_state"] != "CLEAR",
             globally_halted=bool(risk_summary["global_halt"]),
         )
+        readiness = build_readiness(
+            account_status=state.status,
+            stale=stale,
+            unresolved_gaps=int(realtime["unresolved_gaps"]),
+            compliance_hold=risk_summary["compliance_state"] != "CLEAR",
+            compliance_reason=str(risk_summary["compliance_reason"] or ""),
+            globally_halted=bool(risk_summary["global_halt"]),
+            global_halt_reason=str(risk_summary["global_halt_reason"] or ""),
+            real_settled_events=int(learning["real_settled_events"]),
+            promotion_minimum=int(learning["promotion_minimum"]),
+        )
+        state_explanation = readiness_summary_text(readiness)
         if path.startswith("/breaking/"):
             body = self._signal_detail(
                 path.removeprefix("/breaking/"),
@@ -292,12 +361,16 @@ class DashboardApp:
         elif path == "/":
             body = warning + self._overview(
                 state.status,
+                stale,
                 snapshot,
                 universe,
                 realtime,
                 external,
                 global_state,
                 self.store.opportunity_summary(),
+                learning,
+                readiness,
+                self.store.account_value_history(),
             )
         else:
             body = "<section class=hero><p class=eyebrow>NOT FOUND</p><h1>This page does not exist</h1><p>The requested dashboard surface is unavailable.</p><a class=button href=/>Return to overview</a></section>"
@@ -305,13 +378,13 @@ class DashboardApp:
             return self._respond(
                 start,
                 "404 Not Found",
-                _layout("Page not found", body, csrf, path, global_state),
+                _layout("Page not found", body, csrf, path, global_state, state_explanation),
             )
         body += f'<form method=post action=/logout><input type=hidden name=csrf value="{csrf}"><button>Log out</button></form>'
         return self._respond(
             start,
             "200 OK",
-            _layout("Account control center", body, csrf, path, global_state),
+            _layout("Account control center", body, csrf, path, global_state, state_explanation),
         )
 
     def _setup(self, environ: dict[str, Any], start: StartResponse) -> Iterable[bytes]:
@@ -434,49 +507,239 @@ class DashboardApp:
         return verify_totp(secret, form.get("totp", [""])[0])
 
     @staticmethod
+    def _metric_card(label: str, value: str, note_html: str = "") -> str:
+        note = f"<p>{note_html}</p>" if note_html else ""
+        return f"<article><small>{html.escape(label)}</small><strong>{html.escape(value)}</strong>{note}</article>"
+
+    @staticmethod
+    def _readiness_checklist(readiness: tuple[ReadinessCategory, ...]) -> str:
+        categories = []
+        for category in readiness:
+            rows = "".join(
+                f'<li class="check {"met" if check.met else "unmet"}">'
+                f'<span class=check-mark aria-hidden="true">{"✓" if check.met else "✕"}</span>'
+                f"<span class=check-body><strong>{html.escape(check.label)}</strong>"
+                f"<span class=check-word>{'Met' if check.met else 'Not met'}</span>"
+                f"<span class=check-detail>{html.escape(check.detail)}</span></span></li>"
+                for check in category.checks
+            )
+            categories.append(
+                f"<li class=check-category><h3>{html.escape(category.name)}</h3>"
+                f"<ul class=check-list>{rows}</ul></li>"
+            )
+        return f'<ul class=readiness-checklist aria-label="Readiness checklist">{"".join(categories)}</ul>'
+
+    @staticmethod
+    def _primary_action_panel(action: ReadinessCheck | None) -> str:
+        if action is None:
+            return (
+                "<div class=empty-state><strong>No operator action required</strong>"
+                "<p>Every derived readiness check currently passes for this read-only build.</p></div>"
+            )
+        return (
+            "<div class=primary-action><small>What needs you most</small>"
+            f"<strong>{html.escape(action.label)}</strong><p>{html.escape(action.detail)}</p></div>"
+        )
+
+    @staticmethod
     def _overview(
         status: str,
+        stale: bool,
         data: dict[str, Any],
         universe: dict[str, Any],
         realtime: dict[str, Any],
         external: dict[str, int],
         global_state: GlobalProductState,
         opportunities: dict[str, Any],
+        learning: dict[str, Any],
+        readiness: tuple[ReadinessCategory, ...],
+        account_history: list[dict[str, Any]],
     ) -> str:
+        policy = RiskPolicy()
         positions = data.get("positions", [])
         orders = data.get("orders", [])
         fills = data.get("fills", [])
         settlements = data.get("settlements", [])
-        cards = (
-            ("Account equity", dollars(data.get("portfolio_value")), "Reconciled account value"),
-            ("Available cash", dollars(data.get("cash")), "Read-only account balance"),
-            ("Protected reserve", "$700.00", "Immutable policy; not allocated by this UI"),
-            ("Active allocation", "$0.00", "Production execution is unavailable"),
-            ("Open risk", "Unavailable", "M13 reconciliation not complete"),
-            ("Worst-case loss", "Unavailable", "Fails closed until M13"),
+        cash_dec = _decimal_or_none(data.get("cash"))
+        portfolio_value_dec = _decimal_or_none(data.get("portfolio_value"))
+
+        # A. System / readiness hero
+        action = primary_action(readiness)
+        readiness_summary = readiness_summary_text(readiness)
+        hero = (
+            "<section class=hero>"
+            f"<p class=eyebrow>{html.escape(_connection_headline(status, stale))}</p>"
+            "<h1>Your control center</h1>"
+            "<p class=lede>One place to understand safety, research, account state, and what needs attention.</p>"
+            "<div class=decision-banner><div><small>Can it trade?</small><strong>NO</strong></div>"
+            f"<p>Current state: <strong>{html.escape(global_state)}</strong> · {html.escape(readiness_summary)} "
+            "This release has no production order capability.</p></div>"
+            f"{DashboardApp._readiness_checklist(readiness)}"
+            f"{DashboardApp._primary_action_panel(action)}"
+            "</section>"
         )
+
+        # B. Capital + risk: actual account vs policy/target, never conflated.
+        # Kalshi's own materials describe `portfolio_value` inconsistently (positions-only
+        # value in the current API reference vs. total account value including cash in the
+        # changelog), so it is never called "equity" here and no composition is inferred
+        # from it — that would silently assume one of the two disputed semantics.
+        bankroll_fundable = (
+            None if portfolio_value_dec is None else portfolio_value_dec >= policy.bankroll
+        )
+        reserve_note = html.escape(
+            "Policy target; never allocated or spent by this UI; compared against Kalshi's "
+            "reported portfolio value."
+        )
+        if bankroll_fundable is False:
+            reserve_note += " " + status_pill("Not currently fundable", "warn")
+        elif bankroll_fundable is None:
+            reserve_note += " " + status_pill("Funding status unknown", "neutral")
+        actual_grid = "".join(
+            DashboardApp._metric_card(label, value, note)
+            for label, value, note in (
+                ("Available cash", dollars(cash_dec), "Read-only account balance"),
+                (
+                    "Reported portfolio value",
+                    dollars(portfolio_value_dec),
+                    "Kalshi's reported portfolio_value; live semantics not yet positively "
+                    "validated, so no cash/positions split is inferred from it",
+                ),
+                ("Open positions", str(len(positions)), "Reconciled position count"),
+                ("Current exposure", "Unavailable", "M13 reconciliation not complete"),
+            )
+        )
+        policy_grid = "".join(
+            [
+                DashboardApp._metric_card(
+                    "Target bankroll", dollars(policy.bankroll), reserve_note
+                ),
+                DashboardApp._metric_card(
+                    "Protected reserve",
+                    dollars(policy.protected_reserve),
+                    "Immutable policy; not allocated by this UI",
+                ),
+                DashboardApp._metric_card(
+                    "Maximum active allocation",
+                    dollars(policy.active_capital),
+                    "Policy ceiling; production execution is unavailable",
+                ),
+            ]
+        )
+        composition_html = chart_empty_state(
+            "Capital composition is deferred until Kalshi's live portfolio_value semantics "
+            "are positively validated, or a validated position-level valuation field exists. "
+            "Available cash and Kalshi's reported portfolio value are shown separately above "
+            "instead of an inferred split."
+        )
+        policy_chart_html = limit_bars(
+            "Policy limits",
+            [
+                ("Protected reserve", policy.protected_reserve),
+                ("Active allocation", policy.active_capital),
+                ("Aggregate open-risk limit", policy.aggregate_open_risk_limit),
+                ("Related-event limit", policy.related_event_risk_limit),
+                ("Per-market limit", policy.market_loss_limit),
+            ],
+        )
+        history_points: list[tuple[str, Decimal]] = []
+        for row in account_history:
+            observed, value = row.get("observed_at"), _decimal_or_none(row.get("portfolio_value"))
+            if isinstance(observed, str) and value is not None:
+                history_points.append((observed, value))
+        sparkline_html = sparkline("Kalshi portfolio value over time", history_points)
+        capital = (
+            "<section aria-labelledby=capital-heading><h2 id=capital-heading>Capital and risk</h2>"
+            "<div class=capital-split>"
+            f"<div><h3>Actual account</h3><div class=metric-grid>{actual_grid}</div>"
+            f"<h4>Capital composition (deferred)</h4>{composition_html}</div>"
+            f"<div><h3>Policy / target</h3><div class=metric-grid>{policy_grid}</div>"
+            f"<h4>Policy limits</h4>{policy_chart_html}"
+            f'<p><a class=button href="/risk">Review risk &amp; safety</a></p></div>'
+            "</div>"
+            f"<h3>Kalshi portfolio value over time</h3>{sparkline_html}"
+            "</section>"
+        )
+
+        # C. Current activity
         activity = (
             ("Markets", universe["indexed"]),
-            ("Research candidates", opportunities["research_candidates"]),
             ("Positions", len(positions)),
             ("Orders", len(orders)),
             ("Recent fills", len(fills)),
             ("Settlements", len(settlements)),
             ("Errors / gaps", realtime["unresolved_gaps"]),
         )
-        blockers = [
-            "Production mutation capability is absent.",
-            "M13 deterministic portfolio risk is not complete.",
-            "Real settled forecast and execution evidence is insufficient.",
-        ]
-        if realtime["unresolved_gaps"]:
-            blockers.append(f"{realtime['unresolved_gaps']} market-data gap(s) remain unresolved.")
+        activity_section = (
+            "<section><h2>Current activity</h2><div class=compact-grid>"
+            + "".join(
+                f"<article><small>{html.escape(label)}</small><strong>{html.escape(str(value))}</strong></article>"
+                for label, value in activity
+            )
+            + "</div>"
+            f"<p>Account: {html.escape(status)} · Universe: {html.escape(str(universe['status']))} · "
+            f"Market data: {html.escape(str(realtime['state']))} · "
+            f"Current/stale books: {realtime['current_books']}/{realtime['stale_books']}.</p></section>"
+        )
+
+        # D. Research / opportunities
+        candidates = list(opportunities.get("candidates", []))[:3]
+        candidate_items = (
+            "".join(
+                f'<li><a href="/opportunities">{html.escape(str(row.get("market_ticker", "unknown market")))}</a>'
+                f" — {html.escape(str(row.get('decision_state', 'UNKNOWN')))}</li>"
+                for row in candidates
+            )
+            if candidates
+            else "<li>No persisted live research candidates.</li>"
+        )
+        research_section = (
+            "<section aria-labelledby=research-heading><h2 id=research-heading>Research and opportunities</h2>"
+            "<div class=compact-grid>"
+            f"<article><small>Markets indexed</small><strong>{universe['indexed']}</strong></article>"
+            f"<article><small>Research candidates</small><strong>{opportunities['research_candidates']}</strong></article>"
+            f"<article><small>Data freshness</small><strong>{html.escape(str(realtime['state']))}</strong></article>"
+            "</div>"
+            f"<h3>Best current research candidates</h3><ul>{candidate_items}</ul>"
+            "<a class=button href=/opportunities>Open opportunities</a></section>"
+        )
+
+        # E. Learning
+        learning_section = (
+            "<section><h2>Learning</h2>"
+            f"<p>{html.escape(str(learning['state']))}. Progress: {learning['real_settled_events']} / "
+            f"{learning['promotion_minimum']} relevant settled events.</p>"
+            f"<p>Production influence: <strong>{html.escape(str(learning['production_influence']))}</strong></p>"
+            "<a class=button href=/learning>Open learning governance</a></section>"
+        )
+
+        # F. Needs attention — only what isn't already covered by the readiness checklist above
+        extra_items = []
         if external["connector_failures"]:
-            blockers.append(
+            extra_items.append(
                 f"{external['connector_failures']} external connector(s) need attention."
             )
-        blocker_items = "".join(f"<li>{html.escape(item)}</li>" for item in blockers)
-        return f"<section class=hero><p class=eyebrow>REAL ACCOUNT CONNECTED · READ ONLY</p><h1>Your control center</h1><p class=lede>One place to understand safety, research, account state, and what needs attention.</p><div class=decision-banner><div><small>Can it trade?</small><strong>NO</strong></div><p>Current state: <strong>{html.escape(global_state)}</strong>. This release has no production order capability.</p></div></section><section aria-labelledby=money-heading><h2 id=money-heading>Money and risk</h2><div class=metric-grid>{''.join(f'<article><small>{html.escape(label)}</small><strong>{html.escape(value)}</strong><p>{html.escape(note)}</p></article>' for label, value, note in cards)}</div></section><section class=split><div><h2>What it did</h2><div class=compact-grid>{''.join(f'<article><small>{html.escape(label)}</small><strong>{html.escape(str(value))}</strong></article>' for label, value in activity)}</div></div><aside class=attention><h2>What needs you</h2><ul>{blocker_items}</ul><a class=button href=/risk>Review safety blockers</a></aside></section><section><h2>What changed</h2><div class=empty-state><strong>No approved configuration changes</strong><p>Research proposals and simulated outcomes never alter production behavior.</p><a href=/learning>Review learning governance</a></div></section><section><h2>Connection summary</h2><p>Account: {html.escape(status)} · Universe: {html.escape(str(universe['status']))} · Market data: {html.escape(str(realtime['state']))} · Current/stale books: {realtime['current_books']}/{realtime['stale_books']}.</p></section>"
+        attention_body = (
+            "<ul>" + "".join(f"<li>{html.escape(item)}</li>" for item in extra_items) + "</ul>"
+            if extra_items
+            else (
+                "<div class=empty-state><strong>No additional operator decisions pending</strong>"
+                "<p>Every current blocker is already listed in the readiness checklist above.</p></div>"
+            )
+        )
+        attention_section = (
+            "<section><h2>What needs your attention</h2>"
+            f"{attention_body}<a class=button href=/risk>Review safety blockers</a></section>"
+        )
+
+        return (
+            hero
+            + capital
+            + activity_section
+            + research_section
+            + learning_section
+            + attention_section
+        )
 
     @staticmethod
     def _breaking_now(summary: dict[str, int], rows: list[dict[str, Any]]) -> str:
@@ -841,4 +1104,4 @@ class DashboardApp:
         return [b""]
 
 
-CSS = """*:where(:not(dialog)){box-sizing:border-box}html{color-scheme:light}body{margin:0;background:#f5f6f3;color:#142019;font:16px/1.55 ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}a{color:#155d3a;text-underline-offset:.18em}a:hover{text-decoration-thickness:2px}:focus-visible{outline:3px solid #d89400;outline-offset:3px}.skip-link{position:fixed;left:1rem;top:-5rem;background:#fff;color:#10251a;padding:.75rem 1rem;z-index:20;border-radius:.5rem}.skip-link:focus{top:1rem}header{padding:1rem max(1rem,calc((100vw - 1440px)/2));background:#10251a;color:#fff;display:flex;align-items:center;gap:2rem}.brand{font-size:1.05rem;font-weight:800;color:#fff;text-decoration:none;white-space:nowrap}nav{display:flex;gap:.25rem;flex-wrap:wrap}nav a{color:#dce8e0;text-decoration:none;padding:.65rem .75rem;border-radius:.5rem;min-height:44px}nav a:hover,nav a[aria-current=page]{background:#244636;color:#fff}.global-state{display:flex;align-items:center;justify-content:center;gap:1rem;padding:.65rem 1rem;background:#e7efe9;border-bottom:1px solid #c9d8cd;font-size:.9rem}.global-state strong{padding:.2rem .55rem;border-radius:999px;background:#204d36;color:#fff}.global-state.needs-attention,.global-state.halted{background:#fff0d2;border-color:#e5bb68}.global-state.needs-attention strong,.global-state.halted strong{background:#8b4800}main{max-width:1280px;margin:auto;padding:clamp(1.25rem,4vw,3.5rem);min-height:70vh}section+section{margin-top:3rem}h1,h2,h3{line-height:1.15;letter-spacing:-.02em}h1{font-size:clamp(2.25rem,6vw,4.75rem);max-width:18ch;margin:.3rem 0 1rem}h2{font-size:clamp(1.4rem,3vw,2rem)}p{max-width:74ch}.hero{padding:1.5rem 0}.lede{font-size:clamp(1.1rem,2vw,1.35rem);color:#3d5045}.eyebrow{color:#206b47;font-size:.78rem;font-weight:850;letter-spacing:.12em}.grid,.metric-grid,.compact-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,190px),1fr));gap:1rem}.metric-grid article,.grid article,.columns article,.compact-grid article,.market-card,.signal-card,section.auth{background:#fff;border:1px solid #d9e0da;border-radius:14px;padding:1.2rem;box-shadow:0 2px 10px #10251a0a;overflow-wrap:anywhere}.metric-grid strong,.grid strong,.compact-grid strong{display:block;font-size:clamp(1.35rem,3vw,1.85rem);margin-top:.35rem;font-variant-numeric:tabular-nums}.metric-grid p{font-size:.88rem;color:#56645c;margin-bottom:0}.compact-grid{grid-template-columns:repeat(auto-fit,minmax(120px,1fr))}.compact-grid article{padding:1rem}.columns{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:1rem}.split{display:grid;grid-template-columns:minmax(0,2fr) minmax(280px,1fr);gap:2rem}.attention{background:#fff8e8;border:1px solid #e4c98d;border-radius:14px;padding:1.25rem}.decision-banner{display:flex;align-items:center;gap:1.5rem;background:#edf3ef;border-left:6px solid #236b48;padding:1rem 1.25rem;border-radius:.25rem .75rem .75rem .25rem}.decision-banner div{min-width:110px}.decision-banner strong{display:block;font-size:1.7rem}.warning{background:#fff3d8;border-left:5px solid #a75b00;padding:1rem;border-radius:.25rem .65rem .65rem .25rem;color:#4c2b00}.empty-state{background:#f8faf8;border:1px dashed #aab8ae;border-radius:.75rem;padding:1.1rem;color:#445249}.row{padding:.75rem 0;border-top:1px solid #dce2dd;display:flex;justify-content:space-between;gap:1rem}.auth{max-width:560px;margin:auto}label{display:grid;gap:.4rem;margin:1rem 0}.help,small{color:#59675e}input,button,.button{min-height:44px;padding:.72rem .9rem;border-radius:8px;border:1px solid #829187;font:inherit}button,.button{background:#17613d;color:#fff;text-decoration:none;cursor:pointer;display:inline-flex;align-items:center;justify-content:center}button:disabled{background:#d8ddda;color:#505c55;cursor:not-allowed}.actions{display:flex;gap:.75rem;flex-wrap:wrap}dt{font-weight:750;margin-top:1rem}dd{margin-left:0}.badge{display:inline-flex;background:#e8eeea;padding:.25rem .6rem;border-radius:999px;font-size:.8rem;font-weight:750}details{margin-top:1rem;border-top:1px solid #d9e0da;padding-top:1rem}summary{cursor:pointer;min-height:44px}footer{padding:1.25rem max(1rem,calc((100vw - 1440px)/2));background:#10251a;color:#dce8e0;display:flex;gap:1.25rem;flex-wrap:wrap}footer strong{color:#fff}@media(max-width:900px){header{align-items:flex-start;flex-direction:column;gap:.75rem}nav{max-height:9.5rem;overflow:auto}.split{grid-template-columns:1fr}.global-state{justify-content:flex-start;overflow-x:auto}.global-state span,.global-state strong{white-space:nowrap}}@media(max-width:650px){main{padding:1rem}.columns{grid-template-columns:1fr}.decision-banner{align-items:flex-start;flex-direction:column}.row{display:block}footer{display:grid;gap:.5rem}h1{font-size:2.45rem}}@media(prefers-reduced-motion:reduce){*{scroll-behavior:auto!important;transition:none!important}}"""
+CSS = """*:where(:not(dialog)){box-sizing:border-box}html{color-scheme:light}body{margin:0;background:#f5f6f3;color:#142019;font:16px/1.55 ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}a{color:#155d3a;text-underline-offset:.18em}a:hover{text-decoration-thickness:2px}:focus-visible{outline:3px solid #d89400;outline-offset:3px}.skip-link{position:fixed;left:1rem;top:-5rem;background:#fff;color:#10251a;padding:.75rem 1rem;z-index:20;border-radius:.5rem}.skip-link:focus{top:1rem}header{padding:1rem max(1rem,calc((100vw - 1440px)/2));background:#10251a;color:#fff;display:flex;align-items:center;gap:2rem}.brand{font-size:1.05rem;font-weight:800;color:#fff;text-decoration:none;white-space:nowrap}nav{display:flex;gap:.25rem;flex-wrap:wrap}nav a{color:#dce8e0;text-decoration:none;padding:.65rem .75rem;border-radius:.5rem;min-height:44px}nav a:hover,nav a[aria-current=page]{background:#244636;color:#fff}.global-state{display:flex;align-items:center;justify-content:center;gap:1rem;padding:.65rem 1rem;background:#e7efe9;border-bottom:1px solid #c9d8cd;font-size:.9rem}.global-state strong{padding:.2rem .55rem;border-radius:999px;background:#204d36;color:#fff}.global-state.needs-attention,.global-state.halted{background:#fff0d2;border-color:#e5bb68}.global-state.needs-attention strong,.global-state.halted strong{background:#8b4800}main{max-width:1280px;margin:auto;padding:clamp(1.25rem,4vw,3.5rem);min-height:70vh}section+section{margin-top:3rem}h1,h2,h3{line-height:1.15;letter-spacing:-.02em}h1{font-size:clamp(2.25rem,6vw,4.75rem);max-width:18ch;margin:.3rem 0 1rem}h2{font-size:clamp(1.4rem,3vw,2rem)}p{max-width:74ch}.hero{padding:1.5rem 0}.lede{font-size:clamp(1.1rem,2vw,1.35rem);color:#3d5045}.eyebrow{color:#206b47;font-size:.78rem;font-weight:850;letter-spacing:.12em}.grid,.metric-grid,.compact-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,190px),1fr));gap:1rem}.metric-grid article,.grid article,.columns article,.compact-grid article,.market-card,.signal-card,section.auth{background:#fff;border:1px solid #d9e0da;border-radius:14px;padding:1.2rem;box-shadow:0 2px 10px #10251a0a;overflow-wrap:anywhere}.metric-grid strong,.grid strong,.compact-grid strong{display:block;font-size:clamp(1.35rem,3vw,1.85rem);margin-top:.35rem;font-variant-numeric:tabular-nums}.metric-grid p{font-size:.88rem;color:#56645c;margin-bottom:0}.compact-grid{grid-template-columns:repeat(auto-fit,minmax(120px,1fr))}.compact-grid article{padding:1rem}.columns{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:1rem}.split{display:grid;grid-template-columns:minmax(0,2fr) minmax(280px,1fr);gap:2rem}.attention{background:#fff8e8;border:1px solid #e4c98d;border-radius:14px;padding:1.25rem}.decision-banner{display:flex;align-items:center;gap:1.5rem;background:#edf3ef;border-left:6px solid #236b48;padding:1rem 1.25rem;border-radius:.25rem .75rem .75rem .25rem}.decision-banner div{min-width:110px}.decision-banner strong{display:block;font-size:1.7rem}.warning{background:#fff3d8;border-left:5px solid #a75b00;padding:1rem;border-radius:.25rem .65rem .65rem .25rem;color:#4c2b00}.empty-state{background:#f8faf8;border:1px dashed #aab8ae;border-radius:.75rem;padding:1.1rem;color:#445249}.row{padding:.75rem 0;border-top:1px solid #dce2dd;display:flex;justify-content:space-between;gap:1rem}.auth{max-width:560px;margin:auto}label{display:grid;gap:.4rem;margin:1rem 0}.help,small{color:#59675e}input,button,.button{min-height:44px;padding:.72rem .9rem;border-radius:8px;border:1px solid #829187;font:inherit}button,.button{background:#17613d;color:#fff;text-decoration:none;cursor:pointer;display:inline-flex;align-items:center;justify-content:center}button:disabled{background:#d8ddda;color:#505c55;cursor:not-allowed}.actions{display:flex;gap:.75rem;flex-wrap:wrap}dt{font-weight:750;margin-top:1rem}dd{margin-left:0}.badge{display:inline-flex;background:#e8eeea;padding:.25rem .6rem;border-radius:999px;font-size:.8rem;font-weight:750}details{margin-top:1rem;border-top:1px solid #d9e0da;padding-top:1rem}summary{cursor:pointer;min-height:44px}footer{padding:1.25rem max(1rem,calc((100vw - 1440px)/2));background:#10251a;color:#dce8e0;display:flex;gap:1.25rem;flex-wrap:wrap}footer strong{color:#fff}.nav-primary,.nav-group{display:flex;align-items:center;gap:.25rem;flex-wrap:wrap}.nav-group{padding-left:.5rem;margin-left:.25rem;border-left:1px solid #2f5142}.nav-group-label{color:#a9c2b3;font-size:.72rem;font-weight:750;letter-spacing:.08em;text-transform:uppercase;padding:0 .4rem}.state-explainer{color:#3d5045}.readiness-checklist{list-style:none;margin:1.25rem 0;padding:0;display:grid;gap:1rem;grid-template-columns:repeat(auto-fit,minmax(min(100%,220px),1fr))}.check-category h3{font-size:.95rem;margin:0 0 .5rem}.check-list{list-style:none;margin:0;padding:0;display:grid;gap:.4rem}.check{display:grid;grid-template-columns:1.5rem 1fr;gap:.4rem;background:#fff;border:1px solid #d9e0da;border-radius:10px;padding:.6rem .75rem}.check-mark{font-weight:800}.check.met .check-mark{color:#17613d}.check.unmet .check-mark{color:#a75b00}.check-body{display:grid;gap:.15rem}.check-word{font-size:.75rem;font-weight:750;text-transform:uppercase;letter-spacing:.05em;color:#56645c}.check-detail{font-size:.85rem;color:#445249}.primary-action{background:#fff8e8;border:1px solid #e4c98d;border-radius:14px;padding:1rem 1.25rem;margin-top:1rem}.capital-split{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:2rem}.capital-split h3{margin-top:0}.capital-split h4{font-size:.85rem;color:#56645c;text-transform:uppercase;letter-spacing:.05em;margin:1.25rem 0 .5rem}.pill{display:inline-flex;padding:.15rem .55rem;border-radius:999px;font-size:.78rem;font-weight:750}.pill-good{background:#dcefe2;color:#0f4a2c}.pill-warn{background:#fde9c8;color:#7a4200}.pill-bad{background:#fbdede;color:#7a1414}.pill-neutral{background:#e8eeea;color:#3d5045}.chart{margin:.75rem 0}.chart-bar{width:100%;height:3rem;border-radius:8px;overflow:hidden;display:block}.chart-sparkline{width:100%;height:7.5rem;display:block}.chart-legend{list-style:none;margin:.6rem 0 0;padding:0;display:grid;gap:.35rem;font-size:.88rem}.chart-swatch{display:inline-block;width:.75rem;height:.75rem;border-radius:3px;margin-right:.4rem}.chart-caption{font-size:.85rem;color:#445249;margin-top:.5rem}.chart-empty{background:#f8faf8;border:1px dashed #aab8ae;border-radius:.75rem;padding:1rem;color:#445249;font-size:.9rem}.chart-table{margin-top:.6rem}.chart-data{width:100%;border-collapse:collapse;margin-top:.5rem;font-size:.85rem}.chart-data th,.chart-data td{text-align:left;padding:.35rem .5rem;border-bottom:1px solid #e2e7e3}.limit-chart{display:grid;gap:.6rem}.limit-row{display:grid;grid-template-columns:9rem 1fr auto;align-items:center;gap:.6rem}.limit-track{background:#e8eeea;border-radius:999px;height:.6rem;overflow:hidden}.limit-fill{display:block;height:100%;background:#17613d}.limit-value{font-variant-numeric:tabular-nums;font-size:.85rem}@media(max-width:900px){header{align-items:flex-start;flex-direction:column;gap:.75rem}nav{max-height:9.5rem;overflow:auto}.split,.capital-split{grid-template-columns:1fr}.global-state{justify-content:flex-start;overflow-x:auto}.global-state span,.global-state strong{white-space:nowrap}}@media(max-width:650px){main{padding:1rem}.columns{grid-template-columns:1fr}.decision-banner{align-items:flex-start;flex-direction:column}.row{display:block}footer{display:grid;gap:.5rem}h1{font-size:2.45rem}.readiness-checklist{grid-template-columns:1fr}.limit-row{grid-template-columns:1fr auto}.limit-label{grid-column:1/-1}}@media(prefers-reduced-motion:reduce){*{scroll-behavior:auto!important;transition:none!important}}"""
