@@ -15,12 +15,7 @@ override validated the missing wiring. It is now explicit and fail-fast in the e
 Finally, the NATS healthcheck invoked `nats-server --signal ldm`. That command requests lame-duck/graceful
 shutdown and therefore made health checking destructive. NATS monitoring is now enabled only on its
 private network and `/healthz` is probed without signals. CI starts the hardened Redis and NATS services,
-runs the NATS probe repeatedly, checks restart count/running state, and performs client-level
-`CONNECT` plus `PING`/`PONG` connectivity.
-
-The corrected stack was then live validated with all seven services started together: PostgreSQL, Redis,
-NATS, web, and production-signer were healthy; account-worker and Caddy were up. The production-signer
-remained `DISARMED`. The active host value `vm.overcommit_memory=1` was also verified.
+runs the NATS probe repeatedly, checks restart count/running state, and performs a client publish.
 
 ## Safety review
 
@@ -32,7 +27,7 @@ remained `DISARMED`. The active host value `vm.overcommit_memory=1` was also ver
 
 ## Remaining evidence
 
-AWS security-group/NACL/host-firewall inspection, public HTTPS/TLS validation, sysctl persistence across an
-actual reboot, signer runtime network-isolation verification, production-read credentials and account
-reconciliation, backups and restore drill, alerts, long-duration behavior, and Oracle deployment remain
-**NOT VERIFIED / PENDING**. No production order was placed and full production readiness is not claimed.
+Full AWS firewall/host-hardening inspection, public DNS/TLS, reboot persistence of the sysctl, PostgreSQL,
+application services, signer runtime isolation, production reads/reconciliation, backups and restore drill,
+alerts, long-duration restart/resource behavior, and Oracle deployment remain **NOT VERIFIED / PENDING**.
+No production order was placed and full production readiness is not claimed.
