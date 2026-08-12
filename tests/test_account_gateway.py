@@ -225,16 +225,30 @@ def test_scope_match_is_unambiguous_and_uses_current_api_key_id(private_key: byt
             client(private_key, transport).refresh("reader")
 
 
-@pytest.mark.parametrize("subaccount", [None, 1, "0"])
-def test_read_key_must_be_positively_scoped_to_primary_account_zero(
+@pytest.mark.parametrize("subaccount", [1, -1, True, False, "0", "", [], {}, [0], {"v": 0}, 0.0])
+def test_read_key_with_incompatible_subaccount_is_rejected(
     private_key: bytes, subaccount: Any
 ) -> None:
-    key = {"api_key_id": "reader", "scopes": ["read"]}
-    if subaccount is not None:
-        key["subaccount"] = subaccount
+    key = {"api_key_id": "reader", "scopes": ["read"], "subaccount": subaccount}
     transport = Transport({"api_keys": [HttpResponse(200, {"api_keys": [key]})]})
     with pytest.raises(AuthenticationRejected):
         client(private_key, transport).refresh("reader")
+
+
+def test_read_key_missing_subaccount_key_entirely_is_accepted(private_key: bytes) -> None:
+    key = {"api_key_id": "reader", "scopes": ["read"]}
+    transport = Transport({"api_keys": [HttpResponse(200, {"api_keys": [key]})]})
+    client(private_key, transport).refresh("reader")
+
+
+@pytest.mark.parametrize("subaccount", [None, 0])
+def test_read_key_with_null_or_zero_subaccount_is_accepted(
+    private_key: bytes, subaccount: Any
+) -> None:
+    key = {"api_key_id": "reader", "scopes": ["read"], "subaccount": subaccount}
+    transport = Transport({"api_keys": [HttpResponse(200, {"api_keys": [key]})]})
+    snap = client(private_key, transport).refresh("reader")
+    assert snap.subaccount == 0
 
 
 @pytest.mark.parametrize(

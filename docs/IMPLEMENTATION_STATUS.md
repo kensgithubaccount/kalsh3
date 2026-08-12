@@ -35,6 +35,7 @@
 | M19 Final Audit | Complete (offline verified) | Repository-wide audit corrected redirect, exact-fill, signer-oracle, nested-float, XML, auth-DoS, and UI defects; all live/human gates remain pending |
 | M20 Live Deployment Corrections | Complete (targeted live evidence + CI pending) | AWS Ubuntu Redis user/capability correction, persistent overcommit prerequisite, Caddy hostname wiring, non-destructive NATS health, generic/AWS runbook and runtime regression; broader live acceptance pending |
 | M21 Live Production-Read API Contract Correction | Complete (offline/current-shape verified) | Correct API-key identity/scope, integer-cent balance, nested limits and safe setup errors; live production-read retry pending |
+| M22 Read-Only Unrestricted-Key Compatibility | Complete (offline verified) | API-key enrollment accepts absent/null/zero subaccount, rejects all other shapes; runtime subaccount=0 targeting and GET/HEAD-only surface unchanged; live production-read retry pending |
 
 ## Runtime truth
 
@@ -216,3 +217,19 @@
 - Production signer: DISARMED. Production-write credential: NONE. Bounded autonomy: OFF. Account:
   subaccount 0 only. Gateway: GET/HEAD only. Live mutation and real-money orders: NONE. No strategy, model,
   risk, authorization, credential-handling, or production-write behavior was enabled.
+
+## M22 acceptance
+
+- The second live production-read setup attempt reached API-key enrollment but failed because the
+  provisioned key is an unrestricted read-only key: Kalshi omits `subaccount` on such keys rather than
+  returning `0`, and enrollment previously required the field to equal `0` exactly.
+- API-key enrollment now accepts a matching key when scopes are exactly `["read"]` and `subaccount` is
+  absent, explicit `null`, or the exact integer `0`; nonzero integers, booleans, strings (including `"0"`),
+  arrays, objects, and other malformed values fail closed with `AuthenticationRejected`, matching prior
+  behavior for those shapes.
+- Balance, positions, orders, fills, and settlements remain explicitly requested with `subaccount=0` on
+  every call regardless of the enrolled key's own subaccount metadata; there is still no generic subaccount
+  interface, and the gateway remains GET/HEAD only.
+- Production signer: DISARMED. Production-write credential: NONE. Bounded autonomy: OFF. Live mutation and
+  real-money orders: NONE. No strategy, model, risk, authorization, credential-handling, or production-write
+  behavior was changed. Live production-read acceptance with this correction remains PENDING.

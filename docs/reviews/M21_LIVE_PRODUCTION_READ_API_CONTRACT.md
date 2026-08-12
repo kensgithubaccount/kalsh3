@@ -20,7 +20,10 @@ Official references reviewed by the operator: Kalshi's API reference pages for [
 - `GET /trade-api/v2/api_keys` returns `api_keys` items with `api_key_id`, `name`, `scopes`, and
   `subaccount`. Enrollment positively matches one `api_key_id`, requires scopes to equal exactly `["read"]`,
   and positively requires primary subaccount `0`; missing, duplicate, ambiguous, expanded, write-capable, or
-  non-primary keys fail closed.
+  non-primary keys fail closed. **Superseded by M22:** an unrestricted read-only key omits `subaccount`
+  entirely rather than returning `0`; see `docs/reviews/M22_READ_ONLY_UNRESTRICTED_KEY_COMPATIBILITY.md` for
+  the corrected acceptance rule. Runtime account targeting (`subaccount=0` on every read request) is
+  unaffected.
 - `GET /trade-api/v2/portfolio/balance?subaccount=0` returns integer-cent `balance` and
   `portfolio_value`, fixed-point `balance_dollars`, and integer `updated_ts`. Optional `balance_breakdown`
   is an array of objects (currently documented with `exchange_index` and fixed-point `balance` fields); it
