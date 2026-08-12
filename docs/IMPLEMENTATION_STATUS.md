@@ -34,6 +34,7 @@
 | M18 Operations Hardening | Complete (offline verified) | Fail-closed observability, recovery, encrypted backup/restore design, hardened Compose, CI supply-chain gates and runbooks; live operations pending |
 | M19 Final Audit | Complete (offline verified) | Repository-wide audit corrected redirect, exact-fill, signer-oracle, nested-float, XML, auth-DoS, and UI defects; all live/human gates remain pending |
 | M20 Live Deployment Corrections | Complete (targeted live evidence + CI pending) | AWS Ubuntu Redis user/capability correction, persistent overcommit prerequisite, Caddy hostname wiring, non-destructive NATS health, generic/AWS runbook and runtime regression; broader live acceptance pending |
+| M21 Live Production-Read API Contract Correction | Complete (offline/current-shape verified) | Correct API-key identity/scope, integer-cent balance, nested limits and safe setup errors; live production-read retry pending |
 
 ## Runtime truth
 
@@ -196,3 +197,22 @@
 - Production remains DISARMED. Bounded autonomy remains OFF. Production-write credential remains NONE.
   Live production mutation and real-money orders remain NONE. No strategy, model behavior, authorization,
   credential, risk limit, or signer-network boundary changed. Full production readiness is not claimed.
+
+## M21 acceptance
+
+- First live production-read setup reached Kalshi from the healthy HTTPS AWS stack but exposed current API
+  response mismatches and surfaced only a generic WSGI error. Current documented response fixtures now
+  require `api_key_id` with exactly `["read"]`, integer-cent `balance`/`portfolio_value` plus balance
+  metadata, and nested `read`/`write` rate-limit buckets. Decimal-safe parsing rejects floats and obsolete,
+  incomplete, duplicate, or ambiguous shapes.
+- Positions, orders, fills, and settlements retain explicit subaccount 0, complete cursor pagination, their
+  documented collection names, and fail-closed page validation. The setup route now translates credential,
+  scope, malformed-response, timeout/unavailability, rate-limit, and reconciliation failures without
+  displaying or persisting submitted secrets or partial configuration.
+- Independent review against current official Kalshi contract facts additionally corrected optional
+  list-form `balance_breakdown`, required fixed-point `balance_dollars`, required limits `grants`, and API-key
+  subaccount 0. A deploy and successful live production-read retry remain PENDING before production-read
+  acceptance.
+- Production signer: DISARMED. Production-write credential: NONE. Bounded autonomy: OFF. Account:
+  subaccount 0 only. Gateway: GET/HEAD only. Live mutation and real-money orders: NONE. No strategy, model,
+  risk, authorization, credential-handling, or production-write behavior was enabled.
