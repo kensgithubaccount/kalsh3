@@ -32,6 +32,34 @@ def _money(value: Any, field: str) -> Decimal:
     return result
 
 
+def _integer(value: Any, field: str) -> Decimal:
+    if isinstance(value, bool) or not isinstance(value, int):
+        raise SnapshotValidationError(f"{field} must be an integer")
+    return Decimal(value)
+
+
+def _cents(value: Any, field: str) -> Decimal:
+    return _integer(value, field) / Decimal(100)
+
+
+def _balance_breakdown(value: Any) -> None:
+    if value is None:
+        return
+    if not isinstance(value, list):
+        raise SnapshotValidationError("balance breakdown must be an array")
+    for item in value:
+        if not isinstance(item, dict):
+            raise SnapshotValidationError("balance breakdown item must be an object")
+
+
+def _grants(value: Any) -> None:
+    if not isinstance(value, list):
+        raise SnapshotValidationError("account grants must be an array")
+    for grant in value:
+        if not isinstance(grant, dict):
+            raise SnapshotValidationError("account grant must be an object")
+
+
 def _normalize_rows(rows: Any, kind: str) -> tuple[dict[str, Any], ...]:
     if not isinstance(rows, list) or any(not isinstance(row, dict) for row in rows):
         raise SnapshotValidationError(f"malformed {kind}")
@@ -85,17 +113,21 @@ class AccountSnapshot:
         balance, limits = payloads["balance"], payloads["limits"]
         if not isinstance(balance, dict) or not isinstance(limits, dict):
             raise SnapshotValidationError("balance or limits response is malformed")
-        required_limits = {
-            "usage_tier",
-            "read_refill_rate",
-            "read_capacity",
-            "write_refill_rate",
-            "write_capacity",
-        }
-        if not required_limits.issubset(limits) or not isinstance(limits["usage_tier"], str):
+        if not isinstance(limits.get("usage_tier"), str):
             raise SnapshotValidationError("account limits are incomplete")
-        cash = _money(balance.get("balance_dollars"), "balance_dollars")
-        portfolio = _money(balance.get("portfolio_value_dollars"), "portfolio_value_dollars")
+        read_limits, write_limits = limits.get("read"), limits.get("write")
+        if not isinstance(read_limits, dict) or not isinstance(write_limits, dict):
+            raise SnapshotValidationError("account limits are incomplete")
+        _grants(limits.get("grants"))
+        breakdown = balance.get("balance_breakdown")
+        if not isinstance(balance.get("updated_ts"), int) or isinstance(
+            balance.get("updated_ts"), bool
+        ):
+            raise SnapshotValidationError("balance metadata is incomplete")
+        _balance_breakdown(breakdown)
+        cash = _cents(balance.get("balance"), "balance")
+        _money(balance.get("balance_dollars"), "balance_dollars")
+        portfolio = _cents(balance.get("portfolio_value"), "portfolio_value")
         if cash < 0 or portfolio < 0:
             raise SnapshotValidationError("negative account totals are unsupported")
         return cls(
@@ -108,10 +140,10 @@ class AccountSnapshot:
             fills=_normalize_rows(payloads["fills"], "fills"),
             settlements=_normalize_rows(payloads["settlements"], "settlements"),
             api_tier=limits["usage_tier"],
-            read_refill_rate=_money(str(limits["read_refill_rate"]), "read_refill_rate"),
-            read_capacity=_money(str(limits["read_capacity"]), "read_capacity"),
-            write_refill_rate=_money(str(limits["write_refill_rate"]), "write_refill_rate"),
-            write_capacity=_money(str(limits["write_capacity"]), "write_capacity"),
+            read_refill_rate=_integer(read_limits.get("refill_rate"), "read.refill_rate"),
+            read_capacity=_integer(read_limits.get("bucket_capacity"), "read.bucket_capacity"),
+            write_refill_rate=_integer(write_limits.get("refill_rate"), "write.refill_rate"),
+            write_capacity=_integer(write_limits.get("bucket_capacity"), "write.bucket_capacity"),
             read_requests=budget.requests,
             read_retries=budget.retries,
             reconciled=True,

@@ -17,8 +17,17 @@ jobs:
       - name: Install CI verification tools
         run: uv pip install ruff mypy pytest
       - run: make verify
-      - run: docker compose config --quiet
-      - run: sh -n deploy/oracle/install.sh deploy/oracle/backup.sh deploy/oracle/restore-drill.sh
+      - name: Validate effective deployment configuration
+        env:
+          KPV3_HOSTNAME: ci.invalid
+        run: docker compose config --quiet
+      - run: sh -n deploy/oracle/install.sh deploy/oracle/backup.sh deploy/oracle/restore-drill.sh deploy/ubuntu/prepare-host.sh deploy/runtime-smoke.sh
+  hardened-runtime-smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Start hardened Redis and repeatedly probe NATS
+        run: sh deploy/runtime-smoke.sh
   postgres-concurrency:
     runs-on: ubuntu-latest
     services:

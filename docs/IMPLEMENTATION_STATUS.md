@@ -33,6 +33,9 @@
 | M17 Bounded Autonomy | Complete (offline verified) | Off-only policy, evidence snapshots, governance proposals, durable restart constraints and truthful UI; autonomy OFF |
 | M18 Operations Hardening | Complete (offline verified) | Fail-closed observability, recovery, encrypted backup/restore design, hardened Compose, CI supply-chain gates and runbooks; live operations pending |
 | M19 Final Audit | Complete (offline verified) | Repository-wide audit corrected redirect, exact-fill, signer-oracle, nested-float, XML, auth-DoS, and UI defects; all live/human gates remain pending |
+| M20 Live Deployment Corrections | Complete (targeted live evidence + CI pending) | AWS Ubuntu Redis user/capability correction, persistent overcommit prerequisite, Caddy hostname wiring, non-destructive NATS health, generic/AWS runbook and runtime regression; broader live acceptance pending |
+| M21 Live Production-Read API Contract Correction | Complete (offline/current-shape verified) | Correct API-key identity/scope, integer-cent balance, nested limits and safe setup errors; live production-read retry pending |
+| M22 Read-Only Unrestricted-Key Compatibility | Complete (offline/current-shape verified) | Accept absent/null unrestricted or integer-zero primary restriction while runtime reads remain fixed to subaccount 0; live retry pending |
 
 ## Runtime truth
 
@@ -178,3 +181,52 @@
   security scanners/SBOM, browser review, strategy evidence, and human acceptance: NOT VERIFIED / PENDING.
 - Production: DISARMED. Bounded autonomy: OFF. Production-write credential: NONE. Live mutation: NONE.
   Real-money order: NONE. No M13 limit was weakened.
+
+## M20 acceptance
+
+- First AWS EC2 Ubuntu 24.04 x86_64 evidence: Redis previously exited 127 because `setpriv` could not drop
+  privileges after all capabilities were removed. Running directly as `redis`, while retaining
+  `cap_drop: [ALL]` and `no-new-privileges:true`, was LIVE VERIFIED healthy with
+  `Ready to accept connections tcp`.
+- Caddy hostname injection was LIVE DIAGNOSED and validated with a temporary override; checked-in Compose
+  now passes the non-secret hostname explicitly. NATS's destructive `--signal ldm` check was LIVE
+  DIAGNOSED and replaced by private monitoring `/healthz`; repeated lifecycle/client smoke coverage is
+  checked in, with GitHub CI execution PENDING for this commit.
+- Persistent host `vm.overcommit_memory=1`, AWS firewall/hardening, reboot persistence, DNS/TLS, full app
+  startup, PostgreSQL, signer isolation at runtime, backup/restore, alerts, production reads/reconciliation,
+  Oracle behavior, and long-duration operations remain NOT VERIFIED / PENDING as applicable.
+- Production remains DISARMED. Bounded autonomy remains OFF. Production-write credential remains NONE.
+  Live production mutation and real-money orders remain NONE. No strategy, model behavior, authorization,
+  credential, risk limit, or signer-network boundary changed. Full production readiness is not claimed.
+
+## M21 acceptance
+
+- First live production-read setup reached Kalshi from the healthy HTTPS AWS stack but exposed current API
+  response mismatches and surfaced only a generic WSGI error. Current documented response fixtures now
+  require `api_key_id` with exactly `["read"]`, integer-cent `balance`/`portfolio_value` plus balance
+  metadata, and nested `read`/`write` rate-limit buckets. Decimal-safe parsing rejects floats and obsolete,
+  incomplete, duplicate, or ambiguous shapes.
+- Positions, orders, fills, and settlements retain explicit subaccount 0, complete cursor pagination, their
+  documented collection names, and fail-closed page validation. The setup route now translates credential,
+  scope, malformed-response, timeout/unavailability, rate-limit, and reconciliation failures without
+  displaying or persisting submitted secrets or partial configuration.
+- Independent review against current official Kalshi contract facts additionally corrected optional
+  list-form `balance_breakdown`, required fixed-point `balance_dollars`, required limits `grants`, and API-key
+  subaccount 0. A deploy and successful live production-read retry remain PENDING before production-read
+  acceptance.
+- Production signer: DISARMED. Production-write credential: NONE. Bounded autonomy: OFF. Account:
+  subaccount 0 only. Gateway: GET/HEAD only. Live mutation and real-money orders: NONE. No strategy, model,
+  risk, authorization, credential-handling, or production-write behavior was enabled.
+
+## M22 acceptance
+
+- Current official API-key semantics distinguish an optional credential restriction from request targeting.
+  Enrollment accepts an exactly read-only, uniquely matched key when `subaccount` is absent/null
+  (unrestricted) or integer `0` (explicit primary restriction). Nonzero integers, booleans, strings, and
+  malformed values fail closed.
+- Unrestricted credential compatibility does not broaden runtime access: balance, positions, orders, fills,
+  and settlements continue to target `subaccount=0` explicitly; there is no generic subaccount interface and
+  the gateway remains GET/HEAD only.
+- Production signer remains DISARMED. Production-write credential remains NONE. Bounded autonomy remains
+  OFF. Live mutation and real-money orders remain NONE. Deployment and live production-read retry remain
+  PENDING.

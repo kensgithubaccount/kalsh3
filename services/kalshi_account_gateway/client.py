@@ -209,9 +209,17 @@ class KalshiAccountClient:
         if not isinstance(keys, list):
             raise AuthenticationRejected("API key scope response is malformed")
         matches = [
-            item for item in keys if isinstance(item, dict) and item.get("id") == expected_key_id
+            item
+            for item in keys
+            if isinstance(item, dict) and item.get("api_key_id") == expected_key_id
         ]
-        if len(matches) != 1 or matches[0].get("scopes") != ["read"]:
+        subaccount = matches[0].get("subaccount") if len(matches) == 1 else None
+        if (
+            len(matches) != 1
+            or matches[0].get("scopes") != ["read"]
+            or isinstance(subaccount, bool)
+            or (subaccount is not None and (not isinstance(subaccount, int) or subaccount != 0))
+        ):
             raise AuthenticationRejected(
                 "credential is not positively verified as exactly read-only"
             )
