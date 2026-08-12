@@ -125,11 +125,12 @@ COLLECTIONS = {
 
 
 def _api_key_subaccount_is_compatible(value: Any) -> bool:
-    """Accept an absent/null subaccount or the exact integer 0; reject everything else.
+    """Accept a missing/null subaccount or the exact integer 0; reject everything else.
 
-    Unrestricted read-only keys omit `subaccount` entirely rather than returning `0`,
-    so both shapes must positively verify as targeting the primary account. Booleans
-    are excluded even though `bool` is an `int` subclass in Python.
+    The currently documented `GET /trade-api/v2/api_keys` response does not include a
+    `subaccount` field, so enrollment must tolerate it being absent; `null` and the exact
+    integer `0` remain accepted conservatively. Booleans are excluded even though `bool`
+    is an `int` subclass in Python.
     """
     if value is None:
         return True

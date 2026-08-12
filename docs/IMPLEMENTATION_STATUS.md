@@ -220,13 +220,14 @@
 
 ## M22 acceptance
 
-- The second live production-read setup attempt reached API-key enrollment but failed because the
-  provisioned key is an unrestricted read-only key: Kalshi omits `subaccount` on such keys rather than
-  returning `0`, and enrollment previously required the field to equal `0` exactly.
+- The second live production-read setup attempt reached API-key enrollment but failed because enrollment
+  previously required the returned key's `subaccount` field to equal `0` exactly. The current documented
+  `GET /trade-api/v2/api_keys` response describes `api_key_id`, `name`, and `scopes`, and does not document
+  a `subaccount` field, so enrollment must tolerate the field being absent.
 - API-key enrollment now accepts a matching key when scopes are exactly `["read"]` and `subaccount` is
-  absent, explicit `null`, or the exact integer `0`; nonzero integers, booleans, strings (including `"0"`),
-  arrays, objects, and other malformed values fail closed with `AuthenticationRejected`, matching prior
-  behavior for those shapes.
+  absent (the documented shape), or is explicit `null` or the exact integer `0` (accepted conservatively
+  for compatibility); nonzero integers, booleans, strings (including `"0"`), arrays, objects, and other
+  malformed values fail closed with `AuthenticationRejected`, matching prior behavior for those shapes.
 - Balance, positions, orders, fills, and settlements remain explicitly requested with `subaccount=0` on
   every call regardless of the enrolled key's own subaccount metadata; there is still no generic subaccount
   interface, and the gateway remains GET/HEAD only.
