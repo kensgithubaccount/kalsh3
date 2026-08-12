@@ -13,6 +13,13 @@ from http import cookies
 from typing import Any
 from urllib.parse import parse_qs
 
+from services.kalshi_account_gateway.client import (
+    AccountGatewayError,
+    AuthenticationRejected,
+    RateLimited,
+    UpstreamUnavailable,
+)
+from services.kalshi_account_gateway.models import SnapshotValidationError
 from services.reporting_service.support_snapshot import (
     support_snapshot_json,
     support_snapshot_markdown,
@@ -324,6 +331,31 @@ class DashboardApp:
                 totp_code_valid=verify_totp(secret, form["totp_code"].decode()),
                 key_id=form["key_id"].decode(),
                 private_key_pem=form["pem"],
+            )
+        except (
+            AuthenticationRejected,
+            RateLimited,
+            UpstreamUnavailable,
+            AccountGatewayError,
+            SnapshotValidationError,
+        ) as exc:
+            if isinstance(exc, AuthenticationRejected):
+                reason = "The credential was rejected or was not exactly read-only."
+            elif isinstance(exc, RateLimited):
+                reason = "Kalshi rate-limited validation. Wait before retrying."
+            elif isinstance(exc, UpstreamUnavailable):
+                reason = "Kalshi validation timed out or is temporarily unavailable."
+            elif isinstance(exc, SnapshotValidationError):
+                reason = "Account 0 could not be completely reconciled from the current response."
+            else:
+                reason = "Kalshi returned a malformed or unsupported response."
+            return self._respond(
+                start,
+                "400 Bad Request",
+                _layout(
+                    "Setup failed",
+                    f"<h1>Setup failed safely</h1><p>{reason}</p><p>No credential or configuration was stored.</p>",
+                ),
             )
         except (KeyError, UnicodeDecodeError, SetupError, ValueError):
             return self._respond(

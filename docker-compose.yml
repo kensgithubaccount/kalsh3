@@ -2,6 +2,8 @@ name: kalshi-production-v3
 services:
   caddy:
     image: caddy:2-alpine
+    environment:
+      KPV3_HOSTNAME: ${KPV3_HOSTNAME:?set KPV3_HOSTNAME to the public DNS hostname}
     ports: ["80:80", "443:443"]
     volumes:
       - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
@@ -104,6 +106,8 @@ services:
         limits: {cpus: "1.00", memory: 512M}
   redis:
     image: redis:7-alpine
+    # Bypass the root entrypoint's setpriv call; capability dropping remains intact.
+    user: "redis"
     command: ["redis-server", "--save", "60", "1", "--appendonly", "yes", "--maxmemory", "128mb", "--maxmemory-policy", "noeviction"]
     volumes: [redis_data:/data]
     networks: [data]
@@ -121,7 +125,7 @@ services:
         limits: {cpus: "0.25", memory: 192M}
   nats:
     image: nats:2-alpine
-    command: ["-js", "-sd", "/data"]
+    command: ["-js", "-sd", "/data", "-m", "8222"]
     volumes: [nats_data:/data]
     networks: [events]
     security_opt: [no-new-privileges:true]
@@ -129,7 +133,8 @@ services:
     restart: unless-stopped
     logging: *bounded-logs
     healthcheck:
-      test: ["CMD", "nats-server", "--signal", "ldm"]
+      # Monitoring is private, read-only, and cannot change the server lifecycle.
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8222/healthz"]
       interval: 15s
       timeout: 3s
       retries: 5
