@@ -33,6 +33,7 @@
 | M17 Bounded Autonomy | Complete (offline verified) | Off-only policy, evidence snapshots, governance proposals, durable restart constraints and truthful UI; autonomy OFF |
 | M18 Operations Hardening | Complete (offline verified) | Fail-closed observability, recovery, encrypted backup/restore design, hardened Compose, CI supply-chain gates and runbooks; live operations pending |
 | M19 Final Audit | Complete (offline verified) | Repository-wide audit corrected redirect, exact-fill, signer-oracle, nested-float, XML, auth-DoS, and UI defects; all live/human gates remain pending |
+| M20 Live Deployment Corrections | Complete (targeted live evidence + CI pending) | AWS Ubuntu Redis user/capability correction, persistent overcommit prerequisite, Caddy hostname wiring, non-destructive NATS health, generic/AWS runbook and runtime regression; broader live acceptance pending |
 
 ## Runtime truth
 
@@ -178,3 +179,20 @@
   security scanners/SBOM, browser review, strategy evidence, and human acceptance: NOT VERIFIED / PENDING.
 - Production: DISARMED. Bounded autonomy: OFF. Production-write credential: NONE. Live mutation: NONE.
   Real-money order: NONE. No M13 limit was weakened.
+
+## M20 acceptance
+
+- First AWS EC2 Ubuntu 24.04 x86_64 evidence: Redis previously exited 127 because `setpriv` could not drop
+  privileges after all capabilities were removed. Running directly as `redis`, while retaining
+  `cap_drop: [ALL]` and `no-new-privileges:true`, was LIVE VERIFIED healthy with
+  `Ready to accept connections tcp`.
+- Caddy hostname injection was LIVE DIAGNOSED and validated with a temporary override; checked-in Compose
+  now passes the non-secret hostname explicitly. NATS's destructive `--signal ldm` check was LIVE
+  DIAGNOSED and replaced by private monitoring `/healthz`; repeated lifecycle/client smoke coverage is
+  checked in, with GitHub CI execution PENDING for this commit.
+- Persistent host `vm.overcommit_memory=1`, AWS firewall/hardening, reboot persistence, DNS/TLS, full app
+  startup, PostgreSQL, signer isolation at runtime, backup/restore, alerts, production reads/reconciliation,
+  Oracle behavior, and long-duration operations remain NOT VERIFIED / PENDING as applicable.
+- Production remains DISARMED. Bounded autonomy remains OFF. Production-write credential remains NONE.
+  Live production mutation and real-money orders remain NONE. No strategy, model behavior, authorization,
+  credential, risk limit, or signer-network boundary changed. Full production readiness is not claimed.
