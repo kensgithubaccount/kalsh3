@@ -36,6 +36,7 @@
 | M20 Live Deployment Corrections | Complete (targeted live evidence + CI pending) | AWS Ubuntu Redis user/capability correction, persistent overcommit prerequisite, Caddy hostname wiring, non-destructive NATS health, generic/AWS runbook and runtime regression; broader live acceptance pending |
 | M21 Live Production-Read API Contract Correction | Complete (offline/current-shape verified) | Correct API-key identity/scope, integer-cent balance, nested limits and safe setup errors; live production-read retry pending |
 | M22 Read-Only Unrestricted-Key Compatibility | Complete (offline verified) | API-key enrollment accepts absent/null/zero subaccount, rejects all other shapes; runtime subaccount=0 targeting and GET/HEAD-only surface unchanged; live production-read retry pending |
+| M23A Control Center UX, Visualization & Maintainability Audit | Complete (offline verified) | Readiness checklist, actual-vs-policy capital split, real-data-only SVG charts, navigation regrouping, presentation-layer refactor; no execution/signer/risk-policy files touched; browser visual QA desktop/tablet/mobile |
 
 ## Runtime truth
 
@@ -234,3 +235,33 @@
 - Production signer: DISARMED. Production-write credential: NONE. Bounded autonomy: OFF. Live mutation and
   real-money orders: NONE. No strategy, model, risk, authorization, credential-handling, or production-write
   behavior was changed. Live production-read acceptance with this correction remains PENDING.
+
+## M23A acceptance
+
+- An audit of `services/web_dashboard` found the entire product rendered as inline f-string HTML with no
+  view models, ad hoc repeated formatting, a hardcoded `$700.00` reserve figure on Overview that diverged
+  from `RiskPolicy`, a flat blocker list duplicated across the banner and Overview, and no real-data
+  visualizations anywhere in the product. See `docs/reviews/M23A_CONTROL_CENTER_UX_VISUALIZATION_MAINTAINABILITY_AUDIT.md`
+  for the full audit and the changes made in response.
+- Global system state now explains itself: a derived, categorized readiness checklist (Connection, Research,
+  Risk, Execution, Autonomy readiness) replaces the flat blocker list, with one primary next action
+  surfaced. HALTED is visually distinct from a crash: the same restrained amber treatment already used for
+  NEEDS ATTENTION, never alarmist red.
+- Overview now separates the actual reconciled account (equity, cash, positions, exposure) from policy
+  targets (bankroll, protected reserve, active-allocation ceiling), and labels a policy bankroll target that
+  exceeds current equity as "Not currently fundable" instead of implying it is allocated capital. The
+  previously hardcoded `$700.00` reserve figure is now read from `RiskPolicy` like the rest of the product.
+- Three new accessible, server-rendered SVG chart primitives (capital composition, policy-limit bars, and an
+  account-value sparkline) were added; every chart exposes an openable exact-value table, never relies on
+  color alone, and renders only real reconciled data. A new `account_snapshot_history` table records each
+  successful read-only reconciliation's cash/equity so the sparkline has real history to draw from; before
+  two real points exist it shows an honest "insufficient history" state, never a fabricated one.
+- Primary navigation is now visually grouped (Research / Account / Safety / System) without hiding, removing,
+  or reordering any existing page; a new invariant check (`assert_navigation_covers_all_surfaces`) fails
+  closed if grouping ever drops or duplicates a surface.
+- No file under `services/kalshi_account_gateway`, `services/risk_engine`, `services/production_execution`,
+  `services/supervised_canary`, or `services/bounded_autonomy` was touched. Production signer: DISARMED.
+  Production-write credential: NONE. Bounded autonomy: OFF. The production account gateway remains
+  read-only; no credentials were requested or used. Pre-existing account positions/fills are never labeled
+  as bot-generated absent explicit provenance — the product still renders only the raw reconciled fields it
+  is given.

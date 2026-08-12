@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import html
 from dataclasses import dataclass
 from decimal import Decimal, InvalidOperation
 from enum import StrEnum
@@ -84,6 +85,33 @@ SURFACES = (
 )
 
 
+NAV_GROUPS: tuple[tuple[str, tuple[str, ...]], ...] = (
+    ("Research", ("/opportunities", "/breaking", "/markets", "/sources", "/learning")),
+    ("Account", ("/portfolio", "/orders", "/reports")),
+    ("Safety", ("/risk",)),
+    ("System", ("/system", "/advanced")),
+)
+
+
+def grouped_navigation() -> tuple[tuple[str | None, tuple[ProductSurface, ...]], ...]:
+    """Group SURFACES for progressive-disclosure navigation without hiding any page.
+
+    Every surface still appears exactly once, in its original SURFACES order;
+    this only changes how the navigation is visually sectioned.
+    """
+    by_path = {surface.path: surface for surface in SURFACES}
+    grouped_paths = {path for _, paths in NAV_GROUPS for path in paths}
+    primary = tuple(surface for surface in SURFACES if surface.path not in grouped_paths)
+    groups = tuple((label, tuple(by_path[path] for path in paths)) for label, paths in NAV_GROUPS)
+    return ((None, primary), *groups)
+
+
+def assert_navigation_covers_all_surfaces() -> None:
+    grouped = tuple(surface for _, surfaces in grouped_navigation() for surface in surfaces)
+    if len(grouped) != len(SURFACES) or set(grouped) != set(SURFACES):
+        raise RuntimeError("navigation grouping dropped or duplicated a product surface")
+
+
 ADVANCED_SURFACES = (
     ProductSurface(
         "/forecasting", "Forecasting", "Frozen research forecasts", EvidenceMode.HISTORICAL_REPLAY
@@ -125,3 +153,17 @@ def dollars(value: Any) -> str:
         return f"${Decimal(str(value)):,.2f}"
     except (InvalidOperation, TypeError, ValueError):
         return "Unavailable"
+
+
+_PILL_TONES = frozenset({"good", "warn", "bad", "neutral"})
+
+
+def status_pill(text: str, tone: str) -> str:
+    """One centralized, escaped status-label renderer so every page shares markup.
+
+    `tone` selects styling only; the visible text always carries the meaning
+    so nothing is conveyed by color alone.
+    """
+    if tone not in _PILL_TONES:
+        raise ValueError(f"unknown status pill tone: {tone!r}")
+    return f'<span class="pill pill-{tone}">{html.escape(text)}</span>'
