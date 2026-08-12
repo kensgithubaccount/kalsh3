@@ -124,6 +124,19 @@ COLLECTIONS = {
 }
 
 
+def _api_key_subaccount_is_compatible(value: Any) -> bool:
+    """Accept a missing/null subaccount or the exact integer 0; reject everything else.
+
+    The currently documented `GET /trade-api/v2/api_keys` response does not include a
+    `subaccount` field, so enrollment must tolerate it being absent; `null` and the exact
+    integer `0` remain accepted conservatively. Booleans are excluded even though `bool`
+    is an `int` subclass in Python.
+    """
+    if value is None:
+        return True
+    return isinstance(value, int) and not isinstance(value, bool) and value == 0
+
+
 class KalshiAccountClient:
     """Read account 0 only; there is intentionally no generic request/mutation method."""
 
@@ -216,7 +229,7 @@ class KalshiAccountClient:
         if (
             len(matches) != 1
             or matches[0].get("scopes") != ["read"]
-            or matches[0].get("subaccount") != 0
+            or not _api_key_subaccount_is_compatible(matches[0].get("subaccount"))
         ):
             raise AuthenticationRejected(
                 "credential is not positively verified as exactly read-only"
