@@ -50,55 +50,91 @@ production-write enablement, or trading logic. It touches only presentation code
   each with typed `ReadinessCheck(label, met, detail)` entries. `Execution readiness` and
   `Autonomy readiness` are structurally unmet in this build (no production-write credential
   exists; autonomy is off) — the same fact the product already stated elsewhere, now organized
-  instead of duplicated. `primary_action()` returns the single highest-priority unmet check;
+  instead of duplicated. Research readiness includes a "Required real evidence sufficient" check
+  driven by the existing governed `promotion_minimum` / `real_settled_events` threshold already
+  shown on `/learning` — informational only, it does not change promotion, strategy, risk,
+  execution, or autonomy behavior, and it cannot render as met while real settled evidence is
+  insufficient. `primary_action()` returns the single highest-priority unmet check;
   `readiness_summary_text()` is the one place the "N of M readiness checks unmet" sentence is
   written.
-- **`services/web_dashboard/charts.py`** (new): three accessible, server-rendered SVG chart
+- **`services/web_dashboard/charts.py`** (new): accessible, server-rendered SVG chart
   primitives — `composition_bar`, `limit_bars`, `sparkline` — plus `chart_empty_state`. Every
   chart renders an openable `<details>` table of its exact values (helps everyone who can't read
   the SVG well, not just screen-reader users), always shows values as text alongside color, and
   is built only from values the caller already validated as real. No chart fabricates a number.
+  `composition_bar` remains available as a tested primitive but is not currently called from
+  Overview — see "Deferred: capital composition" below.
 - **`services/web_dashboard/product.py`**: added `NAV_GROUPS` / `grouped_navigation()` (visual
   navigation grouping that provably covers every existing surface exactly once — see
   `assert_navigation_covers_all_surfaces()`) and `status_pill()` (one centralized, escaped
   status-label renderer).
 - **`services/web_dashboard/store.py`**: added an `account_snapshot_history` table and
-  `account_value_history()` reader. `refresh_succeeded()` now also records the real cash/equity
-  point from that refresh (best-effort; a snapshot missing usable values simply isn't plotted)
-  and prunes to the most recent 200 points. This is the "safe, read-only persistence mechanism"
-  the task allowed when a visualization needs data that isn't yet persisted — it does not touch
-  the signer, execution, or risk paths, and it stores only values already read from the account.
+  `account_value_history()` reader. `refresh_succeeded()` now also records the real cash/
+  portfolio-value point from that refresh (best-effort; a snapshot missing usable values simply
+  isn't plotted) and prunes to the most recent 200 points. `account_value_history(limit=N)`
+  returns the **newest** `N` observations in oldest-to-newest display order (a pre-merge review
+  caught and fixed an initial version that returned the *oldest* `N` instead whenever more than
+  `N` points existed). This is the "safe, read-only persistence mechanism" the task allowed when
+  a visualization needs data that isn't yet persisted — it does not touch the signer, execution,
+  or risk paths, and it stores only values already read from the account.
 - **`services/web_dashboard/app.py`**:
   - `_layout()` now renders grouped navigation and a derived one-line state explanation instead
     of the two static "Production writes OFF" / "Research influence NONE" spans.
+  - The Overview eyebrow ("REAL ACCOUNT CONNECTED · READ ONLY") is no longer a hardcoded
+    literal. `_connection_headline(account_status, stale)` derives it from real state: a
+    connected-and-fresh account says "REAL ACCOUNT CONNECTED · READ ONLY"; connected-but-stale
+    says "REAL ACCOUNT CONNECTED · DATA STALE"; `error` status says "ACCOUNT CONNECTION NEEDS
+    ATTENTION"; anything else (never configured, mid-refresh, etc.) says "READ-ONLY ACCOUNT
+    STATUS UNKNOWN". The word "CONNECTED" can now only appear when the account actually is.
   - Overview (`_overview`) was rebuilt into the requested hierarchy: **A.** readiness hero with
     the full checklist and primary action; **B.** capital and risk, split into "Actual account"
-    (equity, cash, open positions, exposure) and "Policy / target" (bankroll, protected reserve,
-    maximum active allocation), each with its own chart, plus the account-value sparkline;
-    **C.** current activity; **D.** research and opportunities, including up to three real
-    persisted candidates; **E.** learning; **F.** needs attention, now containing only items not
-    already covered by the readiness checklist (previously the same blockers were listed twice).
+    (available cash, Kalshi's reported portfolio value, open positions, exposure) and
+    "Policy / target" (bankroll, protected reserve, maximum active allocation), plus the policy
+    limits chart and the portfolio-value sparkline; **C.** current activity; **D.** research and
+    opportunities, including up to three real persisted candidates; **E.** learning; **F.** needs
+    attention, now containing only items not already covered by the readiness checklist
+    (previously the same blockers were listed twice).
   - The hardcoded `$700.00` reserve is gone; Overview now reads `RiskPolicy()` like Risk &
-    Safety does. When the policy bankroll exceeds current equity, the target-bankroll card is
-    labeled "Not currently fundable" via `status_pill`; when equity is unknown (no reconciled
-    snapshot yet), it says "Funding status unknown" instead of guessing either way.
+    Safety does. When the policy bankroll exceeds the currently reported portfolio value, the
+    target-bankroll card is labeled "Not currently fundable" via `status_pill`; when the
+    portfolio value is unknown (no reconciled snapshot yet), it says "Funding status unknown"
+    instead of guessing either way.
 
 ## Visualizations added (real data only)
 
-- **Capital composition** (Overview, Portfolio-adjacent): cash vs. "in positions" (derived as
-  `equity − cash`, both real reconciled fields — never fabricated), stacked bar with legend and
-  an exact-value table.
 - **Policy limits** (Overview): protected reserve, active allocation, aggregate open-risk limit,
   related-event limit, and per-market limit, all real `RiskPolicy` values on one shared scale.
   These are the configured ceilings, not usage against them — usage is not charted because it
   is not yet real/reconciled (M13 read-side reconciliation remains pending).
-- **Account value over time** (Overview): a real sparkline built from the new
-  `account_snapshot_history` table. Before two real points exist, it renders an honest
-  "insufficient history to chart" state that explains it accumulates automatically — never a
-  fabricated trend line.
+- **Kalshi portfolio value over time** (Overview): a real sparkline built from the new
+  `account_snapshot_history` table, labeled as Kalshi's raw `portfolio_value` field rather than
+  "equity" or "account value" (see "Deferred: capital composition" below for why). Before two
+  real points exist, it renders an honest "insufficient history to chart" state that explains it
+  accumulates automatically — never a fabricated trend line.
 - **Readiness checklist** (Overview hero): not a chart in the traditional sense, but a direct
   answer to "is the system healthy / can it trade / why not," rendered as a categorized,
-  non-color-only checklist.
+  non-color-only checklist, now including real-evidence sufficiency alongside connection, gap,
+  compliance, and halt state.
+
+## Deferred: capital composition
+
+Overview no longer renders a cash-vs-positions composition chart, and no longer calls Kalshi's
+`portfolio_value` field "equity." A pre-merge review found that current official Kalshi
+materials describe `portfolio_value` inconsistently: the `GET /portfolio/balance` API reference
+describes it as the current value of open positions, while Kalshi's changelog describes it as
+total portfolio value including available balance plus positions. Because those two readings
+imply different arithmetic, this presentation layer must not infer `in_positions = portfolio_value
+- cash` (with or without clamping the result to zero) — doing so would silently assume one
+disputed semantics over the other about a real user's money.
+
+Overview now shows `balance`/`cash` as **"Available cash"** and `portfolio_value` as
+**"Reported portfolio value"** — two real, unmodified numbers, presented side by side with no
+inferred relationship between them — plus an explicit "Capital composition is deferred" note
+explaining why. The composition chart returns once portfolio_value's live semantics are
+positively validated against current Kalshi documentation, or once a validated position-level
+valuation field exists to compute a real split from. The `composition_bar` chart primitive
+itself is unaffected and stays in `charts.py`, still covered by its own unit tests, ready for
+that day.
 
 ## Visualization ideas deferred (real data does not yet exist or is not reliably typed)
 
@@ -136,10 +172,23 @@ completeness, chart escaping and empty states, `account_snapshot_history` record
 its behavior when a snapshot is missing usable money fields, the Overview actual-vs-policy split
 and "Not currently fundable" / "Funding status unknown" labeling, the insufficient-history →
 sparkline transition once two real snapshots exist, and that pre-existing account
-positions/fills are never labeled as bot-generated. All pre-existing dashboard tests
-(`test_dashboard_product_complete.py`, `test_dashboard_product_partial.py`,
-`test_m1_security_ui.py`) pass unchanged, including the exact-substring assertions on `/risk`,
-`/system`, `/portfolio`, and `/orders`, which this pass deliberately left untouched.
+positions/fills are never labeled as bot-generated. It additionally covers, from the pre-merge
+correctness pass: `_connection_headline` for every (status, staleness) combination plus Overview
+integration tests proving the hero cannot say "CONNECTED" when the account errored, was never
+configured, or is stale; that "Required real evidence sufficient" cannot render as met with zero
+real settled events and does render as met once the existing governed threshold is reached; that
+Overview never renders the word "Equity" or an inferred "In positions" figure and instead shows
+the deferred-composition explanation; and that `account_value_history(limit=2)` returns the two
+*newest* observations (not the two oldest) when more history exists than the limit.
+
+All pre-existing dashboard tests (`test_dashboard_product_complete.py`,
+`test_dashboard_product_partial.py`, `test_m1_security_ui.py`) pass, with one intentional,
+documented correction: `test_ui_security_headers_csrf_stale_state_and_downloads` previously
+asserted "REAL ACCOUNT CONNECTED" appears even for an account that has never successfully
+reconciled — that assertion tested the mislabeling bug this pass fixes, so it now asserts the
+truthful "READ-ONLY ACCOUNT STATUS UNKNOWN" instead. Every other pre-existing assertion,
+including the exact-substring checks on `/risk`, `/system`, `/portfolio`, and `/orders`, is
+unchanged.
 
 ## Safety confirmation
 

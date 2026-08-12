@@ -40,6 +40,8 @@ def build_readiness(
     compliance_reason: str | None,
     globally_halted: bool,
     global_halt_reason: str | None,
+    real_settled_events: int,
+    promotion_minimum: int,
 ) -> tuple[ReadinessCategory, ...]:
     connected = account_status in {"healthy", "connected"}
     connection_detail = (
@@ -57,6 +59,15 @@ def build_readiness(
         if unresolved_gaps == 0
         else f"{unresolved_gaps} unresolved market-data gap(s)"
     )
+    # Reuses the same governed promotion_minimum threshold already shown on /learning;
+    # this check is informational only and never changes promotion, strategy, risk,
+    # execution, or autonomy behavior.
+    evidence_sufficient = promotion_minimum > 0 and real_settled_events >= promotion_minimum
+    evidence_detail = (
+        f"{real_settled_events} / {promotion_minimum} relevant real settled events"
+        if promotion_minimum > 0
+        else "No governed evidence threshold is configured"
+    )
     compliance_detail = "No compliance hold recorded"
     if compliance_hold:
         compliance_detail = compliance_reason or "Compliance hold is active"
@@ -73,7 +84,12 @@ def build_readiness(
         ),
         ReadinessCategory(
             "Research readiness",
-            (ReadinessCheck("No unresolved market-data gaps", unresolved_gaps == 0, gap_detail),),
+            (
+                ReadinessCheck("No unresolved market-data gaps", unresolved_gaps == 0, gap_detail),
+                ReadinessCheck(
+                    "Required real evidence sufficient", evidence_sufficient, evidence_detail
+                ),
+            ),
         ),
         ReadinessCategory(
             "Risk readiness",

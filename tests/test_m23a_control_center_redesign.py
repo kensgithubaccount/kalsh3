@@ -17,7 +17,7 @@ from typing import Any
 
 import pytest
 
-from services.web_dashboard.app import DashboardApp
+from services.web_dashboard.app import DashboardApp, _connection_headline
 from services.web_dashboard.charts import chart_empty_state, composition_bar, limit_bars, sparkline
 from services.web_dashboard.product import (
     SURFACES,
@@ -26,6 +26,7 @@ from services.web_dashboard.product import (
     status_pill,
 )
 from services.web_dashboard.readiness import (
+    ReadinessCategory,
     build_readiness,
     primary_action,
     readiness_summary_text,
@@ -44,6 +45,8 @@ def _healthy_kwargs() -> dict[str, Any]:
         compliance_reason=None,
         globally_halted=False,
         global_halt_reason=None,
+        real_settled_events=50,
+        promotion_minimum=50,
     )
 
 
@@ -55,7 +58,7 @@ def test_readiness_reflects_structural_facts_even_when_every_real_signal_is_clea
     # healthy the live signals are: no production-write credential exists,
     # autonomy is off, and M13 read-side reconciliation is not yet complete.
     assert unmet == 3
-    assert total == 8
+    assert total == 9
     assert readiness_summary_text(readiness) == f"{unmet} of {total} readiness checks unmet."
 
 
@@ -68,6 +71,8 @@ def test_readiness_flags_disconnection_staleness_gaps_hold_and_halt() -> None:
         compliance_reason="manual review",
         globally_halted=True,
         global_halt_reason="account state uncertain",
+        real_settled_events=0,
+        promotion_minimum=50,
     )
     by_label = {check.label: check for category in readiness for check in category.checks}
     assert not by_label["Real account connected"].met
@@ -89,10 +94,65 @@ def test_primary_action_returns_first_unmet_check_in_category_priority_order() -
         compliance_reason=None,
         globally_halted=False,
         global_halt_reason=None,
+        real_settled_events=50,
+        promotion_minimum=50,
     )
     action = primary_action(readiness)
     assert action is not None
     assert action.label == "Real account connected"
+
+
+def test_research_readiness_cannot_be_fully_met_with_zero_real_settled_events() -> None:
+    readiness = build_readiness(
+        account_status="healthy",
+        stale=False,
+        unresolved_gaps=0,
+        compliance_hold=False,
+        compliance_reason=None,
+        globally_halted=False,
+        global_halt_reason=None,
+        real_settled_events=0,
+        promotion_minimum=50,
+    )
+    research = next(category for category in readiness if category.name == "Research readiness")
+    assert not research.met
+    evidence_check = next(
+        check for check in research.checks if check.label == "Required real evidence sufficient"
+    )
+    assert not evidence_check.met
+    assert evidence_check.detail == "0 / 50 relevant real settled events"
+
+
+def test_research_readiness_evidence_check_reflects_existing_governed_threshold() -> None:
+    below = build_readiness(**_healthy_kwargs() | {"real_settled_events": 49})
+    at_threshold = build_readiness(**_healthy_kwargs() | {"real_settled_events": 50})
+
+    def evidence_met(readiness: tuple[ReadinessCategory, ...]) -> bool:
+        research = next(c for c in readiness if c.name == "Research readiness")
+        check = next(c for c in research.checks if c.label == "Required real evidence sufficient")
+        return bool(check.met)
+
+    assert evidence_met(below) is False
+    assert evidence_met(at_threshold) is True
+
+
+@pytest.mark.parametrize(
+    ("account_status", "stale", "expected"),
+    [
+        ("healthy", False, "REAL ACCOUNT CONNECTED · READ ONLY"),
+        ("connected", False, "REAL ACCOUNT CONNECTED · READ ONLY"),
+        ("healthy", True, "REAL ACCOUNT CONNECTED · DATA STALE"),
+        ("connected", True, "REAL ACCOUNT CONNECTED · DATA STALE"),
+        ("error", False, "ACCOUNT CONNECTION NEEDS ATTENTION"),
+        ("error", True, "ACCOUNT CONNECTION NEEDS ATTENTION"),
+        ("not_configured", True, "READ-ONLY ACCOUNT STATUS UNKNOWN"),
+        ("connecting", False, "READ-ONLY ACCOUNT STATUS UNKNOWN"),
+    ],
+)
+def test_connection_headline_never_overclaims(
+    account_status: str, stale: bool, expected: str
+) -> None:
+    assert _connection_headline(account_status, stale) == expected
 
 
 def test_primary_action_is_none_only_when_every_check_passes() -> None:
@@ -220,6 +280,25 @@ def test_account_value_history_prunes_to_the_configured_limit(tmp_path: Path) ->
     )
 
 
+def test_account_value_history_limit_returns_newest_observations_not_oldest(
+    tmp_path: Path,
+) -> None:
+    """A small `limit` must return the *newest* observations, ASC-ordered among those.
+
+    The naive `ORDER BY observed_at ASC LIMIT N` returns the oldest N instead —
+    this pins the fix.
+    """
+    store = StateStore(tmp_path / "state.db")
+    for day in range(1, 6):
+        store.refresh_succeeded(_snapshot(f"2026-01-0{day}T00:00:00+00:00", str(day), str(day)))
+    newest_two = store.account_value_history(limit=2)
+    assert [row["observed_at"] for row in newest_two] == [
+        "2026-01-04T00:00:00+00:00",
+        "2026-01-05T00:00:00+00:00",
+    ]
+    assert [row["portfolio_value"] for row in newest_two] == ["4", "5"]
+
+
 def _configured(tmp_path: Path) -> tuple[StateStore, DashboardApp, str]:
     store = StateStore(tmp_path / "state.db")
     box = SecretBox(b"k" * 32)
@@ -261,10 +340,26 @@ def test_overview_separates_actual_account_from_policy_target(tmp_path: Path) ->
     assert "Policy / target" in body
     assert "Target bankroll" in body and "$1,000.00" in body
     assert "Protected reserve" in body and "$700.00" in body
-    assert "$50.00" in body  # the real, reconciled equity/cash — not the policy figures
+    assert "$50.00" in body  # the real, reconciled cash/portfolio value — not the policy figures
 
 
-def test_overview_labels_policy_bankroll_as_not_currently_fundable_when_equity_is_low(
+def test_overview_never_calls_portfolio_value_equity_or_infers_a_composition(
+    tmp_path: Path,
+) -> None:
+    """Kalshi's own materials describe portfolio_value inconsistently; never guess."""
+    store, app, token = _configured(tmp_path)
+    store.refresh_succeeded(_snapshot("2026-08-01T00:00:00+00:00", "50", "80"))
+    body = _get(app, "/", token).decode()
+    assert "Available cash" in body
+    assert "Reported portfolio value" in body
+    assert "<small>Equity</small>" not in body
+    assert "In positions" not in body
+    assert "Capital composition is deferred" in body
+    assert "positively validated" in body
+    assert "chart-bar" not in body  # composition_bar's stacked-bar SVG must not render
+
+
+def test_overview_labels_policy_bankroll_as_not_currently_fundable_when_value_is_low(
     tmp_path: Path,
 ) -> None:
     store, app, token = _configured(tmp_path)
@@ -273,7 +368,9 @@ def test_overview_labels_policy_bankroll_as_not_currently_fundable_when_equity_i
     assert "Not currently fundable" in body
 
 
-def test_overview_does_not_claim_unfundable_when_equity_is_unknown(tmp_path: Path) -> None:
+def test_overview_does_not_claim_unfundable_when_portfolio_value_is_unknown(
+    tmp_path: Path,
+) -> None:
     _, app, token = _configured(tmp_path)
     body = _get(app, "/", token).decode()
     assert "Not currently fundable" not in body
@@ -338,3 +435,33 @@ def test_overview_still_states_no_production_order_capability(tmp_path: Path) ->
     assert "Production-write credential: NONE" in body
     assert "signer: DISARMED" in body
     assert "Autonomy: OFF" in body
+
+
+def test_overview_hero_never_claims_connected_when_account_status_is_error(
+    tmp_path: Path,
+) -> None:
+    store, app, token = _configured(tmp_path)
+    store.refresh_failed("upstream timed out")
+    body = _get(app, "/", token).decode()
+    assert "ACCOUNT CONNECTION NEEDS ATTENTION" in body
+    assert "REAL ACCOUNT CONNECTED" not in body
+
+
+def test_overview_hero_marks_a_connected_account_as_stale_explicitly(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    store, app, token = _configured(tmp_path)
+    store.refresh_succeeded(_snapshot("2026-08-01T00:00:00+00:00", "50", "50"))
+    monkeypatch.setattr(DashboardApp, "_stale", staticmethod(lambda last_success: True))
+    body = _get(app, "/", token).decode()
+    assert "REAL ACCOUNT CONNECTED · DATA STALE" in body
+    assert "REAL ACCOUNT CONNECTED · READ ONLY" not in body
+
+
+def test_overview_hero_never_claims_connected_before_setup_ever_succeeded(
+    tmp_path: Path,
+) -> None:
+    _, app, token = _configured(tmp_path)
+    body = _get(app, "/", token).decode()
+    assert "READ-ONLY ACCOUNT STATUS UNKNOWN" in body
+    assert "REAL ACCOUNT CONNECTED" not in body

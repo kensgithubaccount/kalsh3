@@ -84,7 +84,10 @@ def test_ui_security_headers_csrf_stale_state_and_downloads(tmp_path: Path) -> N
     store, box, token, csrf = configured_store(tmp_path)
     app = DashboardApp(store, box)
     status, headers, body = call(app, "/", cookie=f"session={token}")
-    assert status == "200 OK" and b"REAL ACCOUNT CONNECTED" in body and b"stale" in body
+    # The account has never successfully reconciled here, so the hero must not
+    # claim it is connected — it truthfully reports an unknown connection state.
+    assert status == "200 OK" and b"READ-ONLY ACCOUNT STATUS UNKNOWN" in body and b"stale" in body
+    assert b"REAL ACCOUNT CONNECTED" not in body
     assert all(name in headers for name, _ in SECURITY_HEADERS)
     assert headers["Cache-Control"] == "no-store"
     status, _, _ = call(app, "/logout", "POST", f"session={token}", "csrf=wrong")

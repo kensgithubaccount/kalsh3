@@ -428,12 +428,19 @@ class StateStore:
     def account_value_history(
         self, limit: int = ACCOUNT_VALUE_HISTORY_LIMIT
     ) -> list[dict[str, Any]]:
+        """Return the most recent `limit` observations, oldest-to-newest for charting.
+
+        Selects the newest `limit` rows first (ORDER BY ... DESC LIMIT), then
+        reverses them into chronological display order — selecting ASC LIMIT
+        would instead return the *oldest* observations whenever more history
+        exists than `limit`.
+        """
         with self._connect() as db:
             rows = db.execute(
-                "SELECT * FROM account_snapshot_history ORDER BY observed_at ASC LIMIT ?",
+                "SELECT * FROM account_snapshot_history ORDER BY observed_at DESC LIMIT ?",
                 (min(max(limit, 1), ACCOUNT_VALUE_HISTORY_LIMIT),),
             ).fetchall()
-        return [dict(row) for row in rows]
+        return [dict(row) for row in reversed(rows)]
 
     def refresh_failed(self, reason: str) -> None:
         now = datetime.now(UTC).isoformat()

@@ -28,7 +28,7 @@ from services.reporting_service.support_snapshot import (
 from services.risk_engine.authorization import AuthorizationError, AuthorizationStore, SystemClock
 from services.risk_engine.policy import RiskPolicy
 
-from .charts import chart_empty_state, composition_bar, limit_bars, sparkline
+from .charts import chart_empty_state, limit_bars, sparkline
 from .product import (
     GlobalProductState,
     ProductSurface,
@@ -92,6 +92,25 @@ def _decimal_or_none(value: Any) -> Decimal | None:
         return Decimal(str(value))
     except (InvalidOperation, ValueError, TypeError):
         return None
+
+
+_CONNECTED_STATUSES = frozenset({"healthy", "connected"})
+
+
+def _connection_headline(account_status: str, stale: bool) -> str:
+    """State-derived Overview eyebrow text; never claims connection that isn't real.
+
+    Only a connected, fresh account may say "connected" without qualification.
+    A connected-but-stale account says so explicitly; anything else (error,
+    disconnected, not yet configured) never uses the word "connected" at all.
+    """
+    if account_status in _CONNECTED_STATUSES:
+        return (
+            "REAL ACCOUNT CONNECTED · DATA STALE" if stale else "REAL ACCOUNT CONNECTED · READ ONLY"
+        )
+    if account_status == "error":
+        return "ACCOUNT CONNECTION NEEDS ATTENTION"
+    return "READ-ONLY ACCOUNT STATUS UNKNOWN"
 
 
 def _layout(
@@ -203,6 +222,7 @@ class DashboardApp:
         semantics = self.store.semantic_summary()
         external = self.store.external_intelligence_summary()
         risk_summary = self.risk_store.safety_summary()
+        learning = self.store.learning_summary()
         global_state = derive_global_state(
             account_status=state.status,
             stale=stale,
@@ -218,6 +238,8 @@ class DashboardApp:
             compliance_reason=str(risk_summary["compliance_reason"] or ""),
             globally_halted=bool(risk_summary["global_halt"]),
             global_halt_reason=str(risk_summary["global_halt_reason"] or ""),
+            real_settled_events=int(learning["real_settled_events"]),
+            promotion_minimum=int(learning["promotion_minimum"]),
         )
         state_explanation = readiness_summary_text(readiness)
         if path.startswith("/breaking/"):
@@ -339,13 +361,14 @@ class DashboardApp:
         elif path == "/":
             body = warning + self._overview(
                 state.status,
+                stale,
                 snapshot,
                 universe,
                 realtime,
                 external,
                 global_state,
                 self.store.opportunity_summary(),
-                self.store.learning_summary(),
+                learning,
                 readiness,
                 self.store.account_value_history(),
             )
@@ -521,6 +544,7 @@ class DashboardApp:
     @staticmethod
     def _overview(
         status: str,
+        stale: bool,
         data: dict[str, Any],
         universe: dict[str, Any],
         realtime: dict[str, Any],
@@ -537,14 +561,14 @@ class DashboardApp:
         fills = data.get("fills", [])
         settlements = data.get("settlements", [])
         cash_dec = _decimal_or_none(data.get("cash"))
-        equity_dec = _decimal_or_none(data.get("portfolio_value"))
+        portfolio_value_dec = _decimal_or_none(data.get("portfolio_value"))
 
         # A. System / readiness hero
         action = primary_action(readiness)
         readiness_summary = readiness_summary_text(readiness)
         hero = (
             "<section class=hero>"
-            "<p class=eyebrow>REAL ACCOUNT CONNECTED · READ ONLY</p>"
+            f"<p class=eyebrow>{html.escape(_connection_headline(status, stale))}</p>"
             "<h1>Your control center</h1>"
             "<p class=lede>One place to understand safety, research, account state, and what needs attention.</p>"
             "<div class=decision-banner><div><small>Can it trade?</small><strong>NO</strong></div>"
@@ -555,9 +579,18 @@ class DashboardApp:
             "</section>"
         )
 
-        # B. Capital + risk: actual account vs policy/target, never conflated
-        bankroll_fundable = None if equity_dec is None else equity_dec >= policy.bankroll
-        reserve_note = html.escape("Policy target; never allocated or spent by this UI.")
+        # B. Capital + risk: actual account vs policy/target, never conflated.
+        # Kalshi's own materials describe `portfolio_value` inconsistently (positions-only
+        # value in the current API reference vs. total account value including cash in the
+        # changelog), so it is never called "equity" here and no composition is inferred
+        # from it — that would silently assume one of the two disputed semantics.
+        bankroll_fundable = (
+            None if portfolio_value_dec is None else portfolio_value_dec >= policy.bankroll
+        )
+        reserve_note = html.escape(
+            "Policy target; never allocated or spent by this UI; compared against Kalshi's "
+            "reported portfolio value."
+        )
         if bankroll_fundable is False:
             reserve_note += " " + status_pill("Not currently fundable", "warn")
         elif bankroll_fundable is None:
@@ -565,8 +598,13 @@ class DashboardApp:
         actual_grid = "".join(
             DashboardApp._metric_card(label, value, note)
             for label, value, note in (
-                ("Equity", dollars(equity_dec), "Reconciled account value"),
-                ("Cash", dollars(cash_dec), "Read-only account balance"),
+                ("Available cash", dollars(cash_dec), "Read-only account balance"),
+                (
+                    "Reported portfolio value",
+                    dollars(portfolio_value_dec),
+                    "Kalshi's reported portfolio_value; live semantics not yet positively "
+                    "validated, so no cash/positions split is inferred from it",
+                ),
                 ("Open positions", str(len(positions)), "Reconciled position count"),
                 ("Current exposure", "Unavailable", "M13 reconciliation not complete"),
             )
@@ -588,15 +626,11 @@ class DashboardApp:
                 ),
             ]
         )
-        composition_html = (
-            composition_bar(
-                "Capital composition",
-                [("Cash", cash_dec), ("In positions", max(equity_dec - cash_dec, Decimal(0)))],
-            )
-            if cash_dec is not None and equity_dec is not None
-            else chart_empty_state(
-                "Capital composition: insufficient reconciled data to visualize."
-            )
+        composition_html = chart_empty_state(
+            "Capital composition is deferred until Kalshi's live portfolio_value semantics "
+            "are positively validated, or a validated position-level valuation field exists. "
+            "Available cash and Kalshi's reported portfolio value are shown separately above "
+            "instead of an inferred split."
         )
         policy_chart_html = limit_bars(
             "Policy limits",
@@ -613,17 +647,17 @@ class DashboardApp:
             observed, value = row.get("observed_at"), _decimal_or_none(row.get("portfolio_value"))
             if isinstance(observed, str) and value is not None:
                 history_points.append((observed, value))
-        sparkline_html = sparkline("Account equity over time", history_points)
+        sparkline_html = sparkline("Kalshi portfolio value over time", history_points)
         capital = (
             "<section aria-labelledby=capital-heading><h2 id=capital-heading>Capital and risk</h2>"
             "<div class=capital-split>"
             f"<div><h3>Actual account</h3><div class=metric-grid>{actual_grid}</div>"
-            f"<h4>Capital composition</h4>{composition_html}</div>"
+            f"<h4>Capital composition (deferred)</h4>{composition_html}</div>"
             f"<div><h3>Policy / target</h3><div class=metric-grid>{policy_grid}</div>"
             f"<h4>Policy limits</h4>{policy_chart_html}"
             f'<p><a class=button href="/risk">Review risk &amp; safety</a></p></div>'
             "</div>"
-            f"<h3>Account value over time</h3>{sparkline_html}"
+            f"<h3>Kalshi portfolio value over time</h3>{sparkline_html}"
             "</section>"
         )
 
