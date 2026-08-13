@@ -114,9 +114,8 @@ class OfflineReadOnlyEvidenceRuntime:
         if not specs:
             raise ShadowResearchError("at least one market spec is required")
         tickers = [spec.ticker for spec in specs]
-        indexes = [spec.exchange_index for spec in specs]
-        if len(set(tickers)) != len(tickers) or len(set(indexes)) != len(indexes):
-            raise ShadowResearchError("duplicate or ambiguous market specs")
+        if len(set(tickers)) != len(tickers):
+            raise ShadowResearchError("duplicate market ticker")
         if len(specs) > max_depth_markets:
             raise ShadowResearchError("market specs exceed max_depth_markets")
         self._specs = MappingProxyType({spec.ticker: spec for spec in specs})
@@ -135,7 +134,7 @@ class OfflineReadOnlyEvidenceRuntime:
         self._state = RuntimeState.DISCONNECTED
         self._connection_epoch: UUID | None = None
         self._orderbook_sid: int | None = None
-        self._recovery_pending: set[int] = set()
+        self._recovery_pending: dict[int, set[str]] = {}
         self._last_raw: datetime | None = None
         self._last_snapshot: datetime | None = None
         self._last_delta: datetime | None = None
@@ -248,7 +247,22 @@ class OfflineReadOnlyEvidenceRuntime:
                     received_at=frame.received_at,
                     structure_hash=self._specs[event.ticker].structure_hash,
                 )
-                self._recovery_pending.discard(event.sid)
+                if result is None:
+                    self._stale += 1
+                    self._request_snapshot_once(event.sid)
+                    self._state = RuntimeState.SUBSCRIBING
+                    return None
+                book = self._manager.books.get(event.ticker)
+                if book is None or book.view(result.available_at).state is not BookState.CURRENT:
+                    self._gaps += 1
+                    self._request_snapshot_once(event.sid)
+                    self._state = RuntimeState.SUBSCRIBING
+                    return None
+                remaining = self._recovery_pending.get(event.sid)
+                if remaining is not None:
+                    remaining.discard(event.ticker)
+                    if not remaining:
+                        del self._recovery_pending[event.sid]
                 self._last_snapshot = frame.received_at
             else:
                 book = self._manager.books.get(event.ticker)
@@ -260,6 +274,7 @@ class OfflineReadOnlyEvidenceRuntime:
                 if result is None:
                     self._gaps += 1
                     self._request_snapshot_once(event.sid)
+                    self._state = RuntimeState.SUBSCRIBING
                     return None
                 self._last_delta = frame.received_at
             after = self._store.count()
@@ -267,7 +282,9 @@ class OfflineReadOnlyEvidenceRuntime:
                 self._rows += after - before
             elif result is not None:
                 self._replays += 1
-            self._state = RuntimeState.HEALTHY
+            self._state = (
+                RuntimeState.SUBSCRIBING if self._recovery_pending else RuntimeState.HEALTHY
+            )
             return result
         except ShadowResearchError as exc:
             message = str(exc)
@@ -287,9 +304,15 @@ class OfflineReadOnlyEvidenceRuntime:
     def _request_snapshot_once(self, sid: int) -> None:
         if sid in self._recovery_pending:
             return
+        self._mark_recovery_required(sid)
         self._transport.send(self._manager.recovery_command(sid))
-        self._recovery_pending.add(sid)
         self._resnapshots += 1
+
+    def _mark_recovery_required(self, sid: int) -> None:
+        self._recovery_pending.setdefault(
+            sid,
+            set(self._manager.sid_markets.get(sid, set())).intersection(self._specs),
+        )
 
     def check_freshness(self) -> bool:
         now = self._clock().astimezone(UTC)

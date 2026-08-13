@@ -109,7 +109,7 @@ class ProtocolState:
             raise ProtocolError("malformed command response")
         kind = raw["type"]
         command_id = raw.get("id")
-        if not isinstance(command_id, int) or command_id not in self.pending:
+        if type(command_id) is not int or command_id < 0 or command_id not in self.pending:
             raise ProtocolError("unknown command id")
         pending = self.pending.pop(command_id)
         if kind == "error":
@@ -119,7 +119,7 @@ class ProtocolState:
         if kind == "subscribed":
             message = raw.get("msg")
             sid = message.get("sid") if isinstance(message, dict) else None
-            if not isinstance(sid, int) or pending.channel is None:
+            if type(sid) is not int or sid < 0 or pending.channel is None:
                 raise ProtocolError("malformed subscribed response")
             subscription = Subscription(
                 self.epoch,

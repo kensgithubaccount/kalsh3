@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import base64
+import json
 import subprocess
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
@@ -84,6 +85,39 @@ def test_subscription_commands_responses_and_sid_command_separation() -> None:
     assert state.errors == ["duplicate subscription"]
     with pytest.raises(ProtocolError):
         state.response({"id": 999, "type": "ok"})
+
+
+def test_official_subscribed_fixture_drives_protocol_contract() -> None:
+    fixture = json.loads(Path("tests/fixtures/kalshi_ws_v2_official.json").read_text())
+    state = ProtocolState(EPOCH)
+    command = state.subscribe(
+        Channel.ORDERBOOK, tuple(fixture["subscribe"]["params"]["market_tickers"])
+    )
+    assert command == fixture["subscribe"]
+    subscription = state.response(fixture["subscribed"])
+    assert subscription is not None
+    assert subscription.sid == fixture["subscribed"]["msg"]["sid"]
+    assert subscription.channel.value == fixture["subscribed"]["msg"]["channel"]
+    assert state.subscriptions[subscription.sid] is subscription
+
+
+@pytest.mark.parametrize(
+    "response",
+    [
+        {"id": True, "type": "subscribed", "msg": {"sid": 7}},
+        {"id": -1, "type": "subscribed", "msg": {"sid": 7}},
+        {"id": 1, "type": "subscribed", "msg": {"sid": True}},
+        {"id": 1, "type": "subscribed", "msg": {"sid": -1}},
+        {"id": 1, "type": "subscribed", "sid": 7, "msg": {}},
+    ],
+)
+def test_command_and_subscription_ids_are_exact_non_negative_ints(
+    response: dict[str, object],
+) -> None:
+    state = ProtocolState(EPOCH)
+    state.subscribe(Channel.ORDERBOOK, ("A",))
+    with pytest.raises(ProtocolError):
+        state.response(response)
 
 
 def snapshot(seq: int = 1, sid: int = 7) -> dict[str, object]:

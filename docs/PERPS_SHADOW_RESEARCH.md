@@ -92,15 +92,19 @@ monotonic receipt time before JSON decoding. One ordered consumer decodes and ap
 frame directly; there is no queue or parallel frame application.
 
 The runtime subscribes only to `orderbook_delta` with `use_yes_price=true`, so price mode is
-derived as unified YES pricing rather than operator configuration. Missing, duplicate,
-ambiguous, or over-capacity market specs fail startup. Successful connections create a fresh
+derived as unified YES pricing rather than operator configuration. Missing, duplicate-ticker,
+or over-capacity market specs fail startup; distinct tickers may share a non-negative
+`exchange_index` because M24/M25 defines it as a routing/partition key, not a ticker identity.
+Successful connections create a fresh
 nonzero epoch and clear subscription state while preserving desired tickers. Disconnects stale
 all books. Old-epoch frames are ignored, and a new snapshot is required before delta evidence
 can resume.
 
 Malformed, unknown, unexpected, colliding, stale, or unpersisted accepted inputs quarantine the
 runtime. A sequence gap persists no delta evidence and emits at most one `get_snapshot` request
-per SID until a recovery snapshot arrives. SQLite uses WAL, FULL synchronous writes, a 30-second
+per SID. Recovery tracks every configured ticker affected under that SID and completes only after
+each has produced a valid current snapshot/evidence; a stale or otherwise unusable snapshot cannot
+clear recovery or healthy-state gating. SQLite uses WAL, FULL synchronous writes, a 30-second
 busy timeout, foreign-key enforcement on owned connections, and a startup quick check. Its
 append-only and exact-zero production-influence constraints remain unchanged.
 

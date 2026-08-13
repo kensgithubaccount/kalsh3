@@ -26,13 +26,13 @@ def frame(payload: object, offset: int = 0) -> ReceivedFrame:
     return ReceivedFrame(json.dumps(payload), NOW + timedelta(milliseconds=offset), 100 + offset)
 
 
-def snapshot(seq: int = 1) -> dict[str, object]:
+def snapshot(seq: int = 1, *, ticker: str = "TEST-PERP", sid: int = 7) -> dict[str, object]:
     return {
         "type": "orderbook_snapshot",
-        "sid": 7,
+        "sid": sid,
         "seq": seq,
         "msg": {
-            "market_ticker": "TEST-PERP",
+            "market_ticker": ticker,
             "market_id": "market-id",
             "yes_dollars_fp": [["0.40", "2"]],
             "no_dollars_fp": [["0.45", "3"]],
@@ -40,13 +40,13 @@ def snapshot(seq: int = 1) -> dict[str, object]:
     }
 
 
-def delta(seq: int) -> dict[str, object]:
+def delta(seq: int, *, ticker: str = "TEST-PERP", sid: int = 7) -> dict[str, object]:
     return {
         "type": "orderbook_delta",
-        "sid": 7,
+        "sid": sid,
         "seq": seq,
         "msg": {
-            "market_ticker": "TEST-PERP",
+            "market_ticker": ticker,
             "market_id": "market-id",
             "price_dollars": "0.40",
             "delta_fp": "1",
@@ -85,14 +85,22 @@ def test_disabled_by_default_and_strict_market_specs(tmp_path: Path) -> None:
         lambda: 1,
     )
     assert disabled.connect() is None and disabled.health().state is RuntimeState.STOPPED
-    with pytest.raises(ShadowResearchError, match="duplicate or ambiguous"):
+    with pytest.raises(ShadowResearchError, match="duplicate market ticker"):
         OfflineReadOnlyEvidenceRuntime(
-            [MarketSpec("A", 1, "h"), MarketSpec("B", 1, "h")],
+            [MarketSpec("A", 1, "h"), MarketSpec("A", 2, "h")],
             BookEvidenceStore(tmp_path / "duplicate.sqlite3"),
             ScriptedTransport(),
             lambda: NOW,
             lambda: 1,
         )
+    shared_index = OfflineReadOnlyEvidenceRuntime(
+        [MarketSpec("A", 1, "h"), MarketSpec("B", 1, "h")],
+        BookEvidenceStore(tmp_path / "shared-index.sqlite3"),
+        ScriptedTransport(),
+        lambda: NOW,
+        lambda: 1,
+    )
+    assert set(shared_index._specs) == {"A", "B"}
     with pytest.raises(ShadowResearchError, match="exceed"):
         OfflineReadOnlyEvidenceRuntime(
             [MarketSpec("A", 1, "h"), MarketSpec("B", 2, "h")],
@@ -102,6 +110,20 @@ def test_disabled_by_default_and_strict_market_specs(tmp_path: Path) -> None:
             lambda: 1,
             max_depth_markets=1,
         )
+
+
+@pytest.mark.parametrize(
+    "args",
+    [
+        ("A", True, "h"),
+        ("A", -1, "h"),
+        ("A", 1, " "),
+        (" ", 1, "h"),
+    ],
+)
+def test_market_spec_rejects_invalid_identity(args: tuple[object, object, object]) -> None:
+    with pytest.raises(ShadowResearchError):
+        MarketSpec(*args)  # type: ignore[arg-type]
 
 
 def test_connection_epoch_subscription_and_old_frame_isolation(tmp_path: Path) -> None:
@@ -134,10 +156,122 @@ def test_gap_has_no_evidence_and_one_recovery_until_snapshot(tmp_path: Path) -> 
     sent = len(app._transport.sent)
     assert app.process(frame(delta(4), 2), connection_epoch=epoch) is None
     assert len(app._transport.sent) == sent
+    assert app.process(frame(snapshot()), connection_epoch=epoch) is None
+    assert app._recovery_pending == {7: {"TEST-PERP"}}
+    assert app.manager.books["TEST-PERP"].state is BookState.GAP
+    assert len(app._transport.sent) == sent
     assert app.process(frame(snapshot(10), 3), connection_epoch=epoch)
     assert app.manager.books["TEST-PERP"].state is BookState.CURRENT
     health = app.health()
-    assert health.gap_count == 2 and health.resnapshot_count == 1
+    assert health.gap_count == 3 and health.resnapshot_count == 1
+
+
+def test_delta_before_snapshot_recovers_without_membership_fabrication(tmp_path: Path) -> None:
+    app = runtime(tmp_path)
+    subscribe(app)
+    epoch = app.health().epoch
+    assert epoch
+
+    assert app.process(frame(delta(1)), connection_epoch=epoch) is None
+    assert app._store.count() == 0
+    assert app.manager.last_seq == {7: 1}
+    assert not app.manager.books
+    assert app.manager.sid_markets == {7: {"TEST-PERP"}}
+    assert app.health().gap_count == 1
+    assert app.health().state is RuntimeState.SUBSCRIBING
+    assert app._recovery_pending == {7: {"TEST-PERP"}}
+    assert app._transport.sent[-1]["params"]["action"] == "get_snapshot"
+
+    sent = len(app._transport.sent)
+    assert app.process(frame(delta(2), 1), connection_epoch=epoch) is None
+    assert app.manager.last_seq == {7: 2}
+    assert not app.manager.books and app._store.count() == 0
+    assert len(app._transport.sent) == sent
+
+    assert app.process(frame(snapshot(10), 2), connection_epoch=epoch) is not None
+    assert not app._recovery_pending
+    assert app.manager.books["TEST-PERP"].state is BookState.CURRENT
+    assert app.process(frame(delta(11), 3), connection_epoch=epoch) is not None
+    assert app.health().state is RuntimeState.HEALTHY
+
+
+def test_unknown_sid_is_rejected_before_manager_mutation(tmp_path: Path) -> None:
+    app = runtime(tmp_path)
+    subscribe(app)
+    epoch = app.health().epoch
+    assert epoch
+
+    assert app.process(frame(delta(1, sid=999)), connection_epoch=epoch) is None
+    assert app.manager.last_seq == {}
+    assert not app.manager.books
+    assert app._store.count() == 0
+    assert app.health().state is RuntimeState.QUARANTINED
+    assert app.health().malformed_count == 1
+
+
+def test_stale_snapshot_cannot_report_health_or_acceptance(tmp_path: Path) -> None:
+    app = OfflineReadOnlyEvidenceRuntime(
+        [MarketSpec("TEST-PERP", 4, "structure-v1")],
+        BookEvidenceStore(tmp_path / "stale-snapshot.sqlite3"),
+        ScriptedTransport(),
+        lambda: NOW + timedelta(seconds=31),
+        lambda: 500,
+        enabled=True,
+    )
+    subscribe(app)
+    epoch = app.health().epoch
+    assert epoch
+
+    assert app.process(frame(snapshot()), connection_epoch=epoch) is None
+    health = app.health()
+    assert app._store.count() == 0
+    assert health.state is not RuntimeState.HEALTHY
+    assert health.last_accepted_snapshot is None
+    assert health.stale_count == 1
+    assert health.resnapshot_count == 1
+    assert app._recovery_pending == {7: {"TEST-PERP"}}
+
+
+def test_multi_ticker_sid_recovery_requires_every_valid_snapshot(tmp_path: Path) -> None:
+    transport = ScriptedTransport()
+    app = OfflineReadOnlyEvidenceRuntime(
+        [MarketSpec("A", 4, "a-v1"), MarketSpec("B", 4, "b-v1")],
+        BookEvidenceStore(tmp_path / "multi.sqlite3"),
+        transport,
+        lambda: NOW + timedelta(milliseconds=50),
+        lambda: 500,
+        enabled=True,
+    )
+    epoch = app.connect()
+    assert epoch is not None
+    app.process(
+        frame({"id": 1, "type": "subscribed", "msg": {"channel": "orderbook_delta", "sid": 7}}),
+        connection_epoch=epoch,
+    )
+    assert app.process(frame(snapshot(1, ticker="A")), connection_epoch=epoch)
+    assert app.process(frame(snapshot(2, ticker="B")), connection_epoch=epoch)
+
+    assert app.process(frame(delta(4, ticker="A"), 1), connection_epoch=epoch) is None
+    assert app._recovery_pending == {7: {"A", "B"}}
+    sent = len(transport.sent)
+    assert transport.sent[-1]["params"]["market_tickers"] == ["A", "B"]
+
+    assert app.process(frame(snapshot(10, ticker="A"), 2), connection_epoch=epoch)
+    assert app._recovery_pending == {7: {"B"}}
+    assert app.manager.books["B"].state is BookState.GAP
+    assert app.health().state is not RuntimeState.HEALTHY
+    assert len(transport.sent) == sent
+
+    assert app.process(frame(snapshot(11, ticker="B"), 3), connection_epoch=epoch)
+    assert not app._recovery_pending
+    assert app.health().state is RuntimeState.HEALTHY
+    assert len(transport.sent) == sent
+
+    app.disconnect()
+    assert not app._recovery_pending
+    new_epoch = app.connect()
+    assert new_epoch is not None and new_epoch != epoch
+    assert not app._recovery_pending
 
 
 def test_malformed_unknown_unexpected_and_stale_fail_closed(tmp_path: Path) -> None:
@@ -221,8 +355,6 @@ def test_official_protocol_fixture_and_safety_isolation() -> None:
         "authenticated": True,
     }
     assert fixture["subscribe"]["params"]["use_yes_price"] is True
-    assert fixture["subscribed"]["msg"]["sid"] == 7
-    assert fixture["get_snapshot"]["cmd"] == "update_subscription"
 
     paths = [
         Path("services/real_time_market_data/transport.py"),
@@ -251,3 +383,17 @@ def test_official_protocol_fixture_and_safety_isolation() -> None:
             and node.value.upper() in {"POST", "PUT", "PATCH", "DELETE"}
             for node in ast.walk(tree)
         )
+
+
+def test_official_subscribed_fixture_drives_runtime_state(tmp_path: Path) -> None:
+    fixture = json.loads(Path("tests/fixtures/kalshi_ws_v2_official.json").read_text())
+    app = runtime(tmp_path)
+    epoch = app.connect()
+    assert epoch is not None
+    assert dict(app._transport.sent[-1]) == fixture["subscribe"]
+    app.process(frame(fixture["subscribed"]), connection_epoch=epoch)
+    sid = fixture["subscribed"]["msg"]["sid"]
+    assert app._orderbook_sid == sid
+    assert app.manager.sid_markets[sid] == set(fixture["subscribe"]["params"]["market_tickers"])
+    assert app.manager.protocol is not None
+    assert app.manager.protocol.subscriptions[sid].sid == sid
