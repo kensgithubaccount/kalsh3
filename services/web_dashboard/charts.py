@@ -13,7 +13,10 @@ from decimal import Decimal
 
 from .product import dollars
 
-_PALETTE = ("#17613d", "#8b4800", "#3d5045", "#5b3fa6")
+# Tuned for the dark trading-terminal background (M23B): light enough to read
+# clearly on near-black, still restrained rather than neon/saturated.
+_PALETTE = ("#3ecf8e", "#e0a94a", "#7fb8e8", "#b18cf0")
+_LINE_COLOR = "#3ecf8e"
 
 
 def chart_empty_state(message: str) -> str:
@@ -60,8 +63,8 @@ def composition_bar(title: str, segments: list[tuple[str, Decimal]]) -> str:
             f"<title>{html.escape(label)}: {html.escape(formatted)} ({percent})</title></rect>"
         )
         legend.append(
-            f'<li><span class="chart-swatch" style="background:{color}" aria-hidden="true">'
-            "</span>"
+            f'<li><span class="chart-swatch chart-swatch-{index % len(_PALETTE)}" '
+            'aria-hidden="true"></span>'
             f"{html.escape(label)}: <strong>{html.escape(formatted)}</strong> ({percent})</li>"
         )
         x += segment_width
@@ -86,18 +89,34 @@ def limit_bars(title: str, entries: list[tuple[str, Decimal]]) -> str:
 
     These are the policy ceilings themselves, not current usage against them;
     usage is not charted here unless it is real and reconciled.
+
+    Bar width is an SVG `width` attribute, not a CSS `style="width:...%"`
+    inline style — this page's CSP is `style-src 'self'` with no
+    'unsafe-inline', which silently drops inline style attributes (every bar
+    would render at its CSS default width instead of its real value). SVG
+    presentation attributes are unaffected by style-src.
     """
     if not entries:
         return chart_empty_state(f"{title}: no policy limits configured.")
     maximum = max(value for _, value in entries)
     scale = maximum if maximum > 0 else Decimal(1)
+    bar_width, bar_height = 200.0, 14.0
     rows = []
     for label, value in entries:
-        share = float(value / scale) * 100
+        share = float(value / scale) if scale > 0 else 0.0
+        fill_width = max(share * bar_width, 1.0) if value > 0 else 0.0
+        svg = (
+            f'<svg viewBox="0 0 {bar_width:.0f} {bar_height:.0f}" class="limit-bar" '
+            'role="presentation" aria-hidden="true" preserveAspectRatio="none">'
+            f'<rect class="limit-track" x="0" y="0" width="{bar_width:.0f}" '
+            f'height="{bar_height:.0f}" />'
+            f'<rect class="limit-fill" x="0" y="0" width="{fill_width:.2f}" '
+            f'height="{bar_height:.0f}" />'
+            "</svg>"
+        )
         rows.append(
             f'<div class="limit-row"><span class="limit-label">{html.escape(label)}</span>'
-            f'<span class="limit-track"><span class="limit-fill" '
-            f'style="width:{share:.1f}%"></span></span>'
+            f"{svg}"
             f'<span class="limit-value">{html.escape(dollars(value))}</span></div>'
         )
     table = _data_table(
@@ -141,8 +160,8 @@ def sparkline(title: str, points: list[tuple[str, Decimal]]) -> str:
         f'<svg role="img" aria-label="{html.escape(summary)}" '
         f'viewBox="0 0 {width:.0f} {height:.0f}" class="chart-sparkline" '
         f'preserveAspectRatio="none">'
-        f'<polyline points="{polyline}" fill="none" stroke="#17613d" stroke-width="2.5" />'
-        f'<circle cx="{last_x:.2f}" cy="{last_y:.2f}" r="3.5" fill="#17613d" />'
+        f'<polyline points="{polyline}" fill="none" stroke="{_LINE_COLOR}" stroke-width="2.5" />'
+        f'<circle cx="{last_x:.2f}" cy="{last_y:.2f}" r="3.5" fill="{_LINE_COLOR}" />'
         "</svg>"
     )
     table = _data_table(

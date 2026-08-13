@@ -37,7 +37,10 @@ class ProductSurface:
 
 SURFACES = (
     ProductSurface(
-        "/", "Overview", "System-wide state and safety posture", EvidenceMode.NOT_AVAILABLE
+        "/",
+        "Dashboard",
+        "Account value, performance, and what needs attention",
+        EvidenceMode.NOT_AVAILABLE,
     ),
     ProductSurface(
         "/opportunities",
@@ -55,9 +58,11 @@ SURFACES = (
         EvidenceMode.LIVE_RESEARCH_DATA,
     ),
     ProductSurface(
-        "/sources", "Sources", "Source health and provenance", EvidenceMode.LIVE_RESEARCH_DATA
+        "/activity",
+        "Activity",
+        "Account positions, orders, fills, and reports",
+        EvidenceMode.NOT_AVAILABLE,
     ),
-    ProductSurface("/learning", "Learning", "Research governance", EvidenceMode.HISTORICAL_REPLAY),
     ProductSurface(
         "/portfolio", "Portfolio", "Read-only account state", EvidenceMode.NOT_AVAILABLE
     ),
@@ -71,10 +76,14 @@ SURFACES = (
         "/reports", "Reports", "Operating and governance reports", EvidenceMode.NOT_AVAILABLE
     ),
     ProductSurface(
-        "/risk", "Risk & Safety", "Deterministic limits and blockers", EvidenceMode.NOT_AVAILABLE
+        "/strategy",
+        "Strategy",
+        "Forecasting, learning, sources, and research diagnostics",
+        EvidenceMode.HISTORICAL_REPLAY,
     ),
+    ProductSurface("/learning", "Learning", "Research governance", EvidenceMode.HISTORICAL_REPLAY),
     ProductSurface(
-        "/system", "System", "Health, replay, and data quality", EvidenceMode.NOT_AVAILABLE
+        "/sources", "Sources", "Source health and provenance", EvidenceMode.LIVE_RESEARCH_DATA
     ),
     ProductSurface(
         "/advanced",
@@ -82,34 +91,62 @@ SURFACES = (
         "Forecast, replay, and execution research diagnostics",
         EvidenceMode.HISTORICAL_REPLAY,
     ),
+    ProductSurface(
+        "/system",
+        "System",
+        "Health, readiness, replay, and data quality",
+        EvidenceMode.NOT_AVAILABLE,
+    ),
+    ProductSurface(
+        "/risk", "Risk & Safety", "Deterministic limits and blockers", EvidenceMode.NOT_AVAILABLE
+    ),
 )
 
 
-NAV_GROUPS: tuple[tuple[str, tuple[str, ...]], ...] = (
-    ("Research", ("/opportunities", "/breaking", "/markets", "/sources", "/learning")),
-    ("Account", ("/portfolio", "/orders", "/reports")),
-    ("Safety", ("/risk",)),
-    ("System", ("/system", "/advanced")),
+@dataclass(frozen=True, slots=True)
+class NavSection:
+    key: str
+    label: str
+    path: str
+    members: tuple[str, ...]
+
+
+NAV_SECTIONS: tuple[NavSection, ...] = (
+    NavSection("dashboard", "Dashboard", "/", ("/",)),
+    NavSection("markets", "Markets", "/markets", ("/markets", "/opportunities", "/breaking")),
+    NavSection(
+        "activity", "Activity", "/activity", ("/activity", "/portfolio", "/orders", "/reports")
+    ),
+    NavSection(
+        "strategy",
+        "Strategy",
+        "/strategy",
+        ("/strategy", "/learning", "/sources", "/forecasting", "/backtests", "/advanced"),
+    ),
+    NavSection("system", "System", "/system", ("/system", "/risk")),
 )
 
 
-def grouped_navigation() -> tuple[tuple[str | None, tuple[ProductSurface, ...]], ...]:
-    """Group SURFACES for progressive-disclosure navigation without hiding any page.
+def section_for_path(path: str) -> NavSection:
+    """Return the top-level nav section a page belongs to, defaulting to Dashboard.
 
-    Every surface still appears exactly once, in its original SURFACES order;
-    this only changes how the navigation is visually sectioned.
+    Detail pages (e.g. `/markets/TICKER`, `/breaking/SIGNAL`) belong to their
+    parent section via prefix match.
     """
-    by_path = {surface.path: surface for surface in SURFACES}
-    grouped_paths = {path for _, paths in NAV_GROUPS for path in paths}
-    primary = tuple(surface for surface in SURFACES if surface.path not in grouped_paths)
-    groups = tuple((label, tuple(by_path[path] for path in paths)) for label, paths in NAV_GROUPS)
-    return ((None, primary), *groups)
+    for section in NAV_SECTIONS:
+        for member in section.members:
+            if path == member or (member != "/" and path.startswith(member + "/")):
+                return section
+    return NAV_SECTIONS[0]
 
 
 def assert_navigation_covers_all_surfaces() -> None:
-    grouped = tuple(surface for _, surfaces in grouped_navigation() for surface in surfaces)
-    if len(grouped) != len(SURFACES) or set(grouped) != set(SURFACES):
-        raise RuntimeError("navigation grouping dropped or duplicated a product surface")
+    """Every reachable SURFACES path must belong to exactly one top-level section."""
+    section_paths = {surface.path for surface in SURFACES}
+    covered = {member for section in NAV_SECTIONS for member in section.members}
+    missing = section_paths - covered
+    if missing:
+        raise RuntimeError(f"navigation sections do not cover surfaces: {sorted(missing)}")
 
 
 ADVANCED_SURFACES = (
@@ -153,6 +190,20 @@ def dollars(value: Any) -> str:
         return f"${Decimal(str(value)):,.2f}"
     except (InvalidOperation, TypeError, ValueError):
         return "Unavailable"
+
+
+def decimal_or_none(value: Any) -> Decimal | None:
+    """Parse a real reconciled value into Decimal, or None if it is absent/invalid.
+
+    Never fabricates a number: unparsable input stays None so callers show an
+    honest empty state instead of a guessed figure.
+    """
+    if value is None:
+        return None
+    try:
+        return Decimal(str(value))
+    except (InvalidOperation, TypeError, ValueError):
+        return None
 
 
 _PILL_TONES = frozenset({"good", "warn", "bad", "neutral"})

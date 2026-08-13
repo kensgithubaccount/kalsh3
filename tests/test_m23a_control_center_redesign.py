@@ -22,7 +22,7 @@ from services.web_dashboard.charts import chart_empty_state, composition_bar, li
 from services.web_dashboard.product import (
     SURFACES,
     assert_navigation_covers_all_surfaces,
-    grouped_navigation,
+    section_for_path,
     status_pill,
 )
 from services.web_dashboard.readiness import (
@@ -41,7 +41,9 @@ def _healthy_kwargs() -> dict[str, Any]:
         account_status="healthy",
         stale=False,
         unresolved_gaps=0,
-        compliance_hold=False,
+        universe_status="ACTIVE",
+        realtime_state="HEALTHY",
+        compliance_state="CLEAR",
         compliance_reason=None,
         globally_halted=False,
         global_halt_reason=None,
@@ -58,7 +60,7 @@ def test_readiness_reflects_structural_facts_even_when_every_real_signal_is_clea
     # healthy the live signals are: no production-write credential exists,
     # autonomy is off, and M13 read-side reconciliation is not yet complete.
     assert unmet == 3
-    assert total == 9
+    assert total == 11
     assert readiness_summary_text(readiness) == f"{unmet} of {total} readiness checks unmet."
 
 
@@ -67,7 +69,9 @@ def test_readiness_flags_disconnection_staleness_gaps_hold_and_halt() -> None:
         account_status="error",
         stale=True,
         unresolved_gaps=3,
-        compliance_hold=True,
+        universe_status="NOT_STARTED",
+        realtime_state="DISCONNECTED",
+        compliance_state="HOLD",
         compliance_reason="manual review",
         globally_halted=True,
         global_halt_reason="account state uncertain",
@@ -79,8 +83,8 @@ def test_readiness_flags_disconnection_staleness_gaps_hold_and_halt() -> None:
     assert not by_label["Read-only reconciliation is current"].met
     assert not by_label["No unresolved market-data gaps"].met
     assert "3" in by_label["No unresolved market-data gaps"].detail
-    assert not by_label["No compliance hold"].met
-    assert by_label["No compliance hold"].detail == "manual review"
+    assert not by_label["Compliance state established and clear"].met
+    assert by_label["Compliance state established and clear"].detail == "manual review"
     assert not by_label["Global halt is clear"].met
     assert by_label["Global halt is clear"].detail == "account state uncertain"
 
@@ -90,7 +94,9 @@ def test_primary_action_returns_first_unmet_check_in_category_priority_order() -
         account_status="error",
         stale=True,
         unresolved_gaps=0,
-        compliance_hold=False,
+        universe_status="ACTIVE",
+        realtime_state="HEALTHY",
+        compliance_state="CLEAR",
         compliance_reason=None,
         globally_halted=False,
         global_halt_reason=None,
@@ -107,7 +113,9 @@ def test_research_readiness_cannot_be_fully_met_with_zero_real_settled_events() 
         account_status="healthy",
         stale=False,
         unresolved_gaps=0,
-        compliance_hold=False,
+        universe_status="ACTIVE",
+        realtime_state="HEALTHY",
+        compliance_state="CLEAR",
         compliance_reason=None,
         globally_halted=False,
         global_halt_reason=None,
@@ -121,6 +129,39 @@ def test_research_readiness_cannot_be_fully_met_with_zero_real_settled_events() 
     )
     assert not evidence_check.met
     assert evidence_check.detail == "0 / 50 relevant real settled events"
+
+
+def test_research_readiness_rejects_market_data_contradiction() -> None:
+    """Zero unresolved gaps must never look healthy while the universe never started.
+
+    This is the exact live contradiction M23B fixes: the old presentation could
+    show "No unresolved market-data gaps — MET" while also showing
+    "Universe: NOT_STARTED" and "Market data: DISCONNECTED".
+    """
+    readiness = build_readiness(
+        **_healthy_kwargs() | {"universe_status": "NOT_STARTED", "realtime_state": "DISCONNECTED"}
+    )
+    research = next(category for category in readiness if category.name == "Research readiness")
+    assert not research.met
+    by_label = {check.label: check for check in research.checks}
+    assert by_label["No unresolved market-data gaps"].met  # zero gaps is still true in isolation
+    assert not by_label["Market universe initialized"].met
+    assert not by_label["Live market data connected"].met
+
+
+def test_readiness_distinguishes_unestablished_compliance_from_active_hold() -> None:
+    unestablished = build_readiness(**_healthy_kwargs() | {"compliance_state": "UNKNOWN"})
+    held = build_readiness(
+        **_healthy_kwargs() | {"compliance_state": "HOLD", "compliance_reason": "manual review"}
+    )
+
+    def compliance_detail(readiness: tuple[ReadinessCategory, ...]) -> str:
+        risk = next(c for c in readiness if c.name == "Risk readiness")
+        check = next(c for c in risk.checks if c.label == "Compliance state established and clear")
+        return check.detail
+
+    assert compliance_detail(unestablished) == "Compliance state has not yet been established"
+    assert compliance_detail(held) == "manual review"
 
 
 def test_research_readiness_evidence_check_reflects_existing_governed_threshold() -> None:
@@ -163,14 +204,12 @@ def test_primary_action_is_none_only_when_every_check_passes() -> None:
     assert primary_action(all_met) is None
 
 
-def test_navigation_groups_cover_every_surface_exactly_once() -> None:
+def test_navigation_sections_cover_every_surface() -> None:
+    """Superseded by M23B's five-section nav; see test_m23b_dashboard_simplification.py
+    for the full simplified-navigation coverage this milestone adds."""
     assert_navigation_covers_all_surfaces()
-    grouped = [surface for _, surfaces in grouped_navigation() for surface in surfaces]
-    assert len(grouped) == len(SURFACES)
-    assert {surface.path for surface in grouped} == {surface.path for surface in SURFACES}
-    primary_label, primary_surfaces = grouped_navigation()[0]
-    assert primary_label is None
-    assert [surface.path for surface in primary_surfaces] == ["/"]
+    for surface in SURFACES:
+        section_for_path(surface.path)  # must not raise for any known surface
 
 
 def test_status_pill_escapes_text_and_rejects_unknown_tone() -> None:
@@ -332,15 +371,16 @@ def _get(app: DashboardApp, path: str, token: str) -> bytes:
     )
 
 
-def test_overview_separates_actual_account_from_policy_target(tmp_path: Path) -> None:
+def test_overview_no_longer_puts_policy_cards_on_dashboard(tmp_path: Path) -> None:
+    """M23B moved policy configuration (bankroll/reserve/allocation cards) off
+    Dashboard entirely — see test_m23b_dashboard_simplification.py for the
+    positive assertion that they still live on Risk & Safety."""
     store, app, token = _configured(tmp_path)
     store.refresh_succeeded(_snapshot("2026-08-01T00:00:00+00:00", "50", "50"))
     body = _get(app, "/", token).decode()
-    assert "Actual account" in body
-    assert "Policy / target" in body
-    assert "Target bankroll" in body and "$1,000.00" in body
-    assert "Protected reserve" in body and "$700.00" in body
-    assert "$50.00" in body  # the real, reconciled cash/portfolio value — not the policy figures
+    assert "Target bankroll" not in body
+    assert "Protected reserve" not in body
+    assert "$50.00" in body  # the real, reconciled cash/portfolio value is still shown
 
 
 def test_overview_never_calls_portfolio_value_equity_or_infers_a_composition(
@@ -354,26 +394,24 @@ def test_overview_never_calls_portfolio_value_equity_or_infers_a_composition(
     assert "Reported portfolio value" in body
     assert "<small>Equity</small>" not in body
     assert "In positions" not in body
-    assert "Capital composition is deferred" in body
-    assert "positively validated" in body
     assert "chart-bar" not in body  # composition_bar's stacked-bar SVG must not render
 
 
-def test_overview_labels_policy_bankroll_as_not_currently_fundable_when_value_is_low(
+def test_overview_labels_hero_below_target_bankroll_when_value_is_low(
     tmp_path: Path,
 ) -> None:
     store, app, token = _configured(tmp_path)
     store.refresh_succeeded(_snapshot("2026-08-01T00:00:00+00:00", "50", "50"))
     body = _get(app, "/", token).decode()
-    assert "Not currently fundable" in body
+    assert "Below target bankroll" in body
 
 
-def test_overview_does_not_claim_unfundable_when_portfolio_value_is_unknown(
+def test_overview_does_not_claim_below_target_when_portfolio_value_is_unknown(
     tmp_path: Path,
 ) -> None:
     _, app, token = _configured(tmp_path)
     body = _get(app, "/", token).decode()
-    assert "Not currently fundable" not in body
+    assert "Below target bankroll" not in body
     assert "Funding status unknown" in body
 
 
@@ -394,18 +432,13 @@ def test_overview_renders_sparkline_once_two_real_snapshots_exist(tmp_path: Path
     assert "insufficient history to chart" not in body
 
 
-def test_overview_readiness_checklist_lists_every_category(tmp_path: Path) -> None:
+def test_overview_no_longer_shows_the_full_readiness_matrix(tmp_path: Path) -> None:
+    """M23B moves the nine-check readiness matrix off Dashboard onto /system —
+    see test_m23b_dashboard_simplification.py for the positive coverage that
+    it is still fully available there."""
     _, app, token = _configured(tmp_path)
     body = _get(app, "/", token).decode()
-    for category in (
-        "Connection",
-        "Research readiness",
-        "Risk readiness",
-        "Execution readiness",
-        "Autonomy readiness",
-    ):
-        assert category in body
-    assert "readiness-checklist" in body
+    assert "readiness-checklist" not in body
 
 
 def test_overview_never_attributes_preexisting_account_activity_to_the_bot(tmp_path: Path) -> None:
@@ -428,13 +461,16 @@ def test_overview_never_attributes_preexisting_account_activity_to_the_bot(tmp_p
 
 
 def test_overview_still_states_no_production_order_capability(tmp_path: Path) -> None:
+    """M23B replaced the Dashboard decision-banner with a compact top-bar/status-strip
+    "Trading OFF" indicator; the full facts (credential/signer/autonomy) moved to the
+    readiness matrix on /system — see test_m23b_dashboard_simplification.py."""
     _, app, token = _configured(tmp_path)
     body = _get(app, "/", token).decode()
-    assert "Can it trade?" in body
-    assert "<strong>NO</strong>" in body
-    assert "Production-write credential: NONE" in body
-    assert "signer: DISARMED" in body
-    assert "Autonomy: OFF" in body
+    assert "Trading OFF" in body
+    system_body = _get(app, "/system", token).decode()
+    assert "Production-write credential: NONE" in system_body
+    assert "signer: DISARMED" in system_body
+    assert "Autonomy: OFF" in system_body
 
 
 def test_overview_hero_never_claims_connected_when_account_status_is_error(
