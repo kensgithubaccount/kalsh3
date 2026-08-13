@@ -58,6 +58,12 @@ def test_directional_leverage_is_kept_separate_and_exchange_index_required():
 
     with pytest.raises(ShadowResearchError):
         parse_margin_market({"ticker": "TEST-PERP"}, observed_at=now)
+    for invalid_index in (True, False, -1):
+        with pytest.raises(ShadowResearchError, match="exchange_index"):
+            parse_margin_market(
+                {"ticker": "TEST-PERP", "exchange_index": invalid_index},
+                observed_at=now,
+            )
 
 
 def test_position_margin_fields_are_nullable_not_invented():
@@ -71,6 +77,14 @@ def test_position_margin_fields_are_nullable_not_invented():
     assert obs.available_balance is None
     assert obs.margin_used is None
     assert obs.maintenance_margin is None
+    for invalid_subaccount in (True, False, -1):
+        with pytest.raises(ShadowResearchError, match="subaccount"):
+            parse_portfolio_margin(
+                {},
+                observed_at=datetime.now(UTC),
+                subaccount=invalid_subaccount,
+                exchange_index=0,
+            )
 
 
 def test_retained_raw_payload_is_recursively_read_only():
@@ -137,12 +151,42 @@ def test_out_of_order_timestamps_fail_closed():
     obs = _edge_observation()
     with pytest.raises(ShadowResearchError, match="monotonic"):
         replace(obs, signal_available_at=obs.signal_created_at - timedelta(milliseconds=1))
+    with pytest.raises(ShadowResearchError, match="monotonic"):
+        measure_edge_decay(
+            ticker="TEST-PERP",
+            direction=Direction.LONG,
+            exchange_index=0,
+            signal_created_at=obs.signal_created_at,
+            signal_available_at=obs.signal_created_at - timedelta(milliseconds=1),
+            decision_at=obs.decision_at,
+            hypothetical_send_at=obs.hypothetical_send_at,
+            signal_value=obs.signal_value,
+            value_at_creation=obs.value_at_creation,
+            value_at_available=obs.value_at_available,
+            value_at_decision=obs.value_at_decision,
+            value_at_hypothetical_send=obs.value_at_hypothetical_send,
+        )
 
 
 def test_contradictory_latency_fails_closed():
     obs = _edge_observation()
     with pytest.raises(ShadowResearchError, match="stored latencies contradict"):
         replace(obs, available_to_decision_ms=51)
+    with pytest.raises(ShadowResearchError, match="exact millisecond precision"):
+        measure_edge_decay(
+            ticker="TEST-PERP",
+            direction=Direction.LONG,
+            exchange_index=0,
+            signal_created_at=obs.signal_created_at,
+            signal_available_at=obs.signal_created_at + timedelta(microseconds=1),
+            decision_at=obs.decision_at,
+            hypothetical_send_at=obs.hypothetical_send_at,
+            signal_value=obs.signal_value,
+            value_at_creation=obs.value_at_creation,
+            value_at_available=obs.value_at_available,
+            value_at_decision=obs.value_at_decision,
+            value_at_hypothetical_send=obs.value_at_hypothetical_send,
+        )
 
 
 def test_contradictory_edge_fails_closed():
@@ -153,6 +197,13 @@ def test_contradictory_edge_fails_closed():
 
 def test_production_influence_rejected_for_every_shadow_observation_type():
     now = datetime.now(UTC)
+    quote = QuoteObservation(now, Decimal("1"), "fixture", 0, subaccount=0)
+    assert quote.observed_at == now
+    assert quote.value == Decimal("1")
+    assert quote.source == "fixture"
+    assert quote.exchange_index == 0
+    assert quote.subaccount == 0
+    assert quote.production_influence == 0
     with pytest.raises(ShadowResearchError):
         MarginMarketObservation("TEST-PERP", 0, now, production_influence=Decimal("0.01"))
     with pytest.raises(ShadowResearchError):

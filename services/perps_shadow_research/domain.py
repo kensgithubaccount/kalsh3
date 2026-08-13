@@ -73,6 +73,12 @@ def _edge(signal_value: Decimal, observed_value: Decimal, direction: Direction) 
     raise ShadowResearchError("unsupported direction")
 
 
+def _non_negative_int(value: Any, field: str) -> int:
+    if type(value) is not int or value < 0:
+        raise ShadowResearchError(f"{field} must be a non-negative integer")
+    return value
+
+
 def _milliseconds(start: datetime, end: datetime) -> int:
     delta = end - start
     total_microseconds = (delta.days * 86_400 + delta.seconds) * 1_000_000 + delta.microseconds
@@ -116,8 +122,7 @@ class MarginMarketObservation:
         object.__setattr__(self, "raw", _immutable_raw(self.raw))
         if not self.ticker:
             raise ShadowResearchError("ticker is required")
-        if self.exchange_index < 0:
-            raise ShadowResearchError("exchange_index must be non-negative")
+        _non_negative_int(self.exchange_index, "exchange_index")
         if self.production_influence != 0:
             raise ShadowResearchError("shadow perps data cannot have production influence")
 
@@ -139,10 +144,8 @@ class PortfolioMarginObservation:
     def __post_init__(self) -> None:
         object.__setattr__(self, "observed_at", _utc(self.observed_at, "observed_at"))
         object.__setattr__(self, "raw", _immutable_raw(self.raw))
-        if self.subaccount < 0:
-            raise ShadowResearchError("subaccount must be non-negative")
-        if self.exchange_index < 0:
-            raise ShadowResearchError("exchange_index must be non-negative")
+        _non_negative_int(self.subaccount, "subaccount")
+        _non_negative_int(self.exchange_index, "exchange_index")
         if self.production_influence != 0:
             raise ShadowResearchError("shadow margin data cannot have production influence")
 
@@ -158,10 +161,9 @@ class QuoteObservation:
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "observed_at", _utc(self.observed_at, "observed_at"))
-        if self.exchange_index < 0:
-            raise ShadowResearchError("exchange_index must be non-negative")
-        if self.subaccount is not None and self.subaccount < 0:
-            raise ShadowResearchError("subaccount must be non-negative when present")
+        _non_negative_int(self.exchange_index, "exchange_index")
+        if self.subaccount is not None:
+            _non_negative_int(self.subaccount, "subaccount")
         if self.production_influence != 0:
             raise ShadowResearchError("shadow quote data cannot have production influence")
 
@@ -202,8 +204,7 @@ class EdgeDecayObservation:
             "hypothetical_send_at",
         ):
             object.__setattr__(self, field, _utc(getattr(self, field), field))
-        if self.exchange_index < 0:
-            raise ShadowResearchError("exchange_index must be non-negative")
+        _non_negative_int(self.exchange_index, "exchange_index")
         if not (
             self.signal_created_at
             <= self.signal_available_at

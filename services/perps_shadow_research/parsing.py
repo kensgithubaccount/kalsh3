@@ -54,7 +54,7 @@ def parse_margin_market(raw: dict[str, Any], *, observed_at: datetime) -> Margin
     exchange_index = raw.get("exchange_index")
     if not isinstance(ticker, str) or not ticker:
         raise ShadowResearchError("ticker missing")
-    if not isinstance(exchange_index, int):
+    if type(exchange_index) is not int:
         raise ShadowResearchError("exchange_index missing or invalid")
 
     return MarginMarketObservation(
