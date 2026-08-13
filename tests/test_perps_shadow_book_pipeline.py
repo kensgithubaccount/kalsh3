@@ -11,6 +11,7 @@ import pytest
 from services.perps_shadow_research.book_evidence import (
     BookEvidenceObservation,
     BookUpdateKind,
+    source_event_fingerprint,
 )
 from services.perps_shadow_research.domain import ShadowResearchError
 from services.perps_shadow_research.pipeline import ReadOnlyBookEvidencePipeline
@@ -68,6 +69,7 @@ def observation(**changes) -> BookEvidenceObservation:
         connection_epoch=UUID("12345678-1234-5678-1234-567812345678"),
         sid=7,
         sequence=1,
+        source_event_fingerprint=source_event_fingerprint(snapshot()),
         book_state=BookState.CURRENT,
         best_yes_bid=Decimal("0.4000"),
         best_yes_ask=Decimal("0.6000"),
@@ -92,6 +94,20 @@ def test_accepted_snapshot_and_delta_persist_exactly_once(tmp_path):
     assert second is not None and second.exchange_at == NOW - timedelta(seconds=2)
     assert second.best_bid_size == Decimal("3.750")
     assert store.count() == 2
+
+
+def test_source_fingerprint_uses_parsed_semantics_not_raw_formatting():
+    first = snapshot()
+    reformatted = replace(
+        first,
+        yes=((Decimal("0.4"), Decimal("2.5000")),),
+        no=((Decimal("0.600"), Decimal("3.75")),),
+        raw={"arbitrary": {"mutable": "formatting"}},
+    )
+    assert source_event_fingerprint(first) == source_event_fingerprint(reformatted)
+    assert source_event_fingerprint(delta()) != source_event_fingerprint(
+        replace(delta(), exchange_at=NOW + timedelta(microseconds=1))
+    )
 
 
 def test_rejected_gapped_and_stale_delta_store_nothing(tmp_path):
@@ -130,6 +146,71 @@ def test_reconnect_epoch_provenance(tmp_path):
     assert new_epoch != old_epoch and second.connection_epoch == new_epoch and store.count() == 2
 
 
+def test_delta_replay_is_preflighted_without_manager_mutation(tmp_path):
+    manager, store, pipe = pipeline(tmp_path)
+    pipe.snapshot(snapshot(), received_at=NOW, structure_hash="rules-v1")
+    event = delta(exchange_at=NOW - timedelta(seconds=2))
+    first = pipe.delta(event, received_at=NOW)
+    assert first is not None
+    book = manager.books[event.ticker]
+    state_before = (book.state, book.sequence, book.yes.copy(), len(manager.gaps))
+
+    replay = pipe.delta(event, received_at=NOW + timedelta(milliseconds=1))
+
+    assert replay == first
+    assert store.count() == 2
+    assert (book.state, book.sequence, book.yes, len(manager.gaps)) == state_before
+    following = pipe.delta(delta(3), received_at=NOW)
+    assert following is not None
+    assert manager.books[event.ticker].state is BookState.CURRENT
+    assert manager.books[event.ticker].sequence == 3
+
+
+def test_delta_source_collision_fails_before_manager_mutation(tmp_path):
+    manager, store, pipe = pipeline(tmp_path)
+    pipe.snapshot(snapshot(), received_at=NOW, structure_hash="rules-v1")
+    pipe.delta(delta(), received_at=NOW)
+    book = manager.books["TEST-PERP"]
+    state_before = (book.state, book.sequence, book.yes.copy(), len(manager.gaps))
+    collision = replace(delta(), delta=Decimal("9.5"))
+
+    with pytest.raises(ShadowResearchError, match=r"source-event.*collision"):
+        pipe.delta(collision, received_at=NOW)
+
+    assert (book.state, book.sequence, book.yes, len(manager.gaps)) == state_before
+    assert store.count() == 2
+
+
+def test_snapshot_replay_is_preflighted_without_phantom_recovery(tmp_path):
+    manager, store, pipe = pipeline(tmp_path)
+    event = snapshot()
+    first = pipe.snapshot(event, received_at=NOW, structure_hash="rules-v1")
+    book = manager.books[event.ticker]
+    state_before = (book.state, book.sequence, book.yes.copy(), book.no.copy(), len(manager.gaps))
+
+    replay = pipe.snapshot(
+        event, received_at=NOW + timedelta(milliseconds=1), structure_hash="changed-but-unused"
+    )
+
+    assert replay == first
+    assert store.count() == 1
+    assert (book.state, book.sequence, book.yes, book.no, len(manager.gaps)) == state_before
+
+
+def test_snapshot_source_collision_fails_before_manager_mutation(tmp_path):
+    manager, store, pipe = pipeline(tmp_path)
+    pipe.snapshot(snapshot(), received_at=NOW, structure_hash="rules-v1")
+    book = manager.books["TEST-PERP"]
+    state_before = (book.state, book.sequence, book.yes.copy(), book.no.copy(), len(manager.gaps))
+    collision = replace(snapshot(), yes=((Decimal("0.41"), Decimal("2.5")),))
+
+    with pytest.raises(ShadowResearchError, match=r"source-event.*collision"):
+        pipe.snapshot(collision, received_at=NOW, structure_hash="rules-v1")
+
+    assert (book.state, book.sequence, book.yes, book.no, len(manager.gaps)) == state_before
+    assert store.count() == 1
+
+
 def test_store_duplicate_collision_restart_and_concurrency(tmp_path):
     path = tmp_path / "book.sqlite3"
     store = BookEvidenceStore(path)
@@ -138,12 +219,27 @@ def test_store_duplicate_collision_restart_and_concurrency(tmp_path):
     assert not store.append(item)
     reopened = BookEvidenceStore(path)
     assert not reopened.append(item)
-    collision = observation(best_bid_size=Decimal("9.00"))
+    collision = observation(source_event_fingerprint="1" * 64)
     with pytest.raises(ShadowResearchError, match="collision"):
         reopened.append(collision)
     with ThreadPoolExecutor(max_workers=8) as pool:
         results = list(pool.map(lambda _: reopened.append(item), range(16)))
     assert results == [False] * 16 and reopened.count() == 1
+
+
+def test_concurrent_first_insert_into_empty_store(tmp_path):
+    path = tmp_path / "book.sqlite3"
+    BookEvidenceStore(path)
+    item = observation()
+
+    def append_from_fresh_connection(_: int) -> bool:
+        return BookEvidenceStore(path).append(item)
+
+    with ThreadPoolExecutor(max_workers=8) as pool:
+        results = list(pool.map(append_from_fresh_connection, range(16)))
+    assert results.count(True) == 1
+    assert results.count(False) == 15
+    assert BookEvidenceStore(path).count() == 1
 
 
 def test_exact_decimal_round_trip_and_zero_influence_enforcement(tmp_path):
@@ -157,7 +253,7 @@ def test_exact_decimal_round_trip_and_zero_influence_enforcement(tmp_path):
         observation(production_influence=Decimal("0.01"))
     with sqlite3.connect(store.path) as db, pytest.raises(sqlite3.IntegrityError):
         db.execute(
-            "INSERT INTO book_evidence VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            "INSERT INTO book_evidence VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
             (
                 "x",
                 "SNAPSHOT",
@@ -167,6 +263,7 @@ def test_exact_decimal_round_trip_and_zero_influence_enforcement(tmp_path):
                 str(uuid4()),
                 0,
                 0,
+                "0" * 64,
                 "CURRENT",
                 "0.4",
                 None,
@@ -193,6 +290,37 @@ def test_database_update_and_delete_are_prohibited(tmp_path):
             db.execute(statement)
 
 
+def test_database_rejects_non_current_book_state(tmp_path):
+    store = BookEvidenceStore(tmp_path / "book.sqlite3")
+    item = observation()
+    with sqlite3.connect(store.path) as db, pytest.raises(sqlite3.IntegrityError):
+        db.execute(
+            "INSERT INTO book_evidence VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            (
+                item.evidence_id,
+                item.update_kind.value,
+                item.ticker,
+                item.market_id,
+                item.exchange_index,
+                str(item.connection_epoch),
+                item.sid,
+                item.sequence,
+                item.source_event_fingerprint,
+                BookState.GAP.value,
+                str(item.best_yes_bid),
+                str(item.best_yes_ask),
+                str(item.best_bid_size),
+                str(item.best_ask_size),
+                None,
+                item.received_at.isoformat(),
+                item.available_at.isoformat(),
+                item.price_mode.value,
+                item.structure_hash,
+                "0",
+            ),
+        )
+
+
 @pytest.mark.parametrize(
     "field,value", [("sid", True), ("sid", -1), ("sequence", True), ("sequence", -1)]
 )
@@ -201,9 +329,19 @@ def test_sid_and_sequence_validation(field, value):
         observation(**{field: value})
 
 
+@pytest.mark.parametrize("exchange_index", [True, -1])
+def test_book_evidence_exchange_index_rejects_bool_and_negative(exchange_index):
+    with pytest.raises(ShadowResearchError, match="exchange_index"):
+        observation(exchange_index=exchange_index)
+
+
 def test_timestamp_validation_and_normalization():
     offset = datetime.fromisoformat("2026-08-13T08:00:00-04:00")
     assert observation(received_at=offset).received_at == NOW
+    assert (
+        observation(received_at=NOW, available_at=NOW).received_at
+        == observation(received_at=NOW, available_at=NOW).available_at
+    )
     with pytest.raises(ShadowResearchError, match="timezone-aware"):
         observation(received_at=datetime(2026, 8, 13))
     with pytest.raises(ShadowResearchError, match="must not exceed"):

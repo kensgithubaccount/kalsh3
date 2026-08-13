@@ -11,6 +11,7 @@ from enum import StrEnum
 from typing import Any
 from uuid import UUID
 
+from services.real_time_market_data.events import BookDeltaEvent, BookSnapshotEvent
 from services.real_time_market_data.orderbook import BookState, PriceMode
 
 from .domain import ShadowResearchError
@@ -19,6 +20,46 @@ from .domain import ShadowResearchError
 class BookUpdateKind(StrEnum):
     SNAPSHOT = "SNAPSHOT"
     DELTA = "DELTA"
+
+
+def source_event_fingerprint(event: BookSnapshotEvent | BookDeltaEvent) -> str:
+    """Hash only the canonical semantics of an already-parsed source event."""
+
+    def decimal(value: Decimal) -> str:
+        rendered = format(value, "f")
+        if "." in rendered:
+            rendered = rendered.rstrip("0").rstrip(".")
+        return "0" if rendered in {"", "-0"} else rendered
+
+    common: dict[str, Any] = {
+        "ticker": event.ticker,
+        "market_id": event.market_id,
+        "sid": event.sid,
+        "sequence": event.seq,
+    }
+    if isinstance(event, BookSnapshotEvent):
+        payload = {
+            **common,
+            "update_kind": BookUpdateKind.SNAPSHOT.value,
+            "price_mode": event.mode.value,
+            "yes_levels": [[decimal(price), decimal(size)] for price, size in event.yes],
+            "no_levels": [[decimal(price), decimal(size)] for price, size in event.no],
+        }
+    elif isinstance(event, BookDeltaEvent):
+        payload = {
+            **common,
+            "update_kind": BookUpdateKind.DELTA.value,
+            "side": event.side,
+            "price": decimal(event.price),
+            "delta": decimal(event.delta),
+            "exchange_at": _utc(event.exchange_at, "exchange_at").isoformat(
+                timespec="microseconds"
+            ),
+        }
+    else:
+        raise ShadowResearchError("unsupported book source event")
+    canonical = json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=True)
+    return hashlib.sha256(canonical.encode()).hexdigest()
 
 
 def _utc(value: datetime, field: str) -> datetime:
@@ -49,6 +90,7 @@ class BookEvidenceObservation:
     connection_epoch: UUID
     sid: int
     sequence: int
+    source_event_fingerprint: str
     book_state: BookState
     best_yes_bid: Decimal | None
     best_yes_ask: Decimal | None
@@ -69,6 +111,10 @@ class BookEvidenceObservation:
         _non_negative_int(self.exchange_index, "exchange_index")
         _non_negative_int(self.sid, "sid")
         _non_negative_int(self.sequence, "sequence")
+        if len(self.source_event_fingerprint) != 64 or any(
+            character not in "0123456789abcdef" for character in self.source_event_fingerprint
+        ):
+            raise ShadowResearchError("source_event_fingerprint must be a SHA-256 hex digest")
         if not isinstance(self.connection_epoch, UUID) or self.connection_epoch.int == 0:
             raise ShadowResearchError("connection_epoch must be a non-zero UUID")
         if self.book_state is not BookState.CURRENT:

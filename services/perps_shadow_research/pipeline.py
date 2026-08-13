@@ -11,7 +11,11 @@ from services.real_time_market_data.events import BookDeltaEvent, BookSnapshotEv
 from services.real_time_market_data.manager import SubscriptionManager
 from services.real_time_market_data.orderbook import BookState
 
-from .book_evidence import BookEvidenceObservation, BookUpdateKind
+from .book_evidence import (
+    BookEvidenceObservation,
+    BookUpdateKind,
+    source_event_fingerprint,
+)
 from .domain import ShadowResearchError
 from .store import BookEvidenceStore
 
@@ -60,10 +64,21 @@ class ReadOnlyBookEvidencePipeline:
         epoch = self._epoch()
         exchange_index = self._exchange_index(event.ticker)
         received_at = self._utc(received_at, "received_at")
+        fingerprint = source_event_fingerprint(event)
+        replay = self._preflight(event, epoch, fingerprint)
+        if replay is not None:
+            return replay
         self._manager.install_snapshot(event, received_at, structure_hash)
         available_at = self._utc(self._clock(), "available_at")
         return self._persist(
-            event, BookUpdateKind.SNAPSHOT, exchange_index, epoch, received_at, available_at, None
+            event,
+            BookUpdateKind.SNAPSHOT,
+            exchange_index,
+            epoch,
+            received_at,
+            available_at,
+            None,
+            fingerprint,
         )
 
     def delta(
@@ -72,6 +87,10 @@ class ReadOnlyBookEvidencePipeline:
         epoch = self._epoch()
         exchange_index = self._exchange_index(event.ticker)
         received_at = self._utc(received_at, "received_at")
+        fingerprint = source_event_fingerprint(event)
+        replay = self._preflight(event, epoch, fingerprint)
+        if replay is not None:
+            return replay
         if not self._manager.apply_delta(event, received_at):
             return None
         available_at = self._utc(self._clock(), "available_at")
@@ -83,7 +102,21 @@ class ReadOnlyBookEvidencePipeline:
             received_at,
             available_at,
             event.exchange_at,
+            fingerprint,
         )
+
+    def _preflight(
+        self,
+        event: BookSnapshotEvent | BookDeltaEvent,
+        epoch: UUID,
+        fingerprint: str,
+    ) -> BookEvidenceObservation | None:
+        existing = self._store.get_by_source_identity(epoch, event.sid, event.seq, event.ticker)
+        if existing is None:
+            return None
+        if existing.source_event_fingerprint != fingerprint:
+            raise ShadowResearchError("book source-event logical identity collision")
+        return existing
 
     def _persist(
         self,
@@ -94,6 +127,7 @@ class ReadOnlyBookEvidencePipeline:
         received_at: datetime,
         available_at: datetime,
         exchange_at: datetime | None,
+        fingerprint: str,
     ) -> BookEvidenceObservation | None:
         book = self._manager.books.get(event.ticker)
         if book is None:
@@ -111,6 +145,7 @@ class ReadOnlyBookEvidencePipeline:
             connection_epoch=epoch,
             sid=event.sid,
             sequence=event.seq,
+            source_event_fingerprint=fingerprint,
             book_state=view.state,
             best_yes_bid=view.best_yes_bid,
             best_yes_ask=view.best_yes_ask,

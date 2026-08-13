@@ -28,6 +28,8 @@ class BookEvidenceStore:
                     connection_epoch TEXT NOT NULL,
                     sid INTEGER NOT NULL CHECK(sid >= 0),
                     sequence INTEGER NOT NULL CHECK(sequence >= 0),
+                    source_event_fingerprint TEXT NOT NULL
+                        CHECK(length(source_event_fingerprint) = 64),
                     book_state TEXT NOT NULL CHECK(book_state = 'CURRENT'),
                     best_yes_bid TEXT, best_yes_ask TEXT,
                     best_bid_size TEXT, best_ask_size TEXT,
@@ -68,6 +70,7 @@ class BookEvidenceStore:
             str(observation.connection_epoch),
             observation.sid,
             observation.sequence,
+            observation.source_event_fingerprint,
             observation.book_state.value,
             self._text(observation.best_yes_bid),
             self._text(observation.best_yes_ask),
@@ -84,7 +87,7 @@ class BookEvidenceStore:
             with self._connect() as db:
                 db.execute("BEGIN IMMEDIATE")
                 row = db.execute(
-                    "SELECT evidence_id FROM book_evidence "
+                    "SELECT evidence_id, source_event_fingerprint FROM book_evidence "
                     "WHERE connection_epoch=? AND sid=? AND sequence=? AND ticker=?",
                     (
                         str(observation.connection_epoch),
@@ -94,16 +97,27 @@ class BookEvidenceStore:
                     ),
                 ).fetchone()
                 if row is not None:
-                    if row["evidence_id"] == observation.evidence_id:
+                    if row["source_event_fingerprint"] == observation.source_event_fingerprint:
                         return False
-                    raise ShadowResearchError("book evidence logical identity collision")
+                    raise ShadowResearchError("book source-event logical identity collision")
                 db.execute(
-                    "INSERT INTO book_evidence VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                    "INSERT INTO book_evidence VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                     values,
                 )
         except sqlite3.IntegrityError as exc:
             raise ShadowResearchError("book evidence persistence rejected") from exc
         return True
+
+    def get_by_source_identity(
+        self, connection_epoch: UUID, sid: int, sequence: int, ticker: str
+    ) -> BookEvidenceObservation | None:
+        with self._connect() as db:
+            row = db.execute(
+                "SELECT evidence_id FROM book_evidence "
+                "WHERE connection_epoch=? AND sid=? AND sequence=? AND ticker=?",
+                (str(connection_epoch), sid, sequence, ticker),
+            ).fetchone()
+        return None if row is None else self.get(row["evidence_id"])
 
     def get(self, evidence_id: str) -> BookEvidenceObservation | None:
         with self._connect() as db:
@@ -125,6 +139,7 @@ class BookEvidenceStore:
             connection_epoch=UUID(row["connection_epoch"]),
             sid=row["sid"],
             sequence=row["sequence"],
+            source_event_fingerprint=row["source_event_fingerprint"],
             book_state=BookState(row["book_state"]),
             best_yes_bid=decimal(row["best_yes_bid"]),
             best_yes_ask=decimal(row["best_yes_ask"]),
