@@ -34,6 +34,7 @@ from .product import (
     GlobalProductState,
     NavSection,
     ProductSurface,
+    derive_display_status,
     derive_global_state,
     dollars,
     section_for_path,
@@ -131,7 +132,7 @@ def _layout(
     body: str,
     csrf: str = "",
     current_path: str = "/",
-    global_state: GlobalProductState = GlobalProductState.LEARNING,
+    display_status: GlobalProductState = GlobalProductState.LEARNING,
     connection_label: str = "UNKNOWN",
     sync_label: str = "Never synced",
 ) -> bytes:
@@ -157,14 +158,14 @@ def _layout(
         if len(sub_surfaces) > 1
         else ""
     )
-    state_class = global_state.lower().replace(" ", "-")
+    state_class = display_status.lower().replace(" ", "-")
     top_status = (
         f'<div class="top-status {state_class}" role=status aria-label="System status">'
         f"<span>{html.escape(connection_label)}</span>"
         f"<span>{html.escape(sync_label)}</span>"
         "<span>Trading OFF</span>"
         f'<span class=system-state><span class="status-dot" aria-hidden="true"></span>'
-        f"System {html.escape(global_state)}</span>"
+        f"System {html.escape(display_status)}</span>"
         "</div>"
     )
     return f"""<!doctype html><html lang=en><head><meta charset=utf-8><meta name=viewport content="width=device-width,initial-scale=1"><title>{html.escape(title)}</title><link rel=stylesheet href=/static/app.css></head><body><a class=skip-link href=#main-content>Skip to main content</a><header><a class=brand href=/ aria-label="Kalshi Bot home">Kalshi Bot</a><nav aria-label="Primary product navigation">{top_nav}</nav>{top_status}</header>{section_nav}<main id=main-content tabindex=-1>{body}</main><footer><strong>Safety boundary</strong><span>PRODUCTION WRITES: <strong>OFF</strong></span><span>RESEARCH INFLUENCE: NONE</span><span>Simulations are not orders</span></footer></body></html>""".encode()
@@ -260,6 +261,12 @@ class DashboardApp:
             unresolved_gaps=int(realtime["unresolved_gaps"]),
             compliance_hold=risk_summary["compliance_state"] != "CLEAR",
             globally_halted=bool(risk_summary["global_halt"]),
+        )
+        display_status = derive_display_status(
+            compliance_state=str(risk_summary["compliance_state"]),
+            globally_halted=bool(risk_summary["global_halt"]),
+            account_status=state.status,
+            stale=stale,
         )
         readiness = build_readiness(
             account_status=state.status,
@@ -423,14 +430,14 @@ class DashboardApp:
                 start,
                 "404 Not Found",
                 _layout(
-                    "Page not found", body, csrf, path, global_state, connection_label, sync_label
+                    "Page not found", body, csrf, path, display_status, connection_label, sync_label
                 ),
             )
         body += f'<form method=post action=/logout><input type=hidden name=csrf value="{csrf}"><button>Log out</button></form>'
         return self._respond(
             start,
             "200 OK",
-            _layout("Kalshi Bot", body, csrf, path, global_state, connection_label, sync_label),
+            _layout("Kalshi Bot", body, csrf, path, display_status, connection_label, sync_label),
         )
 
     def _setup(self, environ: dict[str, Any], start: StartResponse) -> Iterable[bytes]:

@@ -300,10 +300,10 @@
   small metric row, an honest opportunities table, a positions table, and a compact system status strip —
   the full nine-check readiness matrix moved to `/system` (still fully present there, unit-tested to remain
   so) rather than being deleted.
-- Account-vs-bot provenance: the current account's pre-existing positions, orders, fills, and settlements
-  are labeled "Pre-existing" everywhere they render; "Bot P&L" reads an explicit "No attributable live
-  trades yet" rather than any figure derived from those settlements, because no persisted field currently
-  attributes them to bot activity. This is enforced by dedicated tests, not just docstring intent.
+- Account-vs-bot provenance: the current account's positions, orders, fills, and settlements default to
+  "Unattributed" everywhere they render, because no persisted field proves either bot ownership or that an
+  item predates the bot; "Bot P&L" reads an explicit "No attributable live trades yet" rather than any
+  figure derived from those settlements. This is enforced by dedicated tests, not just docstring intent.
 - Four live-observed defects were corrected: (1) `build_readiness()` now takes explicit
   `universe_status`/`realtime_state` and can no longer report market-data gaps as resolved while the
   universe is `NOT_STARTED` or market data is disconnected; (2) the compliance check now takes the raw
@@ -313,6 +313,19 @@
   sufficient" text; (4) the policy-limit bar chart no longer relies on inline `style="width:...%"`, which
   `style-src 'self'` silently drops — it now renders per-row SVG using the `width` presentation attribute,
   with the CSP left unchanged and unweakened.
+- A follow-up correctness pass on this same milestone fixed four further truthfulness gaps, all confined to
+  `services/web_dashboard/` and its tests: (5) the positions table no longer hardcodes "Pre-existing" — it
+  defaults to "Unattributed" and only claims real ownership from an explicit `provenance` field, so a
+  manual trade placed after deployment can never be misattributed; (6) the Dashboard opportunities table now
+  only surfaces a candidate whose persisted `data_mode` is the existing `LIVE RESEARCH DATA` value and whose
+  `decision_state` is one of the research engine's own real affirmative states, so a synthetic, historical-
+  replay, or rejected/watch-only candidate can never render as if it were a current live signal; (7) the
+  hero no longer infers "Below target bankroll" from the still-unvalidated `portfolio_value` field — it
+  shows the raw value with a plain link to the real target-bankroll figure on Risk & Safety; (8) the top
+  status bar now uses a new presentation-only `derive_display_status()` so an unestablished (`UNKNOWN`)
+  compliance state renders as amber "NEEDS ATTENTION" rather than the same red "HALTED" as an active
+  compliance hold or an explicit global halt — `derive_global_state()` itself, and the canonical `Risk
+  state` it drives on `/risk`, are unchanged.
 - Charts remain server-rendered SVG only, real-data-only, with accessible titles/descriptions and an
   openable exact-value table; no CDN script, chart library, or inline script was added anywhere in the
   product. The stylesheet was rewritten to a dark-by-default palette using CSS custom properties, keeping

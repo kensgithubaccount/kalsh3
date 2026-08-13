@@ -7,14 +7,21 @@ caller already fetched and validated.
 
 Two rules this module exists to enforce:
 
-1. Account activity is never presented as bot activity. Every position, order,
-   and fill already on the account predates this product and carries no
-   attribution field anywhere in the read path, so every one of them is
-   labeled "Pre-existing" here — never "bot", "strategy", or "automated".
-   Bot P&L/positions/orders show as unavailable until real provenance exists.
-2. Nothing is fabricated to fill space. An empty or deferred concept gets a
-   short, honest empty state, never invented rows, invented history, or an
-   inferred number built from ambiguous fields.
+1. Account activity is never presented as bot activity, and never presented
+   with *more* confidence than the data actually supports either. Positions,
+   orders, and fills carry no ownership/provenance field anywhere in the read
+   path today, so every one of them renders as "Unattributed" — never "bot",
+   "strategy", "automated", and never "Pre-existing" either, since that is
+   also a specific ownership claim ("this predates the bot") that nothing
+   persisted currently proves. A manual trade placed after deployment would
+   be indistinguishable from an old one without a real provenance field, so
+   guessing either way is wrong. Bot P&L/positions/orders show as unavailable
+   until real provenance exists.
+2. Nothing is fabricated to fill space, and nothing is inferred from a field
+   whose exact semantics are not positively validated. An empty or deferred
+   concept gets a short, honest empty state, never invented rows, invented
+   history, or a conclusion (e.g. "below target bankroll") built by combining
+   an unvalidated field with an unrelated policy number.
 """
 
 from __future__ import annotations
@@ -25,11 +32,21 @@ from dataclasses import dataclass
 from decimal import Decimal
 from typing import Any
 
-from services.risk_engine.policy import RiskPolicy
+from services.opportunity_engine.models import DecisionState
 
 from .charts import sparkline
-from .product import decimal_or_none, dollars, status_pill
+from .product import EvidenceMode, decimal_or_none, dollars
 from .readiness import ReadinessCategory, primary_action
+
+# Only these two decision states are the research engine's own affirmative
+# candidates; REJECTED/INCOMPLETE/WATCH must never render as an "opportunity".
+_LIVE_OPPORTUNITY_DECISION_STATES = frozenset(
+    {DecisionState.RESEARCH_CANDIDATE, DecisionState.HIGH_PRIORITY_RESEARCH_CANDIDATE}
+)
+_DECISION_STATE_LABELS: dict[str, str] = {
+    DecisionState.RESEARCH_CANDIDATE: "Research",
+    DecisionState.HIGH_PRIORITY_RESEARCH_CANDIDATE: "High-priority research",
+}
 
 
 @dataclass(frozen=True, slots=True)
@@ -80,6 +97,44 @@ def _table(caption: str, headers: tuple[str, ...], rows: Sequence[tuple[str, ...
     )
 
 
+def _provenance_label(row: dict[str, Any]) -> str:
+    """Truthful per-item ownership label — never a guess in either direction.
+
+    The persisted account snapshot carries no ownership/baseline field today,
+    so every position/order/fill defaults to "Unattributed": it is neither
+    claimed as the bot's (no attribution field says so) nor asserted to
+    predate the bot (no baseline/provenance field proves that either) — a
+    manual trade placed after deployment would look identical to an old one
+    without a real field to tell them apart. This stays ready for a future
+    explicit `provenance` field ("BOT" / "PRE_EXISTING") without inventing
+    one now.
+    """
+    provenance = row.get("provenance")
+    if provenance == "BOT":
+        return "Bot owned"
+    if provenance == "PRE_EXISTING":
+        return "Pre-existing"
+    return "Unattributed"
+
+
+def _eligible_dashboard_candidates(
+    candidates: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    """Only candidates whose persisted mode/decision prove them live-research-eligible.
+
+    A SYNTHETIC/HISTORICAL-REPLAY/fixture-mode candidate, or one the research
+    engine itself rejected, marked incomplete, or is only watching, must never
+    render on the Dashboard next to "Opportunities" as if it were a current
+    live signal — that reads as unsafe/executable when it is neither.
+    """
+    return [
+        row
+        for row in candidates
+        if row.get("data_mode") == EvidenceMode.LIVE_RESEARCH_DATA
+        and row.get("decision_state") in _LIVE_OPPORTUNITY_DECISION_STATES
+    ]
+
+
 def build_status_strip(readiness: tuple[ReadinessCategory, ...], realtime_state: str) -> str:
     by_name = {category.name: category for category in readiness}
     connection_ok = by_name["Connection"].met
@@ -127,28 +182,26 @@ def build_dashboard(
     readiness: tuple[ReadinessCategory, ...],
     account_history: list[dict[str, Any]],
 ) -> str:
-    policy = RiskPolicy()
     positions = list(data.get("positions", []))
     cash_dec = decimal_or_none(data.get("cash"))
     portfolio_value_dec = decimal_or_none(data.get("portfolio_value"))
 
-    below_target = None if portfolio_value_dec is None else portfolio_value_dec < policy.bankroll
-    hero_note = ""
-    if below_target is True:
-        hero_note = status_pill("Below target bankroll", "warn")
-    elif below_target is None:
-        hero_note = status_pill("Funding status unknown", "neutral")
+    # `portfolio_value` semantics have not been positively validated (Kalshi's own
+    # materials describe it inconsistently), so nothing is inferred from it beyond
+    # showing it as-is — no bankroll comparison, no funded/not-funded conclusion.
+    # Target bankroll stays a click away on Risk & Safety.
     hero = (
         "<section class=hero-metric>"
         f"<p class=eyebrow>{html.escape(connection_headline)}</p>"
         f"<p class=hero-value>{html.escape(dollars(portfolio_value_dec))}</p>"
-        f"<p class=hero-label>Reported portfolio value{' · ' + hero_note if hero_note else ''}</p>"
+        "<p class=hero-label>Reported portfolio value · "
+        "<a class=text-link href=/risk>compare to target bankroll</a></p>"
         + _metric_row(
             (
                 MetricItem("Available cash", dollars(cash_dec)),
                 MetricItem("Bot P&L", "—", "No attributable live trades yet"),
                 MetricItem("Open risk", "Unavailable", "Portfolio risk reconciliation pending"),
-                MetricItem("Account positions", str(len(positions)), "Pre-existing"),
+                MetricItem("Account positions", str(len(positions)), "Unattributed"),
             )
         )
         + "</section>"
@@ -164,7 +217,7 @@ def build_dashboard(
         f"{sparkline('Reported portfolio value', history_points)}</section>"
     )
 
-    candidates = list(opportunities.get("candidates", []))[:5]
+    candidates = _eligible_dashboard_candidates(list(opportunities.get("candidates", [])))[:5]
     if candidates:
         rows = [
             (
@@ -173,14 +226,17 @@ def build_dashboard(
                 str(row.get("executable_price", "—")),
                 str(row.get("fair_probability", "—")),
                 str(row.get("raw_difference", "—")),
-                str(row.get("decision_state", "—")),
+                _DECISION_STATE_LABELS.get(str(row.get("decision_state", "")), "Research"),
             )
             for row in candidates
         ]
-        opportunities_body = _table(
-            "Opportunities",
-            ("Market", "Side", "Market price", "Model probability", "Edge", "Status"),
-            rows,
+        opportunities_body = (
+            _table(
+                "Opportunities",
+                ("Market", "Side", "Market price", "Model probability", "Edge", "Mode"),
+                rows,
+            )
+            + "<p class=empty-line>Research signals only — no order is authorized.</p>"
         )
     else:
         why = "" if universe.get("status") != "NOT_STARTED" else " Market universe has not started."
@@ -196,7 +252,10 @@ def build_dashboard(
 
     if positions:
         position_rows = [
-            (str(row.get("ticker") or row.get("market_ticker") or "Account item"), "Pre-existing")
+            (
+                str(row.get("ticker") or row.get("market_ticker") or "Account item"),
+                _provenance_label(row),
+            )
             for row in positions[:10]
         ]
         positions_body = _table("Positions", ("Market", "Provenance"), position_rows)
@@ -212,7 +271,7 @@ def build_dashboard(
     fills = data.get("fills", [])
     settlements = data.get("settlements", [])
     facts = [
-        f"{len(positions)} pre-existing account position(s) on file",
+        f"{len(positions)} account position(s) on file (ownership unattributed)",
         f"{len(orders)} account order(s) on file",
         f"{len(fills)} account fill(s) on file",
         f"{len(settlements)} settlement(s) on file",

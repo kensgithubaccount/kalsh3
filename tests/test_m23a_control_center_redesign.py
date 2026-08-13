@@ -397,22 +397,37 @@ def test_overview_never_calls_portfolio_value_equity_or_infers_a_composition(
     assert "chart-bar" not in body  # composition_bar's stacked-bar SVG must not render
 
 
-def test_overview_labels_hero_below_target_bankroll_when_value_is_low(
+def test_overview_never_infers_below_target_bankroll_from_portfolio_value(
     tmp_path: Path,
 ) -> None:
+    """M23B correctness pass: `portfolio_value` semantics are not positively
+    validated (see test_overview_never_calls_portfolio_value_equity_or_infers_a_composition
+    above), so comparing it against RiskPolicy.bankroll to conclude "below
+    target" is the same kind of unvalidated inference this page already
+    refuses to make for cash/positions. A low portfolio_value must not
+    produce that conclusion; it must show the raw honest number only, with a
+    link to the real policy figure on Risk & Safety."""
     store, app, token = _configured(tmp_path)
     store.refresh_succeeded(_snapshot("2026-08-01T00:00:00+00:00", "50", "50"))
     body = _get(app, "/", token).decode()
-    assert "Below target bankroll" in body
+    assert "Below target bankroll" not in body
+    assert "Not currently fundable" not in body
+    assert "Funded %" not in body
+    assert "$50.00" in body
+    assert "href=/risk" in body
 
 
-def test_overview_does_not_claim_below_target_when_portfolio_value_is_unknown(
+def test_overview_never_infers_funding_status_when_portfolio_value_is_unknown(
     tmp_path: Path,
 ) -> None:
+    """Companion to the case above: an unknown portfolio_value must not produce
+    any funding conclusion either — there is simply nothing to infer from an
+    unvalidated field, known or not."""
     _, app, token = _configured(tmp_path)
     body = _get(app, "/", token).decode()
     assert "Below target bankroll" not in body
-    assert "Funding status unknown" in body
+    assert "Funding status unknown" not in body
+    assert "Unavailable" in body
 
 
 def test_overview_shows_insufficient_history_before_two_real_snapshots(tmp_path: Path) -> None:

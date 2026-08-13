@@ -183,6 +183,36 @@ def derive_global_state(
     return GlobalProductState.LEARNING
 
 
+def derive_display_status(
+    *,
+    compliance_state: str,
+    globally_halted: bool,
+    account_status: str,
+    stale: bool,
+) -> GlobalProductState:
+    """Owner-facing top-bar severity. Presentation only — never a safety decision.
+
+    `derive_global_state` intentionally stays fail-closed: any compliance state
+    other than CLEAR (including the UNKNOWN default nothing has established yet)
+    collapses to HALTED for backend/readiness purposes, and that must not change.
+    But rendering that collapsed value in the top bar makes an unestablished
+    compliance state look exactly like an active compliance hold or an explicit
+    emergency halt, which is not true and reads as more alarming than reality.
+
+    This derives the same three-value vocabulary from the real distinction: an
+    explicit global halt or an active compliance HOLD is HALTED; an unestablished
+    (UNKNOWN) compliance state, or a stale/disconnected account, is NEEDS
+    ATTENTION; anything else is the restrained default, LEARNING. Production
+    execution being OFF never appears here — it renders separately as "Trading
+    OFF" and must never look like an infrastructure emergency on its own.
+    """
+    if globally_halted or compliance_state == "HOLD":
+        return GlobalProductState.HALTED
+    if compliance_state != "CLEAR" or stale or account_status not in {"healthy", "connected"}:
+        return GlobalProductState.NEEDS_ATTENTION
+    return GlobalProductState.LEARNING
+
+
 def dollars(value: Any) -> str:
     if value is None or value == "—":
         return "Unavailable"

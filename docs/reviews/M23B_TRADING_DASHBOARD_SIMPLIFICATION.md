@@ -77,20 +77,23 @@ short fact list, and a five-item status strip:
 
 1. **Hero** — `REPORTED PORTFOLIO VALUE` (still not called "Equity" — see
    below) as one large tabular-nums figure, with Available cash / Bot P&L /
-   Open risk / Account positions underneath. A single conditional note
-   ("Below target bankroll" or "Funding status unknown") replaces the old
-   policy-card grid.
+   Open risk / Account positions underneath, and a plain link to compare
+   against the target bankroll on Risk & Safety (see the correctness-pass
+   section below for why this replaced an inferred "Below target bankroll"
+   conclusion).
 2. **Portfolio value chart** — the real `account_snapshot_history` sparkline
    (unchanged data source from M23A), with an honest "insufficient history"
    empty state before two real points exist.
 3. **Opportunities** — a compact table (Market / Side / Market price / Model
-   probability / Edge / Status) from the same typed fields `/opportunities`
-   already renders, or "No qualified opportunities yet." with an optional
-   one-line reason. Never fabricated rows.
+   probability / Edge / Mode) built only from candidates whose persisted
+   `data_mode`/`decision_state` prove them live-research-eligible (see the
+   correctness-pass section below), or "No qualified opportunities yet." with
+   an optional one-line reason. Never fabricated rows.
 4. **Positions** — a compact table with only the fields this codebase
-   actually validates (ticker) plus an explicit **Provenance** column, always
-   "Pre-existing" — there is no bot-attribution field anywhere in the read
-   path, so nothing is ever inferred as bot-owned.
+   actually validates (ticker) plus an explicit **Provenance** column,
+   defaulting to "Unattributed" — there is no ownership field anywhere in the
+   read path, so nothing is ever inferred as bot-owned or as pre-existing
+   (see the correctness-pass section below).
 5. **Activity** — a short, honest fact list built from real current counts
    (positions/orders/fills/settlements on file, bot-attributed fills), not a
    fabricated timeline — this codebase has no persisted event log to draw a
@@ -112,9 +115,12 @@ order, or fill — the account gateway reads raw Kalshi objects with no
 provenance field. M23B's rule, enforced in `dashboard.py` and tested in
 `tests/test_m23b_dashboard_simplification.py`:
 
-- Every position shown carries `Provenance: Pre-existing` — never "bot",
-  "strategy", or "automated" language, because no field anywhere supports
-  that claim.
+- Every position shown carries `Provenance: Unattributed` by default — never
+  "bot", "strategy", or "automated" language, and (since the correctness
+  pass below) never "Pre-existing" either, because no field anywhere
+  supports either claim. `_provenance_label()` only ever returns "Bot owned"
+  or "Pre-existing" if a future explicit `provenance` field on the row says
+  so; today nothing sets that field, so every item is honestly unattributed.
 - `Bot P&L` always renders `—` with the note "No attributable live trades
   yet" — it is never computed from existing settlements, which predate this
   product and are not attributable to it.
@@ -170,6 +176,79 @@ provenance field. M23B's rule, enforced in `dashboard.py` and tested in
    `composition_bar`'s legend swatch had the same inline-style bug
    (`style="background:..."`) and is fixed the same way, with per-index CSS
    classes.
+
+## M23B correctness pass (follow-up)
+
+After the initial version of this milestone merged, a follow-up truthfulness
+pass fixed four remaining gaps, all scoped to `services/web_dashboard/` and
+its tests — no execution, signer, risk-policy, credential, autonomy,
+strategy, or forecasting file was touched.
+
+5. **Hardcoded "Pre-existing" provenance.** The Dashboard positions table and
+   hero metric previously labeled every account position "Pre-existing"
+   unconditionally. That happened to match the currently observed positions,
+   but the persisted account snapshot carries no baseline/ownership field
+   that actually proves a position predates the bot — a manual trade placed
+   after deployment would have been mislabeled "Pre-existing" exactly the
+   same way. `dashboard.py: _provenance_label()` now defaults every
+   position/order/fill to **"Unattributed"** and only ever returns "Bot
+   owned" or "Pre-existing" if a row carries a real, explicit `provenance`
+   field ("BOT" / "PRE_EXISTING") — which nothing in this codebase sets yet.
+   `Bot P&L` stays `—` / "No attributable live trades yet", unchanged,
+   because that was already correct. Full M23 account
+   reconciliation/provenance is explicitly **not** implemented here; this
+   only removes a claim the current data cannot support.
+6. **Unfiltered opportunity candidates on the Dashboard.** The Dashboard
+   opportunities table previously rendered the first five persisted
+   `opportunity_candidate_ui` rows regardless of their `data_mode` or
+   `decision_state`, so a `SYNTHETIC TEST` or `HISTORICAL REPLAY` fixture row
+   could render next to "Opportunities" indistinguishably from a real live
+   signal. `dashboard.py: _eligible_dashboard_candidates()` now only surfaces
+   a candidate when both its persisted `data_mode` equals the existing
+   `EvidenceMode.LIVE_RESEARCH_DATA` value (from `product.py` — no new
+   literal was invented) **and** its `decision_state` is one of the research
+   engine's own two affirmative states, `DecisionState.RESEARCH_CANDIDATE` or
+   `DecisionState.HIGH_PRIORITY_RESEARCH_CANDIDATE` (from
+   `services.opportunity_engine.models` — the domain's real enum, not a
+   Dashboard-invented one). Rejected/incomplete/watch-only candidates, and
+   any non-live data mode, never render as an "opportunity" regardless of how
+   the row looks otherwise. Eligible rows show a **Mode** column ("Research"
+   / "High-priority research") and a fixed line — "Research signals only — no
+   order is authorized." — so nothing implies executability. Today, with
+   market data disconnected and the universe not started, no candidate is
+   ever eligible, so the Dashboard still shows the honest empty state; the
+   filter exists for when real live-mode research candidates start existing.
+7. **`portfolio_value` → bankroll inference.** The hero previously computed
+   `portfolio_value < RiskPolicy.bankroll` and rendered "Below target
+   bankroll" or "Funding status unknown" — a semantic conclusion built from
+   the same `portfolio_value` field the Dashboard elsewhere refuses to treat
+   as validated account equity (see "never calls portfolio_value equity"
+   above). That inference is removed entirely: the hero now shows only the
+   raw reported value plus a plain, non-judgmental link — "compare to target
+   bankroll" — to `/risk`, where the real `Target bankroll` figure already
+   lives. `RiskPolicy` is no longer imported by `dashboard.py` at all.
+8. **Top-bar severity conflated an unresolved state with an active
+   emergency.** The top status bar's color/class came directly from
+   `derive_global_state()`, which intentionally (and correctly, for backend
+   fail-closed purposes) collapses any non-`CLEAR` compliance state —
+   including the store's own `UNKNOWN` default, meaning nothing has been
+   established yet — into `HALTED`. Rendering that in the top bar meant a
+   freshly configured install, before anything has gone wrong, showed the
+   same red "System HALTED" as an active compliance `HOLD` or an explicit
+   global halt. `derive_global_state()` itself is **unchanged** — it still
+   backs `/risk`'s canonical "Risk state" and every readiness/fail-closed
+   decision exactly as before. A new, presentation-only function,
+   `product.py: derive_display_status()`, drives only the top bar: an
+   explicit global halt or an active compliance `HOLD` is `HALTED` (red); an
+   `UNKNOWN` compliance state or a stale/disconnected account is `NEEDS
+   ATTENTION` (amber); anything else is the restrained default, `LEARNING`.
+   Production execution being `OFF` is not a parameter to this function at
+   all — it keeps rendering separately as the neutral "Trading OFF" chip and
+   never contributes to the severity color. Verified visually: a freshly
+   seeded install (matching the realistic local fixture described under
+   Testing below) now shows an amber "System NEEDS ATTENTION" top bar
+   instead of a red "System HALTED" one, while `/risk` still correctly shows
+   canonical `Risk state: HALTED` underneath.
 
 ## Accessibility
 
@@ -297,7 +376,7 @@ added. No secrets were requested, logged, or exposed.
 
 ## Testing
 
-`tests/test_m23b_dashboard_simplification.py` (19 tests) covers: exactly five
+`tests/test_m23b_dashboard_simplification.py` (34 tests) covers: exactly five
 top-level nav sections with no deep-page labels leaking into the header,
 every legacy/deep page (`SURFACES` + `ADVANCED_SURFACES`) still returning
 200, the new hubs linking to their sub-pages, the full readiness matrix still
@@ -305,20 +384,49 @@ present and complete on `/system`, the primary-action typography fix, the
 disconnected-market-data/NOT_STARTED-universe scenario rendering as not-ready
 (and the positive ACTIVE/HEALTHY case rendering as ready), Bot P&L staying
 unavailable, honest empty states for opportunities, exact (not fabricated)
-sparkline point counts, no inferred cash/position split, pre-existing
-positions never labeled bot-generated, policy configuration still reachable
-on `/risk`, the CSP header byte-for-byte unchanged, no inline `<script>`
-anywhere, and the dark-theme/contrast/overflow-containment CSS hooks.
+sparkline point counts, no inferred cash/position split, positions never
+labeled bot-generated, policy configuration still reachable on `/risk`, the
+CSP header byte-for-byte unchanged, no inline `<script>` anywhere, and the
+dark-theme/contrast/overflow-containment CSS hooks.
+
+The **correctness-pass** tests (added in the follow-up covered above) add:
+a position/order/fill with no `provenance` field renders "Unattributed", not
+"Pre-existing" or "Bot owned" (and a position that does carry an explicit
+`provenance` field is honored); a `SYNTHETIC TEST`-mode candidate and a
+`HISTORICAL REPLAY`-mode candidate never render on the Dashboard even when
+seeded directly into `opportunity_candidate_ui`; a `REJECTED`/`WATCH`
+candidate never renders even with a live `data_mode`; an eligible
+`LIVE RESEARCH DATA` + `RESEARCH_CANDIDATE` row does render, labeled
+"Research", with "no order is authorized" present and "trade authorized" /
+"executable" absent; a low `portfolio_value` never produces "Below target
+bankroll"/"Not currently fundable"/"Funded %"; `derive_display_status()` is
+unit-tested directly for all four owner-facing outcomes (`UNKNOWN` →
+`NEEDS_ATTENTION`, `HOLD` → `HALTED`, explicit global halt → `HALTED`,
+stale/disconnected → `NEEDS_ATTENTION`, fully clear → `LEARNING`); a freshly
+configured store (default `UNKNOWN` compliance) does **not** render the top
+bar as `halted`; an explicit `ComplianceState.HOLD` and an explicit global
+halt (set via the real `AuthorizationStore`) **do** render it as `halted`;
+and `/risk` still shows the canonical, unweakened `Risk state: HALTED` in
+that same freshly configured scenario, proving `derive_global_state()` was
+not touched.
+
 `tests/test_m23a_control_center_redesign.py` was updated in the small number
 of places that pinned now-intentionally-redesigned behavior (nav shape,
 policy cards on Dashboard, the full readiness matrix on Dashboard, the
-decision banner), each with an inline comment explaining why and pointing at
-the new test file. Every other pre-existing test — escaping, security
-headers, CSRF, session handling, account-gateway truthfulness, the M22/M23A
-provenance and non-mutation guarantees — passes unchanged.
+decision banner, and — in the correctness pass — the bankroll-inference
+pills), each with an inline comment explaining why and pointing at the new
+test file. Every other pre-existing test — escaping, security headers, CSRF,
+session handling, account-gateway truthfulness, the M22/M23A provenance and
+non-mutation guarantees — passes unchanged.
 
 ## Deferred work
 
+- Full M23 account reconciliation/provenance (a real `provenance` field
+  populated from actual ownership evidence, not just read by the Dashboard if
+  present) — the correctness pass only stopped claiming "Pre-existing"
+  without proof; it does not build the reconciliation system that would let
+  the Dashboard honestly say "Pre-existing" or "Bot owned" for a specific
+  position.
 - Per-position validated financial fields (quantity, cost, current value,
   potential payout) — the account gateway's position rows are raw,
   unvalidated Kalshi objects; adding typed fields to the Positions table
