@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import json
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from uuid import uuid4
 
@@ -15,7 +15,11 @@ from services.perps_shadow_research.perps_events import (
     PerpsBookSnapshotEvent,
     PerpsTickerEvent,
 )
-from services.perps_shadow_research.perps_evidence import perps_book_fingerprint
+from services.perps_shadow_research.perps_evidence import (
+    PerpsMarketStateObservation,
+    perps_book_fingerprint,
+    perps_ticker_fingerprint,
+)
 from services.perps_shadow_research.perps_metadata import parse_perps_market
 
 NOW = datetime(2026, 8, 13, 12, tzinfo=UTC)
@@ -94,6 +98,20 @@ def test_market_metadata_exactness_hashes_and_perps_boundary() -> None:
     assert reordered.perps_contract_hash == item.perps_contract_hash
     assert reordered.market_metadata_hash == item.market_metadata_hash
     assert market(tick_size="1.0").perps_contract_hash != item.perps_contract_hash
+
+
+@pytest.mark.parametrize("fractional", [False, True])
+def test_book_quantity_uses_fixed_point_granularity_not_fractional_flag(
+    fractional: bool,
+) -> None:
+    item = market(fractional_trading_enabled=fractional)
+    assert item.quantity_valid(Decimal("1.55"))
+    assert item.quantity_valid(Decimal("0.01"))
+    assert item.quantity_valid(Decimal("0"))
+    assert not item.quantity_valid(Decimal("0.001"))
+    assert not item.quantity_valid(Decimal("1.551"))  # exact rejection; never rounded
+    assert not item.quantity_valid(Decimal("-0.01"))
+    assert not item.quantity_valid(Decimal("NaN"))
 
 
 @pytest.mark.parametrize(
@@ -227,6 +245,17 @@ def test_ticker_exact_fields_independent_timestamps_and_no_sequence() -> None:
     assert event.settlement_mark_price and event.settlement_mark_price.ts_ms == 91
     assert event.liquidation_mark_price and event.liquidation_mark_price.ts_ms == 92
     assert not hasattr(event, "sequence")
+
+
+def test_ticker_source_fingerprint_excludes_local_clocks() -> None:
+    event = PerpsTickerEvent.parse(ticker(), market())
+    epoch = uuid4()
+    first = PerpsMarketStateObservation.create(event, market(), epoch, NOW, NOW)
+    later = PerpsMarketStateObservation.create(
+        event, market(), epoch, NOW + timedelta(seconds=1), NOW + timedelta(seconds=2)
+    )
+    assert first.source_fingerprint == later.source_fingerprint == perps_ticker_fingerprint(event)
+    assert first.evidence_id != later.evidence_id
 
 
 def test_margin_protocol_is_minimal_and_ambiguity_fails_closed() -> None:

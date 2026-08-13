@@ -21,6 +21,7 @@ from .perps_evidence import (
     PerpsBookEvidenceObservation,
     PerpsMarketStateObservation,
     perps_book_fingerprint,
+    perps_ticker_fingerprint,
 )
 from .perps_metadata import PerpsMarketMetadata
 from .perps_orderbook import PerpsBookState, PerpsSequencedBook
@@ -50,6 +51,8 @@ class PerpsHealthSnapshot:
     replay_count: int
     collision_count: int
     gap_count: int
+    crossed_count: int
+    stale_count: int
     malformed_count: int
     persistence_failure_count: int
     reconnect_count: int
@@ -109,6 +112,7 @@ class OfflinePerpsEvidenceRuntime:
         self._last_delta: datetime | None = None
         self._last_ticker: datetime | None = None
         self._rows = self._replays = self._collisions = self._gaps = self._malformed = 0
+        self._crossed = self._stale = 0
         self._persistence_failures = self._reconnects = 0
         self._lag_ns: int | None = None
         self.store.append_metadata(market)
@@ -242,6 +246,16 @@ class OfflinePerpsEvidenceRuntime:
         available = self.clock().astimezone(UTC)
         view = self.book.view(available)
         if not view.usable:
+            if view.state is PerpsBookState.CROSSED:
+                self._crossed += 1
+                self.state = PerpsRuntimeState.RECONNECT_REQUIRED
+            elif view.state is PerpsBookState.STALE:
+                self._stale += 1
+                self.book.mark_stale()
+                self.state = PerpsRuntimeState.RECONNECT_REQUIRED
+            else:
+                # A source-valid empty snapshot is waiting for a usable level.
+                self.state = PerpsRuntimeState.SUBSCRIBING
             return None
         if self.epoch is None:
             raise ShadowResearchError("missing Perps connection epoch")
@@ -263,11 +277,23 @@ class OfflinePerpsEvidenceRuntime:
             self.state = PerpsRuntimeState.HEALTHY
         return item
 
-    def _ticker(self, event: PerpsTickerEvent, frame: ReceivedFrame) -> PerpsMarketStateObservation:
+    def _ticker(
+        self, event: PerpsTickerEvent, frame: ReceivedFrame
+    ) -> PerpsMarketStateObservation | None:
         if event.sid != self.ticker_sid:
             raise ShadowResearchError("ticker SID mismatch")
         if self.epoch is None:
             raise ShadowResearchError("missing Perps connection epoch")
+        fingerprint = perps_ticker_fingerprint(event)
+        if (
+            self.store.get_market_state_by_source(
+                self.epoch, event.sid, event.ticker, event.ts_ms, fingerprint
+            )
+            is not None
+        ):
+            # Replays are observed but are not newly accepted ticker evidence.
+            self._replays += 1
+            return None
         item = PerpsMarketStateObservation.create(
             event, self.market, self.epoch, frame.received_at, self.clock().astimezone(UTC)
         )
@@ -302,6 +328,8 @@ class OfflinePerpsEvidenceRuntime:
             self._replays,
             self._collisions,
             self._gaps,
+            self._crossed,
+            self._stale,
             self._malformed,
             self._persistence_failures,
             self._reconnects,

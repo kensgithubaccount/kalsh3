@@ -126,6 +126,12 @@ deltas feed a dedicated `PerpsSequencedBook`; crossed, stale, or gapped books ar
 the current Perps AsyncAPI has no `get_snapshot` action, a sequence gap requires a new connection
 epoch and fresh snapshot.
 
+Perps book quantities use finite, nonnegative exact Decimals at 0.01-contract granularity, with no
+rounding. `fractional_trading_enabled` remains metadata and structural provenance, but M25B1 does
+not infer whole-contract-only book sizes when it is false. Ticker source replay identity combines
+epoch, SID, ticker, exchange timestamp, and the exact semantic source fingerprint; local receipt
+and availability times are excluded.
+
 Dedicated append-only `perps_market_metadata`, `perps_book_evidence`, and `perps_market_state`
 tables retain exact Decimal text and enforce `production_influence = '0'`. Optional server-supplied
 client-order and subaccount fields are recognized only as ephemeral presence flags and never enter

@@ -170,10 +170,10 @@ class PerpsMarketMetadata:
         return self.status == "active" and (self.schedule is None or self.schedule.is_open)
 
     def quantity_valid(self, quantity: Decimal) -> bool:
-        if quantity < 0:
+        """Validate the documented fixed-point Perps book quantity contract."""
+        if not quantity.is_finite() or quantity < 0:
             return False
-        granularity = Decimal("0.01") if self.fractional_trading_enabled else Decimal("1")
-        return quantity % granularity == 0
+        return quantity % Decimal("0.01") == 0
 
     def price_on_tick(self, price: Decimal) -> bool:
         return price > 0 and price % self.tick_size == 0

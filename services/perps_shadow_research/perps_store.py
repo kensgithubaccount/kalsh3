@@ -85,10 +85,16 @@ class PerpsEvidenceStore:
                     funding_rate TEXT, funding_observed_ts_ms INTEGER, next_funding_time_ms INTEGER,
                     market_metadata_hash TEXT NOT NULL,
                     production_influence TEXT NOT NULL DEFAULT '0' CHECK(production_influence='0'),
+                    UNIQUE(connection_epoch, sid, ticker, ticker_ts_ms, source_fingerprint),
                     FOREIGN KEY(market_metadata_hash)
                         REFERENCES perps_market_metadata(market_metadata_hash)
                 );
             """)
+            db.execute(
+                "CREATE UNIQUE INDEX IF NOT EXISTS perps_market_state_source_replay "
+                "ON perps_market_state(connection_epoch, sid, ticker, ticker_ts_ms, "
+                "source_fingerprint)"
+            )
             for table in self.TABLES:
                 db.executescript(f"""
                     CREATE TRIGGER IF NOT EXISTS {table}_no_update BEFORE UPDATE ON {table}
@@ -197,6 +203,18 @@ class PerpsEvidenceStore:
         return True
 
     def append_market_state(self, item: PerpsMarketStateObservation) -> bool:
+        if (
+            self.get_market_state_by_source(
+                item.connection_epoch,
+                item.sid,
+                item.ticker,
+                item.ticker_ts_ms,
+                item.source_fingerprint,
+            )
+            is not None
+        ):
+            return False
+
         def mark(value: Any) -> tuple[str | None, int | None]:
             return (None, None) if value is None else (self._text(value.price), value.ts_ms)
 
@@ -237,14 +255,30 @@ class PerpsEvidenceStore:
             item.market_metadata_hash,
             "0",
         )
-        return self._insert_idempotent(
-            "perps_market_state",
-            "evidence_id",
-            item.evidence_id,
-            "INSERT INTO perps_market_state VALUES "
-            "(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
-            values,
-        )
+        try:
+            with self._connect() as db:
+                db.execute("BEGIN IMMEDIATE")
+                row = db.execute(
+                    "SELECT 1 FROM perps_market_state WHERE connection_epoch=? AND sid=? "
+                    "AND ticker=? AND ticker_ts_ms=? AND source_fingerprint=?",
+                    (
+                        str(item.connection_epoch),
+                        item.sid,
+                        item.ticker,
+                        item.ticker_ts_ms,
+                        item.source_fingerprint,
+                    ),
+                ).fetchone()
+                if row is not None:
+                    return False
+                db.execute(
+                    "INSERT INTO perps_market_state VALUES "
+                    "(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                    values,
+                )
+        except sqlite3.Error as exc:
+            raise ShadowResearchError("Perps market-state persistence rejected") from exc
+        return True
 
     def _insert_idempotent(
         self, table: str, key: str, value: str, statement: str, values: tuple[Any, ...]
@@ -273,6 +307,22 @@ class PerpsEvidenceStore:
                 "SELECT * FROM perps_book_evidence "
                 "WHERE connection_epoch=? AND sid=? AND sequence=? AND ticker=?",
                 (str(epoch), sid, sequence, ticker),
+            ).fetchone()
+        return row if isinstance(row, sqlite3.Row) else None
+
+    def get_market_state_by_source(
+        self,
+        epoch: UUID,
+        sid: int,
+        ticker: str,
+        ticker_ts_ms: int,
+        source_fingerprint: str,
+    ) -> sqlite3.Row | None:
+        with self._connect() as db:
+            row = db.execute(
+                "SELECT * FROM perps_market_state WHERE connection_epoch=? AND sid=? "
+                "AND ticker=? AND ticker_ts_ms=? AND source_fingerprint=?",
+                (str(epoch), sid, ticker, ticker_ts_ms, source_fingerprint),
             ).fetchone()
         return row if isinstance(row, sqlite3.Row) else None
 

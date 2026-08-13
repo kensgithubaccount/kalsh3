@@ -197,6 +197,117 @@ def test_replay_collision_and_gap_before_mutation(tmp_path: Path) -> None:
     assert "get_snapshot" not in str(gapped.transport.sent)
 
 
+def test_ticker_source_replay_identity_and_epoch_scope(tmp_path: Path) -> None:
+    runtime = app(tmp_path)
+    first_epoch = connect(runtime)
+    source = ticker()
+    first = runtime.process(frame(source), connection_epoch=first_epoch)
+    assert first
+    last_ticker = runtime.health().last_ticker_at
+
+    # Local receipt and availability times are not source identity.
+    runtime.clock = lambda: NOW + timedelta(seconds=2)
+    assert runtime.process(frame(source, 1000), connection_epoch=first_epoch) is None
+    assert runtime.store.count("perps_market_state") == 1
+    assert runtime.health().replay_count == 1
+    assert runtime.health().rows_written == 1
+    assert runtime.health().last_ticker_at == last_ticker
+
+    # The exchange timestamp is coalesced state, not a sequence or unique identity.
+    changed = ticker()
+    assert isinstance(changed["msg"], dict)
+    changed["msg"]["bid_size_fp"] = "3.01"
+    second = runtime.process(frame(changed, 1000), connection_epoch=first_epoch)
+    assert second
+    assert runtime.store.count("perps_market_state") == 2
+    assert runtime.health().collision_count == 0
+
+    # A distinct source state at the exact same local clock instant is also distinct.
+    changed_again = ticker()
+    assert isinstance(changed_again["msg"], dict)
+    changed_again["msg"]["ask_size_fp"] = "4.01"
+    third = runtime.process(frame(changed_again, 1000), connection_epoch=first_epoch)
+    assert third
+    assert runtime.store.count("perps_market_state") == 3
+
+    runtime.disconnect()
+    second_epoch = connect(runtime)
+    assert second_epoch != first_epoch
+    assert runtime.process(frame(source, 1000), connection_epoch=second_epoch)
+    assert runtime.store.count("perps_market_state") == 4
+
+
+def test_crossed_book_forces_reconnect_without_repair_or_evidence(tmp_path: Path) -> None:
+    runtime = app(tmp_path)
+    epoch = connect(runtime)
+    crossed = snapshot(bid=[["102", "1"]])
+    assert runtime.process(frame(crossed), connection_epoch=epoch) is None
+    assert runtime.book.bids == {Decimal("102"): Decimal("1")}
+    assert runtime.book.asks == {Decimal("101.00"): Decimal("3.00")}
+    assert runtime.book.state is PerpsBookState.CROSSED
+    assert runtime.store.count("perps_book_evidence") == 0
+    assert runtime.state is PerpsRuntimeState.RECONNECT_REQUIRED
+    assert runtime.health().crossed_count == 1
+    assert runtime.health().last_snapshot_at is None
+    assert runtime.process(frame(delta()), connection_epoch=epoch) is None
+    assert runtime.store.count("perps_book_evidence") == 0
+
+    runtime.disconnect()
+    new_epoch = connect(runtime)
+    assert new_epoch != epoch and runtime.book.state is PerpsBookState.STALE
+    assert runtime.process(frame(delta()), connection_epoch=new_epoch) is None
+    assert runtime.state is PerpsRuntimeState.RECONNECT_REQUIRED
+
+
+def test_contiguous_crossing_delta_forces_reconnect_and_preserves_source(tmp_path: Path) -> None:
+    runtime = app(tmp_path)
+    epoch = connect(runtime)
+    assert runtime.process(frame(snapshot()), connection_epoch=epoch)
+    crossing = delta(price="102", delta="1", side="bid")
+    assert runtime.process(frame(crossing, 1), connection_epoch=epoch) is None
+    assert runtime.book.bids[Decimal("102")] == Decimal("1")
+    assert runtime.book.asks[Decimal("101.00")] == Decimal("3.00")
+    health = runtime.health()
+    assert health.state is PerpsRuntimeState.RECONNECT_REQUIRED
+    assert health.crossed_count == 1
+    assert health.last_delta_at is None
+    assert runtime.store.count("perps_book_evidence") == 1
+
+
+def test_stale_and_empty_books_never_claim_healthy_evidence(tmp_path: Path) -> None:
+    stale = app(tmp_path / "stale")
+    stale.clock = lambda: NOW + timedelta(seconds=31)
+    stale_epoch = connect(stale)
+    assert stale.process(frame(snapshot()), connection_epoch=stale_epoch) is None
+    assert stale.state is PerpsRuntimeState.RECONNECT_REQUIRED
+    assert stale.book.state is PerpsBookState.STALE
+    assert stale.health().stale_count == 1
+    assert stale.health().last_snapshot_at is None
+    assert stale.store.count("perps_book_evidence") == 0
+
+    stale_after_healthy = app(tmp_path / "stale-after-healthy")
+    healthy_epoch = connect(stale_after_healthy)
+    assert stale_after_healthy.process(frame(snapshot()), connection_epoch=healthy_epoch)
+    assert stale_after_healthy.state is PerpsRuntimeState.HEALTHY
+    stale_after_healthy.clock = lambda: NOW + timedelta(seconds=31)
+    assert stale_after_healthy.process(frame(delta(), 1), connection_epoch=healthy_epoch) is None
+    assert stale_after_healthy.state is PerpsRuntimeState.RECONNECT_REQUIRED
+    assert stale_after_healthy.health().stale_count == 1
+    assert stale_after_healthy.health().last_delta_at is None
+    assert stale_after_healthy.store.count("perps_book_evidence") == 1
+
+    empty = app(tmp_path / "empty")
+    empty_epoch = connect(empty)
+    assert empty.process(frame(snapshot(bid=[], ask=[])), connection_epoch=empty_epoch) is None
+    assert empty.book.state is PerpsBookState.CURRENT
+    assert empty.state is PerpsRuntimeState.SUBSCRIBING
+    assert empty.health().last_snapshot_at is None
+    assert empty.store.count("perps_book_evidence") == 0
+    assert empty.process(frame(delta(), 1), connection_epoch=empty_epoch)
+    assert empty.state is PerpsRuntimeState.HEALTHY
+    assert empty.health().last_delta_at == NOW + timedelta(milliseconds=1)
+
+
 def test_delta_before_snapshot_and_structural_metadata_change(tmp_path: Path) -> None:
     runtime = app(tmp_path)
     epoch = connect(runtime)
