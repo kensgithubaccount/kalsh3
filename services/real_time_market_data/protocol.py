@@ -117,7 +117,8 @@ class ProtocolState:
             self.errors.append(str(message or "protocol error"))
             return None
         if kind == "subscribed":
-            sid = raw.get("sid")
+            message = raw.get("msg")
+            sid = message.get("sid") if isinstance(message, dict) else None
             if not isinstance(sid, int) or pending.channel is None:
                 raise ProtocolError("malformed subscribed response")
             subscription = Subscription(

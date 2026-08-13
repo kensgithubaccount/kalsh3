@@ -19,6 +19,9 @@ class BookEvidenceStore:
         self.path = Path(path)
         self.path.parent.mkdir(parents=True, exist_ok=True)
         with self._connect() as db:
+            result = db.execute("PRAGMA quick_check").fetchone()
+            if result is None or result[0] != "ok":
+                raise ShadowResearchError("book evidence database integrity check failed")
             db.executescript("""
                 CREATE TABLE IF NOT EXISTS book_evidence (
                     evidence_id TEXT PRIMARY KEY,
@@ -48,6 +51,10 @@ class BookEvidenceStore:
     def _connect(self) -> sqlite3.Connection:
         db = sqlite3.connect(self.path, timeout=30)
         db.row_factory = sqlite3.Row
+        db.execute("PRAGMA journal_mode=WAL")
+        db.execute("PRAGMA synchronous=FULL")
+        db.execute("PRAGMA busy_timeout=30000")
+        db.execute("PRAGMA foreign_keys=ON")
         return db
 
     @staticmethod
@@ -104,7 +111,7 @@ class BookEvidenceStore:
                     "INSERT INTO book_evidence VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                     values,
                 )
-        except sqlite3.IntegrityError as exc:
+        except sqlite3.Error as exc:
             raise ShadowResearchError("book evidence persistence rejected") from exc
         return True
 

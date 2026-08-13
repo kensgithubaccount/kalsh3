@@ -66,7 +66,7 @@ def test_subscription_commands_responses_and_sid_command_separation() -> None:
         "A",
         "B",
     ]
-    subscription = state.response({"id": command["id"], "type": "subscribed", "sid": 91})
+    subscription = state.response({"id": command["id"], "type": "subscribed", "msg": {"sid": 91}})
     assert subscription and subscription.sid == 91 and subscription.command_id != 91
     add = state.update(91, "add_markets", ("C",))
     assert add["params"]["action"] == "add_markets"

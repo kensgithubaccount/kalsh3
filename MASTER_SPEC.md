@@ -1779,6 +1779,18 @@ remain separate; portfolio-margin fields remain nullable and uninferred. This mi
 execution, orders, sizing, routing, credentials, networking, or write capability, and enables no
 perps trading.
 
+## M25 — Live Read-Only Evidence Collection
+
+Permit a future authenticated READ-ONLY market-data connection for evidence collection while
+preserving `production_influence == 0`: no execution, orders, sizing, routing, amend/cancel, risk
+authorization changes, canary/autonomy, `services.learning` connection, production-write
+credential, or account funding. M25A is a completely offline read-only evidence runtime using
+deterministic scripted transport frames. It makes no external network calls, uses no real
+credentials, activates no deployment or live collector, implements no concrete production
+WebSocket connection, and remains OFF by default. A later M25B must derive and validate live
+`exchange_index`, `price_level_structure`, and `price_ranges` metadata from the public
+`GET /markets/{ticker}` endpoint rather than treating an operator manifest as authoritative.
+
 Do not wait for user confirmation between milestones.
 
 ---
