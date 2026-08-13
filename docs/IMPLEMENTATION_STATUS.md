@@ -38,6 +38,7 @@
 | M22 Read-Only Unrestricted-Key Compatibility | Complete (offline verified) | API-key enrollment accepts absent/null/zero subaccount, rejects all other shapes; runtime subaccount=0 targeting and GET/HEAD-only surface unchanged; live production-read retry pending |
 | M23A Control Center UX, Visualization & Maintainability Audit | Complete (offline verified) | State-derived connection labeling, readiness checklist incl. evidence sufficiency, actual-vs-policy capital split with deferred (not inferred) composition, real-data-only SVG charts, navigation regrouping, presentation-layer refactor; no execution/signer/risk-policy files touched; browser visual QA desktop/tablet/mobile |
 | M23B Trading Dashboard Simplification | Complete (offline verified) | Five-section navigation preserving every legacy route, redesigned dark compact Dashboard (hero value, real-history chart, opportunities/positions tables, status strip), full readiness matrix relocated to System, Account-vs-Bot provenance labeling, CSP-safe SVG limit-bar fix, compliance/contradiction/typography corrections; no execution/signer/risk-policy files touched; browser visual QA desktop/tablet/mobile |
+| Perps shadow research | Targeted offline verification partial | Pytest 12 passed; Ruff unavailable in configured environment. Research-only immutable observations, separate directional leverage, nullable portfolio margin, fail-closed UTC edge decay; production influence NONE |
 
 ## Runtime truth
 
