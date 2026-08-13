@@ -37,6 +37,7 @@
 | M21 Live Production-Read API Contract Correction | Complete (offline/current-shape verified) | Correct API-key identity/scope, integer-cent balance, nested limits and safe setup errors; live production-read retry pending |
 | M22 Read-Only Unrestricted-Key Compatibility | Complete (offline verified) | API-key enrollment accepts absent/null/zero subaccount, rejects all other shapes; runtime subaccount=0 targeting and GET/HEAD-only surface unchanged; live production-read retry pending |
 | M23A Control Center UX, Visualization & Maintainability Audit | Complete (offline verified) | State-derived connection labeling, readiness checklist incl. evidence sufficiency, actual-vs-policy capital split with deferred (not inferred) composition, real-data-only SVG charts, navigation regrouping, presentation-layer refactor; no execution/signer/risk-policy files touched; browser visual QA desktop/tablet/mobile |
+| M23B Trading Dashboard Simplification | Complete (offline verified) | Five-section navigation preserving every legacy route, redesigned dark compact Dashboard (hero value, real-history chart, opportunities/positions tables, status strip), full readiness matrix relocated to System, Account-vs-Bot provenance labeling, CSP-safe SVG limit-bar fix, compliance/contradiction/typography corrections; no execution/signer/risk-policy files touched; browser visual QA desktop/tablet/mobile |
 
 ## Runtime truth
 
@@ -281,3 +282,61 @@
   read-only; no credentials were requested or used. Pre-existing account positions/fills are never labeled
   as bot-generated absent explicit provenance — the product still renders only the raw reconciled fields it
   is given.
+
+## M23B acceptance
+
+- Mission was explicitly experience simplification, not system simplification: no `services/risk_engine`,
+  `services/production_execution`, `services/supervised_canary`, `services/bounded_autonomy`, or
+  `services/kalshi_account_gateway` file was touched. See
+  `docs/reviews/M23B_TRADING_DASHBOARD_SIMPLIFICATION.md` for the full before/after information
+  architecture, provenance rules, and screenshots.
+- Primary navigation collapsed from a flat twelve-link list to five top-level sections (Dashboard, Markets,
+  Activity, Strategy, System) plus a visible secondary nav per section; a new
+  `assert_navigation_covers_all_surfaces()` invariant and a reachability test fail closed if any existing
+  deep route (`/orders`, `/portfolio`, `/reports`, `/learning`, `/sources`, `/forecasting`, `/backtests`,
+  `/risk`, `/system`, `/advanced`, `/opportunities`, `/breaking`, `/markets`) ever stopped being reachable.
+  No route was removed or renamed.
+- The Dashboard was rebuilt around one hero reported-portfolio-value figure, one real-history sparkline, a
+  small metric row, an honest opportunities table, a positions table, and a compact system status strip —
+  the full nine-check readiness matrix moved to `/system` (still fully present there, unit-tested to remain
+  so) rather than being deleted.
+- Account-vs-bot provenance: the current account's positions, orders, fills, and settlements default to
+  "Unattributed" everywhere they render, because no persisted field proves either bot ownership or that an
+  item predates the bot; "Bot P&L" reads an explicit "No attributable live trades yet" rather than any
+  figure derived from those settlements. This is enforced by dedicated tests, not just docstring intent.
+- Four live-observed defects were corrected: (1) `build_readiness()` now takes explicit
+  `universe_status`/`realtime_state` and can no longer report market-data gaps as resolved while the
+  universe is `NOT_STARTED` or market data is disconnected; (2) the compliance check now takes the raw
+  compliance state string and distinguishes "established and clear" from "not yet established" from an
+  active hold, instead of a collapsed boolean; (3) the primary-action panel now renders eyebrow/title/detail
+  as separate block elements, fixing the concatenated "What needs you mostRequired real evidence
+  sufficient" text; (4) the policy-limit bar chart no longer relies on inline `style="width:...%"`, which
+  `style-src 'self'` silently drops — it now renders per-row SVG using the `width` presentation attribute,
+  with the CSP left unchanged and unweakened.
+- A follow-up correctness pass on this same milestone fixed four further truthfulness gaps, all confined to
+  `services/web_dashboard/` and its tests: (5) the positions table no longer hardcodes "Pre-existing" — it
+  defaults to "Unattributed" and only claims real ownership from an explicit `provenance` field, so a
+  manual trade placed after deployment can never be misattributed; (6) the Dashboard opportunities table now
+  only surfaces a candidate whose persisted `data_mode` is the existing `LIVE RESEARCH DATA` value and whose
+  `decision_state` is one of the research engine's own real affirmative states, so a synthetic, historical-
+  replay, or rejected/watch-only candidate can never render as if it were a current live signal; (7) the
+  hero no longer infers "Below target bankroll" from the still-unvalidated `portfolio_value` field — it
+  shows the raw value with a plain link to the real target-bankroll figure on Risk & Safety; (8) the top
+  status bar now uses a new presentation-only `derive_display_status()` so an unestablished (`UNKNOWN`)
+  compliance state renders as amber "NEEDS ATTENTION" rather than the same red "HALTED" as an active
+  compliance hold or an explicit global halt — `derive_global_state()` itself, and the canonical `Risk
+  state` it drives on `/risk`, are unchanged.
+- Charts remain server-rendered SVG only, real-data-only, with accessible titles/descriptions and an
+  openable exact-value table; no CDN script, chart library, or inline script was added anywhere in the
+  product. The stylesheet was rewritten to a dark-by-default palette using CSS custom properties, keeping
+  every previously verified accessibility hook (`:focus-visible`, `min-height:44px` touch targets,
+  `overflow-wrap:anywhere`, `prefers-reduced-motion`, responsive breakpoints at 900px/650px).
+- Bot performance history, a bot equity curve, trade attribution, per-market/YES-vs-NO exposure, execution
+  alpha/markout, model calibration curves, real source-contribution charts, and any perpetuals data or
+  trading are deferred, not fabricated: the Dashboard and hubs show honest empty states for all of them, and
+  no perpetuals endpoint, credential, order type, or margin/trading capability was added.
+- Production signer: DISARMED. Production-write credential: NONE. Bounded autonomy: OFF. Production account
+  gateway: read only. No real-money order capability was introduced. This milestone does not claim M23
+  reconciliation is complete, does not claim production trading is enabled, and does not claim any bot P&L
+  evidence exists — only that the existing account and system state are now presented truthfully and more
+  legibly.

@@ -36,7 +36,9 @@ def build_readiness(
     account_status: str,
     stale: bool,
     unresolved_gaps: int,
-    compliance_hold: bool,
+    universe_status: str,
+    realtime_state: str,
+    compliance_state: str,
     compliance_reason: str | None,
     globally_halted: bool,
     global_halt_reason: str | None,
@@ -54,6 +56,21 @@ def build_readiness(
         if not stale
         else "Account data is stale or has never successfully reconciled"
     )
+    # Zero unresolved gaps must never look like a healthy research state on its own —
+    # a market-data system that never started or is disconnected has no gaps to
+    # report yet, which is a different fact than "gaps were found and resolved".
+    universe_initialized = universe_status != "NOT_STARTED"
+    universe_detail = (
+        "Market universe is initialized"
+        if universe_initialized
+        else f"Market universe status: {universe_status}"
+    )
+    market_data_connected = realtime_state == "HEALTHY"
+    market_data_detail = (
+        "Live market data is connected"
+        if market_data_connected
+        else f"Market data status: {realtime_state}"
+    )
     gap_detail = (
         "No unresolved market-data gaps"
         if unresolved_gaps == 0
@@ -68,9 +85,16 @@ def build_readiness(
         if promotion_minimum > 0
         else "No governed evidence threshold is configured"
     )
-    compliance_detail = "No compliance hold recorded"
-    if compliance_hold:
-        compliance_detail = compliance_reason or "Compliance hold is active"
+    # Distinguish "no hold has ever been recorded" (compliance_state == UNKNOWN, the
+    # store's own default) from an actual active hold with a real reason — both are
+    # "not clear", but they are not the same fact and must not read the same way.
+    compliance_clear = compliance_state == "CLEAR"
+    if compliance_clear:
+        compliance_detail = "Compliance state is established and clear"
+    elif compliance_state == "UNKNOWN":
+        compliance_detail = "Compliance state has not yet been established"
+    else:
+        compliance_detail = compliance_reason or f"Compliance hold is active: {compliance_state}"
     halt_detail = "Global halt is not active"
     if globally_halted:
         halt_detail = global_halt_reason or "Global halt is active"
@@ -85,6 +109,12 @@ def build_readiness(
         ReadinessCategory(
             "Research readiness",
             (
+                ReadinessCheck(
+                    "Market universe initialized", universe_initialized, universe_detail
+                ),
+                ReadinessCheck(
+                    "Live market data connected", market_data_connected, market_data_detail
+                ),
                 ReadinessCheck("No unresolved market-data gaps", unresolved_gaps == 0, gap_detail),
                 ReadinessCheck(
                     "Required real evidence sufficient", evidence_sufficient, evidence_detail
@@ -94,7 +124,9 @@ def build_readiness(
         ReadinessCategory(
             "Risk readiness",
             (
-                ReadinessCheck("No compliance hold", not compliance_hold, compliance_detail),
+                ReadinessCheck(
+                    "Compliance state established and clear", compliance_clear, compliance_detail
+                ),
                 ReadinessCheck("Global halt is clear", not globally_halted, halt_detail),
                 ReadinessCheck(
                     "Deterministic portfolio risk reconciliation complete",

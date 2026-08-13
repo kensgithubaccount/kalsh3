@@ -80,29 +80,36 @@ def call(
     return str(captured["status"]), result
 
 
-def test_main_navigation_matches_information_architecture_and_has_one_state() -> None:
-    expected = (
-        "Overview",
+def test_deep_surface_inventory_matches_information_architecture() -> None:
+    """M23B replaced the flat 12-link top nav with 5 top-level sections plus a
+    per-section secondary nav (see test_m23b_dashboard_simplification.py for
+    that positive coverage). SURFACES itself is now an inventory of every deep
+    page — checked here as a set, since its declaration order no longer
+    determines what's rendered in the primary nav.
+    """
+    expected = {
+        "Dashboard",
         "Opportunities",
         "Breaking Now",
         "Markets",
-        "Sources",
-        "Learning",
+        "Activity",
         "Portfolio",
         "Orders & Trades",
         "Reports",
-        "Risk & Safety",
-        "System",
+        "Strategy",
+        "Learning",
+        "Sources",
         "Advanced",
-    )
-    assert tuple(surface.label for surface in SURFACES) == expected
+        "System",
+        "Risk & Safety",
+    }
+    assert {surface.label for surface in SURFACES} == expected
     page = _layout("Markets", "<h1>Markets</h1>", current_path="/markets").decode()
     audit = AuditParser()
     audit.feed(page)
     assert audit.landmarks == {"header", "nav", "main", "footer"}
     assert audit.h1_count == 1
-    assert audit.current_pages == 1
-    assert page.count("System state") == 1
+    assert audit.current_pages >= 1
 
 
 @pytest.mark.parametrize(
@@ -140,7 +147,7 @@ def test_financial_units_use_decimal_and_unknown_is_not_zero() -> None:
 def test_every_primary_surface_renders_honest_empty_state(tmp_path: Path) -> None:
     _, app, token = configured(tmp_path)
     expected = {
-        "/": (b"Can it trade?", b"NO", b"What needs you"),
+        "/": (b"Reported portfolio value", b"Bot P", b"No qualified opportunities yet"),
         "/opportunities": (b"INSUFFICIENT REAL FORECAST EVIDENCE", b"No trade has been authorized"),
         "/breaking": (b"SHADOW RESEARCH ONLY", b"never authorize"),
         "/markets": (b"READ-ONLY DISCOVERY", b"No markets match"),
