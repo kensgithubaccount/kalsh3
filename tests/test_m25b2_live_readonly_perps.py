@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import inspect
 import json
+import time
 from datetime import UTC, datetime
 from decimal import Decimal
 from pathlib import Path
@@ -25,12 +26,18 @@ from services.perps_shadow_research.live_boundary import (
     PerpsMarketClient,
     resolve_signer,
 )
-from services.perps_shadow_research.live_smoke import LiveSmokeConfig
+from services.perps_shadow_research.live_smoke import LiveSmokeConfig, collect_live_evidence
 from services.perps_shadow_research.live_transport import (
     MAX_WEBSOCKET_MESSAGE_BYTES,
     AsyncMarginTransport,
 )
 from services.perps_shadow_research.margin_protocol import MarginChannel
+from services.perps_shadow_research.perps_metadata import parse_perps_market
+from services.perps_shadow_research.perps_runtime import (
+    OfflinePerpsEvidenceRuntime,
+    ScriptedPerpsTransport,
+)
+from services.perps_shadow_research.perps_store import PerpsEvidenceStore
 
 NOW = datetime(2026, 8, 13, 12, tzinfo=UTC)
 
@@ -243,6 +250,243 @@ def test_websocket_exact_url_signing_raw_receipt_order_and_protocol_only() -> No
             await transport.send_protocol_command({"id": 999, "cmd": "subscribe"})
         await transport.close()
         assert websocket.closed and transport.epoch is None
+
+    asyncio.run(run())
+
+
+def test_websocket_requires_exact_protocol_created_command_payload() -> None:
+    async def run() -> None:
+        websocket = FakeWebSocket([], [])
+
+        async def connector(url: str, **kwargs: Any) -> FakeWebSocket:
+            del url, kwargs
+            return websocket
+
+        transport = AsyncMarginTransport(
+            MarginEnvironment.DEMO,
+            FakeSigner(),
+            connector,  # type: ignore[arg-type]
+        )
+        await transport.connect()
+        assert transport.protocol is not None
+        protocol = transport.protocol
+
+        untouched = protocol.subscribe(MarginChannel.TICKER, ("BTC-PERP",))
+        await transport.send_protocol_command(untouched)
+
+        mutations = [
+            lambda command: command["params"]["channels"].__setitem__(0, "user_orders"),
+            lambda command: command["params"]["market_tickers"].__setitem__(0, "ETH-PERP"),
+            lambda command: command["params"]["sids"].__setitem__(0, 99),
+            lambda command: command.__setitem__("params", {}),
+            lambda command: command.__setitem__("extra", True),
+        ]
+        commands = [
+            protocol.subscribe(MarginChannel.ORDERBOOK, ("BTC-PERP",)),
+            protocol.subscribe(MarginChannel.ORDERBOOK, ("BTC-PERP",)),
+            protocol.unsubscribe(7),
+            protocol.list_subscriptions(),
+            protocol.list_subscriptions(),
+        ]
+        for command, mutate in zip(commands, mutations, strict=True):
+            mutate(command)
+            with pytest.raises(ShadowResearchError, match="protocol state"):
+                await transport.send_protocol_command(command)
+
+        canonical = protocol.list_subscriptions()
+        handcrafted = dict(canonical)
+        with pytest.raises(ShadowResearchError, match="protocol state"):
+            await transport.send_protocol_command(handcrafted)
+        assert len(websocket.sent) == 1
+
+    asyncio.run(run())
+
+
+def _subscribed(channel: str, sid: int, command_id: int) -> dict[str, object]:
+    return {"type": "subscribed", "id": command_id, "msg": {"channel": channel, "sid": sid}}
+
+
+def _snapshot() -> dict[str, object]:
+    return {
+        "type": "orderbook_snapshot",
+        "sid": 7,
+        "seq": 1,
+        "msg": {
+            "market_ticker": "BTC-PERP",
+            "bid": [["100.00", "2.00"]],
+            "ask": [["101.00", "3.00"]],
+        },
+    }
+
+
+def _delta() -> dict[str, object]:
+    return {
+        "type": "orderbook_delta",
+        "sid": 7,
+        "seq": 2,
+        "msg": {
+            "market_ticker": "BTC-PERP",
+            "price": "100.00",
+            "delta": "1.00",
+            "side": "bid",
+        },
+    }
+
+
+def _ticker() -> dict[str, object]:
+    return {
+        "type": "ticker",
+        "sid": 8,
+        "msg": {
+            "market_ticker": "BTC-PERP",
+            "price": "100.5",
+            "bid": "100",
+            "ask": "101",
+            "bid_size_fp": "3",
+            "ask_size_fp": "4",
+            "last_trade_size_fp": "1",
+            "volume": "10",
+            "volume_notional_value_dollars": "1000",
+            "volume_24h": "5",
+            "volume_24h_notional_value_dollars": "500",
+            "open_interest": "7",
+            "open_interest_notional_value_dollars": "700",
+            "ts_ms": 1_786_622_400_000,
+        },
+    }
+
+
+class BoundedFakeWebSocket(FakeWebSocket):
+    async def recv(self) -> Any:
+        self.events.append("recv")
+        try:
+            return next(self.frames)
+        except StopIteration:
+            await asyncio.sleep(3600)
+            raise AssertionError("unreachable") from None
+
+
+@pytest.mark.parametrize(
+    "second_session_frames",
+    [
+        [_subscribed("orderbook_delta", 7, 0), _subscribed("ticker", 8, 1)],
+        [
+            _subscribed("orderbook_delta", 7, 0),
+            _subscribed("ticker", 8, 1),
+            _ticker(),
+        ],
+        [
+            _subscribed("orderbook_delta", 7, 0),
+            _subscribed("ticker", 8, 1),
+            _delta(),
+        ],
+    ],
+    ids=["ack", "ticker", "delta"],
+)
+def test_reconnect_requires_session_local_snapshot(
+    tmp_path: Path, second_session_frames: list[dict[str, object]]
+) -> None:
+    async def run() -> None:
+        sessions = iter(
+            [
+                BoundedFakeWebSocket(
+                    [
+                        json.dumps(_subscribed("orderbook_delta", 7, 0)),
+                        json.dumps(_subscribed("ticker", 8, 1)),
+                        json.dumps(_snapshot()),
+                        json.dumps(_delta()),
+                        json.dumps(_ticker()),
+                    ],
+                    [],
+                ),
+                BoundedFakeWebSocket([json.dumps(item) for item in second_session_frames], []),
+            ]
+        )
+
+        async def connector(url: str, **kwargs: Any) -> BoundedFakeWebSocket:
+            del url, kwargs
+            return next(sessions)
+
+        metadata = parse_perps_market(json.loads(market_reply().body)["market"], observed_at=NOW)
+        runtime = OfflinePerpsEvidenceRuntime(
+            metadata,
+            PerpsEvidenceStore(tmp_path / "evidence.sqlite3"),
+            ScriptedPerpsTransport(),
+            lambda: datetime.now(UTC),
+            time.monotonic_ns,
+            enabled=True,
+        )
+        config = LiveSmokeConfig(
+            MarginEnvironment.DEMO,
+            "BTC-PERP",
+            tmp_path / "evidence.sqlite3",
+            live_readonly=True,
+            window_seconds=0.02,
+        )
+        epochs, snapshots, deltas, tickers = await collect_live_evidence(
+            config,
+            runtime,
+            FakeSigner(),  # type: ignore[arg-type]
+            connector=connector,  # type: ignore[arg-type]
+        )
+        assert len(set(epochs)) == 2
+        assert snapshots == 1
+        assert deltas == 1
+        assert tickers >= 1
+        assert runtime.health().accepted_snapshot_count == 1
+
+    asyncio.run(run())
+
+
+def test_fresh_reconnect_snapshot_is_counted_for_success(
+    tmp_path: Path,
+) -> None:
+    async def run() -> None:
+        initial = [
+            _subscribed("orderbook_delta", 7, 0),
+            _subscribed("ticker", 8, 1),
+            _snapshot(),
+            _delta(),
+            _ticker(),
+        ]
+        reconnect = [
+            _subscribed("orderbook_delta", 7, 0),
+            _subscribed("ticker", 8, 1),
+            _snapshot(),
+        ]
+        sessions = iter(
+            BoundedFakeWebSocket([json.dumps(item) for item in frames], [])
+            for frames in (initial, reconnect)
+        )
+
+        async def connector(url: str, **kwargs: Any) -> BoundedFakeWebSocket:
+            del url, kwargs
+            return next(sessions)
+
+        metadata = parse_perps_market(json.loads(market_reply().body)["market"], observed_at=NOW)
+        runtime = OfflinePerpsEvidenceRuntime(
+            metadata,
+            PerpsEvidenceStore(tmp_path / "evidence.sqlite3"),
+            ScriptedPerpsTransport(),
+            lambda: datetime.now(UTC),
+            time.monotonic_ns,
+            enabled=True,
+        )
+        config = LiveSmokeConfig(
+            MarginEnvironment.DEMO,
+            "BTC-PERP",
+            tmp_path / "evidence.sqlite3",
+            live_readonly=True,
+            window_seconds=0.02,
+        )
+        _, snapshots, deltas, tickers = await collect_live_evidence(
+            config,
+            runtime,
+            FakeSigner(),  # type: ignore[arg-type]
+            connector=connector,  # type: ignore[arg-type]
+        )
+        assert (snapshots, deltas, tickers) == (2, 1, 1)
+        assert runtime.health().accepted_snapshot_count == 2
 
     asyncio.run(run())
 

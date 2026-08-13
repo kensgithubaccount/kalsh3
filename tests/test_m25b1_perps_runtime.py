@@ -155,9 +155,27 @@ def test_disabled_old_epoch_and_fresh_snapshot_after_reconnect(tmp_path: Path) -
     runtime.disconnect()
     second_epoch = connect(runtime)
     assert second_epoch != first_epoch and runtime.book.state is PerpsBookState.STALE
+    snapshot_count = runtime.health().accepted_snapshot_count
+    assert runtime.process(frame(snapshot()), connection_epoch=first_epoch) is None
+    assert runtime.health().accepted_snapshot_count == snapshot_count
     assert runtime.process(frame(delta()), connection_epoch=first_epoch) is None
     assert runtime.process(frame(delta()), connection_epoch=second_epoch) is None
     assert runtime.state is PerpsRuntimeState.RECONNECT_REQUIRED
+
+
+def test_fresh_snapshot_counter_advances_with_identical_wall_clock_after_reconnect(
+    tmp_path: Path,
+) -> None:
+    runtime = app(tmp_path)
+    first_epoch = connect(runtime)
+    assert runtime.process(frame(snapshot()), connection_epoch=first_epoch)
+    assert runtime.health().accepted_snapshot_count == 1
+    runtime.disconnect()
+    second_epoch = connect(runtime)
+    assert runtime.process(frame(snapshot()), connection_epoch=second_epoch)
+    health = runtime.health()
+    assert health.accepted_snapshot_count == 2
+    assert health.last_snapshot_at == NOW
 
 
 def test_replay_collision_and_gap_before_mutation(tmp_path: Path) -> None:

@@ -28,10 +28,14 @@ configured bound. Metadata is parsed through M25B1 and persisted before authenti
 The concrete async transport uses `websockets==16.1.1`, fixed handshake parameters, bounded size
 and timeouts, and configured ping/pong. Immediately after `raw = await websocket.recv()` it records
 monotonic and UTC clocks, constructs immutable `ReceivedFrame`, and performs no parsing. Application
-messages must match a pending command created by the connection's own `MarginProtocolState`.
+messages must be the exact object issued by the connection's own `MarginProtocolState` and exactly
+match its retained canonical payload, including nested parameters and absence of extra fields.
 
 Each connection creates a non-zero UUID and binds that exact epoch to M25B1. Disconnect invalidates
 it. A reconnect creates a new protocol and epoch, resubscribes, and cannot accept an old frame.
+Acceptance compares monotonic accepted snapshot/delta/ticker counters against a baseline captured
+immediately after each bind, so acknowledgements, other frame types, historical timestamps, and old
+epochs cannot substitute for a genuinely accepted snapshot in the new connection epoch.
 M25B1 still owns gap, crossed, stale, replay, collision, evidence, and sensitive delta-field policy.
 No raw-frame archive exists.
 

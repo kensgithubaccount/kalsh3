@@ -57,6 +57,9 @@ class PerpsHealthSnapshot:
     persistence_failure_count: int
     reconnect_count: int
     processing_lag_ns: int | None
+    accepted_snapshot_count: int
+    accepted_delta_count: int
+    accepted_ticker_count: int
 
 
 class ScriptedPerpsTransport:
@@ -114,6 +117,7 @@ class OfflinePerpsEvidenceRuntime:
         self._rows = self._replays = self._collisions = self._gaps = self._malformed = 0
         self._crossed = self._stale = 0
         self._persistence_failures = self._reconnects = 0
+        self._accepted_snapshots = self._accepted_deltas = self._accepted_tickers = 0
         self._lag_ns: int | None = None
         self.store.append_metadata(market)
 
@@ -292,8 +296,10 @@ class OfflinePerpsEvidenceRuntime:
             self._rows += 1
         if isinstance(event, PerpsBookSnapshotEvent):
             self._last_snapshot = frame.received_at
+            self._accepted_snapshots += 1
         else:
             self._last_delta = frame.received_at
+            self._accepted_deltas += 1
         if self.orderbook_sid is not None and self.ticker_sid is not None:
             self.state = PerpsRuntimeState.HEALTHY
         return item
@@ -321,6 +327,7 @@ class OfflinePerpsEvidenceRuntime:
         if self.store.append_market_state(item):
             self._rows += 1
         self._last_ticker = frame.received_at
+        self._accepted_tickers += 1
         return item
 
     def _book_sid(self, sid: int) -> None:
@@ -355,4 +362,7 @@ class OfflinePerpsEvidenceRuntime:
             self._persistence_failures,
             self._reconnects,
             self._lag_ns,
+            self._accepted_snapshots,
+            self._accepted_deltas,
+            self._accepted_tickers,
         )

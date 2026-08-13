@@ -4,8 +4,9 @@ from __future__ import annotations
 
 import json
 import time
-from collections.abc import Callable, Mapping
+from collections.abc import Awaitable, Callable, Mapping
 from datetime import UTC, datetime
+from importlib import import_module
 from typing import Any, Protocol, cast
 from uuid import UUID, uuid4
 
@@ -49,19 +50,19 @@ async def websockets_connector(
     ping_interval: float,
     ping_timeout: float,
 ) -> WebSocketSession:
-    from websockets.asyncio.client import connect  # type: ignore[import-not-found]
+    connect = cast(
+        Callable[..., Awaitable[WebSocketSession]],
+        import_module("websockets.asyncio.client").connect,
+    )
 
-    return cast(
-        WebSocketSession,
-        await connect(
-            url,
-            additional_headers=additional_headers,
-            open_timeout=open_timeout,
-            close_timeout=close_timeout,
-            max_size=max_size,
-            ping_interval=ping_interval,
-            ping_timeout=ping_timeout,
-        ),
+    return await connect(
+        url,
+        additional_headers=additional_headers,
+        open_timeout=open_timeout,
+        close_timeout=close_timeout,
+        max_size=max_size,
+        ping_interval=ping_interval,
+        ping_timeout=ping_timeout,
     )
 
 
@@ -118,11 +119,7 @@ class AsyncMarginTransport:
     async def send_protocol_command(self, command: Mapping[str, Any]) -> None:
         if self._websocket is None or self.protocol is None:
             raise ShadowResearchError("margin WebSocket is disconnected")
-        command_id = command.get("id")
-        if type(command_id) is not int:
-            raise ShadowResearchError("outbound command was not created by protocol state")
-        pending = self.protocol.pending.get(command_id)
-        if pending is None or command.get("cmd") != pending.command.value:
+        if not self.protocol.validates_outbound(command):
             raise ShadowResearchError("outbound command was not created by protocol state")
         await self._websocket.send(json.dumps(dict(command), separators=(",", ":")))
 

@@ -93,6 +93,7 @@ async def collect_live_evidence(
         if protocol is None:
             raise ShadowResearchError("missing connected margin protocol")
         runtime.bind_live_connection(epoch, protocol)
+        session_baseline = runtime.health()
         await transport.send_protocol_command(
             protocol.subscribe(MarginChannel.ORDERBOOK, (config.ticker,))
         )
@@ -104,17 +105,20 @@ async def collect_live_evidence(
             while asyncio.get_running_loop().time() < deadline:
                 remaining = deadline - asyncio.get_running_loop().time()
                 frame = await asyncio.wait_for(transport.receive(), timeout=remaining)
-                before = runtime.health()
                 runtime.process(frame, connection_epoch=epoch)
                 after = runtime.health()
-                snapshots += int(after.last_snapshot_at != before.last_snapshot_at)
-                deltas += int(after.last_delta_at != before.last_delta_at)
-                tickers += int(after.last_ticker_at != before.last_ticker_at)
                 if runtime.state is PerpsRuntimeState.RECONNECT_REQUIRED:
                     break
-                session_ready = after.last_snapshot_at is not None
+                session_snapshots = (
+                    after.accepted_snapshot_count - session_baseline.accepted_snapshot_count
+                )
+                session_deltas = after.accepted_delta_count - session_baseline.accepted_delta_count
+                session_tickers = (
+                    after.accepted_ticker_count - session_baseline.accepted_ticker_count
+                )
+                session_ready = session_snapshots >= 1
                 if session_number == 0:
-                    session_ready = session_ready and deltas >= 1 and tickers >= 1
+                    session_ready = session_ready and session_deltas >= 1 and session_tickers >= 1
                 if session_ready:
                     break
         except TimeoutError:
@@ -126,6 +130,12 @@ async def collect_live_evidence(
                     await transport.send_protocol_command(protocol.unsubscribe(sid))
             runtime.invalidate_live_connection(epoch)
             await transport.close()
+        after_session = runtime.health()
+        snapshots += (
+            after_session.accepted_snapshot_count - session_baseline.accepted_snapshot_count
+        )
+        deltas += after_session.accepted_delta_count - session_baseline.accepted_delta_count
+        tickers += after_session.accepted_ticker_count - session_baseline.accepted_ticker_count
     return tuple(epochs), snapshots, deltas, tickers
 
 

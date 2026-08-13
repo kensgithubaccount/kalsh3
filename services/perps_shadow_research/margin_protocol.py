@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass, field
 from enum import StrEnum
 from typing import Any
@@ -35,6 +36,8 @@ class _Pending:
     command: MarginCommand
     channel: MarginChannel | None
     tickers: tuple[str, ...]
+    canonical_command_json: str
+    issued_command: dict[str, Any]
 
 
 @dataclass(slots=True)
@@ -70,6 +73,30 @@ class MarginProtocolState:
 
     def list_subscriptions(self) -> dict[str, Any]:
         return self._command(MarginCommand.LIST, None, (), None)
+
+    def canonical_command(self, command_id: int) -> dict[str, Any]:
+        """Return a detached copy of the exact command issued for ``command_id``."""
+        pending = self.pending.get(command_id)
+        if pending is None:
+            raise ShadowResearchError("unknown pending margin command")
+        command = json.loads(pending.canonical_command_json)
+        if not isinstance(command, dict):  # pragma: no cover - construction invariant
+            raise ShadowResearchError("invalid canonical margin command")
+        return command
+
+    def validates_outbound(self, command: Any) -> bool:
+        """Require both protocol provenance and exact structural equality."""
+        if type(command) is not dict:
+            return False
+        command_id = command.get("id")
+        if type(command_id) is not int:
+            return False
+        pending = self.pending.get(command_id)
+        return (
+            pending is not None
+            and command is pending.issued_command
+            and _exact_value(command, self.canonical_command(command_id))
+        )
 
     def subscribed(self, raw: Any) -> MarginSubscription:
         if (
@@ -124,13 +151,52 @@ class MarginProtocolState:
     ) -> dict[str, Any]:
         command_id = self.next_id
         self.next_id += 1
-        self.pending[command_id] = _Pending(command_id, command, channel, tickers)
         result: dict[str, Any] = {"id": command_id, "cmd": command.value}
         if params is not None:
-            result["params"] = params
+            result["params"] = _copy_command(params)
+        self.pending[command_id] = _Pending(
+            command_id,
+            command,
+            channel,
+            tickers,
+            json.dumps(result, sort_keys=True, separators=(",", ":")),
+            result,
+        )
         return result
 
     @staticmethod
     def _sid(value: Any) -> None:
         if type(value) is not int or value < 1:
             raise ShadowResearchError("SID must be an exact integer >= 1")
+
+
+def _copy_command(value: dict[str, Any]) -> dict[str, Any]:
+    return {
+        key: [_copy_value(item) for item in item_value]
+        if isinstance(item_value, list)
+        else _copy_value(item_value)
+        for key, item_value in value.items()
+    }
+
+
+def _copy_value(value: Any) -> Any:
+    if isinstance(value, dict):
+        return _copy_command(value)
+    if isinstance(value, list):
+        return [_copy_value(item) for item in value]
+    return value
+
+
+def _exact_value(actual: Any, expected: Any) -> bool:
+    if type(actual) is not type(expected):
+        return False
+    if isinstance(expected, dict):
+        return actual.keys() == expected.keys() and all(
+            _exact_value(actual[key], value) for key, value in expected.items()
+        )
+    if isinstance(expected, list):
+        return len(actual) == len(expected) and all(
+            _exact_value(actual_item, expected_item)
+            for actual_item, expected_item in zip(actual, expected, strict=True)
+        )
+    return bool(actual == expected)
