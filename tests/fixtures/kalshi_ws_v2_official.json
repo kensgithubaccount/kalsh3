@@ -1,0 +1,18 @@
+{
+  "handshake": {"method": "GET", "path": "/trade-api/ws/v2", "authenticated": true},
+  "subscribe": {
+    "id": 1,
+    "cmd": "subscribe",
+    "params": {
+      "channels": ["orderbook_delta"],
+      "market_tickers": ["TEST-PERP"],
+      "use_yes_price": true
+    }
+  },
+  "subscribed": {"id": 1, "type": "subscribed", "msg": {"channel": "orderbook_delta", "sid": 7}},
+  "get_snapshot": {
+    "id": 2,
+    "cmd": "update_subscription",
+    "params": {"sid": 7, "action": "get_snapshot", "market_tickers": ["TEST-PERP"]}
+  }
+}
