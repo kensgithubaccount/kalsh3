@@ -36,3 +36,10 @@ book, protocol, pipeline, or evidence classes. Only the immutable transport-time
 M25B1 is network-incapable and disabled by default. Perps sequence gaps require reconnect and a new
 epoch because the margin AsyncAPI supplies no snapshot-recovery command. A later M25B2 may add the
 concrete read-only margin transport after separate access and credential gates.
+
+M25B2 supplies that transport only for an explicit manual smoke. Environment selection is a closed
+immutable demo/production mapping; raw WebSocket receipt is timestamped before parsing; each live
+session owns its exact UUID epoch; and reconnect invalidates the prior epoch before resubscription.
+The network layer delegates book/ticker semantics to M25B1 and cannot construct arbitrary protocol
+commands or REST methods. Runtime credential composition remains absent until an encrypted
+exact-read credential can prove environment provenance.

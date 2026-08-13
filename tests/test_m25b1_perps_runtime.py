@@ -390,7 +390,21 @@ def test_store_append_only_zero_influence_no_sensitive_schema_and_concurrency(
 
 def test_m25b1_has_no_network_or_execution_capability() -> None:
     package = Path(__file__).parents[1] / "services/perps_shadow_research"
-    sources = "\n".join(path.read_text() for path in package.glob("*.py"))
+    m25b1_modules = (
+        "book_evidence.py",
+        "domain.py",
+        "margin_protocol.py",
+        "perps_events.py",
+        "perps_evidence.py",
+        "perps_metadata.py",
+        "perps_orderbook.py",
+        "perps_runtime.py",
+        "perps_store.py",
+        "pipeline.py",
+        "runtime.py",
+        "store.py",
+    )
+    sources = "\n".join((package / name).read_text() for name in m25b1_modules)
     forbidden = (
         "import requests",
         "import httpx",

@@ -2248,3 +2248,12 @@ Do not enable real-money trading.
 Do not request real secrets until a human integration test genuinely requires them.
 
 **Build the complete system now.**
+
+## M25B2 — live read-only Perps evidence boundary
+
+M25B2 is an explicitly enabled manual evidence smoke only. It adds fixed demo/production Perps
+REST and WebSocket endpoints, public market metadata preflight, authenticated margin-enabled
+preflight, exact-read WebSocket authentication, raw receipt timing, connection epochs, bounded
+reconnect, and only `orderbook_delta`/`ticker` subscriptions. It adds no trading or write method,
+is not deployed or autostarted, and has exactly zero production influence. Live acceptance remains
+pending until a separately reviewed environment-proven exact-read credential provider is composed.

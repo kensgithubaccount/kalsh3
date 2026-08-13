@@ -132,6 +132,27 @@ class OfflinePerpsEvidenceRuntime:
         self.transport.send(self.protocol.subscribe(MarginChannel.TICKER, tickers))
         return self.epoch
 
+    def bind_live_connection(self, epoch: UUID, protocol: MarginProtocolState) -> None:
+        """Bind an externally-owned async connection without creating another epoch."""
+        if not self.enabled or epoch.int == 0 or protocol.epoch != epoch:
+            raise ShadowResearchError("invalid live Perps connection binding")
+        self.epoch = epoch
+        self.protocol = protocol
+        self.orderbook_sid = self.ticker_sid = None
+        self.book.mark_stale()
+        self.state = PerpsRuntimeState.SUBSCRIBING
+
+    def invalidate_live_connection(self, epoch: UUID) -> None:
+        """Invalidate exactly the closing connection; old frames then fail epoch checks."""
+        if self.epoch != epoch:
+            return
+        self._reconnects += 1
+        self.book.mark_stale()
+        self.epoch = None
+        self.protocol = None
+        self.orderbook_sid = self.ticker_sid = None
+        self.state = PerpsRuntimeState.DISCONNECTED
+
     def disconnect(self) -> None:
         if self.epoch is not None:
             self._reconnects += 1
