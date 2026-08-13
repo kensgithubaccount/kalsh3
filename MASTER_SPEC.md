@@ -1771,6 +1771,14 @@ Backup/restore/restart/chaos/monitoring/alerts/incidents/API drift/dependency sc
 
 Security, quant/leakage, accounting, execution/idempotency, operations, UX, API correctness. Fix findings and run full verification.
 
+## M24 — Perps Shadow Research Layer
+
+Research-only, immutable, auditable observations for perps market metadata and edge-decay analysis,
+with zero production influence. `exchange_index` is first-class; long and short leverage estimates
+remain separate; portfolio-margin fields remain nullable and uninferred. This milestone adds no
+execution, orders, sizing, routing, credentials, networking, or write capability, and enables no
+perps trading.
+
 Do not wait for user confirmation between milestones.
 
 ---
