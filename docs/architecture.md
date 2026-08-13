@@ -23,3 +23,16 @@ creates a new epoch; command IDs and subscription SIDs are distinct, and sequenc
 epoch/SID. Global ticker/trade/lifecycle streams remain lightweight, while full depth is selectively capped.
 A gap, reconnect, stale frame, metadata ladder change, or backpressure prevents a book from being healthy until
 a fresh verified snapshot. Lifecycle signals enqueue M2 refreshes and never rewrite immutable versions.
+
+## M25 offline Perps boundary
+
+The M25A runtime remains a Predictions-specific offline composition with YES/NO book semantics.
+M25B1 adds a separate Perps/margin domain: ticker-only market identity, authoritative margin-market
+metadata, independent bid/ask canonical books, a restricted margin subscription protocol, and three
+dedicated append-only evidence tables. Perps frames cannot enter the Predictions event, manager,
+book, protocol, pipeline, or evidence classes. Only the immutable transport-timestamped
+`ReceivedFrame` boundary is shared.
+
+M25B1 is network-incapable and disabled by default. Perps sequence gaps require reconnect and a new
+epoch because the margin AsyncAPI supplies no snapshot-recovery command. A later M25B2 may add the
+concrete read-only margin transport after separate access and credential gates.

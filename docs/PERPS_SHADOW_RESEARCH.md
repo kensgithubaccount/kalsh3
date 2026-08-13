@@ -108,7 +108,35 @@ clear recovery or healthy-state gating. SQLite uses WAL, FULL synchronous writes
 busy timeout, foreign-key enforcement on owned connections, and a startup quick check. Its
 append-only and exact-zero production-influence constraints remain unchanged.
 
-M25B must obtain and validate `exchange_index`, `price_level_structure`, and `price_ranges` from
-the public `GET /markets/{ticker}` response. M25A performs no such lookup and contains no
-concrete network transport, authentication, live collector, or deployment activation. Collection
-is OFF by default.
+M25A is explicitly Predictions-shaped offline runtime work: its events, canonical book, protocol,
+pipeline, and `book_evidence` table use binary YES/NO semantics. They remain useful regression and
+safety work, but must never consume Perps frames and are not reinterpreted as Perps evidence.
+
+## Offline Perps contract and evidence path (M25B1)
+
+M25B1 is a parallel, completely offline Perps/margin path based on the official Perps OpenAPI and
+AsyncAPI. Perps markets have ticker-only identity and independent bid/ask books. Immutable metadata
+requires authoritative `exchange_index`, `contract_size`, `tick_size`, and
+`fractional_trading_enabled`; it contains no Predictions `market_id`, `price_level_structure`, or
+`price_ranges`.
+
+`perps_contract_hash` covers only the structural fields whose change invalidates a book. A separate
+`market_metadata_hash` covers the complete normalized metadata snapshot. Margin book snapshots and
+deltas feed a dedicated `PerpsSequencedBook`; crossed, stale, or gapped books are unusable. Because
+the current Perps AsyncAPI has no `get_snapshot` action, a sequence gap requires a new connection
+epoch and fresh snapshot.
+
+Perps book quantities use finite, nonnegative exact Decimals at 0.01-contract granularity, with no
+rounding. `fractional_trading_enabled` remains metadata and structural provenance, but M25B1 does
+not infer whole-contract-only book sizes when it is false. Ticker source replay identity combines
+epoch, SID, ticker, exchange timestamp, and the exact semantic source fingerprint; local receipt
+and availability times are excluded.
+
+Dedicated append-only `perps_market_metadata`, `perps_book_evidence`, and `perps_market_state`
+tables retain exact Decimal text and enforce `production_influence = '0'`. Optional server-supplied
+client-order and subaccount fields are recognized only as ephemeral presence flags and never enter
+fingerprints or persistence. Funding, mark, and reference data live in market-state evidence, not
+book rows.
+
+M25B1 has no networking, credentials, WebSocket dependency, live collector, or deployment. A later
+M25B2 owns the concrete read-only REST/auth/margin-WebSocket boundary. Live collection remains OFF.

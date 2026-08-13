@@ -1787,9 +1787,12 @@ authorization changes, canary/autonomy, `services.learning` connection, producti
 credential, or account funding. M25A is a completely offline read-only evidence runtime using
 deterministic scripted transport frames. It makes no external network calls, uses no real
 credentials, activates no deployment or live collector, implements no concrete production
-WebSocket connection, and remains OFF by default. A later M25B must derive and validate live
-`exchange_index`, `price_level_structure`, and `price_ranges` metadata from the public
-`GET /markets/{ticker}` endpoint rather than treating an operator manifest as authoritative.
+WebSocket connection, and remains OFF by default. M25A's book runtime is Predictions-shaped and
+must not consume Perps frames. M25B adds a parallel Perps/margin path with ticker-only identity,
+ordinary bid/ask books, and authoritative `exchange_index`, `contract_size`, `tick_size`, and
+`fractional_trading_enabled` metadata from `GET /trade-api/v2/margin/markets/{ticker}`. M25B1 is
+offline contract/domain/evidence work only; a later M25B2 owns any concrete authenticated margin
+transport and live smoke. No M25A YES/NO evidence is reinterpreted as Perps evidence.
 
 Do not wait for user confirmation between milestones.
 
