@@ -334,9 +334,22 @@ class StateStore:
     def opportunity_summary(self) -> dict[str, Any]:
         with self._connect() as db:
             health = db.execute("SELECT * FROM opportunity_health WHERE singleton=1").fetchone()
-            rows = db.execute(
-                "SELECT * FROM opportunity_candidate_ui ORDER BY candidate_id LIMIT 100"
-            ).fetchall()
+            has_receipts = db.execute(
+                "SELECT 1 FROM sqlite_master WHERE type='table' AND name='decision_receipts'"
+            ).fetchone()
+            rows = (
+                db.execute(
+                    "SELECT c.*,r.agent_id attributed_agent_id "
+                    "FROM opportunity_candidate_ui c LEFT JOIN decision_receipts r "
+                    "ON r.source_kind='trade-candidate' AND r.source_id=c.candidate_id "
+                    "ORDER BY c.candidate_id LIMIT 100"
+                ).fetchall()
+                if has_receipts
+                else db.execute(
+                    "SELECT c.*,NULL attributed_agent_id FROM opportunity_candidate_ui c "
+                    "ORDER BY c.candidate_id LIMIT 100"
+                ).fetchall()
+            )
         return dict(health) | {"candidates": [dict(row) for row in rows]}
 
     def execution_research_summary(self) -> dict[str, Any]:

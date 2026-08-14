@@ -32,7 +32,12 @@ from dataclasses import dataclass
 from decimal import Decimal
 from typing import Any
 
-from services.agent_control_center.domain import AGENT_REGISTRY, ImplementationAvailability
+from services.agent_control_center.domain import (
+    AGENT_REGISTRY,
+    DecisionReceipt,
+    ImplementationAvailability,
+    explain_decision,
+)
 from services.opportunity_engine.models import DecisionState
 
 from .charts import sparkline
@@ -182,6 +187,8 @@ def build_dashboard(
     opportunities: dict[str, Any],
     readiness: tuple[ReadinessCategory, ...],
     account_history: list[dict[str, Any]],
+    recent_decisions: tuple[DecisionReceipt, ...] = (),
+    receipt_error: str | None = None,
 ) -> str:
     positions = list(data.get("positions", []))
     cash_dec = decimal_or_none(data.get("cash"))
@@ -301,6 +308,9 @@ def build_dashboard(
     agents_needing_attention = sum(
         agent.availability is not ImplementationAvailability.AVAILABLE for agent in AGENT_REGISTRY
     )
+    receipt_note = receipt_error or (
+        explain_decision(recent_decisions[0]) if recent_decisions else "No decisions yet"
+    )
     agents_section = (
         "<section aria-labelledby=agents-heading><h2 id=agents-heading>Agent desk</h2>"
         + _metric_row(
@@ -310,7 +320,15 @@ def build_dashboard(
                     "Need attention", str(agents_needing_attention), "Unavailable or planned"
                 ),
                 MetricItem("Production influence", "0", "All M26A agents"),
-                MetricItem("Recent decisions", "None", "No decisions yet"),
+                MetricItem(
+                    "Recent decisions",
+                    "Unavailable"
+                    if receipt_error is not None
+                    else str(len(recent_decisions))
+                    if recent_decisions
+                    else "None",
+                    receipt_note,
+                ),
             )
         )
         + "<p class=empty-line>Trading OFF is the expected safe state. "
