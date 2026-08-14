@@ -193,3 +193,16 @@ class DecisionReceiptStore:
                 "GROUP BY agent_id,decision ORDER BY agent_id,decision"
             ).fetchall()
         return dict(Counter({(row["agent_id"], row["decision"]): row["count"] for row in rows}))
+
+    def count_for_agent(self, agent_id: str, agent_version: str | None = None) -> int:
+        query = "SELECT COUNT(*) FROM decision_receipts WHERE agent_id=?"
+        parameters: tuple[object, ...] = (agent_id,)
+        if agent_version is not None:
+            query += " AND json_extract(canonical_json,'$.agent_version')=?"
+            parameters = (agent_id, agent_version)
+        try:
+            with self._connect() as db:
+                row = db.execute(query, parameters).fetchone()
+        except sqlite3.Error as exc:
+            raise DecisionReceiptStoreError("decision receipt count rejected") from exc
+        return 0 if row is None else int(row[0])
