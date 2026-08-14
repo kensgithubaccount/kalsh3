@@ -52,15 +52,15 @@ the command line and never run this command from CI.
 
 The existing encrypted read vault was verified to contain key material but no explicit environment
 provenance. Reusing it for both demo and production would permit credential/environment confusion.
-M25B2 therefore defines an injectable `ExactReadCredentialProvider` and its CLI currently exits
-with a sanitized BLOCKER. A real demo or production smoke must not be attempted until a separate,
-reviewed composition supplies an exactly-read credential whose environment provenance is explicit.
+M25B2 therefore defines an injectable `ExactReadCredentialProvider`. M25B3 now supplies a separately
+reviewable DEMO-only environment-proven provider lifecycle; production composition remains blocked.
 
 Success requires genuine initial snapshot, contiguous delta, ticker observation, persisted book and
 market-state rows, controlled disconnect, new epoch, fresh post-reconnect snapshot, and clean close.
 No delta is INCONCLUSIVE. No synthetic activity may satisfy acceptance.
 
-The live smoke has not been run. Credential composition remains blocked as described above.
+The live smoke has not been run. DEMO enrollment and verification remain human actions after M25B3 review;
+production credential composition remains blocked.
 
 Production execution remains DISARMED. Production-write credential remains NONE. No order, cancel,
 amend, decrease, transfer, risk write, position sizing, routing, canary, autonomy, learning influence,
