@@ -7,6 +7,7 @@ authorize, size, sign, send, or cancel an order.
 from __future__ import annotations
 
 import json
+import re
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from decimal import Decimal
@@ -234,10 +235,7 @@ class DecisionReceipt:
     production_influence: Decimal = ZERO_INFLUENCE
 
     def __post_init__(self) -> None:
-        if self.created_at.tzinfo is None or self.created_at.utcoffset() is None:
-            raise ValueError("created_at must be timezone-aware")
-        if self.production_influence != ZERO_INFLUENCE:
-            raise ValueError("decision receipts must have exactly zero production influence")
+        self._validate_structure()
         definition = agent_by_id(self.agent_id)
         if definition is None:
             raise ValueError("decision receipt agent_id is not registered")
@@ -247,8 +245,23 @@ class DecisionReceipt:
             raise ValueError("decision receipt agent is not available")
         if definition.autonomy_mode is AutonomyMode.DISABLED:
             raise ValueError("decision receipt agent autonomy is disabled")
+
+    def _validate_structure(self) -> None:
+        if self.created_at.tzinfo is None or self.created_at.utcoffset() is None:
+            raise ValueError("created_at must be timezone-aware")
+        if self.created_at.utcoffset() != UTC.utcoffset(self.created_at):
+            raise ValueError("created_at must be UTC")
+        if self.production_influence != ZERO_INFLUENCE:
+            raise ValueError("decision receipts must have exactly zero production influence")
         if self.decision is ResearchDecision.WOULD_TRADE and self.rejection_reasons:
             raise ValueError("WOULD_TRADE cannot include rejection reasons")
+        if not self.receipt_id or not self.instrument_id:
+            raise ValueError("receipt and instrument identities are required")
+        secret_pattern = re.compile(
+            r"-----BEGIN|authorization\s*:|api[_ -]?key|private[_ -]?key", re.IGNORECASE
+        )
+        if any(secret_pattern.search(reference) for reference in self.evidence_references):
+            raise ValueError("evidence references must not contain secret-bearing material")
 
     def to_json(self) -> str:
         def decimal_text(value: Decimal | None) -> str | None:
@@ -283,9 +296,7 @@ class DecisionReceipt:
 def explain_decision(receipt: DecisionReceipt, agent_name: str | None = None) -> str:
     """Generate owner-facing text using receipt fields only."""
     definition = agent_by_id(receipt.agent_id)
-    if definition is None:  # Defensive if a caller bypassed normal dataclass construction.
-        raise ValueError("decision receipt agent_id is not registered")
-    name = agent_name or definition.display_name
+    name = agent_name or (definition.display_name if definition is not None else receipt.agent_id)
     edge = (
         f" sees a {(receipt.after_cost_edge * Decimal('100')):.1f}% after-cost edge"
         if receipt.after_cost_edge is not None
@@ -305,3 +316,94 @@ def explain_decision(receipt: DecisionReceipt, agent_name: str | None = None) ->
         return f"{name}{edge}, but {why}, so it would not trade."
     why = reason or "the research threshold was not met"
     return f"{name}{edge}, but {why}, so it would not trade."
+
+
+def _restore_persisted_receipt(canonical_json: str) -> DecisionReceipt:
+    """Store-only historical restoration without current-registry authority checks."""
+    payload = json.loads(canonical_json)
+    expected_keys = {
+        "after_cost_edge",
+        "agent_id",
+        "agent_version",
+        "applicable_limits",
+        "confidence",
+        "created_at",
+        "current_exposure",
+        "decision",
+        "estimated_fees",
+        "estimated_slippage",
+        "evidence_references",
+        "fair_value",
+        "instrument_id",
+        "model_probability",
+        "observed_market_price",
+        "production_influence",
+        "raw_edge",
+        "receipt_id",
+        "rejected_alternatives",
+        "rejection_reasons",
+        "risk_check_results",
+    }
+    if not isinstance(payload, dict) or set(payload) != expected_keys:
+        raise ValueError("persisted decision receipt fields are invalid")
+
+    def text(name: str) -> str:
+        value = payload[name]
+        if not isinstance(value, str):
+            raise ValueError(f"persisted decision receipt {name} is invalid")
+        return value
+
+    def decimal(name: str) -> Decimal | None:
+        value = payload[name]
+        if value is None:
+            return None
+        if not isinstance(value, str):
+            raise ValueError(f"persisted decision receipt {name} is invalid")
+        return Decimal(value)
+
+    def text_tuple(name: str) -> tuple[str, ...]:
+        value = payload[name]
+        if not isinstance(value, list) or not all(isinstance(item, str) for item in value):
+            raise ValueError(f"persisted decision receipt {name} is invalid")
+        return tuple(value)
+
+    limits = payload["applicable_limits"]
+    if not isinstance(limits, list) or not all(
+        isinstance(item, list)
+        and len(item) == 2
+        and isinstance(item[0], str)
+        and isinstance(item[1], str)
+        for item in limits
+    ):
+        raise ValueError("persisted decision receipt applicable_limits is invalid")
+    created_at = datetime.fromisoformat(text("created_at").replace("Z", "+00:00"))
+    values = {
+        "receipt_id": text("receipt_id"),
+        "created_at": created_at,
+        "agent_id": text("agent_id"),
+        "agent_version": text("agent_version"),
+        "instrument_id": text("instrument_id"),
+        "observed_market_price": decimal("observed_market_price"),
+        "model_probability": decimal("model_probability"),
+        "fair_value": decimal("fair_value"),
+        "raw_edge": decimal("raw_edge"),
+        "estimated_fees": decimal("estimated_fees"),
+        "estimated_slippage": decimal("estimated_slippage"),
+        "after_cost_edge": decimal("after_cost_edge"),
+        "confidence": decimal("confidence"),
+        "evidence_references": text_tuple("evidence_references"),
+        "current_exposure": decimal("current_exposure"),
+        "applicable_limits": tuple((item[0], Decimal(item[1])) for item in limits),
+        "risk_check_results": text_tuple("risk_check_results"),
+        "decision": ResearchDecision(text("decision")),
+        "rejected_alternatives": text_tuple("rejected_alternatives"),
+        "rejection_reasons": text_tuple("rejection_reasons"),
+        "production_influence": Decimal(text("production_influence")),
+    }
+    receipt = object.__new__(DecisionReceipt)
+    for name, value in values.items():
+        object.__setattr__(receipt, name, value)
+    receipt._validate_structure()
+    if receipt.to_json() != canonical_json:
+        raise ValueError("decision receipt JSON is not canonical")
+    return receipt

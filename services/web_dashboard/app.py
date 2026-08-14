@@ -6,14 +6,22 @@ import html
 import json
 import time
 from collections.abc import Callable, Iterable
-from datetime import datetime
+from datetime import UTC, datetime, timedelta
 from email import policy
 from email.parser import BytesParser
 from http import cookies
 from typing import Any
 from urllib.parse import parse_qs
 
-from services.agent_control_center.domain import AGENT_REGISTRY, AgentDefinition, agent_by_id
+from services.agent_control_center.beliefs import FreshnessPolicy, current_belief
+from services.agent_control_center.domain import (
+    AGENT_REGISTRY,
+    AgentDefinition,
+    DecisionReceipt,
+    agent_by_id,
+    explain_decision,
+)
+from services.agent_control_center.store import DecisionReceiptStore, DecisionReceiptStoreError
 from services.kalshi_account_gateway.client import (
     AccountGatewayError,
     AuthenticationRejected,
@@ -180,6 +188,10 @@ class DashboardApp:
         self.box = box
         self.setup = setup
         self.risk_store = AuthorizationStore(store.path, SystemClock())
+        self.receipt_store = DecisionReceiptStore(store.path)
+        self.belief_freshness = FreshnessPolicy(
+            (("event-edge", timedelta(hours=1)), ("cross-market", timedelta(minutes=5)))
+        )
 
     def __call__(self, environ: dict[str, Any], start: StartResponse) -> Iterable[bytes]:
         path, method = str(environ.get("PATH_INFO", "/")), str(environ.get("REQUEST_METHOD", "GET"))
@@ -309,9 +321,11 @@ class DashboardApp:
                         sync_label,
                     ),
                 )
-            body = self._agent_detail(agent)
+            receipts, receipt_error = self._read_receipts(agent.agent_id)
+            body = self._agent_detail(agent, receipts, datetime.now(UTC), receipt_error)
         elif path == "/agents":
-            body = self._agents()
+            receipts, receipt_error = self._read_receipts()
+            body = self._agents(datetime.now(UTC), receipts, receipt_error)
         elif path == "/sources":
             body = self._sources(self.store.external_sources())
         elif path.startswith("/markets/"):
@@ -349,7 +363,8 @@ class DashboardApp:
                 len(self.store.external_sources()),
             )
         elif path == "/opportunities":
-            body = self._opportunities(self.store.opportunity_summary())
+            _, receipt_error = self._read_receipts()
+            body = self._opportunities(self.store.opportunity_summary(), receipt_error)
         elif path == "/backtests":
             body = self._backtests(self.store.execution_research_summary())
         elif path == "/risk":
@@ -432,6 +447,7 @@ class DashboardApp:
                 start, "200 OK", content.encode(), content_type, download=path.rsplit("/", 1)[-1]
             )
         elif path == "/":
+            receipts, receipt_error = self._read_receipts()
             body = (
                 warning
                 + build_dashboard(
@@ -442,6 +458,8 @@ class DashboardApp:
                     opportunities=self.store.opportunity_summary(),
                     readiness=readiness,
                     account_history=self.store.account_value_history(),
+                    recent_decisions=receipts,
+                    receipt_error=receipt_error,
                 )
                 + build_status_strip(readiness, str(realtime["state"]))
             )
@@ -697,11 +715,47 @@ class DashboardApp:
         )
         return f"<section><p class=eyebrow>RESEARCH / SHADOW ONLY</p><h1>Forecasting and calibration</h1><div class=warning>{html.escape(summary['sample_status'])}. No model edge, profitability, opportunity, or trade claim is made.</div><div class=grid><article><small>Unique settled forecasts</small><strong>{summary['settled_forecasts']}</strong></article><article><small>Unique settled events</small><strong>{summary['settled_events']}</strong></article><article><small>Abstention rate</small><strong>{html.escape(summary['abstention_rate'])}</strong></article><article><small>Calibration</small><strong>{html.escape(summary['calibration_status'])}</strong></article></div>{cards or '<p>No persisted forecasts.</p>'}<details><summary>Advanced evaluation</summary><p>Calibration bins, Brier, log loss, market-relative skill, horizon breakdown and effective samples appear only after immutable settled real evidence exists.</p></details></section>"
 
-    @staticmethod
-    def _agents() -> str:
+    def _read_receipts(
+        self, agent_id: str | None = None
+    ) -> tuple[tuple[DecisionReceipt, ...], str | None]:
+        try:
+            receipts = (
+                self.receipt_store.recent()
+                if agent_id is None
+                else self.receipt_store.recent_for_agent(agent_id)
+            )
+        except DecisionReceiptStoreError:
+            return (), "Decision history unavailable: persisted evidence failed validation."
+        return receipts, None
+
+    def _agents(
+        self,
+        now: datetime,
+        receipts: tuple[DecisionReceipt, ...],
+        receipt_error: str | None = None,
+    ) -> str:
         cards = []
         for agent in AGENT_REGISTRY:
+            latest_receipt = next(
+                (receipt for receipt in receipts if receipt.agent_id == agent.agent_id), None
+            )
+            belief = current_belief(
+                agent,
+                latest_receipt,
+                as_of=now,
+                freshness=self.belief_freshness,
+            )
             primary_risk = agent.principal_risks[0] if agent.principal_risks else "Not available"
+            if receipt_error is not None:
+                latest = receipt_error
+            elif belief.receipt is None:
+                latest = "No decisions yet"
+            else:
+                stale = "STALE · " if belief.stale else "CURRENT · "
+                latest = (
+                    f"{stale}{belief.receipt.decision.value} · {belief.receipt.instrument_id} · "
+                    f"{belief.explanation}"
+                )
             cards.append(
                 "<article class=agent-card>"
                 f"<p class=eyebrow>{html.escape(agent.availability)} · {html.escape(agent.autonomy_mode)}</p>"
@@ -712,7 +766,7 @@ class DashboardApp:
                 f"<dt>Authority</dt><dd>Production influence: {agent.production_influence}</dd>"
                 f"<dt>Performance</dt><dd>{html.escape(agent.performance_availability)}</dd>"
                 f"<dt>Primary risk</dt><dd>{html.escape(primary_risk)}</dd>"
-                "<dt>Latest decision</dt><dd>No decisions yet</dd></dl>"
+                f"<dt>Latest decision</dt><dd>{html.escape(latest)}</dd></dl>"
                 f'<a class=button href="/agents/{html.escape(agent.agent_id)}">Inspect agent</a>'
                 "</article>"
             )
@@ -720,12 +774,43 @@ class DashboardApp:
             "<section><p class=eyebrow>RESEARCH STRATEGY ROSTER</p><h1>Agents</h1>"
             "<div class=warning>Trading OFF. Every agent has exactly zero production influence. "
             "Availability describes implemented research support; mode describes research autonomy.</div>"
-            f"<div class=columns>{''.join(cards)}</div></section>"
+            + (
+                f"<div class=warning>{html.escape(receipt_error)}</div>"
+                if receipt_error is not None
+                else ""
+            )
+            + f"<div class=columns>{''.join(cards)}</div></section>"
         )
 
-    @staticmethod
-    def _agent_detail(agent: AgentDefinition) -> str:
+    def _agent_detail(
+        self,
+        agent: AgentDefinition,
+        receipts: tuple[DecisionReceipt, ...],
+        now: datetime,
+        receipt_error: str | None = None,
+    ) -> str:
         risks = "".join(f"<li>{html.escape(risk)}</li>" for risk in agent.principal_risks)
+        belief = current_belief(
+            agent,
+            receipts[0] if receipts else None,
+            as_of=now,
+            freshness=self.belief_freshness,
+        )
+        if receipt_error is not None:
+            recent = f"<div class=warning>{html.escape(receipt_error)}</div>"
+            current = f"<p>{html.escape(receipt_error)}</p>"
+        elif belief.receipt is None:
+            recent = "<p>No decisions yet</p>"
+            current = "<p>No decisions yet.</p>"
+        else:
+            receipt = belief.receipt
+            current = (
+                f"<p><strong>{'STALE' if belief.stale else 'CURRENT'}</strong> · "
+                f"{html.escape(receipt.instrument_id)} · "
+                f"{html.escape(receipt.created_at.isoformat())}</p>"
+                f"<p>{html.escape(belief.explanation)}</p>"
+            )
+            recent = "".join(self._receipt_card(item) for item in receipts)
         return (
             f"<section><p class=eyebrow>{html.escape(agent.availability)} · VERSION {html.escape(agent.version)}</p>"
             f"<h1>{html.escape(agent.display_name)}</h1><p>{html.escape(agent.mandate)}</p>"
@@ -733,16 +818,37 @@ class DashboardApp:
             f"<article><h2>What it watches</h2><p>{html.escape(agent.watches)}</p>"
             f"<p><strong>Universe:</strong> {html.escape(agent.market_universe)}</p>"
             f"<p><strong>Inputs:</strong> {html.escape(agent.inputs_sources)}</p></article>"
-            f"<article><h2>What it believes</h2><p>{html.escape(agent.belief)}</p></article>"
+            f"<article><h2>What it believes</h2>{current}</article>"
             f"<article><h2>When it would act</h2><p>{html.escape(agent.act_when)}</p></article>"
             f"<article><h2>Why it can be wrong</h2><ul>{risks}</ul></article>"
             f"<article><h2>Current mode</h2><p>{html.escape(agent.autonomy_mode)}</p>"
             f"<p>Production influence: {agent.production_influence}</p><p>Trading authority: NONE</p></article>"
             f"<article><h2>Guardrails</h2><p>{html.escape(agent.risk_limit_summary)}</p></article>"
-            "<article><h2>Recent decisions</h2><p>No decisions yet</p></article>"
+            f"<article><h2>Recent decisions</h2>{recent}</article>"
             f"<article><h2>Performance</h2><p>{html.escape(agent.performance_availability)}</p>"
             "<p>No P&amp;L, win rate, Sharpe ratio, confidence, or edge is inferred.</p></article>"
             "</div><a class=button href=/agents>Back to agents</a></section>"
+        )
+
+    @staticmethod
+    def _receipt_card(receipt: DecisionReceipt) -> str:
+        edge = (
+            "Not established" if receipt.after_cost_edge is None else str(receipt.after_cost_edge)
+        )
+        evidence = (
+            "".join(
+                f"<li>{html.escape(reference)}</li>" for reference in receipt.evidence_references
+            )
+            or "<li>None recorded</li>"
+        )
+        reasons = ", ".join(receipt.rejection_reasons) or "No rejection"
+        return (
+            f"<div class=row><strong>{html.escape(receipt.decision.value)}</strong> · "
+            f"{html.escape(receipt.created_at.isoformat())} · {html.escape(receipt.instrument_id)}"
+            f"<p>After-cost edge: {html.escape(edge)} · Reason: {html.escape(reasons)}</p>"
+            f"<p>{html.escape(explain_decision(receipt))}</p>"
+            f"<p>Evidence ({len(receipt.evidence_references)}):</p><ul>{evidence}</ul>"
+            "<small>Research only · No order authorized · Production influence 0</small></div>"
         )
 
     @staticmethod
@@ -762,12 +868,17 @@ class DashboardApp:
         return f"<section><p class=eyebrow>RESEARCH GOVERNANCE ONLY</p><h1>What we've learned</h1><div class=warning>{html.escape(summary['state'])}. Progress: {summary['real_settled_events']} / {summary['promotion_minimum']} relevant settled events. Synthetic results test behavior only.</div><h2>Source performance</h2><p>Accuracy, timeliness, originality, redundancy, incremental forecast value and cost remain separate.</p><h2>Model performance</h2><p>Champion/challenger comparisons require identical events, checkpoints and promotion windows.</p><h2>Market families</h2>{families or '<p>No real tournament evidence.</p>'}<h2>Proposed changes</h2>{proposals}<h2>Recent changes</h2><p>Current configuration: {html.escape(str(summary['current_configuration'] or 'None'))}; previous/rollback: {html.escape(str(summary['previous_configuration'] or 'None'))}.</p><strong>PRODUCTION INFLUENCE: {html.escape(summary['production_influence'])}</strong></section>"
 
     @staticmethod
-    def _opportunities(summary: dict[str, Any]) -> str:
+    def _opportunities(summary: dict[str, Any], attribution_error: str | None = None) -> str:
         cards = "".join(
-            f"<article><p class=eyebrow>{html.escape(row['data_mode'])}</p><h2>{html.escape(row['market_ticker'])} — {html.escape(row['outcome_side'])} ECONOMICS</h2><p>Status: <strong>{html.escape(row['decision_state'])}</strong></p><dl><dt>Fair probability / interval</dt><dd>{html.escape(row['fair_probability'])} · {html.escape(row['lower_probability'])} to {html.escape(row['upper_probability'])}</dd><dt>Executable price</dt><dd>{html.escape(row['executable_price'])}</dd><dt>Raw difference</dt><dd>{html.escape(row['raw_difference'])}</dd><dt>Expected fees</dt><dd>{html.escape(row['expected_fee'])}</dd><dt>Current-book slippage</dt><dd>{html.escape(row['expected_slippage'])}</dd><dt>Conservative after-cost value</dt><dd>{html.escape(row['conservative_value'])}</dd><dt>Required research threshold</dt><dd>{html.escape(row['required_threshold'])}</dd><dt>Liquidity / age</dt><dd>{html.escape(row['liquidity'])} · {html.escape(row['age'])}</dd><dt>Why not a candidate?</dt><dd>{html.escape(row['rejection_reasons'] or 'No deterministic rejection')}</dd></dl><strong>PRODUCTION INFLUENCE: {html.escape(row['production_influence'])}</strong></article>"
+            f"<article><p class=eyebrow>{html.escape(row['data_mode'])}</p><h2>{html.escape(row['market_ticker'])} — {html.escape(row['outcome_side'])} ECONOMICS</h2><p>Responsible agent: <strong>{html.escape('Attribution unavailable' if attribution_error else row.get('attributed_agent_id') or 'Unattributed research')}</strong></p><p>Status: <strong>{html.escape(row['decision_state'])}</strong></p><dl><dt>Fair probability / interval</dt><dd>{html.escape(row['fair_probability'])} · {html.escape(row['lower_probability'])} to {html.escape(row['upper_probability'])}</dd><dt>Executable price</dt><dd>{html.escape(row['executable_price'])}</dd><dt>Raw difference</dt><dd>{html.escape(row['raw_difference'])}</dd><dt>Expected fees</dt><dd>{html.escape(row['expected_fee'])}</dd><dt>Current-book slippage</dt><dd>{html.escape(row['expected_slippage'])}</dd><dt>Conservative after-cost value</dt><dd>{html.escape(row['conservative_value'])}</dd><dt>Required research threshold</dt><dd>{html.escape(row['required_threshold'])}</dd><dt>Liquidity / age</dt><dd>{html.escape(row['liquidity'])} · {html.escape(row['age'])}</dd><dt>Why not a candidate?</dt><dd>{html.escape(row['rejection_reasons'] or 'No deterministic rejection')}</dd></dl><strong>PRODUCTION INFLUENCE: {html.escape(row['production_influence'])}</strong></article>"
             for row in summary["candidates"]
         )
-        return f"<section><p class=eyebrow>AFTER-COST RESEARCH ONLY</p><h1>Opportunity research</h1><div class=warning>INSUFFICIENT REAL FORECAST EVIDENCE. Expected value is a frozen model estimate, not realized profit. No trade has been authorized.</div><div class=grid><article><small>Evaluated</small><strong>{summary['evaluated']}</strong></article><article><small>Rejected / watches</small><strong>{summary['rejected']} / {summary['watches']}</strong></article><article><small>Research candidates</small><strong>{summary['research_candidates']}</strong></article><article><small>Stale</small><strong>{summary['stale_candidates']}</strong></article></div>{cards or '<p>No persisted live research candidates.</p>'}<details><summary>System assumptions</summary><p>Worker: {html.escape(summary['worker_state'])}; fee: {html.escape(summary['fee_version'])} / {html.escape(summary['fee_verification'])}; slippage: {html.escape(summary['slippage_version'])}; fill quality: {html.escape(summary['fill_quality'])}; cross venue: {html.escape(summary['cross_venue_state'])}.</p></details></section>"
+        error = (
+            f"<div class=warning>{html.escape(attribution_error)}</div>"
+            if attribution_error is not None
+            else ""
+        )
+        return f"<section><p class=eyebrow>AFTER-COST RESEARCH ONLY</p><h1>Opportunity research</h1><div class=warning>INSUFFICIENT REAL FORECAST EVIDENCE. Expected value is a frozen model estimate, not realized profit. No trade has been authorized.</div>{error}<div class=grid><article><small>Evaluated</small><strong>{summary['evaluated']}</strong></article><article><small>Rejected / watches</small><strong>{summary['rejected']} / {summary['watches']}</strong></article><article><small>Research candidates</small><strong>{summary['research_candidates']}</strong></article><article><small>Stale</small><strong>{summary['stale_candidates']}</strong></article></div>{cards or '<p>No persisted live research candidates.</p>'}<details><summary>System assumptions</summary><p>Worker: {html.escape(summary['worker_state'])}; fee: {html.escape(summary['fee_version'])} / {html.escape(summary['fee_verification'])}; slippage: {html.escape(summary['slippage_version'])}; fill quality: {html.escape(summary['fill_quality'])}; cross venue: {html.escape(summary['cross_venue_state'])}.</p></details></section>"
 
     @staticmethod
     def _backtests(summary: dict[str, Any]) -> str:
