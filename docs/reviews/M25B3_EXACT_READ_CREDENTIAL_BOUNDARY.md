@@ -9,7 +9,8 @@ did not contain environment provenance, and its setup flow was coupled to accoun
 dashboard state. It therefore could not be reused as an M25B3 provider record.
 
 `RequestSigner` accepts an in-memory unencrypted PKCS#8 PEM, hides it from repr, permits only GET/HEAD,
-and passes it to OpenSSL through an inherited pipe. Its `/proc/self/fd` path is Linux-specific. The separate
+and passes it to OpenSSL through an inherited pipe. M25B4 later replaced its Linux-specific `/proc/self/fd`
+reference with the portable `/dev/fd` inherited-pipe boundary. The separate
 `production_execution` credential and signer use a production-write type and Linux `memfd_create`; M25B3
 does not import, call, migrate, inspect, or modify that domain.
 
@@ -78,8 +79,9 @@ provider; the normal CLI owns the zero-network pre-resolution ordering.
 All M25B3 verification used fake signers, fake HTTP responses, temporary encrypted stores, and zero network.
 No credential was enrolled or verified, and no live smoke was run. Production remains blocked. No write,
 trading, strategy, learning, risk, routing, signer-service, or production-execution capability was added.
-`production_influence` remains exactly zero and Predictions realtime is unchanged. The known macOS
-`/proc/self/fd` and `os.memfd_create` portability failures remain separate.
+`production_influence` remains exactly zero and Predictions realtime is unchanged. M25B4 later resolved the
+read-only signer's macOS `/proc/self/fd` defect; the production execution `os.memfd_create` portability issue
+remains separate.
 
 After independent review and merge, the precise human action is to enroll a DEMO credential, verify DEMO
 provenance through the reviewed GET-only verifier, and then explicitly run one tightly bounded DEMO smoke.
