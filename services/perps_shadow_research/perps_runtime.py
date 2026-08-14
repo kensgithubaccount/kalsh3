@@ -57,6 +57,9 @@ class PerpsHealthSnapshot:
     persistence_failure_count: int
     reconnect_count: int
     processing_lag_ns: int | None
+    accepted_snapshot_count: int
+    accepted_delta_count: int
+    accepted_ticker_count: int
 
 
 class ScriptedPerpsTransport:
@@ -114,6 +117,7 @@ class OfflinePerpsEvidenceRuntime:
         self._rows = self._replays = self._collisions = self._gaps = self._malformed = 0
         self._crossed = self._stale = 0
         self._persistence_failures = self._reconnects = 0
+        self._accepted_snapshots = self._accepted_deltas = self._accepted_tickers = 0
         self._lag_ns: int | None = None
         self.store.append_metadata(market)
 
@@ -131,6 +135,27 @@ class OfflinePerpsEvidenceRuntime:
         self.transport.send(self.protocol.subscribe(MarginChannel.ORDERBOOK, tickers))
         self.transport.send(self.protocol.subscribe(MarginChannel.TICKER, tickers))
         return self.epoch
+
+    def bind_live_connection(self, epoch: UUID, protocol: MarginProtocolState) -> None:
+        """Bind an externally-owned async connection without creating another epoch."""
+        if not self.enabled or epoch.int == 0 or protocol.epoch != epoch:
+            raise ShadowResearchError("invalid live Perps connection binding")
+        self.epoch = epoch
+        self.protocol = protocol
+        self.orderbook_sid = self.ticker_sid = None
+        self.book.mark_stale()
+        self.state = PerpsRuntimeState.SUBSCRIBING
+
+    def invalidate_live_connection(self, epoch: UUID) -> None:
+        """Invalidate exactly the closing connection; old frames then fail epoch checks."""
+        if self.epoch != epoch:
+            return
+        self._reconnects += 1
+        self.book.mark_stale()
+        self.epoch = None
+        self.protocol = None
+        self.orderbook_sid = self.ticker_sid = None
+        self.state = PerpsRuntimeState.DISCONNECTED
 
     def disconnect(self) -> None:
         if self.epoch is not None:
@@ -177,6 +202,11 @@ class OfflinePerpsEvidenceRuntime:
                     self.orderbook_sid = subscription.sid
                 else:
                     self.ticker_sid = subscription.sid
+                return None
+            if raw["type"] in {"unsubscribed", "ok"}:
+                if self.protocol is None:
+                    raise ShadowResearchError("missing margin protocol")
+                self.protocol.command_acknowledged(raw)
                 return None
             if raw["type"] == "orderbook_snapshot":
                 return self._snapshot(PerpsBookSnapshotEvent.parse(raw, self.market), frame)
@@ -271,8 +301,10 @@ class OfflinePerpsEvidenceRuntime:
             self._rows += 1
         if isinstance(event, PerpsBookSnapshotEvent):
             self._last_snapshot = frame.received_at
+            self._accepted_snapshots += 1
         else:
             self._last_delta = frame.received_at
+            self._accepted_deltas += 1
         if self.orderbook_sid is not None and self.ticker_sid is not None:
             self.state = PerpsRuntimeState.HEALTHY
         return item
@@ -300,6 +332,7 @@ class OfflinePerpsEvidenceRuntime:
         if self.store.append_market_state(item):
             self._rows += 1
         self._last_ticker = frame.received_at
+        self._accepted_tickers += 1
         return item
 
     def _book_sid(self, sid: int) -> None:
@@ -334,4 +367,7 @@ class OfflinePerpsEvidenceRuntime:
             self._persistence_failures,
             self._reconnects,
             self._lag_ns,
+            self._accepted_snapshots,
+            self._accepted_deltas,
+            self._accepted_tickers,
         )

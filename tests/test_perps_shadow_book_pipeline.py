@@ -375,7 +375,14 @@ def test_architecture_remains_read_only_and_isolated():
     package = root / "services/perps_shadow_research"
     assert not (package / "adapter.py").exists()
     assert not (package / "canonical.py").exists()
-    sources = "\n".join(path.read_text() for path in package.glob("*.py"))
+    m24_modules = (
+        "book_evidence.py",
+        "domain.py",
+        "perps_metadata.py",
+        "pipeline.py",
+        "store.py",
+    )
+    sources = "\n".join((package / name).read_text() for name in m24_modules)
     forbidden = (
         "production_execution",
         "risk_engine",

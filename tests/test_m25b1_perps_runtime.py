@@ -146,6 +146,21 @@ def test_offline_runtime_snapshot_delta_ticker_and_separate_tables(tmp_path: Pat
     assert state.production_influence == first.production_influence == Decimal("0")
 
 
+def test_runtime_routes_exact_unsubscribe_ack_to_pending_cleanup(tmp_path: Path) -> None:
+    runtime = app(tmp_path)
+    epoch = connect(runtime)
+    assert runtime.protocol is not None
+    command = runtime.protocol.unsubscribe(7)
+    assert (
+        runtime.process(
+            frame({"type": "unsubscribed", "id": command["id"], "sid": 7, "seq": 1}),
+            connection_epoch=epoch,
+        )
+        is None
+    )
+    assert command["id"] not in runtime.protocol.pending
+
+
 def test_disabled_old_epoch_and_fresh_snapshot_after_reconnect(tmp_path: Path) -> None:
     disabled = app(tmp_path / "disabled", enabled=False)
     assert disabled.connect() is None and disabled.state is PerpsRuntimeState.STOPPED
@@ -155,9 +170,27 @@ def test_disabled_old_epoch_and_fresh_snapshot_after_reconnect(tmp_path: Path) -
     runtime.disconnect()
     second_epoch = connect(runtime)
     assert second_epoch != first_epoch and runtime.book.state is PerpsBookState.STALE
+    snapshot_count = runtime.health().accepted_snapshot_count
+    assert runtime.process(frame(snapshot()), connection_epoch=first_epoch) is None
+    assert runtime.health().accepted_snapshot_count == snapshot_count
     assert runtime.process(frame(delta()), connection_epoch=first_epoch) is None
     assert runtime.process(frame(delta()), connection_epoch=second_epoch) is None
     assert runtime.state is PerpsRuntimeState.RECONNECT_REQUIRED
+
+
+def test_fresh_snapshot_counter_advances_with_identical_wall_clock_after_reconnect(
+    tmp_path: Path,
+) -> None:
+    runtime = app(tmp_path)
+    first_epoch = connect(runtime)
+    assert runtime.process(frame(snapshot()), connection_epoch=first_epoch)
+    assert runtime.health().accepted_snapshot_count == 1
+    runtime.disconnect()
+    second_epoch = connect(runtime)
+    assert runtime.process(frame(snapshot()), connection_epoch=second_epoch)
+    health = runtime.health()
+    assert health.accepted_snapshot_count == 2
+    assert health.last_snapshot_at == NOW
 
 
 def test_replay_collision_and_gap_before_mutation(tmp_path: Path) -> None:
@@ -390,7 +423,21 @@ def test_store_append_only_zero_influence_no_sensitive_schema_and_concurrency(
 
 def test_m25b1_has_no_network_or_execution_capability() -> None:
     package = Path(__file__).parents[1] / "services/perps_shadow_research"
-    sources = "\n".join(path.read_text() for path in package.glob("*.py"))
+    m25b1_modules = (
+        "book_evidence.py",
+        "domain.py",
+        "margin_protocol.py",
+        "perps_events.py",
+        "perps_evidence.py",
+        "perps_metadata.py",
+        "perps_orderbook.py",
+        "perps_runtime.py",
+        "perps_store.py",
+        "pipeline.py",
+        "runtime.py",
+        "store.py",
+    )
+    sources = "\n".join((package / name).read_text() for name in m25b1_modules)
     forbidden = (
         "import requests",
         "import httpx",

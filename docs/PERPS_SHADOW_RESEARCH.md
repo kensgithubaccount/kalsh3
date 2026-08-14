@@ -140,3 +140,34 @@ book rows.
 
 M25B1 has no networking, credentials, WebSocket dependency, live collector, or deployment. A later
 M25B2 owns the concrete read-only REST/auth/margin-WebSocket boundary. Live collection remains OFF.
+
+## M25B2 manual live read-only boundary
+
+M25B1 remains the offline Perps contract and evidence implementation. M25B2 adds only a manual,
+bounded collector boundary. It is not a daemon, deployment, autostart service, strategy input,
+learning input, or trading facility. It can represent only public margin market GET, authenticated
+margin-enabled GET, the fixed authenticated margin WebSocket handshake, and commands created by
+`MarginProtocolState`. Collector subscriptions are structurally limited to `orderbook_delta` and
+`ticker`.
+
+Demo is preferred first. Production additionally requires `--confirm-production-readonly` and is
+subject to the member-by-member margin entitlement gate. Neither flag authorizes a trade; there is
+no order or account-mutation code in M25B2. The existing `RequestSigner` uses `/proc/self/fd`, so
+real execution is Linux-only. The encrypted exact-read vault does not record demo/production
+provenance; M25B2 exposes an injectable environment-checked provider and refuses CLI execution
+until separately reviewed runtime composition supplies one. It never accepts a private key on the
+command line.
+
+The intended manual entry point is:
+
+```text
+python -m services.perps_shadow_research.live_smoke \
+  --environment demo --ticker TICKER --evidence-db /untracked/path/perps.sqlite3 \
+  --live-readonly
+```
+
+Until credential composition exists, this validates opt-in configuration and exits with a
+sanitized `BLOCKER`. Never place the database in fixtures or tracked data directories. Success
+requires genuine snapshot, contiguous delta, ticker evidence, controlled disconnect/reconnect, a
+new epoch, and a fresh post-reconnect snapshot. No delta within the bounded window is
+`INCONCLUSIVE`, never fabricated success.
