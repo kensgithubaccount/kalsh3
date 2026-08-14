@@ -469,6 +469,10 @@ def test_current_product_has_no_fake_race_and_corruption_returns_200(tmp_path: P
     assert "no winner selected" in page
     assert "different forecast horizons and information sets" in page
     assert "evaluation processing time" in page
+    assert "Evidence sufficiency" in page
+    assert "Authoritative archived event evidence</dt><dd>Unavailable — not wired" in page
+    assert "Independent evidence units</dt><dd>Not proven" in page
+    assert "PRODUCTION INFLUENCE: 0" in page
     with sqlite3.connect(app.store.path) as db:
         db.execute(
             "INSERT INTO receipt_evaluations VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)",

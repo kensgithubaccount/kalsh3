@@ -1071,6 +1071,13 @@ class DashboardApp:
             f"<p><strong>{html.escape(snapshot.no_winner_reason)}</strong></p>"
             "<p><strong>Temporal limitation:</strong> shared resolved propositions may come from different forecast horizons and information sets. Those inputs are not aligned or proven comparable. Cohort windows use evaluation processing time (<code>evaluated_at</code>), not forecast or decision time.</p>"
             "<p>Comparison evidence is descriptive only and cannot change research budgets, governance, capital, or trading.</p></article>"
+            "<article><p class=eyebrow>EVENT IDENTITY</p><h2>Evidence sufficiency</h2>"
+            "<dl><dt>Markets scored</dt><dd>See outcome evaluation above</dd>"
+            "<dt>Authoritative archived event evidence</dt><dd>Unavailable — not wired</dd>"
+            "<dt>Independent evidence units</dt><dd>Not proven</dd>"
+            "<dt>Evidence status</dt><dd>INCONCLUSIVE</dd></dl>"
+            "<p>This is a status-only view, not a live computed assessment. The repository does not yet have a reconstructable, verified historical Market/Event archive, so candidate observations cannot produce authoritative counts. Multiple markets can belong to one Kalshi event, and independence across distinct events has not been established.</p>"
+            "<strong>PRODUCTION INFLUENCE: 0</strong></article>"
         )
 
     @staticmethod

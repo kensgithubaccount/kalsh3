@@ -24,6 +24,19 @@ from .evaluation import (
     performance,
 )
 from .evaluation_store import EvaluationStore, EvaluationStoreError
+from .event_evidence import (
+    EvaluatedMarketEventBinding,
+    EventEvidenceAssessment,
+    EventEvidenceManifest,
+    EvidenceSufficiencyPolicy,
+    ObservationAuthorityState,
+    UniverseEventObservation,
+    aggregate_market_differences_by_exchange_event,
+    assess_manifest,
+    bind_market_event,
+    manifest_from_evaluation_store,
+    manifest_from_pairwise_comparison,
+)
 from .store import DecisionReceiptStore, DecisionReceiptStoreError
 
 __all__ = [
@@ -35,22 +48,33 @@ __all__ = [
     "DecisionReceipt",
     "DecisionReceiptStore",
     "DecisionReceiptStoreError",
+    "EvaluatedMarketEventBinding",
     "EvaluationDatasetManifest",
     "EvaluationEligibility",
     "EvaluationStore",
     "EvaluationStoreError",
     "EvaluationTarget",
+    "EventEvidenceAssessment",
+    "EventEvidenceManifest",
+    "EvidenceSufficiencyPolicy",
     "FreshnessPolicy",
     "ImplementationAvailability",
+    "ObservationAuthorityState",
     "OpportunityAttribution",
     "ReceiptEvaluation",
     "ResearchDecision",
+    "UniverseEventObservation",
     "agent_by_id",
+    "aggregate_market_differences_by_exchange_event",
+    "assess_manifest",
+    "bind_market_event",
     "calibration",
     "current_belief",
     "effective_evaluations",
     "evaluate_receipt",
     "explain_decision",
+    "manifest_from_evaluation_store",
+    "manifest_from_pairwise_comparison",
     "performance",
     "receipt_identity",
 ]
