@@ -36,6 +36,10 @@ it. A reconnect creates a new protocol and epoch, resubscribes, and cannot accep
 Acceptance compares monotonic accepted snapshot/delta/ticker counters against a baseline captured
 immediately after each bind, so acknowledgements, other frame types, historical timestamps, and old
 epochs cannot substitute for a genuinely accepted snapshot in the new connection epoch.
+Final SUCCESS separately compares book and market-state table counts with invocation-local baselines
+captured before collection. Only rows inserted by the current invocation count; pre-existing rows and
+idempotently rejected replays cannot satisfy persistence acceptance. Documented `unsubscribed` and
+list-subscriptions responses remove only their exact command-id-matched pending entries.
 M25B1 still owns gap, crossed, stale, replay, collision, evidence, and sensitive delta-field policy.
 No raw-frame archive exists.
 
@@ -55,6 +59,8 @@ reviewed composition supplies an exactly-read credential whose environment prove
 Success requires genuine initial snapshot, contiguous delta, ticker observation, persisted book and
 market-state rows, controlled disconnect, new epoch, fresh post-reconnect snapshot, and clean close.
 No delta is INCONCLUSIVE. No synthetic activity may satisfy acceptance.
+
+The live smoke has not been run. Credential composition remains blocked as described above.
 
 Production execution remains DISARMED. Production-write credential remains NONE. No order, cancel,
 amend, decrease, transfer, risk write, position sizing, routing, canary, autonomy, learning influence,

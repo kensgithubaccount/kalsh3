@@ -55,8 +55,12 @@ class LiveSmokeConfig:
             raise ShadowResearchError("production requires --confirm-production-readonly")
         if not 0 < self.window_seconds <= 300 or not 0 <= self.max_reconnects <= 3:
             raise ShadowResearchError("unsafe smoke time or reconnect bound")
-        parts = {part.lower() for part in self.evidence_db.parts}
-        if "fixtures" in parts or "testdata" in parts or "data" in parts:
+        forbidden_parts = {"fixtures", "testdata", "data"}
+        lexical_parts = {part.lower() for part in self.evidence_db.parts}
+        resolved_parts = {
+            part.lower() for part in self.evidence_db.parent.resolve(strict=False).parts
+        }
+        if forbidden_parts & (lexical_parts | resolved_parts):
             raise ShadowResearchError("evidence DB must not be inside tracked fixture/data paths")
 
 
@@ -153,6 +157,8 @@ async def run_live_smoke(
     )
     store = PerpsEvidenceStore(config.evidence_db)
     store.append_metadata(market)
+    book_rows_before = store.count("perps_book_evidence")
+    state_rows_before = store.count("perps_market_state")
     signer = resolve_signer(provider, config.environment)
     entitled = MarginEnabledClient(config.environment, signer, http).enabled(
         timestamp_ms=time.time_ns() // 1_000_000
@@ -182,12 +188,12 @@ async def run_live_smoke(
     epochs, snapshots, deltas, tickers = await collect_live_evidence(
         config, runtime, signer, connector=connector
     )
-    book_rows = store.count("perps_book_evidence")
-    state_rows = store.count("perps_market_state")
+    book_rows = store.count("perps_book_evidence") - book_rows_before
+    state_rows = store.count("perps_market_state") - state_rows_before
     accepted = (
         len(epochs) == config.max_reconnects + 1
         and len(set(epochs)) == len(epochs)
-        and snapshots >= 2
+        and snapshots >= config.max_reconnects + 1
         and deltas >= 1
         and tickers >= 1
         and book_rows >= 2

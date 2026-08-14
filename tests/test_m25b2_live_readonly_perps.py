@@ -8,10 +8,12 @@ from datetime import UTC, datetime
 from decimal import Decimal
 from pathlib import Path
 from typing import Any
+from uuid import UUID
 
 import pytest
 
 from services.kalshi_account_gateway.auth import AuthenticationError, signature_message
+from services.perps_shadow_research import live_transport
 from services.perps_shadow_research.domain import ShadowResearchError
 from services.perps_shadow_research.live_boundary import (
     ENVIRONMENTS,
@@ -26,7 +28,12 @@ from services.perps_shadow_research.live_boundary import (
     PerpsMarketClient,
     resolve_signer,
 )
-from services.perps_shadow_research.live_smoke import LiveSmokeConfig, collect_live_evidence
+from services.perps_shadow_research.live_smoke import (
+    LiveSmokeConfig,
+    SmokeOutcome,
+    collect_live_evidence,
+    run_live_smoke,
+)
 from services.perps_shadow_research.live_transport import (
     MAX_WEBSOCKET_MESSAGE_BYTES,
     AsyncMarginTransport,
@@ -302,6 +309,55 @@ def test_websocket_requires_exact_protocol_created_command_payload() -> None:
     asyncio.run(run())
 
 
+def test_cross_protocol_command_and_boolean_id_are_rejected() -> None:
+    async def run() -> None:
+        websockets = [FakeWebSocket([], []), FakeWebSocket([], [])]
+
+        async def connector(url: str, **kwargs: Any) -> FakeWebSocket:
+            del url, kwargs
+            return websockets.pop(0)
+
+        first = AsyncMarginTransport(MarginEnvironment.DEMO, FakeSigner(), connector)
+        second = AsyncMarginTransport(MarginEnvironment.DEMO, FakeSigner(), connector)
+        await first.connect()
+        await second.connect()
+        assert first.protocol is not None
+        command = first.protocol.list_subscriptions()
+        with pytest.raises(ShadowResearchError, match="protocol state"):
+            await second.send_protocol_command(command)
+        command["id"] = True
+        with pytest.raises(ShadowResearchError, match="protocol state"):
+            await first.send_protocol_command(command)
+
+    asyncio.run(run())
+
+
+def test_unsubscribe_and_list_acknowledgements_clear_only_matching_pending() -> None:
+    from services.perps_shadow_research.margin_protocol import MarginProtocolState
+
+    protocol = MarginProtocolState(UUID(int=1))
+    unsubscribe = protocol.unsubscribe(7)
+    listed = protocol.list_subscriptions()
+    protocol.command_acknowledged(
+        {"id": unsubscribe["id"], "type": "unsubscribed", "sid": 7, "seq": 1}
+    )
+    assert unsubscribe["id"] not in protocol.pending and listed["id"] in protocol.pending
+    protocol.command_acknowledged({"id": listed["id"], "type": "ok", "msg": []})
+    assert not protocol.pending
+
+
+def test_command_acknowledgement_mismatch_preserves_pending() -> None:
+    from services.perps_shadow_research.margin_protocol import MarginProtocolState
+
+    protocol = MarginProtocolState(UUID(int=1))
+    command = protocol.unsubscribe(7)
+    with pytest.raises(ShadowResearchError, match="does not match"):
+        protocol.command_acknowledged(
+            {"id": command["id"], "type": "unsubscribed", "sid": 8, "seq": 1}
+        )
+    assert command["id"] in protocol.pending
+
+
 def _subscribed(channel: str, sid: int, command_id: int) -> dict[str, object]:
     return {"type": "subscribed", "id": command_id, "msg": {"channel": channel, "sid": sid}}
 
@@ -524,6 +580,172 @@ def test_smoke_opt_in_production_confirmation_and_path_guard(tmp_path: Path) -> 
             tmp_path / "fixtures" / "e.db",
             live_readonly=True,
         )
+
+
+def test_smoke_path_guard_resolves_symlink_parent(tmp_path: Path) -> None:
+    fixtures = tmp_path / "fixtures"
+    fixtures.mkdir()
+    linked = tmp_path / "safe-name"
+    linked.symlink_to(fixtures, target_is_directory=True)
+    with pytest.raises(ShadowResearchError, match="fixture/data"):
+        LiveSmokeConfig(MarginEnvironment.DEMO, "BTC-PERP", linked / "e.db", live_readonly=True)
+    config = LiveSmokeConfig(
+        MarginEnvironment.DEMO, "BTC-PERP", tmp_path / "normal" / "e.db", live_readonly=True
+    )
+    assert config.evidence_db == tmp_path / "normal" / "e.db"
+
+
+class FakeProvider:
+    def resolve(self, environment: MarginEnvironment) -> ExactReadCredential:
+        return ExactReadCredential(environment, "fake-id", b"fake-key")
+
+
+def _session_frames(
+    *, snapshot: bool = True, delta: bool = True, ticker_event: bool = True
+) -> tuple[list[dict[str, object]], list[dict[str, object]]]:
+    initial = [
+        _subscribed("orderbook_delta", 7, 0),
+        _subscribed("ticker", 8, 1),
+    ]
+    if snapshot:
+        initial.append(_snapshot())
+    if ticker_event:
+        initial.append(_ticker())
+    if delta:
+        initial.append(_delta())
+    reconnect = [
+        _subscribed("orderbook_delta", 7, 0),
+        _subscribed("ticker", 8, 1),
+    ]
+    if snapshot:
+        reconnect.append(_snapshot())
+    return initial, reconnect
+
+
+async def _direct_smoke(
+    monkeypatch: pytest.MonkeyPatch,
+    db: Path,
+    sessions: tuple[list[dict[str, object]], list[dict[str, object]]],
+    *,
+    enabled: bool = True,
+    epochs: tuple[UUID, UUID] | None = None,
+) -> tuple[Any, int]:
+    monkeypatch.setattr(
+        "services.perps_shadow_research.live_smoke.resolve_signer",
+        lambda provider, environment: FakeSigner(),
+    )
+    if epochs is not None:
+        epoch_values = iter(epochs)
+        monkeypatch.setattr(live_transport, "uuid4", lambda: next(epoch_values))
+    sockets = iter(
+        BoundedFakeWebSocket([json.dumps(item) for item in frames], []) for frames in sessions
+    )
+    connection_count = 0
+
+    async def connector(url: str, **kwargs: Any) -> BoundedFakeWebSocket:
+        nonlocal connection_count
+        del url, kwargs
+        connection_count += 1
+        return next(sockets)
+
+    summary = await run_live_smoke(
+        LiveSmokeConfig(
+            MarginEnvironment.DEMO,
+            "BTC-PERP",
+            db,
+            live_readonly=True,
+            window_seconds=0.02,
+        ),
+        FakeProvider(),
+        http_transport=FakeHttp(
+            [market_reply(), HttpReply(200, json.dumps({"enabled": enabled}).encode())]
+        ),
+        connector=connector,
+    )
+    return summary, connection_count
+
+
+def test_run_live_smoke_preseeded_rows_do_not_help_and_current_rows_succeed(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    async def run() -> None:
+        db = tmp_path / "evidence.sqlite3"
+        success, _ = await _direct_smoke(monkeypatch, db, _session_frames())
+        assert success.outcome is SmokeOutcome.SUCCESS
+        assert (success.book_rows, success.market_state_rows) == (3, 1)
+
+        stale_only, _ = await _direct_smoke(
+            monkeypatch,
+            db,
+            (
+                [_subscribed("orderbook_delta", 7, 0), _subscribed("ticker", 8, 1)],
+                [_subscribed("orderbook_delta", 7, 0), _subscribed("ticker", 8, 1)],
+            ),
+        )
+        assert stale_only.outcome is SmokeOutcome.INCONCLUSIVE
+        assert (stale_only.book_rows, stale_only.market_state_rows) == (0, 0)
+
+        current, _ = await _direct_smoke(monkeypatch, db, _session_frames())
+        assert current.outcome is SmokeOutcome.SUCCESS
+        assert (current.book_rows, current.market_state_rows) == (3, 1)
+
+    asyncio.run(run())
+
+
+def test_run_live_smoke_replay_in_same_epochs_adds_no_persistence(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    async def run() -> None:
+        db = tmp_path / "evidence.sqlite3"
+        epochs = (UUID(int=11), UUID(int=12))
+        first, _ = await _direct_smoke(monkeypatch, db, _session_frames(), epochs=epochs)
+        assert first.outcome is SmokeOutcome.SUCCESS
+        replay, _ = await _direct_smoke(monkeypatch, db, _session_frames(), epochs=epochs)
+        assert replay.outcome is SmokeOutcome.INCONCLUSIVE
+        assert (replay.book_rows, replay.market_state_rows) == (0, 0)
+
+    asyncio.run(run())
+
+
+@pytest.mark.parametrize(
+    ("sessions", "expected_book", "expected_state"),
+    [
+        (_session_frames(ticker_event=False), 3, 0),
+        (_session_frames(snapshot=False), 0, 1),
+        (_session_frames(delta=False), 2, 1),
+    ],
+    ids=["no-new-market-state", "no-new-book-evidence", "no-delta"],
+)
+def test_run_live_smoke_missing_current_evidence_is_inconclusive(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    sessions: tuple[list[dict[str, object]], list[dict[str, object]]],
+    expected_book: int,
+    expected_state: int,
+) -> None:
+    async def run() -> None:
+        db = tmp_path / "e.db"
+        preseeded, _ = await _direct_smoke(monkeypatch, db, _session_frames())
+        assert preseeded.outcome is SmokeOutcome.SUCCESS
+        summary, _ = await _direct_smoke(monkeypatch, db, sessions)
+        assert summary.outcome is SmokeOutcome.INCONCLUSIVE
+        assert (summary.book_rows, summary.market_state_rows) == (
+            expected_book,
+            expected_state,
+        )
+
+    asyncio.run(run())
+
+
+def test_run_live_smoke_false_entitlement_is_no_go_without_websocket(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    summary, connections = asyncio.run(
+        _direct_smoke(monkeypatch, tmp_path / "e.db", _session_frames(), enabled=False)
+    )
+    assert summary.outcome is SmokeOutcome.NO_GO
+    assert connections == 0
+    assert (summary.book_rows, summary.market_state_rows) == (0, 0)
 
 
 def test_static_boundary_has_no_write_or_private_capability() -> None:

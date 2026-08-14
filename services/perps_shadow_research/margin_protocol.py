@@ -142,6 +142,45 @@ class MarginProtocolState:
         self.subscriptions[sid] = subscription
         return subscription
 
+    def command_acknowledged(self, raw: Any) -> None:
+        """Consume an exact unsubscribe or list response identified by command id."""
+        if not isinstance(raw, dict):
+            raise ShadowResearchError("malformed margin command acknowledgement")
+        command_id = raw.get("id")
+        if type(command_id) is not int or command_id < 0:
+            raise ShadowResearchError("command id must be exact non-negative integer")
+        pending = self.pending.get(command_id)
+        if pending is None:
+            raise ShadowResearchError("unknown pending margin command")
+        if pending.command is MarginCommand.UNSUBSCRIBE:
+            sid = raw.get("sid")
+            sequence = raw.get("seq")
+            if (
+                raw.get("type") != "unsubscribed"
+                or type(sid) is not int
+                or type(sequence) is not int
+                or sid < 1
+                or sequence < 1
+                or self.canonical_command(command_id).get("params") != {"sids": [sid]}
+            ):
+                raise ShadowResearchError("unsubscribe acknowledgement does not match command")
+            self.subscriptions.pop(sid, None)
+        elif pending.command is MarginCommand.LIST:
+            message = raw.get("msg")
+            if raw.get("type") != "ok" or not isinstance(message, list):
+                raise ShadowResearchError("list acknowledgement does not match command")
+            for item in message:
+                if not isinstance(item, dict) or set(item) != {"channel", "sid"}:
+                    raise ShadowResearchError("malformed listed margin subscription")
+                try:
+                    MarginChannel(item["channel"])
+                except (ValueError, TypeError) as exc:
+                    raise ShadowResearchError("unapproved listed margin channel") from exc
+                self._sid(item["sid"])
+        else:
+            raise ShadowResearchError("acknowledgement does not match pending command")
+        del self.pending[command_id]
+
     def _command(
         self,
         command: MarginCommand,

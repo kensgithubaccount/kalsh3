@@ -146,6 +146,21 @@ def test_offline_runtime_snapshot_delta_ticker_and_separate_tables(tmp_path: Pat
     assert state.production_influence == first.production_influence == Decimal("0")
 
 
+def test_runtime_routes_exact_unsubscribe_ack_to_pending_cleanup(tmp_path: Path) -> None:
+    runtime = app(tmp_path)
+    epoch = connect(runtime)
+    assert runtime.protocol is not None
+    command = runtime.protocol.unsubscribe(7)
+    assert (
+        runtime.process(
+            frame({"type": "unsubscribed", "id": command["id"], "sid": 7, "seq": 1}),
+            connection_epoch=epoch,
+        )
+        is None
+    )
+    assert command["id"] not in runtime.protocol.pending
+
+
 def test_disabled_old_epoch_and_fresh_snapshot_after_reconnect(tmp_path: Path) -> None:
     disabled = app(tmp_path / "disabled", enabled=False)
     assert disabled.connect() is None and disabled.state is PerpsRuntimeState.STOPPED

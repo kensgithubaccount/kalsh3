@@ -203,6 +203,11 @@ class OfflinePerpsEvidenceRuntime:
                 else:
                     self.ticker_sid = subscription.sid
                 return None
+            if raw["type"] in {"unsubscribed", "ok"}:
+                if self.protocol is None:
+                    raise ShadowResearchError("missing margin protocol")
+                self.protocol.command_acknowledged(raw)
+                return None
             if raw["type"] == "orderbook_snapshot":
                 return self._snapshot(PerpsBookSnapshotEvent.parse(raw, self.market), frame)
             if raw["type"] == "orderbook_delta":
