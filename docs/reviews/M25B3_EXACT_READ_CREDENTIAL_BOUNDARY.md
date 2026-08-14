@@ -69,11 +69,9 @@ search, migration, or networking. Enrollment always produces `ENROLLED_UNVERIFIE
 
 The normal smoke CLI resolves a `VERIFIED_DEMO` provider before any public or authenticated network work.
 Missing, unverified, disabled, quarantined, corrupt, mismatched, or legacy credentials produce a sanitized
-nonzero blocker with zero network. A verified DEMO provider may reach the unchanged M25B2 smoke. Production
-is refused before credential loading or network access; confirmation cannot unlock it and no override exists.
-As corrected in M25B5, the injectable lower-level `run_live_smoke()` also structurally rejects production
-before provider resolution, transport construction or use, and persistence mutation. The normal CLI retains
-its independent zero-network rejection.
+nonzero blocker with zero network. A verified DEMO provider may reach the unchanged M25B2 smoke. M25B6
+later adds a separate production composition path requiring the exact M25B5 verified provider and exact
+reviewed production store; it does not weaken or make DEMO a prerequisite for that production path.
 
 ## Milestone truth and next action
 
@@ -86,5 +84,5 @@ remains separate.
 
 After independent review and merge, the precise human action is to enroll a DEMO credential, verify DEMO
 provenance through the reviewed GET-only verifier, and then explicitly run one tightly bounded DEMO smoke.
-M25B5 later adds an independent production read-only lifecycle; it does not require this DEMO lifecycle as
-a prerequisite.
+M25B5 later adds an independent production read-only lifecycle and M25B6 composes it into the manual smoke;
+neither requires this DEMO lifecycle as a prerequisite.

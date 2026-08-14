@@ -304,11 +304,12 @@ def test_static_boundary_has_no_production_execution_or_write_surface() -> None:
 def test_live_smoke_cli_missing_or_production_credential_is_zero_network(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    async def forbidden(*args: Any, **kwargs: Any) -> Any:
-        del args, kwargs
+    async def credential_gate(config: Any, provider: Any, **kwargs: Any) -> Any:
+        del kwargs
+        provider.resolve(config.environment)
         raise AssertionError("network-capable smoke must not start")
 
-    monkeypatch.setattr(live_smoke, "run_live_smoke", forbidden)
+    monkeypatch.setattr(live_smoke, "run_live_smoke", credential_gate)
     base = [
         "live-smoke",
         "--ticker",
@@ -318,6 +319,8 @@ def test_live_smoke_cli_missing_or_production_credential_is_zero_network(
         "--live-readonly",
         "--credential-store",
         str(tmp_path / "missing"),
+        "--production-credential-store",
+        str(tmp_path / "missing-production"),
     ]
     monkeypatch.setattr(sys, "argv", [*base, "--environment", "demo"])
     assert live_smoke.main() == 2
@@ -326,7 +329,7 @@ def test_live_smoke_cli_missing_or_production_credential_is_zero_network(
         sys,
         "argv",
         [
-            *base[:-2],
+            *base,
             "--credential-store",
             str(unverified.directory),
             "--environment",

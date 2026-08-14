@@ -448,7 +448,7 @@ def test_static_boundaries_remain_read_only_neutral_and_disconnected() -> None:
     assert "/api_keys/create" not in combined and "/api_keys/delete" not in combined
     assert "demo.kalshi" not in combined
     assert "demo" not in signer and "production" not in signer
-    assert "M25B3 production credential composition unavailable" in smoke
+    assert "approved production read credential boundary required" in smoke
     assert live_smoke.main is not None
     assert RequestSigner.headers is not None
 
@@ -482,7 +482,7 @@ def test_run_live_smoke_structurally_rejects_verified_production_before_side_eff
         live_readonly=True,
         confirm_production_readonly=True,
     )
-    with pytest.raises(ShadowResearchError, match="production Perps live smoke is unavailable"):
+    with pytest.raises(ShadowResearchError, match="approved production read credential boundary"):
         asyncio.run(
             live_smoke.run_live_smoke(
                 config,
