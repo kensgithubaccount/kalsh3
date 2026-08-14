@@ -15,6 +15,7 @@ from typing import Any
 from urllib.parse import parse_qs
 
 from services.agent_control_center.beliefs import FreshnessPolicy, current_belief
+from services.agent_control_center.comparison import current_competition_snapshot
 from services.agent_control_center.domain import (
     AGENT_REGISTRY,
     AgentDefinition,
@@ -851,6 +852,7 @@ class DashboardApp:
                 if receipt_error is not None
                 else ""
             )
+            + self._research_comparison(evaluation_error)
             + f"<div class=columns>{''.join(cards)}</div></section>"
         )
 
@@ -1044,7 +1046,32 @@ class DashboardApp:
                 or "No exclusions"
             )
             evaluation_lab = f"<h2>Evidence status</h2><p>{html.escape(evidence)} · settled scoreable decisions {len(eligible)} · unique markets {unique_markets} · independent event count unavailable · excluded {sum(excluded.values())}. Evidence remains inconclusive because independent event identity is not preserved.</p><h2>Agent evaluation</h2><p>Event Edge outcome evaluation is version-segmented on its detail page. Cross-Market remains unavailable because one settlement cannot prove both venue legs.</p><h2>Descriptive decision-level calibration</h2><p>Observations may be correlated within markets or underlying events. Bucket counts are display diagnostics, not significance or event-level sufficiency.</p><ul>{bins}</ul><h2>Decision review</h2><p>WOULD_TRADE, NO_TRADE, BLOCKED_BY_RISK, and INSUFFICIENT_EVIDENCE are retained without converting them to wins or losses.</p><h2>Data quality</h2><p>{html.escape(quality)}</p>"
-        return f"<section><p class=eyebrow>RESEARCH GOVERNANCE ONLY · OUTCOME EVALUATION</p><h1>Evidence laboratory</h1><div class=warning>{html.escape(summary['state'])}. No automatic strategy, threshold, weight, budget, capital, or autonomy change is permitted.</div>{evaluation_lab}<h2>Market families</h2>{families or '<p>No real tournament evidence.</p>'}<h2>Proposed changes</h2>{proposals}<h2>Recent changes</h2><p>Current configuration: {html.escape(str(summary['current_configuration'] or 'None'))}; previous/rollback: {html.escape(str(summary['previous_configuration'] or 'None'))}.</p><strong>PRODUCTION INFLUENCE: {html.escape(summary['production_influence'])}</strong></section>"
+        comparison = DashboardApp._research_comparison(evaluation_error)
+        return f"<section><p class=eyebrow>RESEARCH GOVERNANCE ONLY · OUTCOME EVALUATION</p><h1>Evidence laboratory</h1><div class=warning>{html.escape(summary['state'])}. No automatic strategy, threshold, weight, budget, capital, or autonomy change is permitted.</div>{comparison}{evaluation_lab}<h2>Market families</h2>{families or '<p>No real tournament evidence.</p>'}<h2>Proposed changes</h2>{proposals}<h2>Recent changes</h2><p>Current configuration: {html.escape(str(summary['current_configuration'] or 'None'))}; previous/rollback: {html.escape(str(summary['previous_configuration'] or 'None'))}.</p><strong>PRODUCTION INFLUENCE: {html.escape(summary['production_influence'])}</strong></section>"
+
+    @staticmethod
+    def _research_comparison(evaluation_error: str | None) -> str:
+        snapshot = current_competition_snapshot(evaluation_error is None)
+        rows = "".join(
+            "<li><strong>"
+            + html.escape(f"{item.agent_id} {item.agent_version}")
+            + "</strong> — "
+            + html.escape(
+                item.explanation if item.supported else f"Not comparable — {item.explanation}"
+            )
+            + "</li>"
+            for item in snapshot.contenders
+        )
+        return (
+            "<article><p class=eyebrow>RESEARCH COMPARISON</p>"
+            "<h2>Which agents are comparable?</h2>"
+            f"<ul>{rows}</ul>"
+            "<dl><dt>Independent-event evidence</dt><dd>Unavailable</dd>"
+            f"<dt>Competition status</dt><dd>{html.escape(snapshot.evidence_state.value)} — no winner selected</dd></dl>"
+            f"<p><strong>{html.escape(snapshot.no_winner_reason)}</strong></p>"
+            "<p><strong>Temporal limitation:</strong> shared resolved propositions may come from different forecast horizons and information sets. Those inputs are not aligned or proven comparable. Cohort windows use evaluation processing time (<code>evaluated_at</code>), not forecast or decision time.</p>"
+            "<p>Comparison evidence is descriptive only and cannot change research budgets, governance, capital, or trading.</p></article>"
+        )
 
     @staticmethod
     def _opportunities(summary: dict[str, Any], attribution_error: str | None = None) -> str:
