@@ -76,3 +76,17 @@ After independent review and merge, a human must separately create an exchange k
 enroll it through the M25B5 FD-only CLI, verify it through M25B5's fixed production GET, and then explicitly
 invoke the command above with an untracked evidence path. A real smoke result remains pending and must not
 be inferred from this milestone's offline success test.
+
+## Post-merge live acceptance
+
+The preceding statements remain the implementation and review truth for M25B6: no real credentials or
+network were used, and no real smoke was run during its implementation or review. After M25B6 was merged,
+a separately human-invoked, bounded production read-only smoke was completed for canonical ticker
+`KXBTCPERP`. It succeeded after the dedicated read-only credential was verified and Perps entitlement had
+propagated. The accepted evidence included two snapshots, 66 deltas, and two distinct connection epochs;
+all persisted Perps evidence tables retained `production_influence = 0`.
+
+This later result is production observation acceptance only. It does not alter M25B6's offline review
+history, enable a collector or scheduler, place an order, or unlock production execution. The authoritative
+record, including the credential lifecycle, environment synchronization, evidence counts, and boundaries,
+is `M25B7_PRODUCTION_LIVE_ACCEPTANCE.md`.
