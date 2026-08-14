@@ -7,13 +7,12 @@ import hashlib
 import hmac
 import secrets
 import struct
-import subprocess
 import time
-from dataclasses import dataclass, field
 
+from services.neutral_security import SecretBox, SecretStorageError
 
-class SecurityError(ValueError):
-    pass
+SecurityError = SecretStorageError
+__all__ = ["SecretBox", "SecurityError"]
 
 
 def hash_password(password: str) -> str:
@@ -71,81 +70,6 @@ def verify_totp(secret: str, code: str, when: int | None = None) -> bool:
         return any(hmac.compare_digest(totp(secret, now + offset), code) for offset in (-30, 0, 30))
     except (ValueError, TypeError):
         return False
-
-
-@dataclass(frozen=True, slots=True)
-class SecretBox:
-    """Encrypt-then-MAC vault using scrypt-derived AES-256-CTR and HMAC-SHA256 keys."""
-
-    master_key: bytes = field(repr=False)
-
-    def __post_init__(self) -> None:
-        if len(self.master_key) < 32:
-            raise SecurityError("vault master key must contain at least 256 bits")
-
-    def _keys(self, salt: bytes) -> tuple[bytes, bytes]:
-        material = hashlib.scrypt(
-            self.master_key,
-            salt=salt,
-            n=2**15,
-            r=8,
-            p=1,
-            dklen=64,
-            maxmem=64 * 1024 * 1024,
-        )
-        return material[:32], material[32:]
-
-    def seal(self, plaintext: bytes) -> str:
-        salt, iv = secrets.token_bytes(16), secrets.token_bytes(16)
-        encryption_key, mac_key = self._keys(salt)
-        result = subprocess.run(  # noqa: S603
-            [
-                "/usr/bin/openssl",
-                "enc",
-                "-aes-256-ctr",
-                "-K",
-                encryption_key.hex(),
-                "-iv",
-                iv.hex(),
-            ],
-            input=plaintext,
-            capture_output=True,
-            check=False,
-        )
-        if result.returncode:
-            raise SecurityError("credential encryption failed")
-        body = b"KPV3\x01" + salt + iv + result.stdout
-        return base64.urlsafe_b64encode(body + hmac.digest(mac_key, body, "sha256")).decode()
-
-    def open(self, token: str) -> bytes:
-        try:
-            raw = base64.urlsafe_b64decode(token)
-            if raw[:5] != b"KPV3\x01" or len(raw) < 69:
-                raise SecurityError("invalid credential envelope")
-            salt, iv, ciphertext, signature = raw[5:21], raw[21:37], raw[37:-32], raw[-32:]
-            encryption_key, mac_key = self._keys(salt)
-            if not hmac.compare_digest(signature, hmac.digest(mac_key, raw[:-32], "sha256")):
-                raise SecurityError("credential envelope authentication failed")
-            result = subprocess.run(  # noqa: S603
-                [
-                    "/usr/bin/openssl",
-                    "enc",
-                    "-d",
-                    "-aes-256-ctr",
-                    "-K",
-                    encryption_key.hex(),
-                    "-iv",
-                    iv.hex(),
-                ],
-                input=ciphertext,
-                capture_output=True,
-                check=False,
-            )
-        except (ValueError, TypeError) as exc:
-            raise SecurityError("invalid credential envelope") from exc
-        if result.returncode:
-            raise SecurityError("credential decryption failed")
-        return result.stdout
 
 
 def recovery_codes() -> tuple[tuple[str, ...], tuple[str, ...]]:

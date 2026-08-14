@@ -13,6 +13,12 @@ from pathlib import Path
 from services.kalshi_account_gateway.auth import RequestSigner
 
 from .domain import ShadowResearchError
+from .exact_read_credentials import (
+    CredentialBoundaryError,
+    ExactReadCredentialStore,
+    VerifiedDemoCredentialProvider,
+    default_store_directory,
+)
 from .live_boundary import (
     ExactReadCredentialProvider,
     MarginEnabledClient,
@@ -224,20 +230,32 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--evidence-db", required=True, type=Path)
     parser.add_argument("--live-readonly", action="store_true")
     parser.add_argument("--confirm-production-readonly", action="store_true")
+    parser.add_argument("--credential-store", type=Path, default=default_store_directory())
     return parser
 
 
 def main() -> int:
     args = _parser().parse_args()
-    LiveSmokeConfig(
-        MarginEnvironment(args.environment),
-        args.ticker,
-        args.evidence_db,
-        args.live_readonly,
-        args.confirm_production_readonly,
-    )
-    print("BLOCKER: no environment-proven exact-read credential provider is composed")
-    return 2
+    environment = MarginEnvironment(args.environment)
+    if environment is MarginEnvironment.PRODUCTION:
+        print("BLOCKER: M25B3 production credential composition unavailable")
+        return 2
+    try:
+        config = LiveSmokeConfig(
+            environment,
+            args.ticker,
+            args.evidence_db,
+            args.live_readonly,
+            args.confirm_production_readonly,
+        )
+        provider = VerifiedDemoCredentialProvider(ExactReadCredentialStore(args.credential_store))
+        provider.resolve(MarginEnvironment.DEMO)
+    except (ShadowResearchError, CredentialBoundaryError):
+        print("BLOCKER: verified DEMO credential unavailable")
+        return 2
+    summary = asyncio.run(run_live_smoke(config, provider))
+    print(f"DEMO read-only smoke outcome: {summary.outcome.value}")
+    return 0 if summary.outcome is SmokeOutcome.SUCCESS else 2
 
 
 if __name__ == "__main__":
