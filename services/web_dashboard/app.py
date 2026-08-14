@@ -299,7 +299,15 @@ class DashboardApp:
                 return self._respond(
                     start,
                     "404 Not Found",
-                    _layout("Agent not found", body, csrf, path, display_status, connection_label, sync_label),
+                    _layout(
+                        "Agent not found",
+                        body,
+                        csrf,
+                        path,
+                        display_status,
+                        connection_label,
+                        sync_label,
+                    ),
                 )
             body = self._agent_detail(agent)
         elif path == "/agents":
