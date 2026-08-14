@@ -88,12 +88,13 @@ def test_deep_surface_inventory_matches_information_architecture() -> None:
     determines what's rendered in the primary nav.
     """
     expected = {
-        "Dashboard",
+        "Overview",
+        "Agents",
         "Opportunities",
         "Breaking Now",
         "Markets",
         "Activity",
-        "Portfolio",
+        "Positions",
         "Orders & Trades",
         "Reports",
         "Strategy",

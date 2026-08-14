@@ -38,9 +38,12 @@ class ProductSurface:
 SURFACES = (
     ProductSurface(
         "/",
-        "Dashboard",
+        "Overview",
         "Account value, performance, and what needs attention",
         EvidenceMode.NOT_AVAILABLE,
+    ),
+    ProductSurface(
+        "/agents", "Agents", "Research strategy roster and authority", EvidenceMode.NOT_AVAILABLE
     ),
     ProductSurface(
         "/opportunities",
@@ -64,7 +67,7 @@ SURFACES = (
         EvidenceMode.NOT_AVAILABLE,
     ),
     ProductSurface(
-        "/portfolio", "Portfolio", "Read-only account state", EvidenceMode.NOT_AVAILABLE
+        "/portfolio", "Positions", "Read-only account state", EvidenceMode.NOT_AVAILABLE
     ),
     ProductSurface(
         "/orders",
@@ -112,16 +115,25 @@ class NavSection:
 
 
 NAV_SECTIONS: tuple[NavSection, ...] = (
-    NavSection("dashboard", "Dashboard", "/", ("/",)),
-    NavSection("markets", "Markets", "/markets", ("/markets", "/opportunities", "/breaking")),
+    NavSection("overview", "Overview", "/", ("/",)),
+    NavSection("agents", "Agents", "/agents", ("/agents",)),
     NavSection(
-        "activity", "Activity", "/activity", ("/activity", "/portfolio", "/orders", "/reports")
+        "opportunities",
+        "Opportunities",
+        "/opportunities",
+        ("/opportunities", "/markets", "/breaking", "/sources", "/forecasting"),
     ),
     NavSection(
-        "strategy",
-        "Strategy",
-        "/strategy",
-        ("/strategy", "/learning", "/sources", "/forecasting", "/backtests", "/advanced"),
+        "positions",
+        "Positions",
+        "/portfolio",
+        ("/portfolio", "/activity", "/orders", "/reports"),
+    ),
+    NavSection(
+        "learning",
+        "Learning",
+        "/learning",
+        ("/learning", "/strategy", "/backtests", "/advanced"),
     ),
     NavSection("system", "System", "/system", ("/system", "/risk")),
 )
