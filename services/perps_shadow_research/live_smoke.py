@@ -156,6 +156,8 @@ async def run_live_smoke(
     http_transport: UrllibMarginHttpTransport | None = None,
     connector: WebSocketConnector = websockets_connector,
 ) -> SmokeSummary:
+    if config.environment is MarginEnvironment.PRODUCTION:
+        raise ShadowResearchError("production Perps live smoke is unavailable")
     http = http_transport or UrllibMarginHttpTransport()
     observed_at = datetime.now(UTC)
     market = PerpsMarketClient(config.environment, http).get_market(

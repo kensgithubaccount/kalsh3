@@ -71,8 +71,9 @@ The normal smoke CLI resolves a `VERIFIED_DEMO` provider before any public or au
 Missing, unverified, disabled, quarantined, corrupt, mismatched, or legacy credentials produce a sanitized
 nonzero blocker with zero network. A verified DEMO provider may reach the unchanged M25B2 smoke. Production
 is refused before credential loading or network access; confirmation cannot unlock it and no override exists.
-The injectable lower-level `run_live_smoke()` remains test-oriented and expects its caller to supply a valid
-provider; the normal CLI owns the zero-network pre-resolution ordering.
+As corrected in M25B5, the injectable lower-level `run_live_smoke()` also structurally rejects production
+before provider resolution, transport construction or use, and persistence mutation. The normal CLI retains
+its independent zero-network rejection.
 
 ## Milestone truth and next action
 
@@ -85,3 +86,5 @@ remains separate.
 
 After independent review and merge, the precise human action is to enroll a DEMO credential, verify DEMO
 provenance through the reviewed GET-only verifier, and then explicitly run one tightly bounded DEMO smoke.
+M25B5 later adds an independent production read-only lifecycle; it does not require this DEMO lifecycle as
+a prerequisite.
