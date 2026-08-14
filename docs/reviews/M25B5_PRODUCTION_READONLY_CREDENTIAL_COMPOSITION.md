@@ -12,9 +12,11 @@ The production store, verifier, provider, and CLI also live in the account-gatew
 Perps research package. Predictions and Perps can therefore consume the same reviewed production read
 credential in later separately reviewed composition work; M25B5 wires neither consumer to it.
 
-The Perps `run_live_smoke()` orchestration itself rejects production as its first operation, before provider
-resolution, signer or transport construction, REST or WebSocket use, and evidence-store mutation. The CLI
-retains its earlier production rejection as an additional boundary. There is no override in M25B5.
+At M25B5, the Perps `run_live_smoke()` orchestration rejected production as its first operation, before
+provider resolution, signer or transport construction, REST or WebSocket use, and evidence-store mutation.
+M25B6 replaces that blanket rejection with a reviewed nominal gate requiring this exact verified provider
+backed by exactly `ProductionReadCredentialStore`; generic providers, duck stores, wrappers, and subclasses
+cannot unlock production.
 
 The production record is separate from the M25B3 DEMO store, dashboard legacy state, and
 `production_execution` write credentials. DEMO enrollment or verification is not a prerequisite and no
@@ -99,8 +101,8 @@ migrated, or composed.
 
 After independent review and merge, the human action is to create one dedicated production API key manually
 with Kalshi server-side scope `read` only, enroll its key ID and PEM once through the reviewed FD input, and
-run the explicit production verification command. No DEMO lifecycle is required first. A later milestone
-may explicitly approve and run a tightly bounded production read-only collector smoke.
+run the explicit production verification command. No DEMO lifecycle is required first. M25B6 later composes
+this provider into a tightly bounded, explicitly invoked production read-only Perps smoke.
 
 No real credential was used or enrolled, no network or live smoke was run, and production execution remains
 disarmed. No write/trading capability was added, Predictions realtime is unchanged, and

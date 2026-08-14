@@ -35,7 +35,8 @@ DEMO or PRODUCTION knowledge and remains environment-neutral; exact environment 
 credential-provider/composition layer's responsibility.
 
 M25B3 credential composition remains DEMO-only. M25B5 later adds a separate neutral production read-only
-credential lifecycle without changing this signer or unlocking a production smoke. The separate
+credential lifecycle, and M25B6 composes it into a bounded manual production smoke without changing this
+signer. The separate
 `services.production_execution` credential and `os.memfd_create` signer were inspected only for comparison
 and were not changed. Predictions realtime and dashboard credential behavior retain their existing APIs and
 signing semantics.

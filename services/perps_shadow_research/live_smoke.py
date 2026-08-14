@@ -1,4 +1,4 @@
-"""Explicit manual M25B2 read-only Perps evidence smoke; never autostarted."""
+"""Explicit manual bounded read-only Perps evidence smoke; never autostarted."""
 
 from __future__ import annotations
 
@@ -11,6 +11,12 @@ from enum import StrEnum
 from pathlib import Path
 
 from services.kalshi_account_gateway.auth import RequestSigner
+from services.kalshi_account_gateway.production_read_credentials import (
+    ProductionCredentialError,
+    ProductionReadCredentialStore,
+    VerifiedProductionReadCredentialProvider,
+    default_production_store_directory,
+)
 
 from .domain import ShadowResearchError
 from .exact_read_credentials import (
@@ -59,7 +65,12 @@ class LiveSmokeConfig:
             and not self.confirm_production_readonly
         ):
             raise ShadowResearchError("production requires --confirm-production-readonly")
-        if not 0 < self.window_seconds <= 300 or not 0 <= self.max_reconnects <= 3:
+        maximum_window = 60 if self.environment is MarginEnvironment.PRODUCTION else 300
+        maximum_reconnects = 1 if self.environment is MarginEnvironment.PRODUCTION else 3
+        if (
+            not 0 < self.window_seconds <= maximum_window
+            or not 0 <= self.max_reconnects <= maximum_reconnects
+        ):
             raise ShadowResearchError("unsafe smoke time or reconnect bound")
         forbidden_parts = {"fixtures", "testdata", "data"}
         lexical_parts = {part.lower() for part in self.evidence_db.parts}
@@ -157,20 +168,24 @@ async def run_live_smoke(
     connector: WebSocketConnector = websockets_connector,
 ) -> SmokeSummary:
     if config.environment is MarginEnvironment.PRODUCTION:
-        raise ShadowResearchError("production Perps live smoke is unavailable")
+        if type(provider) is not VerifiedProductionReadCredentialProvider:
+            raise ShadowResearchError("approved production read credential boundary required")
+        if type(provider.store) is not ProductionReadCredentialStore:
+            raise ShadowResearchError("approved production read credential boundary required")
+    signer = resolve_signer(provider, config.environment)
     http = http_transport or UrllibMarginHttpTransport()
     observed_at = datetime.now(UTC)
-    market = PerpsMarketClient(config.environment, http).get_market(
+    rest_retries = 0 if config.environment is MarginEnvironment.PRODUCTION else 2
+    market = PerpsMarketClient(config.environment, http, max_retries=rest_retries).get_market(
         config.ticker, observed_at=observed_at
     )
     store = PerpsEvidenceStore(config.evidence_db)
     store.append_metadata(market)
     book_rows_before = store.count("perps_book_evidence")
     state_rows_before = store.count("perps_market_state")
-    signer = resolve_signer(provider, config.environment)
-    entitled = MarginEnabledClient(config.environment, signer, http).enabled(
-        timestamp_ms=time.time_ns() // 1_000_000
-    )
+    entitled = MarginEnabledClient(
+        config.environment, signer, http, max_retries=rest_retries
+    ).enabled(timestamp_ms=time.time_ns() // 1_000_000)
     if not entitled:
         return SmokeSummary(
             SmokeOutcome.NO_GO,
@@ -233,15 +248,17 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--live-readonly", action="store_true")
     parser.add_argument("--confirm-production-readonly", action="store_true")
     parser.add_argument("--credential-store", type=Path, default=default_store_directory())
+    parser.add_argument(
+        "--production-credential-store",
+        type=Path,
+        default=default_production_store_directory(),
+    )
     return parser
 
 
 def main() -> int:
     args = _parser().parse_args()
     environment = MarginEnvironment(args.environment)
-    if environment is MarginEnvironment.PRODUCTION:
-        print("BLOCKER: M25B3 production credential composition unavailable")
-        return 2
     try:
         config = LiveSmokeConfig(
             environment,
@@ -250,13 +267,19 @@ def main() -> int:
             args.live_readonly,
             args.confirm_production_readonly,
         )
-        provider = VerifiedDemoCredentialProvider(ExactReadCredentialStore(args.credential_store))
-        provider.resolve(MarginEnvironment.DEMO)
-    except (ShadowResearchError, CredentialBoundaryError):
-        print("BLOCKER: verified DEMO credential unavailable")
+        if environment is MarginEnvironment.PRODUCTION:
+            provider: ExactReadCredentialProvider = VerifiedProductionReadCredentialProvider(
+                ProductionReadCredentialStore(args.production_credential_store)
+            )
+        else:
+            provider = VerifiedDemoCredentialProvider(
+                ExactReadCredentialStore(args.credential_store)
+            )
+        summary = asyncio.run(run_live_smoke(config, provider))
+    except (ShadowResearchError, CredentialBoundaryError, ProductionCredentialError, ValueError):
+        print(f"BLOCKER: verified {environment.value.upper()} read-only smoke unavailable")
         return 2
-    summary = asyncio.run(run_live_smoke(config, provider))
-    print(f"DEMO read-only smoke outcome: {summary.outcome.value}")
+    print(f"{environment.value.upper()} read-only smoke outcome: {summary.outcome.value}")
     return 0 if summary.outcome is SmokeOutcome.SUCCESS else 2
 
 

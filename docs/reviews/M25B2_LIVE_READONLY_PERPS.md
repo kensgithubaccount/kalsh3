@@ -54,17 +54,16 @@ The existing encrypted read vault was verified to contain key material but no ex
 provenance. Reusing it for both demo and production would permit credential/environment confusion.
 M25B2 therefore defines an injectable `ExactReadCredentialProvider`. M25B3 supplies a separately reviewable
 DEMO-only environment-proven provider lifecycle. M25B5 implements neutral production read-only credential
-composition, while `run_live_smoke()` itself structurally rejects production before provider resolution,
-transport construction or use, and persistence mutation. The CLI retains its independent rejection; no
-confirmation or override can unlock production Perps smoke pending a separate live milestone.
+composition. M25B6 later replaces the production blanket rejection with a nominal gate that accepts only
+the exact M25B5 verified provider backed by the exact reviewed production store, and resolves a current
+valid record through that real store before transport construction or use and persistence mutation.
 
 Success requires genuine initial snapshot, contiguous delta, ticker observation, persisted book and
 market-state rows, controlled disconnect, new epoch, fresh post-reconnect snapshot, and clean close.
 No delta is INCONCLUSIVE. No synthetic activity may satisfy acceptance.
 
-The live smoke has not been run. No DEMO or production credential has been enrolled or verified. M25B5
-implements production read-only credential composition, but production Perps smoke is structurally rejected
-by `run_live_smoke()` itself.
+The live smoke has not been run. No DEMO or production credential has been enrolled or verified. M25B6
+later makes one bounded, manual production read-only smoke composable after separate credential setup.
 
 Production execution remains DISARMED. Production-write credential remains NONE. No order, cancel,
 amend, decrease, transfer, risk write, position sizing, routing, canary, autonomy, learning influence,
