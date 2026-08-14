@@ -9,6 +9,7 @@ from __future__ import annotations
 import base64
 import os
 import subprocess
+from contextlib import suppress
 from dataclasses import dataclass, field
 from pathlib import PurePosixPath
 from urllib.parse import urlsplit
@@ -16,6 +17,65 @@ from urllib.parse import urlsplit
 
 class AuthenticationError(ValueError):
     """Raised when a request cannot safely be authenticated."""
+
+
+_OPENSSL = "/usr/bin/openssl"
+_PORTABLE_FD_ROOT = "/dev/fd"
+
+
+def _write_all(descriptor: int, value: bytes) -> None:
+    view = memoryview(value)
+    while view:
+        written = os.write(descriptor, view)
+        if written <= 0:
+            raise OSError("private-key pipe write failed")
+        view = view[written:]
+
+
+def _rsa_pss_sha256(private_key_pem: bytes, message: bytes) -> bytes:
+    """Sign with OpenSSL while transferring the key through an inherited pipe."""
+    read_fd, write_fd = os.pipe()
+    process: subprocess.Popen[bytes] | None = None
+    try:
+        command = [
+            _OPENSSL,
+            "dgst",
+            "-sha256",
+            "-sigopt",
+            "rsa_padding_mode:pss",
+            "-sigopt",
+            "rsa_pss_saltlen:digest",
+            "-sign",
+            f"{_PORTABLE_FD_ROOT}/{read_fd}",
+        ]
+        process = subprocess.Popen(  # noqa: S603 - fixed command, no shell
+            command,
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            close_fds=True,
+            pass_fds=(read_fd,),
+        )
+        os.close(read_fd)
+        read_fd = -1
+        _write_all(write_fd, private_key_pem)
+        os.close(write_fd)
+        write_fd = -1
+        stdout, _stderr = process.communicate(input=message)
+        if process.returncode != 0:
+            raise AuthenticationError("RSA signing failed")
+        return stdout
+    except (OSError, subprocess.SubprocessError) as exc:
+        if process is not None:
+            with suppress(OSError, subprocess.SubprocessError):
+                process.kill()
+                process.communicate()
+        raise AuthenticationError("RSA signing failed") from exc
+    finally:
+        if read_fd >= 0:
+            os.close(read_fd)
+        if write_fd >= 0:
+            os.close(write_fd)
 
 
 def signature_message(timestamp_ms: int, method: str, request_target: str) -> bytes:
@@ -49,39 +109,9 @@ class RequestSigner:
 
     def headers(self, timestamp_ms: int, method: str, request_target: str) -> dict[str, str]:
         message = signature_message(timestamp_ms, method, request_target)
-        read_fd, write_fd = os.pipe()
-        try:
-            os.write(write_fd, self.private_key_pem)
-            os.close(write_fd)
-            write_fd = -1
-            command = [
-                "/usr/bin/openssl",
-                "dgst",
-                "-sha256",
-                "-sigopt",
-                "rsa_padding_mode:pss",
-                "-sigopt",
-                "rsa_pss_saltlen:digest",
-                "-sign",
-                f"/proc/self/fd/{read_fd}",
-            ]
-            result = subprocess.run(  # noqa: S603 - fixed command, no shell
-                command,
-                input=message,
-                capture_output=True,
-                check=False,
-                pass_fds=(read_fd,),
-            )
-        except (OSError, subprocess.SubprocessError) as exc:
-            raise AuthenticationError("RSA signing failed") from exc
-        finally:
-            os.close(read_fd)
-            if write_fd >= 0:
-                os.close(write_fd)
-        if result.returncode != 0:
-            raise AuthenticationError("RSA signing failed")
+        signature = _rsa_pss_sha256(self.private_key_pem, message)
         return {
             "KALSHI-ACCESS-KEY": self.access_key,
             "KALSHI-ACCESS-TIMESTAMP": str(timestamp_ms),
-            "KALSHI-ACCESS-SIGNATURE": base64.b64encode(result.stdout).decode("ascii"),
+            "KALSHI-ACCESS-SIGNATURE": base64.b64encode(signature).decode("ascii"),
         }

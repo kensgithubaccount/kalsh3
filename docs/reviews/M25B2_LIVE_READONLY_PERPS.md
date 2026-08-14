@@ -45,8 +45,8 @@ No raw-frame archive exists.
 
 ## Manual runbook and blocker
 
-Prefer demo. Use Linux because the unchanged `RequestSigner` uses `/proc/self/fd`. Select one
-explicit ticker and an untracked SQLite path, then require `--live-readonly`. Production additionally
+Prefer demo. M25B4 makes the unchanged-capability `RequestSigner` portable across Linux and macOS. Select
+one explicit ticker and an untracked SQLite path, then require `--live-readonly`. Production additionally
 requires `--confirm-production-readonly`; false entitlement is a clean NO-GO. Never pass secrets on
 the command line and never run this command from CI.
 
