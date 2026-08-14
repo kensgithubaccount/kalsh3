@@ -7,25 +7,25 @@ import time
 import urllib.error
 import urllib.request
 from collections.abc import Callable, Mapping
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import datetime
 from decimal import Decimal
-from enum import StrEnum
 from typing import Any, Protocol
 from urllib.parse import quote
 
 from services.kalshi_account_gateway.auth import RequestSigner
+from services.kalshi_account_gateway.read_credentials import (
+    ExactReadCredential,
+    ExactReadCredentialProvider,
+)
+from services.kalshi_account_gateway.read_credentials import ReadEnvironment as MarginEnvironment
 
 from .domain import ShadowResearchError
 from .perps_metadata import PerpsMarketMetadata, parse_perps_market
 
 MAX_HTTP_RESPONSE_BYTES = 1_000_000
 MARGIN_ENABLED_PATH = "/trade-api/v2/margin/enabled"
-
-
-class MarginEnvironment(StrEnum):
-    DEMO = "demo"
-    PRODUCTION = "production"
+__all__ = ["ExactReadCredential", "ExactReadCredentialProvider", "MarginEnvironment"]
 
 
 @dataclass(frozen=True, slots=True)
@@ -48,22 +48,6 @@ ENVIRONMENTS: Mapping[MarginEnvironment, MarginEnvironmentConfig] = {
         "wss://external-api-margin-ws.kalshi.com/trade-api/ws/v2/margin",
     ),
 }
-
-
-@dataclass(frozen=True, slots=True, repr=False)
-class ExactReadCredential:
-    environment: MarginEnvironment
-    key_id: str = field(repr=False)
-    private_key_pem: bytes = field(repr=False)
-    scopes: frozenset[str] = field(default=frozenset({"read"}), repr=False)
-
-    def __post_init__(self) -> None:
-        if self.scopes != frozenset({"read"}) or not self.key_id or not self.private_key_pem:
-            raise ShadowResearchError("an exact-read credential is required")
-
-
-class ExactReadCredentialProvider(Protocol):
-    def resolve(self, environment: MarginEnvironment) -> ExactReadCredential: ...
 
 
 @dataclass(frozen=True, slots=True)

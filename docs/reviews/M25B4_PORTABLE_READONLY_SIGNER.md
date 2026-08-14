@@ -34,10 +34,11 @@ amend, transfer, risk, sizing, routing, signer-service, or other write path was 
 DEMO or PRODUCTION knowledge and remains environment-neutral; exact environment binding remains the
 credential-provider/composition layer's responsibility.
 
-M25B3 credential composition remains DEMO-only. Production credential composition remains blocked, and
-the separate `services.production_execution` credential and `os.memfd_create` signer were inspected only
-for comparison and were not changed. Predictions realtime and dashboard credential behavior retain their
-existing APIs and signing semantics.
+M25B3 credential composition remains DEMO-only. M25B5 later adds a separate neutral production read-only
+credential lifecycle without changing this signer or unlocking a production smoke. The separate
+`services.production_execution` credential and `os.memfd_create` signer were inspected only for comparison
+and were not changed. Predictions realtime and dashboard credential behavior retain their existing APIs and
+signing semantics.
 
 ## Verification and milestone truth
 
