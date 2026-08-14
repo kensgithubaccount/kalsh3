@@ -5,6 +5,7 @@ from __future__ import annotations
 import html
 import json
 import time
+from collections import Counter
 from collections.abc import Callable, Iterable
 from datetime import UTC, datetime, timedelta
 from email import policy
@@ -21,6 +22,15 @@ from services.agent_control_center.domain import (
     agent_by_id,
     explain_decision,
 )
+from services.agent_control_center.evaluation import (
+    EVALUATION_POLICY_VERSION,
+    EvaluationEligibility,
+    ReceiptEvaluation,
+    calibration,
+    effective_evaluations,
+    performance,
+)
+from services.agent_control_center.evaluation_store import EvaluationStore, EvaluationStoreError
 from services.agent_control_center.store import DecisionReceiptStore, DecisionReceiptStoreError
 from services.kalshi_account_gateway.client import (
     AccountGatewayError,
@@ -189,6 +199,7 @@ class DashboardApp:
         self.setup = setup
         self.risk_store = AuthorizationStore(store.path, SystemClock())
         self.receipt_store = DecisionReceiptStore(store.path)
+        self.evaluation_store = EvaluationStore(store.path)
         self.belief_freshness = FreshnessPolicy(
             (("event-edge", timedelta(hours=1)), ("cross-market", timedelta(minutes=5)))
         )
@@ -322,10 +333,28 @@ class DashboardApp:
                     ),
                 )
             receipts, receipt_error = self._read_receipts(agent.agent_id)
-            body = self._agent_detail(agent, receipts, datetime.now(UTC), receipt_error)
+            evaluations, evaluation_error = self._read_evaluations(agent.agent_id)
+            body = self._agent_detail(
+                agent,
+                receipts,
+                evaluations,
+                datetime.now(UTC),
+                receipt_error,
+                evaluation_error,
+                {
+                    version: self.receipt_store.count_for_agent(agent.agent_id, version)
+                    for version in {
+                        agent.version,
+                        *(row.agent_version for row in evaluations),
+                    }
+                },
+            )
         elif path == "/agents":
             receipts, receipt_error = self._read_receipts()
-            body = self._agents(datetime.now(UTC), receipts, receipt_error)
+            evaluations, evaluation_error = self._read_evaluations()
+            body = self._agents(
+                datetime.now(UTC), receipts, receipt_error, evaluations, evaluation_error
+            )
         elif path == "/sources":
             body = self._sources(self.store.external_sources())
         elif path.startswith("/markets/"):
@@ -354,7 +383,8 @@ class DashboardApp:
         elif path == "/forecasting":
             body = self._forecasting(self.store.forecasting_summary())
         elif path == "/learning":
-            body = self._learning(self.store.learning_summary())
+            evaluations, evaluation_error = self._read_evaluations()
+            body = self._learning(self.store.learning_summary(), evaluations, evaluation_error)
         elif path == "/strategy":
             body = self._strategy_hub(
                 self.store.forecasting_summary(),
@@ -728,11 +758,29 @@ class DashboardApp:
             return (), "Decision history unavailable: persisted evidence failed validation."
         return receipts, None
 
+    def _read_evaluations(
+        self, agent_id: str | None = None
+    ) -> tuple[tuple[ReceiptEvaluation, ...], str | None]:
+        try:
+            values = (
+                self.evaluation_store.all()
+                if agent_id is None
+                else self.evaluation_store.all_for_agent(agent_id)
+            )
+        except EvaluationStoreError:
+            return (
+                (),
+                "Outcome evaluation history unavailable: persisted evidence failed validation.",
+            )
+        return values, None
+
     def _agents(
         self,
         now: datetime,
         receipts: tuple[DecisionReceipt, ...],
         receipt_error: str | None = None,
+        evaluations: tuple[ReceiptEvaluation, ...] = (),
+        evaluation_error: str | None = None,
     ) -> str:
         cards = []
         for agent in AGENT_REGISTRY:
@@ -746,6 +794,30 @@ class DashboardApp:
                 freshness=self.belief_freshness,
             )
             primary_risk = agent.principal_risks[0] if agent.principal_risks else "Not available"
+            agent_evaluations = tuple(row for row in evaluations if row.agent_id == agent.agent_id)
+            if evaluation_error is not None:
+                performance_label = evaluation_error
+            elif agent.agent_id == "cross-market":
+                performance_label = "Unavailable: two-venue outcome semantics not established"
+            elif not agent_evaluations:
+                performance_label = agent.performance_availability
+            else:
+                current = effective_evaluations(
+                    agent_evaluations, policy_version=EVALUATION_POLICY_VERSION
+                )
+                eligible = sum(row.eligibility is EvaluationEligibility.ELIGIBLE for row in current)
+                markets = len(
+                    {
+                        row.market_ticker
+                        for row in current
+                        if row.eligibility is EvaluationEligibility.ELIGIBLE
+                    }
+                )
+                performance_label = (
+                    f"{self.receipt_store.count_for_agent(agent.agent_id)} total decisions · "
+                    f"{eligible} settled scoreable decisions · {markets} unique markets · "
+                    "EARLY / INCONCLUSIVE; independent event count unavailable"
+                )
             if receipt_error is not None:
                 latest = receipt_error
             elif belief.receipt is None:
@@ -764,7 +836,7 @@ class DashboardApp:
                 f"<dl><dt>What it watches</dt><dd>{html.escape(agent.watches)}</dd>"
                 f"<dt>What it is looking for</dt><dd>{html.escape(agent.belief)}</dd>"
                 f"<dt>Authority</dt><dd>Production influence: {agent.production_influence}</dd>"
-                f"<dt>Performance</dt><dd>{html.escape(agent.performance_availability)}</dd>"
+                f"<dt>Performance</dt><dd>{html.escape(performance_label)}</dd>"
                 f"<dt>Primary risk</dt><dd>{html.escape(primary_risk)}</dd>"
                 f"<dt>Latest decision</dt><dd>{html.escape(latest)}</dd></dl>"
                 f'<a class=button href="/agents/{html.escape(agent.agent_id)}">Inspect agent</a>'
@@ -786,8 +858,11 @@ class DashboardApp:
         self,
         agent: AgentDefinition,
         receipts: tuple[DecisionReceipt, ...],
+        evaluations: tuple[ReceiptEvaluation, ...],
         now: datetime,
         receipt_error: str | None = None,
+        evaluation_error: str | None = None,
+        decision_counts: dict[str, int] | None = None,
     ) -> str:
         risks = "".join(f"<li>{html.escape(risk)}</li>" for risk in agent.principal_risks)
         belief = current_belief(
@@ -811,6 +886,13 @@ class DashboardApp:
                 f"<p>{html.escape(belief.explanation)}</p>"
             )
             recent = "".join(self._receipt_card(item) for item in receipts)
+        evaluation_panel = self._agent_performance(
+            agent,
+            receipts,
+            evaluations,
+            evaluation_error,
+            decision_counts,
+        )
         return (
             f"<section><p class=eyebrow>{html.escape(agent.availability)} · VERSION {html.escape(agent.version)}</p>"
             f"<h1>{html.escape(agent.display_name)}</h1><p>{html.escape(agent.mandate)}</p>"
@@ -825,8 +907,7 @@ class DashboardApp:
             f"<p>Production influence: {agent.production_influence}</p><p>Trading authority: NONE</p></article>"
             f"<article><h2>Guardrails</h2><p>{html.escape(agent.risk_limit_summary)}</p></article>"
             f"<article><h2>Recent decisions</h2>{recent}</article>"
-            f"<article><h2>Performance</h2><p>{html.escape(agent.performance_availability)}</p>"
-            "<p>No P&amp;L, win rate, Sharpe ratio, confidence, or edge is inferred.</p></article>"
+            f"{evaluation_panel}"
             "</div><a class=button href=/agents>Back to agents</a></section>"
         )
 
@@ -852,7 +933,82 @@ class DashboardApp:
         )
 
     @staticmethod
-    def _learning(summary: dict[str, Any]) -> str:
+    def _agent_performance(
+        agent: AgentDefinition,
+        receipts: tuple[DecisionReceipt, ...],
+        evaluations: tuple[ReceiptEvaluation, ...],
+        error: str | None,
+        decision_counts: dict[str, int] | None = None,
+    ) -> str:
+        if error is not None:
+            return f"<article><h2>Performance</h2><div class=warning>{html.escape(error)}</div></article>"
+        if agent.agent_id == "cross-market":
+            return "<article><h2>Performance</h2><p>Performance unavailable: a single binary settlement cannot establish the two-venue discrepancy outcome.</p></article>"
+        if agent.agent_id != "event-edge" or not evaluations:
+            return "<article><h2>Performance</h2><p>Not enough evidence - NO EVIDENCE; no persisted outcome-linked evaluations.</p></article>"
+        versions = sorted({row.agent_version for row in evaluations})
+        sections = []
+        for version in versions:
+            projection = performance(
+                evaluations,
+                agent_id=agent.agent_id,
+                agent_version=version,
+                total_persisted_decisions=(
+                    sum(row.agent_version == version for row in receipts)
+                    if decision_counts is None
+                    else decision_counts.get(version, 0)
+                ),
+            )
+            excluded = (
+                ", ".join(f"{reason}: {count}" for reason, count in projection.excluded_by_reason)
+                or "None"
+            )
+            sections.append(
+                f"<h3>Event Edge {html.escape(version)}</h3><dl>"
+                f"<dt>Total persisted decisions</dt><dd>{projection.total_persisted_decisions}</dd>"
+                f"<dt>Evaluation attempts</dt><dd>{projection.evaluation_attempt_count}</dd>"
+                f"<dt>Outcome-linked / settled scoreable decisions</dt><dd>{projection.outcome_linked_decisions} / {projection.effective_eligible_decisions}</dd>"
+                f"<dt>Currently unscoreable / awaiting evaluation</dt><dd>{projection.currently_unscoreable_decisions} / {projection.awaiting_evaluation_decisions}</dd>"
+                f"<dt>Unique markets</dt><dd>{projection.unique_market_count}</dd>"
+                "<dt>Independent event count</dt><dd>Unavailable - event identity is not preserved</dd>"
+                f"<dt>Evidence status</dt><dd>{html.escape(projection.evidence_state.value)}</dd>"
+                f"<dt>Average model Brier</dt><dd>{html.escape(str(projection.average_model_brier if projection.average_model_brier is not None else 'Unavailable'))}</dd>"
+                f"<dt>Average market Brier</dt><dd>{html.escape(str(projection.average_market_brier if projection.average_market_brier is not None else 'Unavailable'))}</dd>"
+                f"<dt>Market-relative Brier improvement</dt><dd>{html.escape(str(projection.average_market_relative_brier_improvement if projection.average_market_relative_brier_improvement is not None else 'Unavailable'))}</dd>"
+                f"<dt>Excluded</dt><dd>{html.escape(excluded)}</dd></dl>"
+            )
+        recent = "".join(DashboardApp._evaluation_card(row) for row in evaluations[:10])
+        return (
+            "<article><p class=eyebrow>RESEARCH EVALUATION · NOT ACTUAL TRADING</p><h2>Performance</h2><h3>Outcome performance</h3>"
+            + "".join(sections)
+            + recent
+            + "<p>No P&amp;L, profit, ROI, win rate, or actual trade result is claimed.</p></article>"
+        )
+
+    @staticmethod
+    def _evaluation_card(row: ReceiptEvaluation) -> str:
+        eligible = row.eligibility is EvaluationEligibility.ELIGIBLE
+        actual = (
+            row.target.outcome_side.value
+            if row.realized_target == 1
+            else ("opposite side" if row.realized_target == 0 else row.settlement_result)
+        )
+        return (
+            f"<div class=row><strong>{html.escape(row.decision.value)} · {html.escape(row.eligibility.value)}</strong>"
+            f"<p>{html.escape(row.market_ticker)} · finalized outcome {html.escape(actual)}</p>"
+            f"<p>Historical probability: {html.escape(str(row.model_probability if row.model_probability is not None else 'Unavailable'))} · "
+            f"Brier: {html.escape(str(row.model_brier if eligible else 'Unavailable'))} · "
+            f"Market comparison: {html.escape(str(row.market_relative_brier_improvement if eligible and row.market_relative_brier_improvement is not None else 'Unavailable'))}</p>"
+            f"<p>Counterfactual unit research value: {html.escape(str(row.counterfactual_unit_value if eligible and row.counterfactual_unit_value is not None else 'Unavailable'))} · "
+            f"Reason: {html.escape(row.exclusion_detail or 'Authoritative finalized MATCHED outcome')}</p></div>"
+        )
+
+    @staticmethod
+    def _learning(
+        summary: dict[str, Any],
+        evaluations: tuple[ReceiptEvaluation, ...] = (),
+        evaluation_error: str | None = None,
+    ) -> str:
         proposals = (
             "<p>No research changes are proposed.</p>"
             if not summary["proposals"]
@@ -865,7 +1021,30 @@ class DashboardApp:
             f"<article><h3>{html.escape(row['family'])}</h3><p>Usable markets: {row['usable_markets']} · settled events: {row['settled_events']}</p><p>Market-relative skill: {html.escape(row['skill_state'])} · completeness: {html.escape(row['data_completeness'])}</p><p>Research cost: {html.escape(row['research_cost'])} · priority: {html.escape(row['research_priority'])}</p><strong>Capital allocation: {html.escape(row['capital_allocation'])}</strong></article>"
             for row in summary["families"]
         )
-        return f"<section><p class=eyebrow>RESEARCH GOVERNANCE ONLY</p><h1>What we've learned</h1><div class=warning>{html.escape(summary['state'])}. Progress: {summary['real_settled_events']} / {summary['promotion_minimum']} relevant settled events. Synthetic results test behavior only.</div><h2>Source performance</h2><p>Accuracy, timeliness, originality, redundancy, incremental forecast value and cost remain separate.</p><h2>Model performance</h2><p>Champion/challenger comparisons require identical events, checkpoints and promotion windows.</p><h2>Market families</h2>{families or '<p>No real tournament evidence.</p>'}<h2>Proposed changes</h2>{proposals}<h2>Recent changes</h2><p>Current configuration: {html.escape(str(summary['current_configuration'] or 'None'))}; previous/rollback: {html.escape(str(summary['previous_configuration'] or 'None'))}.</p><strong>PRODUCTION INFLUENCE: {html.escape(summary['production_influence'])}</strong></section>"
+        if evaluation_error is not None:
+            evaluation_lab = f"<h2>Evidence status</h2><p><strong>EVALUATION HISTORY UNAVAILABLE</strong></p><p>Persisted evaluation evidence failed validation. No evaluation, calibration, or decision-review metrics are trusted.</p><h2>Data quality</h2><p>{html.escape(evaluation_error)}</p>"
+        else:
+            current = effective_evaluations(evaluations, policy_version=EVALUATION_POLICY_VERSION)
+            eligible = tuple(
+                row for row in current if row.eligibility is EvaluationEligibility.ELIGIBLE
+            )
+            excluded = Counter(
+                row.eligibility.value
+                for row in current
+                if row.eligibility is not EvaluationEligibility.ELIGIBLE
+            )
+            unique_markets = len({row.market_ticker for row in eligible})
+            evidence = "NO EVIDENCE" if not eligible else "EARLY / INCONCLUSIVE"
+            bins = "".join(
+                f"<li>{bucket.lower}-{bucket.upper}: n={bucket.count}; mean={bucket.mean_probability if bucket.mean_probability is not None else 'Unavailable'}; observed={bucket.observed_frequency if bucket.observed_frequency is not None else 'Unavailable'}; {'DESCRIPTIVE' if bucket.sufficient else 'SPARSE / INCONCLUSIVE'}</li>"
+                for bucket in calibration(eligible)
+            )
+            quality = (
+                ", ".join(f"{reason}: {count}" for reason, count in sorted(excluded.items()))
+                or "No exclusions"
+            )
+            evaluation_lab = f"<h2>Evidence status</h2><p>{html.escape(evidence)} · settled scoreable decisions {len(eligible)} · unique markets {unique_markets} · independent event count unavailable · excluded {sum(excluded.values())}. Evidence remains inconclusive because independent event identity is not preserved.</p><h2>Agent evaluation</h2><p>Event Edge outcome evaluation is version-segmented on its detail page. Cross-Market remains unavailable because one settlement cannot prove both venue legs.</p><h2>Descriptive decision-level calibration</h2><p>Observations may be correlated within markets or underlying events. Bucket counts are display diagnostics, not significance or event-level sufficiency.</p><ul>{bins}</ul><h2>Decision review</h2><p>WOULD_TRADE, NO_TRADE, BLOCKED_BY_RISK, and INSUFFICIENT_EVIDENCE are retained without converting them to wins or losses.</p><h2>Data quality</h2><p>{html.escape(quality)}</p>"
+        return f"<section><p class=eyebrow>RESEARCH GOVERNANCE ONLY · OUTCOME EVALUATION</p><h1>Evidence laboratory</h1><div class=warning>{html.escape(summary['state'])}. No automatic strategy, threshold, weight, budget, capital, or autonomy change is permitted.</div>{evaluation_lab}<h2>Market families</h2>{families or '<p>No real tournament evidence.</p>'}<h2>Proposed changes</h2>{proposals}<h2>Recent changes</h2><p>Current configuration: {html.escape(str(summary['current_configuration'] or 'None'))}; previous/rollback: {html.escape(str(summary['previous_configuration'] or 'None'))}.</p><strong>PRODUCTION INFLUENCE: {html.escape(summary['production_influence'])}</strong></section>"
 
     @staticmethod
     def _opportunities(summary: dict[str, Any], attribution_error: str | None = None) -> str:
