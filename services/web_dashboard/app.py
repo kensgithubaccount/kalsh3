@@ -13,6 +13,7 @@ from http import cookies
 from typing import Any
 from urllib.parse import parse_qs
 
+from services.agent_control_center.domain import AGENT_REGISTRY, AgentDefinition, agent_by_id
 from services.kalshi_account_gateway.client import (
     AccountGatewayError,
     AuthenticationRejected,
@@ -290,6 +291,27 @@ class DashboardApp:
             )
         elif path == "/breaking":
             body = self._breaking_now(external, self.store.breaking_signals())
+        elif path.startswith("/agents/"):
+            agent = agent_by_id(path.removeprefix("/agents/"))
+            if agent is None:
+                body = "<section><p class=eyebrow>AGENT NOT FOUND</p><h1>Unknown agent</h1><p>This agent is not in the audited registry.</p></section>"
+                body += f'<form method=post action=/logout><input type=hidden name=csrf value="{csrf}"><button>Log out</button></form>'
+                return self._respond(
+                    start,
+                    "404 Not Found",
+                    _layout(
+                        "Agent not found",
+                        body,
+                        csrf,
+                        path,
+                        display_status,
+                        connection_label,
+                        sync_label,
+                    ),
+                )
+            body = self._agent_detail(agent)
+        elif path == "/agents":
+            body = self._agents()
         elif path == "/sources":
             body = self._sources(self.store.external_sources())
         elif path.startswith("/markets/"):
@@ -674,6 +696,54 @@ class DashboardApp:
             for row in summary["forecasts"]
         )
         return f"<section><p class=eyebrow>RESEARCH / SHADOW ONLY</p><h1>Forecasting and calibration</h1><div class=warning>{html.escape(summary['sample_status'])}. No model edge, profitability, opportunity, or trade claim is made.</div><div class=grid><article><small>Unique settled forecasts</small><strong>{summary['settled_forecasts']}</strong></article><article><small>Unique settled events</small><strong>{summary['settled_events']}</strong></article><article><small>Abstention rate</small><strong>{html.escape(summary['abstention_rate'])}</strong></article><article><small>Calibration</small><strong>{html.escape(summary['calibration_status'])}</strong></article></div>{cards or '<p>No persisted forecasts.</p>'}<details><summary>Advanced evaluation</summary><p>Calibration bins, Brier, log loss, market-relative skill, horizon breakdown and effective samples appear only after immutable settled real evidence exists.</p></details></section>"
+
+    @staticmethod
+    def _agents() -> str:
+        cards = []
+        for agent in AGENT_REGISTRY:
+            primary_risk = agent.principal_risks[0] if agent.principal_risks else "Not available"
+            cards.append(
+                "<article class=agent-card>"
+                f"<p class=eyebrow>{html.escape(agent.availability)} · {html.escape(agent.autonomy_mode)}</p>"
+                f"<h2>{html.escape(agent.display_name)}</h2>"
+                f"<p>{html.escape(agent.mandate)}</p>"
+                f"<dl><dt>What it watches</dt><dd>{html.escape(agent.watches)}</dd>"
+                f"<dt>What it is looking for</dt><dd>{html.escape(agent.belief)}</dd>"
+                f"<dt>Authority</dt><dd>Production influence: {agent.production_influence}</dd>"
+                f"<dt>Performance</dt><dd>{html.escape(agent.performance_availability)}</dd>"
+                f"<dt>Primary risk</dt><dd>{html.escape(primary_risk)}</dd>"
+                "<dt>Latest decision</dt><dd>No decisions yet</dd></dl>"
+                f'<a class=button href="/agents/{html.escape(agent.agent_id)}">Inspect agent</a>'
+                "</article>"
+            )
+        return (
+            "<section><p class=eyebrow>RESEARCH STRATEGY ROSTER</p><h1>Agents</h1>"
+            "<div class=warning>Trading OFF. Every agent has exactly zero production influence. "
+            "Availability describes implemented research support; mode describes research autonomy.</div>"
+            f"<div class=columns>{''.join(cards)}</div></section>"
+        )
+
+    @staticmethod
+    def _agent_detail(agent: AgentDefinition) -> str:
+        risks = "".join(f"<li>{html.escape(risk)}</li>" for risk in agent.principal_risks)
+        return (
+            f"<section><p class=eyebrow>{html.escape(agent.availability)} · VERSION {html.escape(agent.version)}</p>"
+            f"<h1>{html.escape(agent.display_name)}</h1><p>{html.escape(agent.mandate)}</p>"
+            "<div class=columns>"
+            f"<article><h2>What it watches</h2><p>{html.escape(agent.watches)}</p>"
+            f"<p><strong>Universe:</strong> {html.escape(agent.market_universe)}</p>"
+            f"<p><strong>Inputs:</strong> {html.escape(agent.inputs_sources)}</p></article>"
+            f"<article><h2>What it believes</h2><p>{html.escape(agent.belief)}</p></article>"
+            f"<article><h2>When it would act</h2><p>{html.escape(agent.act_when)}</p></article>"
+            f"<article><h2>Why it can be wrong</h2><ul>{risks}</ul></article>"
+            f"<article><h2>Current mode</h2><p>{html.escape(agent.autonomy_mode)}</p>"
+            f"<p>Production influence: {agent.production_influence}</p><p>Trading authority: NONE</p></article>"
+            f"<article><h2>Guardrails</h2><p>{html.escape(agent.risk_limit_summary)}</p></article>"
+            "<article><h2>Recent decisions</h2><p>No decisions yet</p></article>"
+            f"<article><h2>Performance</h2><p>{html.escape(agent.performance_availability)}</p>"
+            "<p>No P&amp;L, win rate, Sharpe ratio, confidence, or edge is inferred.</p></article>"
+            "</div><a class=button href=/agents>Back to agents</a></section>"
+        )
 
     @staticmethod
     def _learning(summary: dict[str, Any]) -> str:

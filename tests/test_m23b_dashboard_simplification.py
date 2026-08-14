@@ -128,25 +128,26 @@ def _seed_candidate(
 # --- 3. Primary navigation exposes only simplified top-level areas ---------
 
 
-def test_primary_nav_has_exactly_five_top_level_sections() -> None:
+def test_primary_nav_uses_m26a_owner_hierarchy() -> None:
     assert [s.label for s in NAV_SECTIONS] == [
-        "Dashboard",
-        "Markets",
-        "Activity",
-        "Strategy",
+        "Overview",
+        "Agents",
+        "Opportunities",
+        "Positions",
+        "Learning",
         "System",
     ]
 
 
-def test_dashboard_top_nav_renders_exactly_five_links(tmp_path: Path) -> None:
+def test_dashboard_top_nav_renders_owner_hierarchy(tmp_path: Path) -> None:
     _, app, token = _configured(tmp_path)
     _, body = _get(app, "/", token)
     page = body.decode()
     header, _, _rest = page.partition("</header>")
-    for label in ("Dashboard", "Markets", "Activity", "Strategy", "System"):
+    for label in ("Overview", "Agents", "Opportunities", "Positions", "Learning", "System"):
         assert f">{label}<" in header, label
     # None of the individual deep-page labels leak into the primary header nav.
-    for leaked in ("Opportunities", "Breaking Now", "Portfolio", "Learning", "Risk & Safety"):
+    for leaked in ("Breaking Now", "Markets", "Activity", "Strategy", "Risk & Safety"):
         assert f">{leaked}<" not in header, leaked
 
 

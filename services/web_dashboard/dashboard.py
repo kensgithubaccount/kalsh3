@@ -32,6 +32,7 @@ from dataclasses import dataclass
 from decimal import Decimal
 from typing import Any
 
+from services.agent_control_center.domain import AGENT_REGISTRY, ImplementationAvailability
 from services.opportunity_engine.models import DecisionState
 
 from .charts import sparkline
@@ -294,9 +295,33 @@ def build_dashboard(
         else ""
     )
 
+    available_agents = sum(
+        agent.availability is ImplementationAvailability.AVAILABLE for agent in AGENT_REGISTRY
+    )
+    agents_needing_attention = sum(
+        agent.availability is not ImplementationAvailability.AVAILABLE for agent in AGENT_REGISTRY
+    )
+    agents_section = (
+        "<section aria-labelledby=agents-heading><h2 id=agents-heading>Agent desk</h2>"
+        + _metric_row(
+            (
+                MetricItem("Available agents", str(available_agents), "Research capability only"),
+                MetricItem(
+                    "Need attention", str(agents_needing_attention), "Unavailable or planned"
+                ),
+                MetricItem("Production influence", "0", "All M26A agents"),
+                MetricItem("Recent decisions", "None", "No decisions yet"),
+            )
+        )
+        + "<p class=empty-line>Trading OFF is the expected safe state. "
+        "No agent can authorize an order.</p>"
+        + "<a class=text-link href=/agents>Open agent roster</a></section>"
+    )
+
     return (
         hero
         + attention_note
+        + agents_section
         + chart_section
         + opportunities_section
         + positions_section
