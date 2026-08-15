@@ -1,10 +1,12 @@
 from __future__ import annotations
 
+import http.client
 import importlib
 import inspect
 import sqlite3
 import subprocess
 import sys
+from dataclasses import FrozenInstanceError, fields
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from pathlib import Path
@@ -16,12 +18,21 @@ from services.agent_control_center import evidence_units
 from services.market_universe.archive import ArchiveError, UniverseObservationArchive
 from services.market_universe.collect import (
     ALLOWED_RESOURCES,
+    M26H1_SCOPE_POLICY_VERSION,
+    OPEN_NON_MVE_V1,
+    REVIEWED_SCOPES,
     CollectionError,
+    CollectionScope,
     PublicUniverseTransport,
     collect_evidence,
     main,
 )
-from services.market_universe.sync import Completeness
+from services.market_universe.sync import (
+    Completeness,
+    MemoryUniverseRepository,
+    SyncProgress,
+    UniverseSynchronizer,
+)
 
 NOW = datetime(2026, 8, 15, tzinfo=UTC)
 
@@ -168,7 +179,7 @@ def test_pagination_completes_only_at_natural_end(tmp_path: Path) -> None:
                 {"markets": [market("M2")], "cursor": ""},
             ],
             "events": [
-                {"events": [event("E1")], "cursor": "next"},
+                {"events": [event("E")], "cursor": "next"},
                 {"events": [event("E2")], "cursor": ""},
             ],
         }
@@ -292,7 +303,18 @@ def test_failure_output_is_sanitized(
         raise RuntimeError(secret)
 
     monkeypatch.setattr("services.market_universe.collect.collect_evidence", fail)
-    assert main(["--archive", str(tmp_path / "archive.sqlite"), "--live-public-read"]) == 1
+    assert (
+        main(
+            [
+                "--archive",
+                str(tmp_path / "archive.sqlite"),
+                "--live-public-read",
+                "--scope",
+                "open-non-mve-v1",
+            ]
+        )
+        == 1
+    )
     output = capsys.readouterr().out
     assert secret not in output
     assert "RuntimeError" in output
@@ -311,3 +333,307 @@ def test_m26f_writer_boundary_and_m26g_m9_disconnection_remain_intact() -> None:
     assert "production_execution" not in collector_source
     assert evidence_units._REPOSITORY_REVIEWED_AUTHORITIES == ()
     assert "authoritative archive writes require acquisition capability" in archive_source
+
+
+def test_live_cli_requires_the_only_reviewed_scope_before_side_effects(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    def forbidden(*args: object, **kwargs: object) -> None:
+        del args, kwargs
+        raise AssertionError("side effect reached")
+
+    monkeypatch.setattr("services.market_universe.collect.collect_evidence", forbidden)
+    path = tmp_path / "absent.sqlite"
+    assert main(["--archive", str(path), "--live-public-read"]) == 2
+    assert not path.exists()
+    assert "scope is required" in capsys.readouterr().out
+    with pytest.raises(SystemExit):
+        main(
+            [
+                "--archive",
+                str(path),
+                "--live-public-read",
+                "--scope",
+                "arbitrary",
+            ]
+        )
+    assert not path.exists()
+
+
+def test_scope_identity_and_exact_fixed_queries(tmp_path: Path) -> None:
+    transport = complete_transport()
+    receipt = collect_evidence(tmp_path / "archive.sqlite", transport, clock=lambda: NOW)
+    assert receipt.scope == "open-non-mve-v1"
+    assert receipt.scope_policy_version == M26H1_SCOPE_POLICY_VERSION
+    assert receipt.scope_id == OPEN_NON_MVE_V1.scope_id
+    assert transport.calls == [
+        "/trade-api/v2/markets?status=open&mve_filter=exclude&limit=1000",
+        "/trade-api/v2/events?status=open&limit=200",
+    ]
+
+
+def test_reviewed_scope_registry_is_structurally_immutable() -> None:
+    fake = CollectionScope(
+        name="fake",
+        markets_endpoint="/trade-api/v2/markets",
+        markets_parameters=OPEN_NON_MVE_V1.markets_parameters,
+        events_endpoint="/trade-api/v2/events",
+        events_parameters=OPEN_NON_MVE_V1.events_parameters,
+    )
+    assert tuple(REVIEWED_SCOPES) == ("open-non-mve-v1",)
+    assert REVIEWED_SCOPES["open-non-mve-v1"] is OPEN_NON_MVE_V1
+    with pytest.raises(TypeError):
+        REVIEWED_SCOPES["fake"] = fake  # type: ignore[index]
+    with pytest.raises(TypeError):
+        del REVIEWED_SCOPES["open-non-mve-v1"]  # type: ignore[attr-defined]
+    with pytest.raises(CollectionError, match="scope rejected"):
+        PublicUniverseTransport(fake)
+    assert tuple(REVIEWED_SCOPES) == ("open-non-mve-v1",)
+
+
+def test_cursor_is_encoded_as_one_value_and_cannot_inject(tmp_path: Path) -> None:
+    cursor = "next&status=settled#fragment/path?cursor=other"
+    transport = FakeTransport(
+        {
+            "markets": [
+                {"markets": [market()], "cursor": cursor},
+                {"markets": [], "cursor": ""},
+            ],
+            "events": [{"events": [event()], "cursor": ""}],
+        }
+    )
+    collect_evidence(tmp_path / "archive.sqlite", transport, clock=lambda: NOW)
+    second = transport.calls[1]
+    assert "cursor=next%26status%3Dsettled%23fragment%2Fpath%3Fcursor%3Dother" in second
+    assert second.count("status=") == 1
+    assert second.count("cursor=") == 1
+
+
+def test_double_encoded_control_is_only_semantically_decoded_once(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class NetworkReached(RuntimeError):
+        pass
+
+    def reached(*args: object, **kwargs: object) -> None:
+        del args, kwargs
+        raise NetworkReached
+
+    monkeypatch.setattr("urllib.request.build_opener", reached)
+    with pytest.raises(NetworkReached):
+        PublicUniverseTransport().get(
+            "/trade-api/v2/events?status=open&limit=200&cursor=%250d",
+            timeout_seconds=1,
+        )
+
+
+@pytest.mark.parametrize("cursor", ["bad\rvalue", "bad\nvalue", "%0d", "%0a", "%00", "x\x1fy"])
+def test_control_character_cursor_stops_before_second_request(tmp_path: Path, cursor: str) -> None:
+    transport = FakeTransport(
+        {
+            "markets": [{"markets": [market()], "cursor": cursor}],
+            "events": [{"events": [event()], "cursor": ""}],
+        }
+    )
+    receipt = collect_evidence(tmp_path / "archive.sqlite", transport, clock=lambda: NOW)
+    assert receipt.market_run.failure == "invalid_cursor"
+    assert len([path for path in transport.calls if "/markets?" in path]) == 1
+
+
+@pytest.mark.parametrize(
+    "path",
+    [
+        "/trade-api/v2/markets?status=settled&mve_filter=exclude&limit=1000",
+        "/trade-api/v2/markets?status=open&mve_filter=exclude&limit=999",
+        "/trade-api/v2/markets?status=open&mve_filter=only&limit=1000",
+        "/trade-api/v2/markets?status=open&status=open&mve_filter=exclude&limit=1000",
+        "/trade-api/v2/markets?status=open&mve_filter=exclude&limit=1000&extra=x",
+        "/trade-api/v2/events?status=open&limit=200#fragment",
+        "/trade-api/v2/events?status=open&limit=200&cursor=%0d",
+        "/trade-api/v2/events?status=open&mve_filter=exclude&limit=1000",
+        "/trade-api/v2/markets?status=open&limit=200",
+    ],
+)
+def test_transport_rejects_wrong_scope_shape_before_network(
+    path: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(
+        "urllib.request.build_opener",
+        lambda *args, **kwargs: pytest.fail("network reached"),
+    )
+    with pytest.raises(CollectionError, match="resource rejected"):
+        PublicUniverseTransport().get(path, timeout_seconds=1)
+
+
+@pytest.mark.parametrize("value", [0, -1])
+def test_max_pages_nonpositive_rejected(value: int) -> None:
+    with pytest.raises(ValueError, match="positive"):
+        UniverseSynchronizer(complete_transport(), MemoryUniverseRepository(), max_pages=value)
+
+
+@pytest.mark.parametrize("value", [True, False, 1.0, "1"])
+def test_max_pages_wrong_type_rejected(value: object) -> None:
+    with pytest.raises(TypeError, match="positive int"):
+        UniverseSynchronizer(complete_transport(), MemoryUniverseRepository(), max_pages=value)  # type: ignore[arg-type]
+
+
+def test_market_event_coverage_is_conservative_and_extra_events_do_not_repair(
+    tmp_path: Path,
+) -> None:
+    transport = FakeTransport(
+        {
+            "markets": [{"markets": [market()], "cursor": ""}],
+            "events": [{"events": [event("EXTRA")], "cursor": ""}],
+        }
+    )
+    receipt = collect_evidence(tmp_path / "archive.sqlite", transport, clock=lambda: NOW)
+    assert receipt.market_run.completeness is Completeness.COMPLETE
+    assert receipt.event_run.completeness is Completeness.COMPLETE
+    assert not receipt.complete
+    assert receipt.market_event_ticker_count == 1
+    assert receipt.matched_event_ticker_count == 0
+    assert receipt.missing_event_tickers == ("E",)
+
+
+def test_archive_provenance_has_fixed_scope_parameters(tmp_path: Path) -> None:
+    path = tmp_path / "archive.sqlite"
+    collect_evidence(path, complete_transport(), clock=lambda: NOW)
+    with sqlite3.connect(path) as db:
+        rows = db.execute(
+            "SELECT endpoint, parameters_json FROM acquisition_pages ORDER BY endpoint"
+        ).fetchall()
+    assert rows == [
+        ("events", '{"limit":"200","status":"open"}'),
+        ("markets", '{"limit":"1000","mve_filter":"exclude","status":"open"}'),
+    ]
+
+
+def test_old_unfiltered_rows_are_not_relabelled_as_scoped_complete(tmp_path: Path) -> None:
+    path = tmp_path / "archive.sqlite"
+    UniverseSynchronizer(
+        FakeTransport(
+            {
+                "markets": [{"markets": [market()], "cursor": ""}],
+                "events": [],
+            }
+        ),
+        MemoryUniverseRepository(),
+        archive=UniverseObservationArchive(path),
+        clock=lambda: NOW,
+    ).sync("markets")
+    scoped = FakeTransport(
+        {
+            "markets": [{"markets": [market()], "cursor": "still-more"}],
+            "events": [{"events": [event()], "cursor": ""}],
+        }
+    )
+    receipt = collect_evidence(path, scoped, max_pages=1, clock=lambda: NOW)
+    assert not receipt.complete
+    assert receipt.market_run.failure == "bounded_truncation"
+    with sqlite3.connect(path) as db:
+        parameters = [
+            row[0]
+            for row in db.execute("SELECT parameters_json FROM acquisition_pages ORDER BY rowid")
+        ]
+    assert parameters == [
+        "{}",
+        '{"limit":"1000","mve_filter":"exclude","status":"open"}',
+        '{"limit":"200","status":"open"}',
+    ]
+
+
+def test_invalid_url_is_normalized_without_detail(monkeypatch: pytest.MonkeyPatch) -> None:
+    class BadOpener:
+        def open(self, *args: object, **kwargs: object) -> None:
+            del args, kwargs
+            raise http.client.InvalidURL("secret-cursor")
+
+    monkeypatch.setattr("urllib.request.build_opener", lambda *args: BadOpener())
+    with pytest.raises(CollectionError, match="request failed") as caught:
+        PublicUniverseTransport().get(
+            "/trade-api/v2/events?status=open&limit=200", timeout_seconds=1
+        )
+    assert "secret-cursor" not in str(caught.value)
+
+
+def test_cli_progress_reports_pages_without_cursor(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    secret_cursor = "cursor-must-not-print"
+    transport = FakeTransport(
+        {
+            "markets": [
+                {"markets": [market()], "cursor": secret_cursor},
+                {"markets": [], "cursor": ""},
+            ],
+            "events": [{"events": [event()], "cursor": ""}],
+        }
+    )
+    monkeypatch.setattr(
+        "services.market_universe.collect.PublicUniverseTransport", lambda scope: transport
+    )
+    assert (
+        main(
+            [
+                "--archive",
+                str(tmp_path / "archive.sqlite"),
+                "--live-public-read",
+                "--scope",
+                "open-non-mve-v1",
+            ]
+        )
+        == 0
+    )
+    output = capsys.readouterr().out
+    assert "Starting evidence collection" in output
+    assert "Collecting Markets..." in output
+    assert "Markets: 1 pages / 1 observed" in output
+    assert "Markets: 2 pages / 1 observed" in output
+    assert "Collecting Events..." in output
+    assert secret_cursor not in output
+
+
+def test_progress_callback_receives_only_immutable_safe_synchronous_snapshots(
+    tmp_path: Path,
+) -> None:
+    malicious_cursor = "private-cursor&status=settled"
+    progress: list[SyncProgress] = []
+
+    class SynchronousTransport(FakeTransport):
+        def get(self, path: str, *, timeout_seconds: float) -> dict[str, Any]:
+            market_calls = len([call for call in self.calls if "/markets?" in call])
+            if "/markets?" in path and market_calls == 1:
+                assert progress[-1] == SyncProgress("markets", 1, 1)
+            return super().get(path, timeout_seconds=timeout_seconds)
+
+    transport = SynchronousTransport(
+        {
+            "markets": [
+                {"markets": [market()], "cursor": malicious_cursor},
+                {"markets": [], "cursor": ""},
+            ],
+            "events": [{"events": [event()], "cursor": ""}],
+        }
+    )
+    receipt = collect_evidence(
+        tmp_path / "archive.sqlite", transport, clock=lambda: NOW, progress=progress.append
+    )
+    assert receipt.complete
+    assert [(item.resource, item.pages, item.records_received) for item in progress] == [
+        ("markets", 0, 0),
+        ("markets", 1, 1),
+        ("markets", 2, 1),
+        ("events", 0, 0),
+        ("events", 1, 1),
+    ]
+    assert {field.name for field in fields(SyncProgress)} == {
+        "resource",
+        "pages",
+        "records_received",
+    }
+    assert all(
+        not hasattr(item, "cursor") and not hasattr(item, "last_cursor") for item in progress
+    )
+    assert malicious_cursor not in repr(progress)
+    with pytest.raises(FrozenInstanceError):
+        progress[0].pages = 99  # type: ignore[misc]

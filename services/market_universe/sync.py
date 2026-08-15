@@ -2,11 +2,12 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from enum import StrEnum
 from typing import Any, Protocol, cast
+from urllib.parse import unquote, urlencode
 from uuid import uuid4
 
 from .archive import (
@@ -44,8 +45,21 @@ class SyncRun:
     confirmed_watermark: datetime | None = None
 
 
+@dataclass(frozen=True, slots=True)
+class SyncProgress:
+    """Cursor-free descriptive progress safe for operator presentation."""
+
+    resource: str
+    pages: int
+    records_received: int
+
+
 class PublicTransport(Protocol):
     def get(self, path: str, *, timeout_seconds: float) -> dict[str, Any]: ...
+
+
+def _contains_control_character(value: str) -> bool:
+    return any(ord(character) < 32 or ord(character) == 127 for character in value)
 
 
 @dataclass
@@ -122,9 +136,13 @@ class UniverseSynchronizer:
         run_id_factory: Callable[[], str] = lambda: str(uuid4()),
         timeout: float = 15,
         max_pages: int | None = None,
+        progress: Callable[[SyncProgress], None] | None = None,
     ) -> None:
-        if max_pages is not None and max_pages < 1:
-            raise ValueError("max_pages must be positive")
+        if max_pages is not None:
+            if isinstance(max_pages, bool) or not isinstance(max_pages, int):
+                raise TypeError("max_pages must be None or a positive int")
+            if max_pages < 1:
+                raise ValueError("max_pages must be positive")
         self.transport = transport
         self.repo = repo
         self.archive = archive
@@ -136,19 +154,24 @@ class UniverseSynchronizer:
         self.run_id_factory = run_id_factory
         self.timeout = timeout
         self.max_pages = max_pages
+        self.progress = progress
 
     def _pages(
-        self, endpoint: str, field: str, run: SyncRun, params: str = ""
+        self,
+        endpoint: str,
+        field: str,
+        run: SyncRun,
+        parameters: Mapping[str, str] | None = None,
     ) -> list[dict[str, Any]]:
         cursor = None
         seen = set()
         records = []
+        fixed_parameters = dict(parameters or {})
         while True:
-            target = (
-                f"/trade-api/v2/{endpoint}?{params}" if params else f"/trade-api/v2/{endpoint}?"
-            )
-            if cursor:
-                target += ("&" if params else "") + f"cursor={cursor}"
+            request_parameters = dict(fixed_parameters)
+            if cursor is not None:
+                request_parameters["cursor"] = cursor
+            target = f"/trade-api/v2/{endpoint}?{urlencode(request_parameters)}"
             try:
                 payload = self.transport.get(target, timeout_seconds=self.timeout)
             except Exception as exc:
@@ -159,13 +182,10 @@ class UniverseSynchronizer:
             run.pages += 1
             next_cursor = payload.get("cursor")
             if self.__archive_writer is not None:
-                parameters = {}
-                if params:
-                    parameters = dict(part.split("=", 1) for part in params.split("&"))
                 self.__archive_writer.append_page(
                     provider=self.provider,
                     endpoint=endpoint,
-                    parameters=parameters,
+                    parameters=fixed_parameters,
                     acquired_at=self.clock(),
                     page_number=run.pages,
                     cursor_in=cursor,
@@ -182,13 +202,20 @@ class UniverseSynchronizer:
                 raise UniverseValidationError("page collection malformed")
             records.extend(page)
             run.records_received += len(page)
+            if self.progress is not None:
+                self.progress(SyncProgress(endpoint, run.pages, run.records_received))
             if next_cursor in (None, ""):
                 return records
             if self.max_pages is not None and run.pages >= self.max_pages:
                 run.failure = "bounded_truncation"
                 run.completeness = Completeness.PARTIAL
                 raise UniverseValidationError("page collection exceeded safety bound")
-            if not isinstance(next_cursor, str) or next_cursor in seen:
+            if (
+                not isinstance(next_cursor, str)
+                or next_cursor in seen
+                or _contains_control_character(next_cursor)
+                or _contains_control_character(unquote(next_cursor))
+            ):
                 run.failure = "invalid_cursor"
                 run.completeness = Completeness.PARTIAL
                 raise UniverseValidationError("cursor invalid or repeated")
@@ -197,7 +224,12 @@ class UniverseSynchronizer:
             run.last_cursor = cursor
 
     def sync(
-        self, kind: str, *, incremental: bool = False, overlap: timedelta = timedelta(seconds=60)
+        self,
+        kind: str,
+        *,
+        incremental: bool = False,
+        overlap: timedelta = timedelta(seconds=60),
+        parameters: Mapping[str, str] | None = None,
     ) -> SyncRun:
         parsers = {
             "series": (Series.parse, "series"),
@@ -210,17 +242,17 @@ class UniverseSynchronizer:
             self.run_id_factory(), kind, "incremental" if incremental else "baseline", now
         )
         self.repo.runs.append(run)
-        params = ""
+        request_parameters = dict(parameters or {})
         if incremental:
             previous = self.repo.watermarks.get(kind)
             run.previous_watermark = previous
             requested = (previous - overlap) if previous else datetime.fromtimestamp(0, UTC)
             run.requested_watermark = requested
-            params = f"min_updated_ts={int(requested.timestamp())}" + (
-                "&mve_filter=exclude" if kind == "markets" else ""
-            )
+            request_parameters["min_updated_ts"] = str(int(requested.timestamp()))
+            if kind == "markets":
+                request_parameters["mve_filter"] = "exclude"
         try:
-            records = self._pages(kind, field, run, params)
+            records = self._pages(kind, field, run, request_parameters)
             maximum = run.previous_watermark
             for raw in records:
                 try:
