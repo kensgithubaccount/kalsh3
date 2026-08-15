@@ -1074,9 +1074,10 @@ class DashboardApp:
             "<article><p class=eyebrow>EVENT IDENTITY</p><h2>Evidence sufficiency</h2>"
             "<dl><dt>Markets scored</dt><dd>See outcome evaluation above</dd>"
             "<dt>Authoritative archived event evidence</dt><dd>Unavailable — not wired</dd>"
-            "<dt>Independent evidence units</dt><dd>Not proven</dd>"
+            "<dt>Reviewed distinct evidence units</dt>"
+            "<dd>Independent evidence authority — Not configured</dd>"
             "<dt>Evidence status</dt><dd>INCONCLUSIVE</dd></dl>"
-            "<p>This is a status-only view, not a live computed assessment. The repository does not yet have a reconstructable, verified historical Market/Event archive, so candidate observations cannot produce authoritative counts. Multiple markets can belong to one Kalshi event, and independence across distinct events has not been established.</p>"
+            "<p>This is a status-only view, not a live computed assessment. M26F can verify historical Market/Event identity when a real archive is configured, but no real archive plus repository-reviewed M26G evidence-unit authority is wired here. Multiple markets can belong to one Kalshi event, and reviewed distinct units do not claim mathematical independence.</p>"
             "<strong>PRODUCTION INFLUENCE: 0</strong></article>"
         )
 

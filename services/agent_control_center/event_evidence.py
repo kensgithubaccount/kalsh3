@@ -207,8 +207,8 @@ class UniverseEventObservation:
     """Unverified candidate Market/Event material observed together.
 
     Caller-provided hashes and IDs are content to validate, never authority.
-    ``ARCHIVE_VERIFIED`` is reserved for a future constructor backed by a
-    reconstructable immutable archive; no such constructor exists today.
+    ``ARCHIVE_VERIFIED`` is available only through :meth:`from_verified_archive`,
+    which reconstructs the exact observations from the M26F archive.
     """
 
     observation_id: str
