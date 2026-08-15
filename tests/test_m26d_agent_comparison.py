@@ -471,7 +471,10 @@ def test_current_product_has_no_fake_race_and_corruption_returns_200(tmp_path: P
     assert "evaluation processing time" in page
     assert "Evidence sufficiency" in page
     assert "Authoritative archived event evidence</dt><dd>Unavailable — not wired" in page
-    assert "Independent evidence units</dt><dd>Not proven" in page
+    assert (
+        "Reviewed distinct evidence units</dt>"
+        "<dd>Independent evidence authority — Not configured" in page
+    )
     assert "PRODUCTION INFLUENCE: 0" in page
     with sqlite3.connect(app.store.path) as db:
         db.execute(
