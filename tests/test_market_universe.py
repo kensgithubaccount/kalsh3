@@ -260,3 +260,79 @@ def test_malformed_optional_and_required_series() -> None:
     changed = Series.parse(series(settlement_sources=[{"name": "NWS"}], fee_multiplier="0.08"))
     assert changed.metadata_hash != parsed.metadata_hash
     assert Event.parse(event()).series_ticker == "S"
+
+
+def test_live_market_schema_defaults_and_observed_null_title() -> None:
+    observed = market(
+        ticker="KXLLM1-26AUG31-MOON",
+        event_ticker="KXLLM1-26AUG31",
+        title=None,
+        yes_sub_title="Kimi",
+        no_sub_title="Kimi",
+        updated_time="2026-07-29T14:00:07.302364Z",
+    )
+    observed.pop("is_provisional")
+    observed.pop("last_updated_ts")
+
+    parsed = Market.parse(observed)
+
+    assert parsed.title is None
+    assert parsed.provisional is False
+    assert parsed.source_updated_at == datetime(2026, 7, 29, 14, 0, 7, 302364, tzinfo=UTC)
+
+
+@pytest.mark.parametrize(("value", "expected"), [(True, True), (False, False)])
+def test_market_is_provisional_requires_explicit_bool(value: bool, expected: bool) -> None:
+    assert Market.parse(market(is_provisional=value)).provisional is expected
+
+
+@pytest.mark.parametrize("value", [None, 0, 1, "false", {}, []])
+def test_market_is_provisional_rejects_present_non_bool(value: Any) -> None:
+    with pytest.raises(UniverseValidationError):
+        Market.parse(market(is_provisional=value))
+
+
+def test_market_title_string_and_absent_are_preserved() -> None:
+    assert Market.parse(market(title="Source title")).title == "Source title"
+    without_title = market(yes_sub_title="Kimi", no_sub_title="Kimi")
+    without_title.pop("title")
+    assert Market.parse(without_title).title is None
+
+
+@pytest.mark.parametrize("value", ["", 7, {}, []])
+def test_market_title_rejects_invalid_values(value: Any) -> None:
+    with pytest.raises(UniverseValidationError):
+        Market.parse(market(title=value))
+
+
+def test_market_updated_time_precedence_and_legacy_compatibility() -> None:
+    updated_only = market(updated_time="2026-02-03T04:05:06Z")
+    updated_only.pop("last_updated_ts")
+    assert Market.parse(updated_only).source_updated_at == datetime(2026, 2, 3, 4, 5, 6, tzinfo=UTC)
+
+    assert Market.parse(market()).source_updated_at == datetime(2026, 1, 1, tzinfo=UTC)
+
+    without_timestamp = market()
+    without_timestamp.pop("last_updated_ts")
+    assert Market.parse(without_timestamp).source_updated_at is None
+
+
+def test_market_equal_dual_updated_times_are_accepted() -> None:
+    parsed = Market.parse(
+        market(
+            updated_time="2026-01-01T00:00:00.000000Z",
+            last_updated_ts="2025-12-31T19:00:00-05:00",
+        )
+    )
+    assert parsed.source_updated_at == datetime(2026, 1, 1, tzinfo=UTC)
+
+
+def test_market_conflicting_dual_updated_times_are_rejected() -> None:
+    with pytest.raises(UniverseValidationError):
+        Market.parse(market(updated_time="2026-01-01T00:00:01Z"))
+
+
+@pytest.mark.parametrize("value", ["not-a-time", "2026-01-01T00:00:00", None])
+def test_market_malformed_updated_time_is_rejected(value: Any) -> None:
+    with pytest.raises(UniverseValidationError):
+        Market.parse(market(updated_time=value))
