@@ -7,7 +7,7 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from enum import StrEnum
 from typing import Any, Protocol, cast
-from urllib.parse import unquote, urlencode
+from urllib.parse import quote, unquote, urlencode
 from uuid import uuid4
 
 from .archive import (
@@ -32,6 +32,7 @@ class SyncRun:
     started_at: datetime
     finished_at: datetime | None = None
     pages: int = 0
+    requests: int = 0
     records_received: int = 0
     inserted: int = 0
     updated: int = 0
@@ -273,6 +274,78 @@ class UniverseSynchronizer:
         except Exception as exc:
             if run.failure is None:
                 run.failure = type(exc).__name__
+        run.finished_at = self.clock()
+        if self.__archive_writer is not None:
+            self.__archive_writer.record_run_result(
+                run_id=run.run_id,
+                completeness=run.completeness.value,
+                pages=run.pages,
+                records_received=run.records_received,
+                malformed=run.malformed,
+                failure=run.failure,
+                finished_at=run.finished_at,
+            )
+        return run
+
+    def reconcile_events(self, tickers: tuple[str, ...]) -> SyncRun:
+        """Acquire exact Event parents in deterministic order through this authority."""
+        now = self.clock()
+        run = SyncRun(self.run_id_factory(), "events/reconciliation", "exact", now)
+        self.repo.runs.append(run)
+        failed = False
+        for ticker in tickers:
+            try:
+                if not ticker or not all(
+                    character.isascii() and (character.isalnum() or character in "-_.")
+                    for character in ticker
+                ):
+                    raise UniverseValidationError("event ticker is not a canonical target")
+                encoded = quote(ticker, safe="")
+                endpoint = f"events/{encoded}"
+                target = f"/trade-api/v2/{endpoint}"
+                run.requests += 1
+                payload = self.transport.get(target, timeout_seconds=self.timeout)
+                raw = payload.get("event")
+                valid = False
+                entity: Event | None = None
+                if isinstance(raw, dict):
+                    try:
+                        entity = Event.parse(raw)
+                        valid = True
+                    except UniverseValidationError:
+                        pass
+                if entity is not None and entity.ticker != ticker:
+                    valid = False
+                run.pages += 1
+                run.records_received += int(isinstance(raw, dict))
+                if self.__archive_writer is not None:
+                    self.__archive_writer.append_page(
+                        provider=self.provider,
+                        endpoint=endpoint,
+                        parameters={},
+                        acquired_at=self.clock(),
+                        page_number=run.pages,
+                        cursor_in=None,
+                        cursor_out=None,
+                        run_id=run.run_id,
+                        kind=EntityKind.EVENT,
+                        payload=payload,
+                        succeeded=valid,
+                        failure=None if valid else "invalid_exact_event",
+                    )
+                if not valid or entity is None:
+                    run.malformed += 1
+                    failed = True
+                    continue
+                result = self.repo.upsert(entity)
+                setattr(run, result, getattr(run, result) + 1)
+            except Exception as exc:
+                failed = True
+                if run.failure is None:
+                    run.failure = type(exc).__name__
+        run.completeness = Completeness.PARTIAL if failed else Completeness.COMPLETE
+        if failed and run.failure is None:
+            run.failure = "invalid_exact_event"
         run.finished_at = self.clock()
         if self.__archive_writer is not None:
             self.__archive_writer.record_run_result(
