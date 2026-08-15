@@ -18,8 +18,8 @@ from services.agent_control_center import evidence_units
 from services.market_universe.archive import ArchiveError, UniverseObservationArchive
 from services.market_universe.collect import (
     ALLOWED_RESOURCES,
-    M26H1_SCOPE_POLICY_VERSION,
-    OPEN_NON_MVE_V1,
+    M26H3_SCOPE_POLICY_VERSION,
+    OPEN_NON_MVE_V2,
     REVIEWED_SCOPES,
     CollectionError,
     CollectionScope,
@@ -310,7 +310,7 @@ def test_failure_output_is_sanitized(
                 str(tmp_path / "archive.sqlite"),
                 "--live-public-read",
                 "--scope",
-                "open-non-mve-v1",
+                "open-non-mve-v2",
             ]
         )
         == 1
@@ -363,9 +363,9 @@ def test_live_cli_requires_the_only_reviewed_scope_before_side_effects(
 def test_scope_identity_and_exact_fixed_queries(tmp_path: Path) -> None:
     transport = complete_transport()
     receipt = collect_evidence(tmp_path / "archive.sqlite", transport, clock=lambda: NOW)
-    assert receipt.scope == "open-non-mve-v1"
-    assert receipt.scope_policy_version == M26H1_SCOPE_POLICY_VERSION
-    assert receipt.scope_id == OPEN_NON_MVE_V1.scope_id
+    assert receipt.scope == "open-non-mve-v2"
+    assert receipt.scope_policy_version == M26H3_SCOPE_POLICY_VERSION
+    assert receipt.scope_id == OPEN_NON_MVE_V2.scope_id
     assert transport.calls == [
         "/trade-api/v2/markets?status=open&mve_filter=exclude&limit=1000",
         "/trade-api/v2/events?status=open&limit=200",
@@ -376,19 +376,19 @@ def test_reviewed_scope_registry_is_structurally_immutable() -> None:
     fake = CollectionScope(
         name="fake",
         markets_endpoint="/trade-api/v2/markets",
-        markets_parameters=OPEN_NON_MVE_V1.markets_parameters,
+        markets_parameters=OPEN_NON_MVE_V2.markets_parameters,
         events_endpoint="/trade-api/v2/events",
-        events_parameters=OPEN_NON_MVE_V1.events_parameters,
+        events_parameters=OPEN_NON_MVE_V2.events_parameters,
     )
-    assert tuple(REVIEWED_SCOPES) == ("open-non-mve-v1",)
-    assert REVIEWED_SCOPES["open-non-mve-v1"] is OPEN_NON_MVE_V1
+    assert tuple(REVIEWED_SCOPES) == ("open-non-mve-v2",)
+    assert REVIEWED_SCOPES["open-non-mve-v2"] is OPEN_NON_MVE_V2
     with pytest.raises(TypeError):
         REVIEWED_SCOPES["fake"] = fake  # type: ignore[index]
     with pytest.raises(TypeError):
-        del REVIEWED_SCOPES["open-non-mve-v1"]  # type: ignore[attr-defined]
+        del REVIEWED_SCOPES["open-non-mve-v2"]  # type: ignore[attr-defined]
     with pytest.raises(CollectionError, match="scope rejected"):
         PublicUniverseTransport(fake)
-    assert tuple(REVIEWED_SCOPES) == ("open-non-mve-v1",)
+    assert tuple(REVIEWED_SCOPES) == ("open-non-mve-v2",)
 
 
 def test_cursor_is_encoded_as_one_value_and_cannot_inject(tmp_path: Path) -> None:
@@ -579,7 +579,7 @@ def test_cli_progress_reports_pages_without_cursor(
                 str(tmp_path / "archive.sqlite"),
                 "--live-public-read",
                 "--scope",
-                "open-non-mve-v1",
+                "open-non-mve-v2",
             ]
         )
         == 0

@@ -361,8 +361,11 @@ class UniverseObservationArchive:
             EntityKind.EVENT: "events",
             EntityKind.MARKET: "markets",
         }[kind]
-        records = payload.get(field)
-        if not isinstance(records, list):
+        records: object = payload.get(field)
+        if kind is EntityKind.EVENT and endpoint.startswith("events/"):
+            singleton = payload.get("event")
+            records = [singleton] if isinstance(singleton, dict) else []
+        if not succeeded or not isinstance(records, list):
             records = []
         parsed_rows: list[tuple[object, ...]] = []
         observation_ids: list[str] = []
@@ -597,7 +600,16 @@ class UniverseObservationArchive:
             EntityKind.EVENT.value: "events",
             EntityKind.MARKET.value: "markets",
         }.get(str(row["entity_kind"]))
-        page_records = decoded_payload.get(field) if isinstance(decoded_payload, dict) else None
+        page_records: object = (
+            decoded_payload.get(field) if isinstance(decoded_payload, dict) else None
+        )
+        if (
+            row["entity_kind"] == EntityKind.EVENT.value
+            and str(page["endpoint"]).startswith("events/")
+            and isinstance(decoded_payload, dict)
+        ):
+            singleton = decoded_payload.get("event")
+            page_records = [singleton] if isinstance(singleton, dict) else None
         if not isinstance(page_records, list) or raw not in page_records:
             raise ArchiveError("persisted entity is not present in its acquisition page")
         source_hash = _hash_bytes(source.encode("utf-8"))

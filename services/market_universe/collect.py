@@ -16,10 +16,11 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from decimal import Decimal
+from enum import StrEnum
 from pathlib import Path
 from types import MappingProxyType
 from typing import Any, Protocol
-from urllib.parse import parse_qsl, urlsplit
+from urllib.parse import parse_qsl, quote, unquote, urlsplit
 
 from .archive import UniverseObservationArchive
 from .sync import (
@@ -37,6 +38,8 @@ MAX_RESPONSE_BYTES = 8_000_000
 DEFAULT_MAX_PAGES = 250
 ZERO_INFLUENCE = Decimal("0")
 M26H1_SCOPE_POLICY_VERSION = "m26h1-reviewed-public-scope-v1"
+M26H3_SCOPE_POLICY_VERSION = "m26h3-reviewed-public-scope-v2"
+MAX_EVENT_RECONCILIATION_REQUESTS = 100
 
 
 @dataclass(frozen=True, slots=True)
@@ -71,7 +74,15 @@ OPEN_NON_MVE_V1 = CollectionScope(
     events_endpoint="/trade-api/v2/events",
     events_parameters=(("status", "open"), ("limit", "200")),
 )
-REVIEWED_SCOPES = MappingProxyType({OPEN_NON_MVE_V1.name: OPEN_NON_MVE_V1})
+OPEN_NON_MVE_V2 = CollectionScope(
+    name="open-non-mve-v2",
+    markets_endpoint="/trade-api/v2/markets",
+    markets_parameters=(("status", "open"), ("mve_filter", "exclude"), ("limit", "1000")),
+    events_endpoint="/trade-api/v2/events",
+    events_parameters=(("status", "open"), ("limit", "200")),
+    policy_version=M26H3_SCOPE_POLICY_VERSION,
+)
+REVIEWED_SCOPES = MappingProxyType({OPEN_NON_MVE_V2.name: OPEN_NON_MVE_V2})
 
 
 class CollectionError(RuntimeError):
@@ -91,8 +102,8 @@ def _has_control(value: str) -> bool:
 class PublicUniverseTransport:
     """Unauthenticated GET transport restricted to one reviewed scope."""
 
-    def __init__(self, scope: CollectionScope = OPEN_NON_MVE_V1) -> None:
-        if scope is not OPEN_NON_MVE_V1:
+    def __init__(self, scope: CollectionScope = OPEN_NON_MVE_V2) -> None:
+        if scope is not OPEN_NON_MVE_V2:
             raise CollectionError("public universe scope rejected")
         self._scope = scope
 
@@ -112,6 +123,23 @@ class PublicUniverseTransport:
             self._scope.markets_endpoint: dict(self._scope.markets_parameters),
             self._scope.events_endpoint: dict(self._scope.events_parameters),
         }
+        exact_event = None
+        prefix = self._scope.events_endpoint + "/"
+        try:
+            if parsed.path.startswith(prefix):
+                encoded = parsed.path.removeprefix(prefix)
+                decoded = unquote(encoded, errors="strict")
+                if (
+                    encoded
+                    and quote(decoded, safe="") == encoded
+                    and all(
+                        character.isascii() and (character.isalnum() or character in "-_.")
+                        for character in decoded
+                    )
+                ):
+                    exact_event = decoded
+        except UnicodeError:
+            raise CollectionError("public universe resource rejected") from None
         keys = [key for key, _ in pairs]
         semantic = dict(pairs)
         required = expected.get(parsed.path)
@@ -119,10 +147,17 @@ class PublicUniverseTransport:
             parsed.scheme
             or parsed.netloc
             or parsed.fragment
-            or required is None
+            or (required is None and exact_event is None)
             or len(keys) != len(set(keys))
-            or set(semantic) != set(required) | ({"cursor"} if "cursor" in semantic else set())
-            or any(semantic.get(key) != value for key, value in required.items())
+            or (exact_event is not None and pairs)
+            or (
+                required is not None
+                and set(semantic) != set(required) | ({"cursor"} if "cursor" in semantic else set())
+            )
+            or (
+                required is not None
+                and any(semantic.get(key) != value for key, value in required.items())
+            )
             or any(not value or _has_control(value) for _, value in pairs)
         ):
             raise CollectionError("public universe resource rejected")
@@ -163,6 +198,7 @@ class CollectionReceipt:
     archive_authority_id: str
     market_run: SyncRun
     event_run: SyncRun
+    reconciliation_run: SyncRun | None
     started_at: datetime
     finished_at: datetime
     scope: str
@@ -170,7 +206,12 @@ class CollectionReceipt:
     scope_id: str
     market_event_ticker_count: int
     matched_event_ticker_count: int
+    initial_missing_event_tickers: tuple[str, ...]
+    reconciled_event_tickers: tuple[str, ...]
     missing_event_tickers: tuple[str, ...]
+    reconciliation_requests: int
+    reconciliation_status: ReconciliationStatus
+    reconciliation_failure: str | None
     production_influence: Decimal = ZERO_INFLUENCE
 
     @property
@@ -178,8 +219,16 @@ class CollectionReceipt:
         return (
             self.market_run.completeness is Completeness.COMPLETE
             and self.event_run.completeness is Completeness.COMPLETE
+            and self.reconciliation_status
+            in (ReconciliationStatus.COMPLETE, ReconciliationStatus.NOT_NEEDED)
             and not self.missing_event_tickers
         )
+
+
+class ReconciliationStatus(StrEnum):
+    NOT_NEEDED = "NOT NEEDED"
+    COMPLETE = "COMPLETE"
+    PARTIAL = "PARTIAL"
 
 
 class ArchiveFactory(Protocol):
@@ -193,7 +242,7 @@ def collect_evidence(
     archive_path: str | Path,
     transport: PublicTransport,
     *,
-    scope: CollectionScope = OPEN_NON_MVE_V1,
+    scope: CollectionScope = OPEN_NON_MVE_V2,
     max_pages: int = DEFAULT_MAX_PAGES,
     timeout_seconds: float = 15,
     clock: Callable[[], datetime] = lambda: datetime.now(UTC),
@@ -201,7 +250,7 @@ def collect_evidence(
     progress: ProgressCallback | None = None,
 ) -> CollectionReceipt:
     """Collect the fixed scope sequentially through one archive authority."""
-    if scope is not OPEN_NON_MVE_V1:
+    if scope is not OPEN_NON_MVE_V2:
         raise CollectionError("public universe scope rejected")
     if timeout_seconds <= 0:
         raise ValueError("timeout_seconds must be positive")
@@ -224,21 +273,50 @@ def collect_evidence(
         progress(SyncProgress("events", 0, 0))
     event_run = synchronizer.sync("events", parameters=dict(scope.events_parameters))
     market_events = {item.event_ticker for item in repo.markets.values()}
-    matched = market_events & set(repo.events)
-    missing = tuple(sorted(market_events - matched))
+    broad_matched = market_events & set(repo.events)
+    initial_missing = tuple(sorted(market_events - broad_matched))
+    reconciliation_run = None
+    reconciliation_failure = None
+    if not initial_missing:
+        reconciliation_status = ReconciliationStatus.NOT_NEEDED
+    elif (
+        market_run.completeness is not Completeness.COMPLETE
+        or event_run.completeness is not Completeness.COMPLETE
+    ):
+        reconciliation_status = ReconciliationStatus.PARTIAL
+        reconciliation_failure = "broad_acquisition_incomplete"
+    elif len(initial_missing) > MAX_EVENT_RECONCILIATION_REQUESTS:
+        reconciliation_status = ReconciliationStatus.PARTIAL
+        reconciliation_failure = "bounded_reconciliation_exceeded"
+    else:
+        reconciliation_run = synchronizer.reconcile_events(initial_missing)
+        reconciliation_status = (
+            ReconciliationStatus.COMPLETE
+            if reconciliation_run.completeness is Completeness.COMPLETE
+            else ReconciliationStatus.PARTIAL
+        )
+        reconciliation_failure = reconciliation_run.failure
+    missing = tuple(sorted(market_events - set(repo.events)))
+    reconciled = tuple(sorted(set(initial_missing) - set(missing)))
     return CollectionReceipt(
         Path(archive_path),
         archive.authority_id,
         market_run,
         event_run,
+        reconciliation_run,
         started,
         clock(),
         scope.name,
         scope.policy_version,
         scope.scope_id,
         len(market_events),
-        len(matched),
+        len(broad_matched),
+        initial_missing,
+        reconciled,
         missing,
+        0 if reconciliation_run is None else reconciliation_run.requests,
+        reconciliation_status,
+        reconciliation_failure,
     )
 
 
@@ -261,6 +339,10 @@ def _reason(receipt: CollectionReceipt) -> str:
     for label, run in (("market", receipt.market_run), ("event", receipt.event_run)):
         if run.completeness is not Completeness.COMPLETE:
             failures.append(f"{label} acquisition did not complete ({run.failure or 'partial'})")
+    if receipt.reconciliation_status is ReconciliationStatus.PARTIAL:
+        failures.append(
+            f"event reconciliation did not complete ({receipt.reconciliation_failure or 'partial'})"
+        )
     if receipt.missing_event_tickers:
         failures.append("market-to-event coverage is incomplete")
     return "; ".join(failures)
@@ -283,8 +365,15 @@ def _print_receipt(receipt: CollectionReceipt) -> None:
         f"Events: {receipt.event_run.pages} pages / {receipt.event_run.records_received:,} observed"
     )
     print(f"Market event tickers: {receipt.market_event_ticker_count}")
-    print(f"Matched event tickers: {receipt.matched_event_ticker_count}")
-    print(f"Missing event tickers: {', '.join(receipt.missing_event_tickers) or 'none'}")
+    print(f"Broad matched event tickers: {receipt.matched_event_ticker_count}")
+    print(f"Initial missing Event tickers: {len(receipt.initial_missing_event_tickers)}")
+    print(f"Reconciled Event tickers: {len(receipt.reconciled_event_tickers)}")
+    print(
+        f"Remaining missing Event tickers: {len(receipt.missing_event_tickers)} / "
+        f"{', '.join(receipt.missing_event_tickers) or 'none'}"
+    )
+    print(f"Reconciliation requests: {receipt.reconciliation_requests}")
+    print(f"Reconciliation status: {receipt.reconciliation_status.value}")
     print(f"Archive: {receipt.archive_path}")
     print(f"Archive authority: {receipt.archive_authority_id}")
     print(f"Market run: {receipt.market_run.run_id}")
@@ -296,6 +385,8 @@ def _print_receipt(receipt: CollectionReceipt) -> None:
     print(
         f"Event window: {receipt.event_run.started_at.isoformat()} to {event_finished.isoformat()}"
     )
+    if receipt.reconciliation_run is not None:
+        print(f"Reconciliation run: {receipt.reconciliation_run.run_id}")
     print(f"Collection started: {receipt.started_at.isoformat()}")
     print(f"Collection finished: {receipt.finished_at.isoformat()}")
     print("Production influence: 0")
