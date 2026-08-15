@@ -50,7 +50,8 @@
 | M26H Runtime Evidence Collection | Implemented; production acceptance produced a valid partial broad archive | The operator-only public-read collector and M26F archive succeeded technically. An unfiltered 250-page run archived 25,000 Markets and 50,000 Events and truthfully remained `INCOMPLETE / bounded_truncation`, showing that the broad baseline is not a practical completeness unit. See `reviews/M26H_RUNTIME_EVIDENCE_COLLECTION.md`. |
 | M26H.1 Scoped Complete Evidence Collection | Implemented; offline/fake-transport verified; scoped live acceptance pending | The CLI now requires the sole reviewed `open-non-mve-v1` scope: open non-MVE Markets (`status=open`, `mve_filter=exclude`, `limit=1000`) plus open Events (`status=open`, `limit=200`). Structured cursor encoding, exact semantic transport validation, control-character rejection, strict page bounds, sanitized request errors, synchronous progress, deterministic scope identity, sequential run windows, and conservative Market-to-Event coverage fail closed. Repeated runs append; old broad partial rows are not relabeled. M26G remains empty, M9 and the dashboard remain disconnected, production execution remains DISARMED, and influence is exactly 0. See `reviews/M26H1_SCOPED_EVIDENCE_COLLECTION.md`. |
 | M26H.2 Live Market Schema Compatibility | Implemented; focused regression verified | The canonical Market parser defaults an absent `is_provisional` to false while rejecting present non-booleans, preserves null or absent titles as unavailable, and reads `updated_time` with fail-closed reconciliation against legacy `last_updated_ts`. Collection, archive, authority, execution, and production influence semantics are unchanged. |
-| M26H.3 Authoritative Event Coverage Reconciliation | Implemented; offline/fake-transport verified; focused independent review pending | The sole reviewed `open-non-mve-v2` scope traverses open non-MVE Markets, uses the broad open Event traversal as a first-pass optimization, then performs at most 100 sorted exact public Event reads to close current-run Market-parent coverage. Exact singleton responses retain their full raw payload and Event-only M26F authority; malformed, wrong-ticker, failed, over-bound, or unresolved reconciliation remains incomplete. Runs remain sequential/non-atomic, v1 archives are not reinterpreted, M26G authority remains unchanged, production execution remains DISARMED, and influence is exactly 0. See `reviews/M26H3_AUTHORITATIVE_EVENT_COVERAGE_RECONCILIATION.md`. |
+| M26H.3 Authoritative Event Coverage Reconciliation | COMPLETE; independently reviewed and live accepted | The accepted `open-non-mve-v2` archive contains 84,724 Markets and 10,403 parent Event tickers; 7 parents were reconciled by exact read and 0 remain unresolved. M26G authority remains unchanged, production execution remains DISARMED, and influence is exactly 0. See `reviews/M26H3_AUTHORITATIVE_EVENT_COVERAGE_RECONCILIATION.md`. |
+| M27A Live Market Economics Compatibility | Implemented; focused offline verified; independent review ready | Research-only current economics evidence supports live `price_ranges`, integer/string Series multipliers, complete Event fee overrides, current Series fee observations, fee changes, deterministic Event-over-Series fee resolution, distinct maker/taker formula metadata, exact-read batch orderbooks, M10 book normalization, discovery quotes, and TAKER_NOW depth walks. Broad quotes are discovery rather than executable-depth truth; pre-trade final fee remains uncertain; no forecast, edge, profitability, candidate, capital, order, readiness, or trading claim. Production influence is exactly 0. |
 
 ## Runtime truth
 
@@ -101,6 +102,20 @@
   test and UI: OFFLINE VERIFIED.
 - Current live fee formula/examples and live economics: NOT VERIFIED. Maker fill model: UNVALIDATED.
 - Real forecast evidence: INSUFFICIENT REAL EVIDENCE. Production influence: NONE. Human acceptance: PENDING.
+
+## M27A acceptance
+
+- Explicit `price_ranges` are tick authority; descriptive structure labels never infer ticks.
+- Broad Market top quotes are discovery signals, not executable-depth truth. Exact batch orderbooks bridge
+  into M10's canonical complement-normalized `NormalizedBook` with fractional Decimal quantities.
+- Complete Event overrides take precedence over exact current Series fee metadata. Fee-change records are
+  preserved as scheduled/past metadata and do not silently rewrite the current regime.
+- Pre-trade fee evidence separates formula, centicent rounding, fill/balance uncertainty, and rebate or
+  accumulator uncertainty. It does not claim an exact final exchange fee without fills.
+- TAKER_NOW is the first live-compatible execution-cost path. Maker metadata is represented, but maker
+  opportunity economics remain unsupported pending live fill/queue/adverse-selection validation.
+- No forecast, probability, edge, profitability, canonical candidate, capital, execution, autonomy, or
+  trading-readiness claim. Research only; production influence exactly 0.
 
 ## M11 acceptance
 

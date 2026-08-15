@@ -53,6 +53,19 @@ def exact(value: Any, field: str) -> Decimal:
     return result
 
 
+def exact_numeric(value: Any, field: str) -> Decimal:
+    """Parse API numeric metadata without ever admitting binary floats or booleans."""
+    if isinstance(value, bool) or not isinstance(value, (int, str)):
+        raise UniverseValidationError(f"{field} must be integer or fixed-point string")
+    try:
+        result = Decimal(value)
+    except InvalidOperation as exc:
+        raise UniverseValidationError(f"invalid {field}") from exc
+    if not result.is_finite():
+        raise UniverseValidationError(f"invalid {field}")
+    return result
+
+
 def stable_hash(value: Any) -> str:
     return hashlib.sha256(
         json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode()
@@ -123,10 +136,12 @@ class Series:
             raise UniverseValidationError("invalid tags")
         updated = parse_time(raw.get("last_updated_ts"), optional=True)
         fee = (
-            exact(raw["fee_multiplier"], "fee_multiplier")
+            exact_numeric(raw["fee_multiplier"], "fee_multiplier")
             if raw.get("fee_multiplier") is not None
             else None
         )
+        if fee is not None and fee < 0:
+            raise UniverseValidationError("negative fee_multiplier")
         volume = exact(raw["volume_fp"], "volume_fp") if raw.get("volume_fp") is not None else None
         material = {
             k: raw.get(k)

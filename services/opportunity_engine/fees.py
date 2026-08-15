@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import UTC, datetime
 from decimal import ROUND_CEILING, Decimal
 from enum import StrEnum
 
@@ -14,6 +14,12 @@ class FeeType(StrEnum):
     QUADRATIC = "quadratic"
     QUADRATIC_WITH_MAKER_FEES = "quadratic_with_maker_fees"
     FLAT = "flat"
+
+
+class FeeEstimateQuality(StrEnum):
+    DETERMINISTIC_FORMULA_ONLY = "DETERMINISTIC_FORMULA_ONLY"
+    BOUNDED_PRETRADE = "BOUNDED_PRETRADE"
+    OBSERVED_POSTFILL = "OBSERVED_POSTFILL"
 
 
 @dataclass(frozen=True, slots=True)
@@ -28,7 +34,13 @@ class FeePolicy:
     verified: bool
     flat_rate: Decimal | None = None
     quadratic_coefficient: Decimal | None = None
+    maker_quadratic_coefficient: Decimal | None = None
     balance_rounding_increment: Decimal = Decimal("0.0001")
+    production_influence: Decimal = Decimal(0)
+
+    def __post_init__(self) -> None:
+        if self.production_influence != 0:
+            raise OpportunityError("fee policy must have zero production influence")
 
     def applies_at(self, at: datetime) -> bool:
         return self.effective_at <= at and (self.retired_at is None or at < self.retired_at)
@@ -41,6 +53,8 @@ class FeeCalculation:
     expected_rebate: Decimal
     total_fee: Decimal
     policy_id: str
+    quality: FeeEstimateQuality = FeeEstimateQuality.BOUNDED_PRETRADE
+    final_exchange_fee_known: bool = False
 
 
 def select_policy(policies: tuple[FeePolicy, ...], at: datetime) -> FeePolicy:
@@ -48,6 +62,26 @@ def select_policy(policies: tuple[FeePolicy, ...], at: datetime) -> FeePolicy:
     if len(eligible) != 1:
         raise OpportunityError("fee policy unavailable or historical overlap")
     return eligible[0]
+
+
+def current_event_formula_policy(*, fee_type: FeeType, fee_multiplier: Decimal) -> FeePolicy:
+    """Repository-reviewed current policy; it makes no historical-validity claim."""
+    if fee_type not in {FeeType.QUADRATIC, FeeType.QUADRATIC_WITH_MAKER_FEES}:
+        raise OpportunityError("current event fee type unsupported")
+    return FeePolicy(
+        "kalshi-event-fees-2026-07-07-v1",
+        fee_type,
+        fee_multiplier,
+        datetime(2026, 7, 7, tzinfo=UTC),
+        None,
+        "price-times-complement-times-quantity-v1",
+        "Kalshi Fee Schedule, effective 2026-07-07",
+        True,
+        quadratic_coefficient=Decimal("0.07"),
+        maker_quadratic_coefficient=(
+            Decimal("0.0175") if fee_type is FeeType.QUADRATIC_WITH_MAKER_FEES else None
+        ),
+    )
 
 
 def calculate_fee(
@@ -59,18 +93,14 @@ def calculate_fee(
         raise OpportunityError("fee input invalid")
     if policy.fee_type == FeeType.FLAT and policy.flat_rate is not None:
         theoretical = policy.flat_rate * quantity * policy.fee_multiplier
-    elif (
-        policy.fee_type in {FeeType.QUADRATIC, FeeType.QUADRATIC_WITH_MAKER_FEES}
-        and policy.quadratic_coefficient is not None
-    ):
+    elif policy.fee_type in {FeeType.QUADRATIC, FeeType.QUADRATIC_WITH_MAKER_FEES}:
+        coefficient = policy.maker_quadratic_coefficient if maker else policy.quadratic_coefficient
+        if maker and policy.fee_type is FeeType.QUADRATIC:
+            coefficient = Decimal(0)
+        if coefficient is None:
+            raise OpportunityError("unknown or incomplete fee type")
         # The coefficient and formula version must come from verified policy metadata.
-        theoretical = (
-            policy.quadratic_coefficient
-            * price
-            * (Decimal(1) - price)
-            * quantity
-            * policy.fee_multiplier
-        )
+        theoretical = coefficient * price * (Decimal(1) - price) * quantity * policy.fee_multiplier
     else:
         raise OpportunityError("unknown or incomplete fee type")
     rebate = Decimal(0)
