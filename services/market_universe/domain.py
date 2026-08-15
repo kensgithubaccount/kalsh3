@@ -205,7 +205,7 @@ class Event:
 class Market:
     ticker: str
     event_ticker: str
-    title: str
+    title: str | None
     status: MarketStatus
     market_type: str
     provisional: bool
@@ -222,7 +222,6 @@ class Market:
         for key in (
             "ticker",
             "event_ticker",
-            "title",
             "market_type",
             "status",
             "rules_primary",
@@ -230,25 +229,37 @@ class Market:
         ):
             if not isinstance(raw.get(key), str) or not raw[key]:
                 raise UniverseValidationError(f"missing market {key}")
-        for key in ("is_provisional",):
-            if not isinstance(raw.get(key), bool):
-                raise UniverseValidationError(f"missing market {key}")
+        title = raw.get("title")
+        if title is not None and (not isinstance(title, str) or not title):
+            raise UniverseValidationError("invalid market title")
+        provisional = raw.get("is_provisional", False)
+        if not isinstance(provisional, bool):
+            raise UniverseValidationError("invalid market is_provisional")
+        updated = _parse_market_updated_time(raw)
         rules, metadata = material_hashes(raw)
         return cls(
             raw["ticker"],
             raw["event_ticker"],
-            raw["title"],
+            title,
             normalize_status(raw["status"]),
             raw["market_type"],
-            raw["is_provisional"],
+            provisional,
             bool(raw.get("mve_collection_ticker") or raw.get("multivariate_contract")),
             exact(raw.get("volume_fp", "0"), "volume_fp"),
             exact(raw.get("open_interest_fp", "0"), "open_interest_fp"),
             rules,
             metadata,
-            parse_time(raw.get("last_updated_ts"), optional=True),
+            updated,
             raw,
         )
+
+
+def _parse_market_updated_time(raw: dict[str, Any]) -> datetime | None:
+    updated = parse_time(raw["updated_time"]) if "updated_time" in raw else None
+    legacy = parse_time(raw["last_updated_ts"]) if "last_updated_ts" in raw else None
+    if updated is not None and legacy is not None and updated != legacy:
+        raise UniverseValidationError("conflicting market updated timestamps")
+    return updated if updated is not None else legacy
 
 
 def parse_time(value: Any, *, optional: bool = False) -> datetime | None:
