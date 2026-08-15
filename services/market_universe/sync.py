@@ -121,7 +121,10 @@ class UniverseSynchronizer:
         clock: Callable[[], datetime] = lambda: datetime.now(UTC),
         run_id_factory: Callable[[], str] = lambda: str(uuid4()),
         timeout: float = 15,
+        max_pages: int | None = None,
     ) -> None:
+        if max_pages is not None and max_pages < 1:
+            raise ValueError("max_pages must be positive")
         self.transport = transport
         self.repo = repo
         self.archive = archive
@@ -132,6 +135,7 @@ class UniverseSynchronizer:
         self.clock = clock
         self.run_id_factory = run_id_factory
         self.timeout = timeout
+        self.max_pages = max_pages
 
     def _pages(
         self, endpoint: str, field: str, run: SyncRun, params: str = ""
@@ -180,6 +184,10 @@ class UniverseSynchronizer:
             run.records_received += len(page)
             if next_cursor in (None, ""):
                 return records
+            if self.max_pages is not None and run.pages >= self.max_pages:
+                run.failure = "bounded_truncation"
+                run.completeness = Completeness.PARTIAL
+                raise UniverseValidationError("page collection exceeded safety bound")
             if not isinstance(next_cursor, str) or next_cursor in seen:
                 run.failure = "invalid_cursor"
                 run.completeness = Completeness.PARTIAL
