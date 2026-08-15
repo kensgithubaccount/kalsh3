@@ -18,6 +18,12 @@ from enum import StrEnum
 from types import SimpleNamespace
 from typing import TYPE_CHECKING, cast
 
+from services.market_universe.archive import (
+    ARCHIVE_VERIFICATION_POLICY_VERSION,
+    ArchiveError,
+    EntityKind,
+    UniverseObservationArchive,
+)
 from services.market_universe.domain import Event, Market
 
 from .domain import ZERO_INFLUENCE
@@ -34,6 +40,7 @@ EVENT_ASSESSMENT_VERSION = "m26e-event-assessment-v1"
 M26E_EVIDENCE_POLICY_VERSION = "m26e-event-evidence-sufficiency-v1"
 WITHIN_EVENT_AGGREGATION_VERSION = "m26e-within-event-mean-paired-brier-v1"
 POINT_IN_TIME_POLICY_VERSION = "m26e-observed-not-after-evaluation-source-v1"
+ARCHIVE_RECEIPT_VERSION = "m26f-archive-verification-receipt-v1"
 
 
 class EventEvidenceError(ValueError):
@@ -73,6 +80,103 @@ class ObservationAuthorityState(StrEnum):
 
     UNVERIFIED = "UNVERIFIED"
     ARCHIVE_VERIFIED = "ARCHIVE_VERIFIED"
+
+
+@dataclass(frozen=True, slots=True)
+class ArchiveVerificationReceipt:
+    receipt_id: str
+    archive_authority_id: str
+    market_observation_id: str
+    event_observation_id: str
+    market_source_hash: str
+    event_source_hash: str
+    market_ticker: str
+    event_ticker: str
+    series_ticker: str
+    market_acquired_at: datetime
+    event_acquired_at: datetime
+    verified_as_of: datetime
+    archive_verification_policy_version: str = ARCHIVE_VERIFICATION_POLICY_VERSION
+    receipt_policy_version: str = ARCHIVE_RECEIPT_VERSION
+    production_influence: Decimal = ZERO_INFLUENCE
+
+    def __post_init__(self) -> None:
+        for value in (self.market_acquired_at, self.event_acquired_at, self.verified_as_of):
+            _utc(value, "archive receipt timestamp")
+        if (
+            self.market_acquired_at > self.verified_as_of
+            or self.event_acquired_at > self.verified_as_of
+        ):
+            raise EventEvidenceError("archive receipt leaks a future observation")
+        if self.production_influence != ZERO_INFLUENCE:
+            raise EventEvidenceError("archive receipt has nonzero production influence")
+        if self.receipt_id != _receipt_identity(self):
+            raise EventEvidenceError("archive receipt identity mismatch")
+
+
+def _receipt_identity(value: ArchiveVerificationReceipt) -> str:
+    return _hash(
+        {
+            "archive_authority_id": value.archive_authority_id,
+            "archive_verification_policy_version": value.archive_verification_policy_version,
+            "domain": ARCHIVE_RECEIPT_VERSION,
+            "event_acquired_at": _time(value.event_acquired_at),
+            "event_observation_id": value.event_observation_id,
+            "event_source_hash": value.event_source_hash,
+            "event_ticker": value.event_ticker,
+            "market_acquired_at": _time(value.market_acquired_at),
+            "market_observation_id": value.market_observation_id,
+            "market_source_hash": value.market_source_hash,
+            "market_ticker": value.market_ticker,
+            "production_influence": "0",
+            "receipt_policy_version": value.receipt_policy_version,
+            "series_ticker": value.series_ticker,
+            "verified_as_of": _time(value.verified_as_of),
+        }
+    )
+
+
+def _verify_receipt(
+    receipt: ArchiveVerificationReceipt, archive: UniverseObservationArchive
+) -> tuple[Market, Event]:
+    if (
+        receipt.receipt_id != _receipt_identity(receipt)
+        or receipt.archive_authority_id != archive.authority_id
+    ):
+        raise EventEvidenceError("archive receipt authority or identity mismatch")
+    try:
+        market_row = archive.get(receipt.market_observation_id)
+        event_row = archive.get(receipt.event_observation_id)
+        selected_market = archive.at_or_before(
+            EntityKind.MARKET, receipt.market_ticker, receipt.verified_as_of
+        )
+        selected_event = archive.at_or_before(
+            EntityKind.EVENT, receipt.event_ticker, receipt.verified_as_of
+        )
+    except ArchiveError as exc:
+        raise EventEvidenceError("archive receipt has no valid store backing") from exc
+    if not isinstance(market_row.entity, Market) or not isinstance(event_row.entity, Event):
+        raise EventEvidenceError("archive receipt entity kinds are invalid")
+    market, event = market_row.entity, event_row.entity
+    facts = (
+        market_row.archive_authority_id
+        == event_row.archive_authority_id
+        == receipt.archive_authority_id,
+        market_row.canonical_source_hash == receipt.market_source_hash,
+        event_row.canonical_source_hash == receipt.event_source_hash,
+        market.ticker == receipt.market_ticker,
+        market.event_ticker == event.ticker == receipt.event_ticker,
+        event.series_ticker == receipt.series_ticker,
+        market_row.acquired_at == receipt.market_acquired_at,
+        event_row.acquired_at == receipt.event_acquired_at,
+        market_row.acquired_at <= receipt.verified_as_of,
+        event_row.acquired_at <= receipt.verified_as_of,
+        selected_market.observation_id == receipt.market_observation_id,
+        selected_event.observation_id == receipt.event_observation_id,
+    )
+    if not all(facts):
+        raise EventEvidenceError("archive receipt disagrees with reconstructed entities")
+    return market, event
 
 
 def _utc(value: object, name: str) -> None:
@@ -120,6 +224,7 @@ class UniverseEventObservation:
         default=ObservationAuthorityState.UNVERIFIED, init=False
     )
     production_influence: Decimal = ZERO_INFLUENCE
+    archive_receipt: ArchiveVerificationReceipt | None = field(default=None, init=False, repr=False)
 
     def __post_init__(self) -> None:
         _utc(self.observed_at, "observed_at")
@@ -136,7 +241,10 @@ class UniverseEventObservation:
             raise EventEvidenceError("universe event observation identity is incomplete")
         if self.production_influence != ZERO_INFLUENCE:
             raise EventEvidenceError("event observations have exactly zero production influence")
-        if self.authority_state is not ObservationAuthorityState.UNVERIFIED:
+        if (
+            self.authority_state is not ObservationAuthorityState.UNVERIFIED
+            or self.archive_receipt is not None
+        ):
             raise EventEvidenceError(
                 "archive authority requires a repository-verified archive adapter"
             )
@@ -164,7 +272,69 @@ class UniverseEventObservation:
             provenance_hash,
         )
 
-    def material(self) -> dict[str, str]:
+    @classmethod
+    def from_verified_archive(
+        cls,
+        archive: UniverseObservationArchive,
+        *,
+        market_observation_id: str,
+        event_observation_id: str,
+        as_of: datetime,
+    ) -> UniverseEventObservation:
+        """Build authority from store-reconstructed entities, never caller entities."""
+        _utc(as_of, "as_of")
+        try:
+            market_row = archive.get(market_observation_id)
+            event_row = archive.get(event_observation_id)
+        except ArchiveError as exc:
+            raise EventEvidenceError("verified archive reconstruction failed") from exc
+        if not isinstance(market_row.entity, Market) or not isinstance(event_row.entity, Event):
+            raise EventEvidenceError("verified archive pair has wrong entity kinds")
+        market, event = market_row.entity, event_row.entity
+        if market.event_ticker != event.ticker:
+            raise EventEvidenceError("archived Market and Event identity disagree")
+        values = dict(
+            archive_authority_id=archive.authority_id,
+            market_observation_id=market_observation_id,
+            event_observation_id=event_observation_id,
+            market_source_hash=market_row.canonical_source_hash,
+            event_source_hash=event_row.canonical_source_hash,
+            market_ticker=market.ticker,
+            event_ticker=event.ticker,
+            series_ticker=event.series_ticker,
+            market_acquired_at=market_row.acquired_at,
+            event_acquired_at=event_row.acquired_at,
+            verified_as_of=as_of,
+        )
+        draft = cast(
+            ArchiveVerificationReceipt,
+            SimpleNamespace(
+                **values,
+                archive_verification_policy_version=ARCHIVE_VERIFICATION_POLICY_VERSION,
+                receipt_policy_version=ARCHIVE_RECEIPT_VERSION,
+                production_influence=ZERO_INFLUENCE,
+            ),
+        )
+        receipt = ArchiveVerificationReceipt(_receipt_identity(draft), **values)  # type: ignore[arg-type]
+        _verify_receipt(receipt, archive)
+        result = cls.from_entities(
+            market,
+            event,
+            observation_id=receipt.receipt_id,
+            observed_at=max(market_row.acquired_at, event_row.acquired_at),
+            provenance_hash=_hash(
+                {
+                    "archive_authority_id": archive.authority_id,
+                    "market_page_id": market_row.page_id,
+                    "event_page_id": event_row.page_id,
+                }
+            ),
+        )
+        object.__setattr__(result, "authority_state", ObservationAuthorityState.ARCHIVE_VERIFIED)
+        object.__setattr__(result, "archive_receipt", receipt)
+        return result
+
+    def material(self) -> dict[str, str | None]:
         return {
             "event_metadata_hash": self.event_metadata_hash,
             "event_ticker": self.event_ticker,
@@ -177,6 +347,9 @@ class UniverseEventObservation:
             "production_influence": "0",
             "provenance_hash": self.provenance_hash,
             "series_ticker": self.series_ticker,
+            "archive_receipt_id": None
+            if self.archive_receipt is None
+            else self.archive_receipt.receipt_id,
         }
 
 
@@ -195,6 +368,7 @@ class EvaluatedMarketEventBinding:
     observed_at: datetime | None
     as_of: datetime
     detail: str
+    archive_receipt: ArchiveVerificationReceipt | None = None
     binding_policy_version: str = MARKET_EVENT_BINDING_VERSION
     production_influence: Decimal = ZERO_INFLUENCE
 
@@ -206,7 +380,10 @@ class EvaluatedMarketEventBinding:
                 raise EventEvidenceError("event observation occurs after historical as-of")
         if self.production_influence != ZERO_INFLUENCE:
             raise EventEvidenceError("event bindings have exactly zero production influence")
-        if self.state is ExchangeEventIdentityState.PROVEN:
+        if self.state is ExchangeEventIdentityState.PROVEN and (
+            self.observation_authority_state is not ObservationAuthorityState.ARCHIVE_VERIFIED
+            or self.archive_receipt is None
+        ):
             raise EventEvidenceError(
                 "authoritative historical identity is unavailable without an archive verifier"
             )
@@ -215,6 +392,7 @@ class EvaluatedMarketEventBinding:
 
 
 def _binding_identity(binding: EvaluatedMarketEventBinding) -> str:
+    receipt = getattr(binding, "archive_receipt", None)
     return _hash(
         {
             "as_of": _time(binding.as_of),
@@ -236,6 +414,7 @@ def _binding_identity(binding: EvaluatedMarketEventBinding) -> str:
             "series_ticker": binding.series_ticker,
             "source_observation_id": binding.source_observation_id,
             "state": binding.state.value,
+            "archive_receipt_id": (None if receipt is None else receipt.receipt_id),
         }
     )
 
@@ -245,6 +424,7 @@ def bind_market_event(
     *,
     as_of: datetime,
     observations: tuple[UniverseEventObservation, ...],
+    archive: UniverseObservationArchive | None = None,
 ) -> EvaluatedMarketEventBinding:
     """Validate point-in-time candidate grouping without inventing archive authority."""
     _utc(as_of, "as_of")
@@ -346,9 +526,26 @@ def bind_market_event(
             # Version transitions that preserve identity are valid. Use the latest
             # historical observation, never an observation after the cohort as-of.
             row = eligible[-1]
+            proven = False
+            if row.authority_state is ObservationAuthorityState.ARCHIVE_VERIFIED:
+                if archive is None or row.archive_receipt is None:
+                    raise EventEvidenceError("archive-verified observation requires its archive")
+                market, event = _verify_receipt(row.archive_receipt, archive)
+                if (
+                    market.ticker != row.market_ticker
+                    or market.metadata_hash != row.market_metadata_hash
+                    or event.metadata_hash != row.event_metadata_hash
+                    or row.observed_at > as_of
+                ):
+                    raise EventEvidenceError("archive observation material mismatch")
+                proven = True
             values = dict(
                 market_ticker=market_ticker,
-                state=ExchangeEventIdentityState.UNPROVEN,
+                state=(
+                    ExchangeEventIdentityState.PROVEN
+                    if proven
+                    else ExchangeEventIdentityState.UNPROVEN
+                ),
                 event_ticker=row.event_ticker,
                 series_ticker=row.series_ticker,
                 market_metadata_hash=row.market_metadata_hash,
@@ -358,8 +555,12 @@ def bind_market_event(
                 observation_authority_state=row.authority_state,
                 observed_at=row.observed_at,
                 as_of=as_of,
+                archive_receipt=row.archive_receipt if proven else None,
                 detail=(
-                    "Candidate point-in-time Market.event_ticker matches Event.ticker, but no "
+                    "Market/Event identity was independently reconstructed and verified against "
+                    "the append-only acquisition archive"
+                    if proven
+                    else "Candidate point-in-time Market.event_ticker matches Event.ticker, but no "
                     "repository-verified historical archive proves its authority"
                 ),
             )
@@ -398,20 +599,46 @@ class EventEvidenceManifest:
             raise EventEvidenceError("event manifest identity mismatch")
 
 
-def _validate_manifest_bindings(bindings: tuple[EvaluatedMarketEventBinding, ...]) -> None:
+def _validate_manifest_bindings(
+    bindings: tuple[EvaluatedMarketEventBinding, ...],
+    archive: UniverseObservationArchive | None = None,
+    *,
+    require_archive: bool = False,
+) -> None:
     """Revalidate authoritative invariants without trusting constructor history."""
     for binding in bindings:
         if binding.production_influence != ZERO_INFLUENCE:
             raise EventEvidenceError("manifest binding has nonzero production influence")
         if binding.binding_id != _binding_identity(binding):
             raise EventEvidenceError("manifest binding identity mismatch")
-        if (
-            binding.state is ExchangeEventIdentityState.PROVEN
-            or binding.observation_authority_state is ObservationAuthorityState.ARCHIVE_VERIFIED
-        ):
-            raise EventEvidenceError(
-                "manifest cannot contain authoritative identity without an archive verifier"
-            )
+        authoritative = binding.state is ExchangeEventIdentityState.PROVEN or (
+            binding.observation_authority_state is ObservationAuthorityState.ARCHIVE_VERIFIED
+        )
+        if authoritative:
+            if binding.archive_receipt is None:
+                raise EventEvidenceError(
+                    "manifest authority is unavailable without an archive verifier"
+                )
+            if binding.archive_receipt.receipt_id != _receipt_identity(binding.archive_receipt):
+                raise EventEvidenceError("manifest archive receipt identity mismatch")
+            if archive is None:
+                if require_archive:
+                    raise EventEvidenceError(
+                        "manifest authority is unavailable without an archive verifier"
+                    )
+                continue
+            market, event = _verify_receipt(binding.archive_receipt, archive)
+            if not all(
+                (
+                    binding.market_ticker == market.ticker,
+                    binding.event_ticker == market.event_ticker == event.ticker,
+                    binding.series_ticker == event.series_ticker,
+                    binding.market_metadata_hash == market.metadata_hash,
+                    binding.event_metadata_hash == event.metadata_hash,
+                    binding.observed_at is not None and binding.observed_at <= binding.as_of,
+                )
+            ):
+                raise EventEvidenceError("manifest binding disagrees with archive receipt")
 
 
 def _manifest_identity(value: EventEvidenceManifest) -> str:
@@ -437,10 +664,13 @@ def _make_manifest(
     included_source_ids: tuple[str, ...],
     excluded_source_items: tuple[tuple[str, str], ...],
     observations: tuple[UniverseEventObservation, ...],
+    archive: UniverseObservationArchive | None = None,
 ) -> EventEvidenceManifest:
     markets = tuple(sorted(market_as_of))
     bindings = tuple(
-        bind_market_event(ticker, as_of=market_as_of[ticker], observations=observations)
+        bind_market_event(
+            ticker, as_of=market_as_of[ticker], observations=observations, archive=archive
+        )
         for ticker in markets
     )
     values = dict(
@@ -530,11 +760,13 @@ def _assessment_identity(value: EventEvidenceAssessment) -> str:
 def assess_manifest(
     manifest: EventEvidenceManifest,
     policy: EvidenceSufficiencyPolicy = DEFAULT_EVIDENCE_SUFFICIENCY_POLICY,
+    *,
+    archive: UniverseObservationArchive | None = None,
 ) -> EventEvidenceAssessment:
     """Count proven exchange groups; conservatively leave independence unproven."""
     # Defense in depth: a same-process caller can bypass frozen-dataclass
     # constructors, so assessment repeats the manifest's trust-boundary checks.
-    _validate_manifest_bindings(manifest.bindings)
+    _validate_manifest_bindings(manifest.bindings, archive, require_archive=True)
     conflicted = [
         row for row in manifest.bindings if row.state is ExchangeEventIdentityState.CONFLICTED
     ]
@@ -603,10 +835,14 @@ def assess_manifest(
             aggregation_policy_version=WITHIN_EVENT_AGGREGATION_VERSION,
             explanation=(
                 f"{len(manifest.market_tickers)} scored markets map consistently to "
-                f"{candidate_event_count} candidate Kalshi events, but the authoritative "
-                "historical "
-                "event count is unavailable because no verified archive boundary exists; "
-                "independence across distinct exchange events has not been established."
+                f"{candidate_event_count} candidate Kalshi events; "
+                + (
+                    f"{event_count} exchange events are archive verified; "
+                    if proven
+                    else "the authoritative historical event count is unavailable; "
+                )
+                + "statistical independence across distinct exchange events has not been "
+                "established."
             ),
         )
     draft = cast(
@@ -625,6 +861,7 @@ def manifest_from_evaluation_store(
     generated_at: datetime,
     observations: tuple[UniverseEventObservation, ...],
     policy_version: str = EVALUATION_POLICY_VERSION,
+    archive: UniverseObservationArchive | None = None,
 ) -> EventEvidenceManifest:
     """Derive the complete effective M26C universe; callers cannot submit market IDs."""
     source = store.build_manifest(
@@ -659,6 +896,7 @@ def manifest_from_evaluation_store(
             if row.eligibility is not EvaluationEligibility.ELIGIBLE
         ),
         observations=observations,
+        archive=archive,
     )
 
 
@@ -667,6 +905,7 @@ def manifest_from_pairwise_comparison(
     evaluations: tuple[ReceiptEvaluation, ...],
     *,
     observations: tuple[UniverseEventObservation, ...],
+    archive: UniverseObservationArchive | None = None,
 ) -> EventEvidenceManifest:
     """Bind every shared unit and exclusion from one immutable M26D cohort."""
     if comparison.cohort is None:
@@ -696,6 +935,7 @@ def manifest_from_pairwise_comparison(
             (row.unit_id, row.reason) for row in comparison.cohort.excluded_units
         ),
         observations=observations,
+        archive=archive,
     )
 
 

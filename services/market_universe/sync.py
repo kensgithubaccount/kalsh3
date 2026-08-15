@@ -9,6 +9,11 @@ from enum import StrEnum
 from typing import Any, Protocol, cast
 from uuid import uuid4
 
+from .archive import (
+    EntityKind,
+    UniverseObservationArchive,
+    _acquisition_writer_for_synchronizer,
+)
 from .domain import Event, Market, Series, UniverseValidationError, parse_time
 
 
@@ -111,12 +116,21 @@ class UniverseSynchronizer:
         transport: PublicTransport,
         repo: MemoryUniverseRepository,
         *,
+        archive: UniverseObservationArchive | None = None,
+        provider: str = "kalshi-public-api",
         clock: Callable[[], datetime] = lambda: datetime.now(UTC),
+        run_id_factory: Callable[[], str] = lambda: str(uuid4()),
         timeout: float = 15,
     ) -> None:
         self.transport = transport
         self.repo = repo
+        self.archive = archive
+        self.__archive_writer = (
+            None if archive is None else _acquisition_writer_for_synchronizer(archive)
+        )
+        self.provider = provider
         self.clock = clock
+        self.run_id_factory = run_id_factory
         self.timeout = timeout
 
     def _pages(
@@ -139,13 +153,31 @@ class UniverseSynchronizer:
                 raise
             page = payload.get(field)
             run.pages += 1
+            next_cursor = payload.get("cursor")
+            if self.__archive_writer is not None:
+                parameters = {}
+                if params:
+                    parameters = dict(part.split("=", 1) for part in params.split("&"))
+                self.__archive_writer.append_page(
+                    provider=self.provider,
+                    endpoint=endpoint,
+                    parameters=parameters,
+                    acquired_at=self.clock(),
+                    page_number=run.pages,
+                    cursor_in=cursor,
+                    cursor_out=next_cursor if isinstance(next_cursor, str) else None,
+                    run_id=run.run_id,
+                    kind=EntityKind(endpoint[:-1] if endpoint.endswith("s") else endpoint),
+                    payload=payload,
+                    succeeded=isinstance(page, list),
+                    failure=None if isinstance(page, list) else "malformed_page",
+                )
             if not isinstance(page, list):
                 run.failure = "malformed_page"
                 run.completeness = Completeness.PARTIAL
                 raise UniverseValidationError("page collection malformed")
             records.extend(page)
             run.records_received += len(page)
-            next_cursor = payload.get("cursor")
             if next_cursor in (None, ""):
                 return records
             if not isinstance(next_cursor, str) or next_cursor in seen:
@@ -166,7 +198,9 @@ class UniverseSynchronizer:
         }
         parser, field = parsers[kind]
         now = self.clock()
-        run = SyncRun(str(uuid4()), kind, "incremental" if incremental else "baseline", now)
+        run = SyncRun(
+            self.run_id_factory(), kind, "incremental" if incremental else "baseline", now
+        )
         self.repo.runs.append(run)
         params = ""
         if incremental:
@@ -200,6 +234,16 @@ class UniverseSynchronizer:
             if run.failure is None:
                 run.failure = type(exc).__name__
         run.finished_at = self.clock()
+        if self.__archive_writer is not None:
+            self.__archive_writer.record_run_result(
+                run_id=run.run_id,
+                completeness=run.completeness.value,
+                pages=run.pages,
+                records_received=run.records_received,
+                malformed=run.malformed,
+                failure=run.failure,
+                finished_at=run.finished_at,
+            )
         return run
 
     def sync_historical_cutoff(self) -> HistoricalCutoff:
