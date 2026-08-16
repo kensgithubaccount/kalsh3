@@ -1,0 +1,4 @@
+time,station,latitude[unit="degrees_north"],longitude[unit="degrees_east"],Maximum_temperature_surface_12_Hour_Maximum[unit="K"]
+2018-06-20T18:00:00Z,GridPointRequestedAt[41.784N_87.755W],41.772,-87.741,296.5
+2018-06-21T18:00:00Z,GridPointRequestedAt[41.784N_87.755W],41.772,-87.741,298.7
+2018-06-22T18:00:00Z,GridPointRequestedAt[41.784N_87.755W],41.772,-87.741,295.4

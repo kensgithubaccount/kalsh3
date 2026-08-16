@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<gridDataset location="/thredds/captured">
+  <axis name="reftime" type="double" axisType="RunTime">
+    <attribute name="units" value="Hour since 2018-06-20T07:00:00Z" />
+    <attribute name="standard_name" value="forecast_reference_time" />
+    <attribute name="long_name" value="GRIB reference time" />
+    <values spacing="regularPoint" npts="1" start="0" end="0" />
+  </axis>
+  <axis name="time" type="double" axisType="Time">
+    <attribute name="units" value="Hour" />
+    <attribute name="udunits" value="Hour since 2018-06-20T07:00:00Z" />
+    <attribute name="_CoordinateAxisType" value="Time" />
+    <values spacing="discontiguousInterval" npts="3" start="5" end="65" resolution="24">11 35 59</values>
+  </axis>
+  <gridSet name="reftime time y x">
+    <grid name="Maximum_temperature_surface_12_Hour_Maximum" desc="Maximum temperature (12_Hour Maximum) @ Ground or water surface">
+      <attribute name="long_name" value="Maximum temperature (12_Hour Maximum) @ Ground or water surface" />
+      <attribute name="units" value="K" />
+      <attribute name="Grib_Variable_Id" value="VAR_0-0-4_L1_I12_Hour_S2" />
+      <attribute name="Grib2_Parameter" value="0 0 4" />
+      <attribute name="Grib2_Parameter_Category" value="Temperature" />
+      <attribute name="Grib2_Parameter_Name" value="Maximum temperature" />
+      <attribute name="Grib2_Generating_Process_Type" value="Forecast" />
+      <attribute name="Grib2_Statistical_Process_Type" value="Maximum" />
+    </grid>
+  </gridSet>
+</gridDataset>
