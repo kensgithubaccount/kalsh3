@@ -52,6 +52,7 @@
 | M26H.2 Live Market Schema Compatibility | Implemented; focused regression verified | The canonical Market parser defaults an absent `is_provisional` to false while rejecting present non-booleans, preserves null or absent titles as unavailable, and reads `updated_time` with fail-closed reconciliation against legacy `last_updated_ts`. Collection, archive, authority, execution, and production influence semantics are unchanged. |
 | M26H.3 Authoritative Event Coverage Reconciliation | COMPLETE; independently reviewed and live accepted | The accepted `open-non-mve-v2` archive contains 84,724 Markets and 10,403 parent Event tickers; 7 parents were reconciled by exact read and 0 remain unresolved. M26G authority remains unchanged, production execution remains DISARMED, and influence is exactly 0. See `reviews/M26H3_AUTHORITATIVE_EVENT_COVERAGE_RECONCILIATION.md`. |
 | M27A Live Market Economics Compatibility | Implemented, independently reviewed, and bounded production read-only live accepted | One bounded authenticated exact-read batch orderbook GET plus current Market/Event/Series point reads verified production read-only universe/economics evidence and exact self-contained TAKER_NOW replay for cent, subpenny, and fractional representatives. All accepted representatives used `current_series`; the Event override path was not separately live accepted. Pre-fill final exchange fee remains unknown, maker opportunity economics remain unsupported, trading remained locked/off, and production influence is exactly 0. See `reviews/M27A_LIVE_MARKET_ECONOMICS_COMPATIBILITY.md`. |
+| M27B Universal Router + Directional Structural Scanner | Implemented (offline verified; independent review pending); research-only | Deterministic universal Market routing records every route or abstention; directional discovery requires ACTIVE binary non-provisional non-MVE Markets; complete canonical `custom_strike` identity prevents cross-entity Event comparisons; v1 mechanically supports only finite-floor `greater` / `greater_or_equal` nesting. Broad quotes produce discovery-only Structural Leads. Exact confirmation additionally requires compatible strategy-supported ContractSpecifications whose canonical Market rules/metadata hashes exactly match M27A evidence, plus identical cross-market `orderbook_observed_at`; final exchange fees remain unknown pre-fill. No fair value, EV, profit, arbitrage, capital allocation, trading readiness, or execution path; production influence is exactly 0. See `reviews/M27B_UNIVERSAL_ROUTER_STRUCTURAL_SCANNER.md`. |
 
 ## Runtime truth
 
@@ -137,6 +138,28 @@
   profitability, ranking, capital allocation, `TradeCandidate`, `DecisionReceipt`, `RiskIntent`, order
   activity, execution, autonomy, or trading-readiness acceptance. M27A production influence remains
   exactly `Decimal("0")`.
+
+## M27B acceptance
+
+- M27B is offline, deterministic, and research-only. Every supplied canonical Market yields a route or
+  explicit abstention; unsupported shapes are measurable rather than silently dropped.
+- Event ticker alone is not a safe cohort. Complete canonical non-empty `custom_strike` content binds
+  subject identity, preventing player, team, index, and contract cross-comparisons. Malformed,
+  mixed-presence, and duplicate-threshold groups fail closed.
+- Version 1 structural semantics are limited to finite Decimal `floor_strike` values for `greater` and
+  `greater_or_equal`. Discovery also requires ACTIVE binary non-provisional non-MVE Markets. All other
+  strike types and base-gate failures route explicitly without producing leads.
+- Broad quotes are discovery-only. Exact confirmation consumes existing M27A replayable evidence for
+  broad YES plus narrow NO at exactly equal quantities, plus compatible strategy-supported canonical
+  ContractSpecifications. Each specification's canonical Market rules and metadata hashes must exactly
+  match its corresponding M27A evidence hashes. Exact books must share precisely the same caller-assigned
+  `orderbook_observed_at`, normally from one bounded batch snapshot; this does not establish exchange-wire
+  atomicity. Final exchange fees remain unknown pre-fill, so final/guaranteed net profit remains
+  unavailable.
+- The accepted M26H.3 probe counts document an observed archive, not permanent live-universe truth.
+- No forecasting, fair value, positive EV, profitability, arbitrage, capital allocation,
+  `TradeCandidate`, `DecisionReceipt`, `RiskIntent`, order, scheduler, autonomy, network, execution, or
+  trading-readiness claim is introduced. Production influence is exactly `Decimal("0")`.
 
 ## M11 acceptance
 
