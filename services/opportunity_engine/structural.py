@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 import json
+import math
+import re
 from collections import Counter
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
-from decimal import Decimal
+from decimal import Decimal, InvalidOperation
 from enum import StrEnum
 
 from services.contract_intelligence.specification import ContractSpecification
@@ -16,7 +18,6 @@ from services.market_universe.domain import (
     Market,
     MarketStatus,
     UniverseValidationError,
-    exact_numeric,
     stable_hash,
 )
 from services.market_universe.quality import Family, classify
@@ -32,6 +33,7 @@ from .live_economics import (
 POLICY_VERSION = "m27b-directional-structural-v1"
 ZERO = Decimal("0")
 SUPPORTED_STRIKE_TYPES = frozenset(("greater", "greater_or_equal"))
+_FIXED_POINT_STRIKE = re.compile(r"[+-]?(?:\d+(?:\.\d*)?|\.\d+)")
 
 
 class RouteState(StrEnum):
@@ -454,7 +456,7 @@ def _initial_route(
                 reasons=(RouteReason.MALFORMED_CUSTOM_STRIKE,),
             )
     try:
-        threshold = exact_numeric(market.raw.get("floor_strike"), "floor_strike")
+        threshold = _parse_exchange_strike(market.raw.get("floor_strike"))
     except UniverseValidationError:
         return _route(
             **base,
@@ -474,6 +476,32 @@ def _initial_route(
         canonical_custom_strike=canonical_custom,
         threshold=threshold,
     )
+
+
+def _parse_exchange_strike(value: object) -> Decimal:
+    """Parse decoded exchange strike metadata at the narrow M27B boundary.
+
+    Exchange JSON numbers may decode as floats. For this descriptive field only,
+    ``Decimal(str(value))`` preserves the decoded exchange-facing decimal value
+    without introducing the binary expansion from ``Decimal(value)``. The archive
+    does not retain the original JSON numeric token, so this does not reconstruct
+    its byte-for-byte lexical representation.
+    """
+    if isinstance(value, bool) or not isinstance(value, (int, str, float)):
+        raise UniverseValidationError(
+            "floor_strike must be integer, fixed-point string, or finite decoded float"
+        )
+    if isinstance(value, float) and not math.isfinite(value):
+        raise UniverseValidationError("invalid floor_strike")
+    if isinstance(value, str) and _FIXED_POINT_STRIKE.fullmatch(value) is None:
+        raise UniverseValidationError("invalid floor_strike")
+    try:
+        result = Decimal(str(value)) if isinstance(value, float) else Decimal(value)
+    except InvalidOperation as exc:
+        raise UniverseValidationError("invalid floor_strike") from exc
+    if not result.is_finite():
+        raise UniverseValidationError("invalid floor_strike")
+    return result
 
 
 def _route(**values: object) -> StructuralRoute:
