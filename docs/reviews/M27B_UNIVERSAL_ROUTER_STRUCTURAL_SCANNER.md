@@ -94,10 +94,24 @@ fail-closed malformed/mixed/duplicate shapes, supported and unsupported semantic
 identity changes, a 1,000-market cohort, a 50,001-market universe, exact side/cost/fee mapping,
 insufficient depth, and the zero-influence/no-execution boundary.
 
-Independent review of M27B is complete. M27B.1 review and the post-fix archive acceptance rerun remain
-pending. The 6 Structural Leads observed by the original acceptance are provisional discovery results
-from incomplete directional coverage and must not be treated as the final M27B lead set. No archive
-count after this compatibility fix is claimed here until it is observed by the separate rerun.
+Independent review of M27B and M27B.1 is complete. The final M27B.1 micro-review found 0 BLOCKER,
+0 IMPORTANT, and 0 MINOR findings with verdict `SAFE TO COMMIT M27B.1`.
+
+Committed-SHA H3 acceptance on `1880dd46f7418c7c193bb8c343ece6d77d70c720` replayed 84,724 Markets
+and 10,403 Events. All 35,930 supported `greater` / `greater_or_equal` Markets passed floor-strike
+parsing; `INVALID_FLOOR_STRIKE` was 0. The scan produced 35,823 structurally eligible Markets across
+5,513 cohorts and 14 discovery-only Structural Leads across 11 Events. All original 6 leads remained
+and 8 additional leads became visible after fractional-strike coverage was restored.
+
+Acceptance artifact:
+`/Users/ksyme/.kalsh3/evidence/m27b1-committed-acceptance-20260816-044201.json`
+
+Artifact SHA-256:
+`96a6e86d6750c355d46fab5d0c99e9d4e28146430005c94b0cb665e5677c0d45`
+
+The acceptance used 0 network calls, 0 production writes, 0 exact confirmations, and production influence
+remained exactly 0. These archived broad-quote Structural Leads do not establish current executability,
+arbitrage, positive EV, or profitability. Global `exact_numeric()` behavior remains unchanged.
 
 ## Claims not established
 
