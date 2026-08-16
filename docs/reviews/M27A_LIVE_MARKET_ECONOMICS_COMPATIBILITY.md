@@ -1,6 +1,6 @@
 # M27A Live Market Economics Compatibility Review
 
-Status: implementation candidate, focused offline verification complete, independent review pending.
+Status: implemented, independently reviewed, and bounded production read-only live accepted.
 
 M27A is research-only. It introduces no forecasting, Event Edge decision, `TradeCandidate`, ranking,
 capital, order, scheduler, autonomy, or production-execution path. Every new evidence/policy object has
@@ -29,5 +29,30 @@ identity, and observation time used for both sides. Evidence creation verifies t
 legacy provenance fields and stored YES/NO results, and replay requires no network, database, clock, or
 external archive.
 
-Independent review should verify coefficient-source evidence, exact live response envelopes, retry and
-redirect behavior, content identities, temporal parent matching, and absence of any execution coupling.
+## Production read-only live acceptance
+
+Acceptance ran at repository head `d8ca7db580be18fef63bb8e0d36e4be785b583fc` with requested
+hypothetical quantity `0.01`. The acceptance evidence is
+`~/.kalsh3/evidence/m27a-live-acceptance-20260816-033036.json`, with JSON SHA256
+`ca83bc6b44f46b234d6e8dd418d98adca2bc953d84325d177ff6f8c66e0ca199` and acceptance-log SHA256
+`08a985fe810c3b32b3202a9527fa4da2225e70103960216cd2abfb2ee51d6a67`.
+
+The bounded acceptance used one authenticated exact-read batch orderbook GET and current
+Market/Event/Series point reads. It performed no production writes, production influence remained exactly
+`Decimal("0")`, and trading remained locked/off.
+
+| Representative | Market | Series | Category | Structure / minimum step | Observed depth | Fee resolution | TAKER_NOW / replay |
+|---|---|---|---|---|---|---|---|
+| CENT | `KXUFCFIGHT-26AUG15MAKMGI-MGI` | `KXUFCFIGHT` | Sports | `linear_cent` / `0.0100` | Fractional: yes | `current_series`; `quadratic`; multiplier `1` | YES and NO available; self-contained exact replay PASS |
+| SUBPENNY | `KXGOVFLNOMR-26-JFIS` | `KXGOVFLNOMR` | Elections | `tapered_deci_cent` / `0.0010` | Exact subpenny: yes; fractional: yes | `current_series`; `quadratic`; multiplier `1` | YES and NO available; self-contained exact replay PASS |
+| FRACTIONAL | `KXPGATOUR-FESJC26-SSCH` | `KXPGATOUR` | Sports | `tapered_deci_cent` / `0.0010` | Exact subpenny: yes; fractional: yes | `current_series`; `quadratic_with_maker_fees`; multiplier `1` | YES and NO available; self-contained exact replay PASS |
+
+All representatives used fee policy `kalshi-event-fees-2026-07-07-v1` and the `current_series`
+fee-resolution path. The Event override path has real M26H.3 archived shapes and focused/adversarial test
+coverage, but was not separately exercised by this bounded production acceptance. This acceptance does
+not establish that every fee-resolution branch was live accepted.
+
+Pre-fill final exchange fee remains `UNKNOWN`, by design, and maker opportunity economics remain
+unsupported. This acceptance makes no forecasting, fair-value, edge, profitability, ranking, capital
+allocation, `TradeCandidate`, `DecisionReceipt`, `RiskIntent`, execution, order-activity, or
+trading-readiness claim. M27A remains research-only with production influence exactly `Decimal("0")`.

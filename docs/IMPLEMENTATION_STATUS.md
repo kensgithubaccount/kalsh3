@@ -51,12 +51,13 @@
 | M26H.1 Scoped Complete Evidence Collection | Implemented; offline/fake-transport verified; scoped live acceptance pending | The CLI now requires the sole reviewed `open-non-mve-v1` scope: open non-MVE Markets (`status=open`, `mve_filter=exclude`, `limit=1000`) plus open Events (`status=open`, `limit=200`). Structured cursor encoding, exact semantic transport validation, control-character rejection, strict page bounds, sanitized request errors, synchronous progress, deterministic scope identity, sequential run windows, and conservative Market-to-Event coverage fail closed. Repeated runs append; old broad partial rows are not relabeled. M26G remains empty, M9 and the dashboard remain disconnected, production execution remains DISARMED, and influence is exactly 0. See `reviews/M26H1_SCOPED_EVIDENCE_COLLECTION.md`. |
 | M26H.2 Live Market Schema Compatibility | Implemented; focused regression verified | The canonical Market parser defaults an absent `is_provisional` to false while rejecting present non-booleans, preserves null or absent titles as unavailable, and reads `updated_time` with fail-closed reconciliation against legacy `last_updated_ts`. Collection, archive, authority, execution, and production influence semantics are unchanged. |
 | M26H.3 Authoritative Event Coverage Reconciliation | COMPLETE; independently reviewed and live accepted | The accepted `open-non-mve-v2` archive contains 84,724 Markets and 10,403 parent Event tickers; 7 parents were reconciled by exact read and 0 remain unresolved. M26G authority remains unchanged, production execution remains DISARMED, and influence is exactly 0. See `reviews/M26H3_AUTHORITATIVE_EVENT_COVERAGE_RECONCILIATION.md`. |
-| M27A Live Market Economics Compatibility | Implemented; focused offline verified; independent review ready | Research-only current economics evidence supports live `price_ranges`, integer/string Series multipliers, complete Event fee overrides, current Series fee observations, fee changes, deterministic Event-over-Series fee resolution, distinct maker/taker formula metadata, exact-read batch orderbooks, M10 book normalization, discovery quotes, and TAKER_NOW depth walks. Broad quotes are discovery rather than executable-depth truth; pre-trade final fee remains uncertain; no forecast, edge, profitability, candidate, capital, order, readiness, or trading claim. Production influence is exactly 0. |
+| M27A Live Market Economics Compatibility | Implemented, independently reviewed, and bounded production read-only live accepted | One bounded authenticated exact-read batch orderbook GET plus current Market/Event/Series point reads verified production read-only universe/economics evidence and exact self-contained TAKER_NOW replay for cent, subpenny, and fractional representatives. All accepted representatives used `current_series`; the Event override path was not separately live accepted. Pre-fill final exchange fee remains unknown, maker opportunity economics remain unsupported, trading remained locked/off, and production influence is exactly 0. See `reviews/M27A_LIVE_MARKET_ECONOMICS_COMPATIBILITY.md`. |
 
 ## Runtime truth
 
 - Research data/semantics/signals: M2–M5 code offline verified; no forecast, probability, alpha or opportunity
-- Live account/universe/WebSocket/external feeds: deliberately not connected or verified
+- Production read-only account and universe/economics evidence: verified; general WebSocket and external
+  feeds remain separately unverified where noted
 - Production write: disabled and absent
 - Production armed: no
 - Autonomous trading: off
@@ -105,6 +106,24 @@
 
 ## M27A acceptance
 
+- Bounded production read-only live acceptance ran at repository head
+  `d8ca7db580be18fef63bb8e0d36e4be785b583fc` with requested hypothetical quantity `0.01`.
+- Acceptance file: `~/.kalsh3/evidence/m27a-live-acceptance-20260816-033036.json`; JSON SHA256:
+  `ca83bc6b44f46b234d6e8dd418d98adca2bc953d84325d177ff6f8c66e0ca199`; log SHA256:
+  `08a985fe810c3b32b3202a9527fa4da2225e70103960216cd2abfb2ee51d6a67`.
+- The acceptance used one bounded authenticated exact-read batch orderbook GET and current
+  Market/Event/Series point reads. It performed no production writes; trading remained locked/off.
+- Live representatives were `KXUFCFIGHT-26AUG15MAKMGI-MGI` (`linear_cent`, minimum step `0.0100`,
+  fractional depth), `KXGOVFLNOMR-26-JFIS` (`tapered_deci_cent`, minimum step `0.0010`, exact subpenny
+  and fractional depth), and `KXPGATOUR-FESJC26-SSCH` (`tapered_deci_cent`, minimum step `0.0010`, exact
+  subpenny and fractional depth). YES and NO TAKER_NOW were available and self-contained replay passed
+  exactly for all three.
+- All accepted representatives used the `current_series` fee-resolution path with multiplier `1` and fee
+  policy `kalshi-event-fees-2026-07-07-v1`. The UFC and Elections representatives used `quadratic`; the
+  PGA representative used `quadratic_with_maker_fees`.
+- The Event override path has real M26H.3 archived shapes and focused/adversarial test coverage, but was
+  not separately exercised by this bounded production acceptance; not every fee-resolution branch is
+  live accepted.
 - Explicit `price_ranges` are tick authority; descriptive structure labels never infer ticks.
 - Broad Market top quotes are discovery signals, not executable-depth truth. Exact batch orderbooks bridge
   into M10's canonical complement-normalized `NormalizedBook` with fractional Decimal quantities.
@@ -114,8 +133,10 @@
   accumulator uncertainty. It does not claim an exact final exchange fee without fills.
 - TAKER_NOW is the first live-compatible execution-cost path. Maker metadata is represented, but maker
   opportunity economics remain unsupported pending live fill/queue/adverse-selection validation.
-- No forecast, probability, edge, profitability, canonical candidate, capital, execution, autonomy, or
-  trading-readiness claim. Research only; production influence exactly 0.
+- Pre-fill final exchange fee remains `UNKNOWN`, by design. There is no forecasting, fair value, edge,
+  profitability, ranking, capital allocation, `TradeCandidate`, `DecisionReceipt`, `RiskIntent`, order
+  activity, execution, autonomy, or trading-readiness acceptance. M27A production influence remains
+  exactly `Decimal("0")`.
 
 ## M11 acceptance
 
