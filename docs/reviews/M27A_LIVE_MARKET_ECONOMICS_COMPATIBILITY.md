@@ -23,5 +23,11 @@ centicent rounding. Because a pre-trade snapshot does not reveal eventual fill f
 accumulator/rebate behavior, it does not claim an exact final fee or conservative final total when no
 mathematically justified bound is available.
 
+Each economics evidence object is self-contained for deterministic TAKER_NOW replay: it immutably binds
+the exact normalized bid depth, authoritative price ladder, resolved fee regime, fee policy, source
+identity, and observation time used for both sides. Evidence creation verifies those inputs against the
+legacy provenance fields and stored YES/NO results, and replay requires no network, database, clock, or
+external archive.
+
 Independent review should verify coefficient-source evidence, exact live response envelopes, retry and
 redirect behavior, content identities, temporal parent matching, and absence of any execution coupling.

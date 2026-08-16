@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from typing import Any
@@ -16,10 +17,11 @@ from services.kalshi_account_gateway.orderbooks import (
 from services.kalshi_account_gateway.read_credentials import ExactReadCredential, ReadEnvironment
 from services.market_universe.domain import Series, UniverseValidationError
 from services.market_universe.pricing import PriceLadder
-from services.opportunity_engine.books import OutcomeSide
+from services.opportunity_engine.books import OutcomeSide, walk_depth
 from services.opportunity_engine.domain import OpportunityError
 from services.opportunity_engine.fees import (
     FeeEstimateQuality,
+    FeePolicy,
     FeeType,
     calculate_fee,
     current_event_formula_policy,
@@ -27,7 +29,10 @@ from services.opportunity_engine.fees import (
 from services.opportunity_engine.live_economics import (
     DiscoveryQuotes,
     MarketEconomicsEvidence,
+    MarketEconomicsReplayInput,
+    TakerCost,
     normalize_live_orderbook,
+    replay_market_economics,
     taker_cost,
     validate_economics_time,
 )
@@ -149,9 +154,15 @@ def test_formula_maker_taker_and_rounding_quality() -> None:
         current_event_formula_policy(fee_type=FeeType.FLAT, fee_multiplier=Decimal(1))
 
 
-def test_live_book_adapter_both_sides_depth_and_evidence_identity() -> None:
+def replay_evidence_values(
+    *,
+    raw: dict[str, Any] | None = None,
+    quantity: Decimal = Decimal("1.2"),
+    multiplier: Decimal = Decimal("1"),
+    policy: FeePolicy | None = None,
+) -> dict[str, Any]:
     ladder = PriceLadder.parse("deci_cent", ranges(".001"))
-    raw = {
+    book_raw = raw or {
         "ticker": "M",
         "orderbook_fp": {
             "yes_dollars": [[".421", ".25"], [".400", "5"]],
@@ -159,19 +170,30 @@ def test_live_book_adapter_both_sides_depth_and_evidence_identity() -> None:
         },
     }
     observed = normalize_live_orderbook(
-        raw,
+        book_raw,
         ticker="M",
         ladder=ladder,
         source_id="snapshot-1",
         observed_at=NOW,
         market_rules_hash="rules",
     )
-    policy = current_event_formula_policy(fee_type=FeeType.QUADRATIC, fee_multiplier=Decimal(1))
-    yes = taker_cost(observed.book, OutcomeSide.YES, Decimal("1.2"), policy)
-    no = taker_cost(observed.book, OutcomeSide.NO, Decimal("1.2"), policy)
-    assert yes.depth.levels_consumed == 2 and no.depth.levels_consumed == 2
-    assert yes.conservative_total_entry_cost is None
-    values = dict(
+    series_raw = series(str(multiplier))
+    series_raw["ticker"] = "S"
+    series_observation = CurrentSeriesFeeObservation.parse(series_raw, observed_at=NOW)
+    event = EventFeeOverride.parse({})
+    regime = resolve_current_fee_regime(series_observation, event)
+    selected_policy = policy or current_event_formula_policy(
+        fee_type=regime.fee_type, fee_multiplier=regime.fee_multiplier
+    )
+    replay_input = MarketEconomicsReplayInput(observed, ladder, regime, selected_policy)
+
+    def replay_side(side: OutcomeSide) -> TakerCost | None:
+        asks = observed.book.yes_asks if side is OutcomeSide.YES else observed.book.no_asks
+        if not walk_depth(asks, quantity).complete:
+            return None
+        return taker_cost(observed.book, side, quantity, selected_policy)
+
+    return dict(
         market_ticker="M",
         event_ticker="E",
         series_ticker="S",
@@ -179,27 +201,188 @@ def test_live_book_adapter_both_sides_depth_and_evidence_identity() -> None:
         market_rules_hash="rules",
         market_metadata_hash="metadata",
         price_range_hash=observed.price_range_hash,
-        event_fee_hash="event-fee",
-        series_fee_observation_id="series-fee",
-        resolved_fee_regime_id="regime",
-        fee_policy_id=policy.policy_id,
+        event_fee_hash=regime.event_metadata_hash,
+        series_fee_observation_id=regime.series_observation_id,
+        resolved_fee_regime_id=regime.regime_id,
+        fee_policy_id=selected_policy.policy_id,
         orderbook_source_id=observed.source_id,
         orderbook_source_hash=observed.source_hash,
         market_observed_at=NOW,
         orderbook_observed_at=NOW,
         economics_observed_at=NOW,
-        requested_quantity=Decimal("1.2"),
-        yes=yes,
-        no=no,
+        requested_quantity=quantity,
+        yes=replay_side(OutcomeSide.YES),
+        no=replay_side(OutcomeSide.NO),
+        replay_input=replay_input,
     )
+
+
+def test_self_contained_multilevel_fractional_subpenny_replay_exact() -> None:
+    values = replay_evidence_values()
     first = MarketEconomicsEvidence.create(**values)
     assert first == MarketEconomicsEvidence.create(**values)
-    values["market_rules_hash"] = "changed"
-    assert MarketEconomicsEvidence.create(**values).evidence_id != first.evidence_id
+    assert first.yes is not None and first.yes.depth.levels_consumed == 2
+    assert first.no is not None and first.no.depth.levels_consumed == 2
+    assert first.yes.depth.filled == first.no.depth.filled == Decimal("1.2")
+    assert first.yes.depth.worst_price == Decimal(".460")
+    assert replay_market_economics(first) == (first.yes, first.no)
+    assert first.production_influence == Decimal("0")
+
+
+@pytest.mark.parametrize(
+    ("yes_depth", "no_depth", "expect_yes", "expect_no"),
+    [
+        ([[".421", "2"]], [[".551", ".25"]], False, True),
+        ([[".421", ".25"]], [[".551", "2"]], True, False),
+        ([[".421", "2"]], [[".551", "2"]], True, True),
+        ([[".421", ".25"]], [[".551", ".25"]], False, False),
+    ],
+)
+def test_optional_replay_preserves_complement_depth_semantics(
+    yes_depth: list[list[str]],
+    no_depth: list[list[str]],
+    expect_yes: bool,
+    expect_no: bool,
+) -> None:
+    raw = {
+        "ticker": "M",
+        "orderbook_fp": {"yes_dollars": yes_depth, "no_dollars": no_depth},
+    }
+    evidence = MarketEconomicsEvidence.create(**replay_evidence_values(raw=raw))
+    assert (evidence.yes is not None) is expect_yes
+    assert (evidence.no is not None) is expect_no
+    assert replay_market_economics(evidence) == (evidence.yes, evidence.no)
+
+
+def test_optional_replay_rejects_supplied_side_state_mismatch() -> None:
+    complete = replay_evidence_values()
+    complete["yes"] = None
     with pytest.raises(OpportunityError):
-        MarketEconomicsEvidence.create(**values, production_influence=Decimal(".1"))
+        MarketEconomicsEvidence.create(**complete)
+
+    no_raw_depth = {
+        "ticker": "M",
+        "orderbook_fp": {
+            "yes_dollars": [[".421", "2"]],
+            "no_dollars": [[".551", ".25"]],
+        },
+    }
+    incomplete = replay_evidence_values(raw=no_raw_depth)
+    sufficient = replay_evidence_values()["yes"]
+    assert isinstance(sufficient, TakerCost)
+    incomplete["yes"] = sufficient
     with pytest.raises(OpportunityError):
-        taker_cost(observed.book, OutcomeSide.YES, Decimal("100"), policy)
+        MarketEconomicsEvidence.create(**incomplete)
+
+
+def test_optional_replay_does_not_hide_invalid_inputs() -> None:
+    off_ladder = {
+        "ticker": "M",
+        "orderbook_fp": {
+            "yes_dollars": [[".4215", "2"]],
+            "no_dollars": [[".551", "2"]],
+        },
+    }
+    with pytest.raises(OpportunityError):
+        replay_evidence_values(raw=off_ladder)
+
+    values = replay_evidence_values()
+    replay_input = values["replay_input"]
+    assert isinstance(replay_input, MarketEconomicsReplayInput)
+    invalid_policy = replace(replay_input.fee_policy, quadratic_coefficient=None)
+    values["replay_input"] = MarketEconomicsReplayInput(
+        replay_input.book_observation,
+        replay_input.price_ladder,
+        replay_input.fee_regime,
+        invalid_policy,
+    )
+    with pytest.raises(OpportunityError):
+        MarketEconomicsEvidence.create(**values)
+
+
+def test_replay_book_fee_multiplier_and_policy_changes_bind_identity_and_result() -> None:
+    original = MarketEconomicsEvidence.create(**replay_evidence_values())
+    changed_raw = {
+        "ticker": "M",
+        "orderbook_fp": {
+            "yes_dollars": [[".421", ".25"], [".400", "5"]],
+            "no_dollars": [[".550", ".75"], [".540", "5"]],
+        },
+    }
+    changed_book = MarketEconomicsEvidence.create(**replay_evidence_values(raw=changed_raw))
+    changed_multiplier = MarketEconomicsEvidence.create(
+        **replay_evidence_values(multiplier=Decimal("2"))
+    )
+    base_policy = current_event_formula_policy(
+        fee_type=FeeType.QUADRATIC_WITH_MAKER_FEES, fee_multiplier=Decimal("1")
+    )
+    changed_policy = replace(
+        base_policy,
+        policy_id="kalshi-event-fees-2026-07-07-v2-test",
+        quadratic_coefficient=Decimal(".08"),
+    )
+    policy_evidence = MarketEconomicsEvidence.create(
+        **replay_evidence_values(policy=changed_policy)
+    )
+    for changed in (changed_book, changed_multiplier, policy_evidence):
+        assert changed.evidence_id != original.evidence_id
+        assert (changed.yes, changed.no) != (original.yes, original.no)
+        assert replay_market_economics(changed) == (changed.yes, changed.no)
+
+
+@pytest.mark.parametrize(
+    ("field", "wrong"),
+    [
+        ("fee_policy_id", "wrong-policy"),
+        ("resolved_fee_regime_id", "wrong-regime"),
+        ("orderbook_source_id", "wrong-source"),
+        ("orderbook_source_hash", "wrong-hash"),
+        ("price_range_hash", "wrong-ranges"),
+    ],
+)
+def test_replay_provenance_mismatch_fails_closed(field: str, wrong: str) -> None:
+    values = replay_evidence_values()
+    values[field] = wrong
+    with pytest.raises(OpportunityError):
+        MarketEconomicsEvidence.create(**values)
+
+
+def test_replay_regime_policy_and_requested_quantity_mismatch_fail_closed() -> None:
+    values = replay_evidence_values()
+    replay_input = values["replay_input"]
+    assert isinstance(replay_input, MarketEconomicsReplayInput)
+    regime = replay_input.fee_regime
+    incompatible = replace(replay_input.fee_policy, fee_multiplier=Decimal("2"))
+    with pytest.raises(OpportunityError):
+        MarketEconomicsReplayInput(
+            replay_input.book_observation,
+            replay_input.price_ladder,
+            regime,
+            incompatible,
+        )
+    invalid_regime = replace(regime, regime_id="wrong-regime")
+    with pytest.raises(OpportunityError):
+        MarketEconomicsReplayInput(
+            replay_input.book_observation,
+            replay_input.price_ladder,
+            invalid_regime,
+            replay_input.fee_policy,
+        )
+    values["requested_quantity"] = Decimal("1.1")
+    with pytest.raises(OpportunityError):
+        MarketEconomicsEvidence.create(**values)
+
+
+def test_economics_evidence_has_no_execution_or_decision_construction() -> None:
+    evidence = MarketEconomicsEvidence.create(**replay_evidence_values())
+    assert not any(
+        hasattr(evidence, name)
+        for name in ("trade_candidate", "decision_receipt", "risk_intent", "order")
+    )
+    with pytest.raises(OpportunityError):
+        MarketEconomicsEvidence.create(
+            **replay_evidence_values(), production_influence=Decimal(".1")
+        )
 
 
 def test_discovery_boundaries_fractional_and_temporal_safety() -> None:

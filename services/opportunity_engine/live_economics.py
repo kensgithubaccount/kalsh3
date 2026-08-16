@@ -21,6 +21,7 @@ from .books import (
 )
 from .domain import OpportunityError
 from .fees import FeeEstimateQuality, FeePolicy, calculate_fee
+from .live_fees import ResolvedFeeRegime
 
 
 @dataclass(frozen=True, slots=True)
@@ -143,6 +144,51 @@ class TakerCost:
     fee_quality: FeeEstimateQuality
 
 
+@dataclass(frozen=True, slots=True)
+class MarketEconomicsReplayInput:
+    book_observation: BookObservation
+    price_ladder: PriceLadder
+    fee_regime: ResolvedFeeRegime
+    fee_policy: FeePolicy
+
+    def __post_init__(self) -> None:
+        observation = self.book_observation
+        expected_range_hash = stable_hash((self.price_ladder.structure, self.price_ladder.ranges))
+        if observation.price_range_hash != expected_range_hash:
+            raise OpportunityError("replay price-range hash mismatch")
+        raw_levels = tuple(
+            RawBidLevel(
+                level.raw_level_id,
+                level.raw_side,
+                level.raw_price,
+                level.quantity,
+            )
+            for level in observation.book.yes_bids + observation.book.no_bids
+        )
+        if any(not self.price_ladder.is_valid(level.price) for level in raw_levels):
+            raise OpportunityError("replay book contains off-ladder level")
+        if normalize_binary_book(raw_levels) != observation.book:
+            raise OpportunityError("replay book is not canonically normalized")
+        regime = self.fee_regime
+        expected_regime_id = stable_hash(
+            (
+                regime.version,
+                regime.fee_type,
+                regime.fee_multiplier,
+                regime.source,
+                regime.series_observation_id,
+                regime.event_metadata_hash,
+            )
+        )
+        if regime.regime_id != expected_regime_id:
+            raise OpportunityError("replay fee regime identity mismatch")
+        if (
+            self.fee_policy.fee_type is not regime.fee_type
+            or self.fee_policy.fee_multiplier != regime.fee_multiplier
+        ):
+            raise OpportunityError("replay fee policy incompatible with resolved regime")
+
+
 def taker_cost(
     book: NormalizedBook, side: OutcomeSide, quantity: Decimal, policy: FeePolicy
 ) -> TakerCost:
@@ -206,6 +252,7 @@ class MarketEconomicsEvidence:
     requested_quantity: Decimal
     yes: TakerCost | None
     no: TakerCost | None
+    replay_input: MarketEconomicsReplayInput
     analysis_type: str = "TAKER_NOW"
     research_only: bool = True
     production_influence: Decimal = Decimal(0)
@@ -248,8 +295,62 @@ class MarketEconomicsEvidence:
             raise OpportunityError("economics evidence timestamps missing")
         if _utc(market_at) > _utc(economics_at) or _utc(book_at) > _utc(economics_at):
             raise OpportunityError("impossible economics timestamp ordering")
+        replay_input = values.get("replay_input")
+        if not isinstance(replay_input, MarketEconomicsReplayInput):
+            raise OpportunityError("economics replay input missing")
+        observation = replay_input.book_observation
+        regime = replay_input.fee_regime
+        policy = replay_input.fee_policy
+        if (
+            values["orderbook_source_id"] != observation.source_id
+            or values["orderbook_source_hash"] != observation.source_hash
+            or _utc(book_at) != observation.observed_at
+            or values["market_rules_hash"] != observation.market_rules_hash
+        ):
+            raise OpportunityError("economics orderbook provenance mismatch")
+        if values["price_range_hash"] != observation.price_range_hash:
+            raise OpportunityError("economics price-range provenance mismatch")
+        if values["resolved_fee_regime_id"] != regime.regime_id:
+            raise OpportunityError("economics fee regime provenance mismatch")
+        if (
+            values["series_fee_observation_id"] != regime.series_observation_id
+            or values["event_fee_hash"] != regime.event_metadata_hash
+        ):
+            raise OpportunityError("economics fee regime source mismatch")
+        if values["fee_policy_id"] != policy.policy_id:
+            raise OpportunityError("economics fee policy provenance mismatch")
+        replayed_yes, replayed_no = _replay_costs(replay_input, quantity)
+        if values.get("yes") != replayed_yes or values.get("no") != replayed_no:
+            raise OpportunityError("economics results do not match replay inputs")
         digest = stable_hash(tuple(sorted(values.items())))
         return cls(evidence_id=digest, **values)
+
+
+def replay_market_economics(
+    evidence: MarketEconomicsEvidence,
+) -> tuple[TakerCost | None, TakerCost | None]:
+    """Recompute both TAKER_NOW sides using only immutable evidence material."""
+    return _replay_costs(evidence.replay_input, evidence.requested_quantity)
+
+
+def _replay_costs(
+    replay_input: MarketEconomicsReplayInput, quantity: Decimal
+) -> tuple[TakerCost | None, TakerCost | None]:
+    book = replay_input.book_observation.book
+    policy = replay_input.fee_policy
+    return (
+        _replay_side(book, OutcomeSide.YES, quantity, policy),
+        _replay_side(book, OutcomeSide.NO, quantity, policy),
+    )
+
+
+def _replay_side(
+    book: NormalizedBook, side: OutcomeSide, quantity: Decimal, policy: FeePolicy
+) -> TakerCost | None:
+    asks = book.yes_asks if side is OutcomeSide.YES else book.no_asks
+    if not walk_depth(asks, quantity).complete:
+        return None
+    return taker_cost(book, side, quantity, policy)
 
 
 def validate_economics_time(
