@@ -18,7 +18,13 @@ class PriceRange:
     step: Decimal
 
     def __post_init__(self) -> None:
-        if self.minimum < 0 or self.maximum > 1 or self.minimum > self.maximum or self.step <= 0:
+        if (
+            any(not value.is_finite() for value in (self.minimum, self.maximum, self.step))
+            or self.minimum < 0
+            or self.maximum > 1
+            or self.minimum >= self.maximum
+            or self.step <= 0
+        ):
             raise UniverseValidationError("malformed price range")
 
     def contains(self, p: Decimal) -> bool:
@@ -35,11 +41,22 @@ class PriceLadder:
 
     @classmethod
     def parse(cls, structure: Any, ranges: Any) -> PriceLadder:
-        if structure not in {"linear", "tapered"} or not isinstance(ranges, list) or not ranges:
+        if (
+            not isinstance(structure, str)
+            or not structure
+            or not isinstance(ranges, list)
+            or not ranges
+        ):
             raise UniverseValidationError("unsupported price structure")
+        modern = all(isinstance(x, dict) and {"start", "end", "step"} <= x.keys() for x in ranges)
+        legacy = all(isinstance(x, dict) and {"min", "max", "step"} <= x.keys() for x in ranges)
+        if not modern and not legacy:
+            raise UniverseValidationError("malformed price ranges")
         parsed = tuple(
             PriceRange(
-                exact(x.get("min"), "min"), exact(x.get("max"), "max"), exact(x.get("step"), "step")
+                exact(x.get("start" if modern else "min"), "start" if modern else "min"),
+                exact(x.get("end" if modern else "max"), "end" if modern else "max"),
+                exact(x.get("step"), "step"),
             )
             for x in ranges
             if isinstance(x, dict)
@@ -47,10 +64,16 @@ class PriceLadder:
         if len(parsed) != len(ranges):
             raise UniverseValidationError("malformed price ranges")
         ordered = tuple(sorted(parsed, key=lambda x: x.minimum))
-        if any(
+        if modern and any((item.maximum - item.minimum) % item.step != 0 for item in ordered):
+            raise UniverseValidationError("price range width not divisible by step")
+        if modern and any(a.maximum != b.minimum for a, b in pairwise(ordered)):
+            raise UniverseValidationError("overlap or invalid gap")
+        if legacy and any(
             a.maximum > b.minimum or a.maximum + a.step < b.minimum for a, b in pairwise(ordered)
         ):
             raise UniverseValidationError("overlap or invalid gap")
+        if modern and (ordered[0].minimum != 0 or ordered[-1].maximum != 1):
+            raise UniverseValidationError("price ranges must cover zero through one")
         return cls(structure, ordered)
 
     @property
@@ -61,7 +84,9 @@ class PriceLadder:
         return next((r for r in self.ranges if r.contains(p)), None)
 
     def is_valid(self, p: Decimal) -> bool:
-        return any(r.valid(p) for r in self.ranges)
+        return (
+            p.is_finite() and Decimal(0) < p < Decimal(1) and any(r.valid(p) for r in self.ranges)
+        )
 
     def next_above(self, p: Decimal) -> Decimal | None:
         values = [
