@@ -13,7 +13,12 @@ from typing import Any, Protocol
 from uuid import UUID, uuid4
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
-from services.market_universe.domain import UniverseValidationError, exact, parse_time
+from services.market_universe.domain import (
+    UniverseValidationError,
+    exact,
+    material_hashes,
+    parse_time,
+)
 
 
 class SemanticStatus(StrEnum):
@@ -172,6 +177,8 @@ class ContractSpecification:
     series_ticker: str
     rules_version_id: str
     metadata_version_id: str
+    market_rules_hash: str
+    market_metadata_hash: str
     yes_proposition: str
     no_proposition: str
     settlement_type: str
@@ -389,6 +396,7 @@ class ContractSpecificationParser:
                 return None
 
         market, event, series = bundle.market.fields, bundle.event.fields, bundle.series.fields
+        market_rules_hash, market_metadata_hash = material_hashes(market)
         issues = []
         sources, source_issues = normalize_sources(bundle, now)
         issues.extend(source_issues)
@@ -592,6 +600,8 @@ class ContractSpecificationParser:
             series_ticker,
             str(market.get("rules_version_id", "unknown")),
             str(market.get("metadata_version_id", "unknown")),
+            market_rules_hash,
+            market_metadata_hash,
             yes,
             no,
             "exchange_contract",

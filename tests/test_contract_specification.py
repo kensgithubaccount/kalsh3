@@ -32,6 +32,7 @@ from services.contract_intelligence.specification import (
     parse_comparison,
     validate_llm_proposal,
 )
+from services.market_universe.domain import material_hashes
 
 NOW = datetime(2026, 8, 10, tzinfo=UTC)
 
@@ -100,6 +101,12 @@ def test_valid_weather_spec_provenance_hash_and_nonmaterial_price_stability() ->
         and one.threshold_value == Decimal("90")
     )
     assert one.semantic_hash == two.semantic_hash and one.source_input_hash != two.source_input_hash
+    assert (one.market_rules_hash, one.market_metadata_hash) == material_hashes(
+        bundle().market.fields
+    )
+    assert (two.market_rules_hash, two.market_metadata_hash) == material_hashes(
+        bundle(yes_bid_dollars="0.4").market.fields
+    )
     assert {p.field_name for p in one.provenance} >= {
         "yes_proposition",
         "no_proposition",
