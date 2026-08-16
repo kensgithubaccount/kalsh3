@@ -13,7 +13,7 @@ from services.contract_intelligence.specification import (
     SemanticsInputBundle,
     SemanticStatus,
 )
-from services.market_universe.domain import Event, Market
+from services.market_universe.domain import Event, Market, UniverseValidationError, exact_numeric
 from services.market_universe.pricing import PriceLadder
 from services.opportunity_engine.books import OutcomeSide, walk_depth
 from services.opportunity_engine.domain import OpportunityError
@@ -36,6 +36,7 @@ from services.opportunity_engine.structural import (
     RouteReason,
     RouteState,
     StructuralLead,
+    _parse_exchange_strike,
     confirm_structural_lead,
     scan_structural_markets,
 )
@@ -54,7 +55,7 @@ def event(ticker: str = "E", *, category: str = "Sports") -> Event:
     )
 
 
-def semantic_market_fields(ticker: str, threshold: str) -> dict[str, Any]:
+def semantic_market_fields(ticker: str, threshold: object) -> dict[str, Any]:
     return {
         "ticker": ticker,
         "event_ticker": "E",
@@ -91,7 +92,7 @@ def semantic_market_fields(ticker: str, threshold: str) -> dict[str, Any]:
 
 def market(
     ticker: str,
-    threshold: str = "1",
+    threshold: object = "1",
     *,
     event_ticker: str = "E",
     strike_type: str | None = "greater",
@@ -116,6 +117,94 @@ def market(
     else:
         raw.pop("strike_type")
     return Market.parse(raw)
+
+
+@pytest.mark.parametrize(
+    ("raw", "expected"),
+    [
+        (1, Decimal("1")),
+        ("1.0", Decimal("1.0")),
+        (0.7, Decimal("0.7")),
+        (1.39, Decimal("1.39")),
+        (-0.7, Decimal("-0.7")),
+    ],
+)
+def test_exchange_strike_parser_accepts_exact_supported_values(
+    raw: object, expected: Decimal
+) -> None:
+    assert _parse_exchange_strike(raw) == expected
+
+
+@pytest.mark.parametrize(
+    "raw",
+    [
+        True,
+        None,
+        float("nan"),
+        float("inf"),
+        float("-inf"),
+        "not-a-number",
+        "1e2",
+        "",
+        [],
+        {},
+    ],
+)
+def test_exchange_strike_parser_rejects_unsupported_values(raw: object) -> None:
+    with pytest.raises(UniverseValidationError):
+        _parse_exchange_strike(raw)
+
+
+def test_exact_numeric_global_float_policy_is_unchanged() -> None:
+    with pytest.raises(UniverseValidationError):
+        exact_numeric(1.39, "floor_strike")
+
+
+def test_decoded_float_floor_strike_regression_reaches_directional_route() -> None:
+    result = scan([market("KXA100MAX-26DEC31-1.390", 1.39)])
+    route = result.routes[0]
+    assert route.state is RouteState.STRUCTURAL_DIRECTIONAL_THRESHOLD
+    assert route.threshold == Decimal("1.39")
+    assert RouteReason.INVALID_FLOOR_STRIKE not in route.reasons
+
+
+def test_equivalent_threshold_representations_remain_duplicate() -> None:
+    result = scan([market("INT", 1), market("FLOAT", 1.0), market("STRING", "1.0")])
+    assert all(route.state is RouteState.ABSTAIN for route in result.routes)
+    assert all(RouteReason.DUPLICATE_THRESHOLD in route.reasons for route in result.routes)
+
+
+def test_float_thresholds_order_and_create_structural_lead() -> None:
+    result = scan(
+        [market("LOW", -0.7), market("MID", 0.7), market("HIGH", 1.39)],
+        {
+            "LOW": quote(".1", ".2"),
+            "MID": quote(".2", ".3"),
+            "HIGH": quote(".5", ".6"),
+        },
+    )
+    assert [route.threshold for route in result.routes] == [
+        Decimal("1.39"),
+        Decimal("-0.7"),
+        Decimal("0.7"),
+    ]
+    assert len(result.leads) == 1
+    assert result.leads[0].broad_threshold == Decimal("-0.7")
+    assert result.leads[0].narrow_threshold == Decimal("1.39")
+
+
+def test_float_custom_strike_cohort_isolation_is_unchanged() -> None:
+    result = scan(
+        [
+            market("A1", 0.7, custom={"index_contract": "A"}),
+            market("A2", 1.39, custom={"index_contract": "A"}),
+            market("B1", 0.7, custom={"index_contract": "B"}),
+            market("B2", 1.39, custom={"index_contract": "B"}),
+        ]
+    )
+    assert result.manifest.structural_cohorts == 2
+    assert result.routes[0].cohort_identity == result.routes[1].cohort_identity
+    assert result.routes[0].cohort_identity != result.routes[2].cohort_identity
 
 
 def quote(bid: str, ask: str, *, size: str = "5", source: str = "a") -> DiscoveryQuotes:

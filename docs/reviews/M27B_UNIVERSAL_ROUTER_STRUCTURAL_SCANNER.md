@@ -15,6 +15,14 @@ Event groups, 4,163 Events with at least two numeric strikes, and many `greater`
 `less_or_equal` shapes. Those counts describe that accepted point-in-time archive; they are not asserted
 to be permanent live-universe truth.
 
+The original M27B H3 acceptance subsequently exposed a decoded-float `floor_strike` compatibility gap:
+of 35,930 supported directional Markets, 15,603 received `INVALID_FLOOR_STRIKE` solely because their
+finite exchange strike metadata decoded as Python `float`. M27B.1 accepts finite decoded exchange-strike
+floats only at this narrow structural boundary and converts them through `Decimal(str(value))`; it never
+uses `Decimal(value)`, rounds, or quantizes. This represents the canonical human/exchange decimal value
+available from decoded JSON, not reconstruction of an original byte-for-byte JSON numeric token. The
+globally strict `exact_numeric()` policy is unchanged.
+
 Event identity alone is insufficient for structural cohorting. Sports Events can contain multiple
 players or teams, while financial and commodity Events can contain distinct indexes or contracts. M27B
 therefore binds the complete, deterministically canonicalized non-empty `custom_strike` object into
@@ -85,6 +93,11 @@ Focused adversarial tests cover deterministic universal routing, complete custom
 fail-closed malformed/mixed/duplicate shapes, supported and unsupported semantics, missing quotes,
 identity changes, a 1,000-market cohort, a 50,001-market universe, exact side/cost/fee mapping,
 insufficient depth, and the zero-influence/no-execution boundary.
+
+Independent review of M27B is complete. M27B.1 review and the post-fix archive acceptance rerun remain
+pending. The 6 Structural Leads observed by the original acceptance are provisional discovery results
+from incomplete directional coverage and must not be treated as the final M27B lead set. No archive
+count after this compatibility fix is claimed here until it is observed by the separate rerun.
 
 ## Claims not established
 
