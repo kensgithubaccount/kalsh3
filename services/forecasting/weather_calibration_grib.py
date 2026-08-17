@@ -1,4 +1,4 @@
-"""Pure validation of captured operator-only wgrib2 MaxT evidence.
+"""Pure validation of captured operator-only wgrib2 temperature evidence.
 
 The collector owns downloading GRIB and invoking wgrib2.  This module accepts
 only captured extraction text and never performs I/O, subprocesses, or network
@@ -8,6 +8,7 @@ access.
 from __future__ import annotations
 
 import re
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal, InvalidOperation
@@ -24,12 +25,14 @@ from .weather_calibration import (
 from .weather_source_authority import PhysicalWeatherSource
 
 POST2020_GRIB_FAMILY = "POST2020_CHICAGO_MAXT_2P5KM_YGUZ98_03Z"
+POST2020_MINT_GRIB_FAMILY = "POST2020_CHICAGO_MINT_2P5KM_YHUZ98_04Z"
 EXPECTED_GRID_TEMPLATE = 30
 EXPECTED_NX = 2145
 EXPECTED_NY = 1377
 EXPECTED_DX = Decimal("2539.703")
 EXPECTED_DY = Decimal("2539.703")
 EXPECTED_PARAMETER = (0, 0, 4)
+EXPECTED_MINT_PARAMETER = (0, 0, 5)
 _DECIMAL = r"[+-]?(?:\d+(?:\.\d*)?|\.\d+)"
 _TIME = re.compile(r"\A\d{14}\Z")
 
@@ -124,6 +127,49 @@ def parse_wgrib2_max_t_evidence(
     )
 
 
+def parse_wgrib2_min_t_evidence(
+    text: str,
+    *,
+    family_identity: str = POST2020_MINT_GRIB_FAMILY,
+    extraction_policy_version: str = "m27c-wgrib2-mint-extraction-v1",
+    wgrib2_version: str = "3.8.0",
+    raw_grib_sha256: str = "",
+    extraction_sha256: str = "",
+) -> RawGribEvidence:
+    """Parse the reviewed post-2020 Chicago MinT three-record extraction."""
+    if family_identity != POST2020_MINT_GRIB_FAMILY:
+        raise ForecastError("raw GRIB evidence has an unsupported MinT family")
+    if wgrib2_version != "3.8.0":
+        raise ForecastError("wgrib2 version is not the reviewed version")
+    records = _parse_records(text)
+    if len(records) != 3:
+        raise ForecastError("raw GRIB must contain exactly three MinT records")
+    ordered = tuple(sorted(records, key=lambda record: record.record_number))
+    if tuple(record.record_number for record in ordered) != (1, 2, 3):
+        raise ForecastError("raw GRIB record numbering is not exactly 1,2,3")
+    reference = ordered[0].reference_time
+    if reference.hour != 4 or reference.minute or reference.second or reference.microsecond:
+        raise ForecastError("raw GRIB reference time is not the reviewed 04Z cycle")
+    # The first reviewed MinT record is the 0-12 forecast product but its
+    # statistical interval begins at the 04Z reference and therefore has
+    # observed GRIB bounds 04Z-12Z (8 hours); later records are 12 hours.
+    expected_offsets = ((0, 8), (20, 32), (44, 56))
+    for record, (start_hours, end_hours) in zip(ordered, expected_offsets, strict=True):
+        _validate_record_for_measurement(
+            record, reference, start_hours, end_hours, "TMIN", EXPECTED_MINT_PARAMETER, "MinT"
+        )
+    if any(left.interval_end > right.interval_start for left, right in pairwise(ordered)):
+        raise ForecastError("raw GRIB intervals overlap")
+    return RawGribEvidence(
+        family_identity,
+        ordered,
+        extraction_policy_version,
+        wgrib2_version,
+        raw_grib_sha256,
+        extraction_sha256,
+    )
+
+
 def target_local_date(record: RawGribRecord, timezone: str) -> date:
     """Validate DAILY_MAX interval dates and return the local target date."""
     try:
@@ -136,6 +182,22 @@ def target_local_date(record: RawGribRecord, timezone: str) -> date:
     if not (local_start == local_midpoint == local_before_end):
         raise ForecastError("MaxT interval crosses multiple local target dates")
     return local_start
+
+
+def mint_target_local_date(record: RawGribRecord, timezone: str) -> date:
+    """Map reviewed MinT overnight intervals to their local ending date."""
+    try:
+        zone = ZoneInfo(timezone)
+    except Exception as exc:
+        raise ForecastError("invalid target timezone") from exc
+    local_start = record.interval_start.astimezone(zone)
+    local_end = record.interval_end.astimezone(zone)
+    local_midpoint = record.midpoint.astimezone(zone)
+    if local_end.date() < local_start.date():
+        raise ForecastError("MinT interval has an invalid local date order")
+    if local_end.date() != local_midpoint.date() and local_end.date() != local_start.date():
+        raise ForecastError("MinT interval date mapping is ambiguous")
+    return local_end.date()
 
 
 def kelvin_to_fahrenheit(kelvin: Decimal) -> Decimal:
@@ -163,7 +225,39 @@ def build_grib_residuals(
     outcome: GhcndDailySnapshotEvidence,
     acquired_at: datetime,
 ) -> tuple[WeatherCalibrationResidual, ...]:
-    """Join validated GRIB records to the reviewed GHCN-Daily outcome."""
+    """Join validated MaxT GRIB records to the reviewed GHCN-Daily outcome."""
+    return _build_grib_residuals(
+        evidence, source, outcome, acquired_at, CalibrationMeasurement.DAILY_MAX, target_local_date
+    )
+
+
+def build_min_t_grib_residuals(
+    evidence: RawGribEvidence,
+    source: PhysicalWeatherSource,
+    outcome: GhcndDailySnapshotEvidence,
+    acquired_at: datetime,
+) -> tuple[WeatherCalibrationResidual, ...]:
+    """Join validated MinT GRIB records only to usable GHCN TMIN outcomes."""
+    if evidence.family_identity != POST2020_MINT_GRIB_FAMILY:
+        raise ForecastError("MinT residuals require the reviewed MinT family")
+    return _build_grib_residuals(
+        evidence,
+        source,
+        outcome,
+        acquired_at,
+        CalibrationMeasurement.DAILY_MIN,
+        mint_target_local_date,
+    )
+
+
+def _build_grib_residuals(
+    evidence: RawGribEvidence,
+    source: PhysicalWeatherSource,
+    outcome: GhcndDailySnapshotEvidence,
+    acquired_at: datetime,
+    measurement: CalibrationMeasurement,
+    date_mapper: Callable[[RawGribRecord, str], date],
+) -> tuple[WeatherCalibrationResidual, ...]:
     if outcome.authority_identity != source.authority_identity:
         raise ForecastError("GRIB outcome authority does not match source")
     if not evidence.records:
@@ -174,8 +268,8 @@ def build_grib_residuals(
     }
     result: list[WeatherCalibrationResidual] = []
     for record in evidence.records:
-        local_date = target_local_date(record, source.timezone)
-        observed = by_date.get((CalibrationMeasurement.DAILY_MAX, local_date))
+        local_date = date_mapper(record, source.timezone)
+        observed = by_date.get((measurement, local_date))
         if observed is None or not observed.usable or observed.observed_deg_f is None:
             continue
         forecast_f = kelvin_to_fahrenheit(record.kelvin)
@@ -184,7 +278,7 @@ def build_grib_residuals(
                 source.settlement_product_id,
                 source.nws_station_id,
                 source.ghcnd_station_id,
-                CalibrationMeasurement.DAILY_MAX,
+                measurement,
                 record.reference_time,
                 record.midpoint,
                 local_date,
@@ -394,20 +488,35 @@ def _longitude(value: Decimal) -> Decimal:
 
 
 def _validate_record(record: RawGribRecord, reference: datetime, start: int, end: int) -> None:
+    _validate_record_for_measurement(
+        record, reference, start, end, "TMAX", EXPECTED_PARAMETER, "MaxT"
+    )
+
+
+def _validate_record_for_measurement(
+    record: RawGribRecord,
+    reference: datetime,
+    start: int,
+    end: int,
+    variable: str,
+    parameter: tuple[int, int, int],
+    label: str,
+) -> None:
     if record.reference_time != reference:
         raise ForecastError("raw GRIB records have different reference times")
-    if record.variable != "TMAX" or record.level != "2 m above ground":
-        raise ForecastError("raw GRIB variable or level is not reviewed MaxT")
+    if record.variable != variable or record.level != "2 m above ground":
+        raise ForecastError(f"raw GRIB variable or level is not reviewed {label}")
     if record.generating_process_code != 2:
         raise ForecastError("raw GRIB generating process is not Forecast")
-    if record.statistical_process_code != 2 or record.time_processing_code != 2:
-        raise ForecastError("raw GRIB statistical semantics are not reviewed MaxT")
-    if record.parameter != EXPECTED_PARAMETER or record.unit != "Kelvin":
-        raise ForecastError("raw GRIB parameter or unit is not reviewed MaxT")
+    expected_statistical = 3 if label == "MinT" else 2
+    if record.statistical_process_code != expected_statistical or record.time_processing_code != 2:
+        raise ForecastError(f"raw GRIB statistical semantics are not reviewed {label}")
+    if record.parameter != parameter or record.unit != "Kelvin":
+        raise ForecastError(f"raw GRIB parameter or unit is not reviewed {label}")
     if record.interval_end <= record.interval_start:
         raise ForecastError("raw GRIB interval is not increasing")
-    if record.interval_end - record.interval_start != timedelta(hours=12):
-        raise ForecastError("raw GRIB interval is not exactly 12 hours")
+    if record.interval_end - record.interval_start != timedelta(hours=end - start):
+        raise ForecastError("raw GRIB interval duration is not the reviewed duration")
     if record.verification_time != record.interval_end:
         raise ForecastError("raw GRIB verification time is not interval end")
     if record.lead_to_interval_start_seconds != start * 3600:
