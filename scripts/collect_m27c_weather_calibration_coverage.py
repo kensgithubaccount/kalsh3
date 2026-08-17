@@ -19,9 +19,10 @@ import urllib.error
 import urllib.parse
 import urllib.request
 import xml.etree.ElementTree as ET
+from collections.abc import Iterator
 from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
@@ -40,8 +41,11 @@ from services.forecasting.weather_calibration_coverage import (
 )
 from services.forecasting.weather_calibration_grib import (
     POST2020_GRIB_FAMILY,
+    POST2020_MINT_GRIB_FAMILY,
     build_grib_residuals,
+    build_min_t_grib_residuals,
     parse_wgrib2_max_t_evidence,
+    parse_wgrib2_min_t_evidence,
     validate_kmdw_points,
 )
 from services.forecasting.weather_source_authority import (
@@ -63,6 +67,7 @@ USER_AGENT = "kalsh3-m27c-research-coverage/1.0 (public NOAA reads only)"
 ALLOWED_HOSTS = {NCEI_HOST, "api.weather.gov", AWS_HOST}
 WGRIB2_VERSION = "3.8.0"
 EXTRACTION_POLICY_VERSION = "m27c-wgrib2-maxt-extraction-v1"
+MINT_EXTRACTION_POLICY_VERSION = "m27c-wgrib2-mint-extraction-v1"
 
 
 class _AllowlistedRedirect(urllib.request.HTTPRedirectHandler):
@@ -114,7 +119,7 @@ def _get(url: str, *, cache: Path | None = None) -> bytes:
                 if cache.exists() and cache.read_bytes() != payload:
                     raise ForecastError("conflicting cached public evidence")
                 _atomic_write(cache, payload)
-            return payload
+            return cast(bytes, payload)
         except (OSError, urllib.error.URLError, urllib.error.HTTPError, ForecastError) as exc:
             error = exc
             if attempt < RETRIES:
@@ -141,6 +146,7 @@ def _datasets(
     prefix = {
         CalibrationFamily.LEGACY_CHICAGO_MAXT_5KM_YGFZ98: "YGFZ98_KWBN_",
         CalibrationFamily.POST2020_CHICAGO_MAXT_2P5KM_YGUZ98_03Z: "YGUZ98_KWBN_",
+        CalibrationFamily.POST2020_CHICAGO_MINT_2P5KM_YHUZ98_04Z: "YHUZ98_KWBN_",
     }[family]
     # The WMO prefix is discovery-only; every descriptor still passes the
     # strict Part 2B1 semantic parser below.
@@ -156,9 +162,16 @@ def _url_for_dataset(dataset: str, suffix: str = "dataset.xml") -> str:
     return f"{NCEI_ROOT}/ncss/grid/{branch}/{ymd[:6]}/{ymd}/{dataset}/{suffix}"
 
 
-def _aws_index_url(day: date) -> str:
+def _aws_index_url(
+    day: date, measurement: CalibrationMeasurement = CalibrationMeasurement.DAILY_MAX
+) -> str:
+    product_path = "mint" if measurement is CalibrationMeasurement.DAILY_MIN else "maxt"
     query = urllib.parse.urlencode(
-        {"list-type": "2", "prefix": f"wmo/maxt/{day:%Y/%m/%d}/", "max-keys": "1000"}
+        {
+            "list-type": "2",
+            "prefix": f"wmo/{product_path}/{day:%Y/%m/%d}/",
+            "max-keys": "1000",
+        }
     )
     return f"https://{AWS_HOST}/?{query}"
 
@@ -170,6 +183,7 @@ def _aws_candidates(payload: bytes, family: CalibrationFamily) -> tuple[str, ...
     prefix = {
         CalibrationFamily.LEGACY_CHICAGO_MAXT_5KM_YGFZ98: "YGFZ98_KWBN_",
         CalibrationFamily.POST2020_CHICAGO_MAXT_2P5KM_YGUZ98_03Z: "YGUZ98_KWBN_",
+        CalibrationFamily.POST2020_CHICAGO_MINT_2P5KM_YHUZ98_04Z: "YHUZ98_KWBN_",
     }[family]
     return tuple(
         sorted(
@@ -261,8 +275,11 @@ def collect(args: argparse.Namespace) -> dict[str, Any]:
         source,
         acquired,
     )
-    if family is CalibrationFamily.POST2020_CHICAGO_MAXT_2P5KM_YGUZ98_03Z:
-        return _collect_post2020_raw_grib(args, source, station, outcome, acquired, cache)
+    if family in {
+        CalibrationFamily.POST2020_CHICAGO_MAXT_2P5KM_YGUZ98_03Z,
+        CalibrationFamily.POST2020_CHICAGO_MINT_2P5KM_YHUZ98_04Z,
+    }:
+        return _collect_post2020_raw_grib(args, source, station, outcome, acquired, cache, family)
     rows: list[WeatherCalibrationResidual] = []
     descriptors: list[dict[str, Any]] = []
     points: list[dict[str, Any]] = []
@@ -396,7 +413,12 @@ def _collect_post2020_raw_grib(
     outcome: Any,
     acquired: datetime,
     cache: Path,
+    family: CalibrationFamily,
 ) -> dict[str, Any]:
+    is_min = family is CalibrationFamily.POST2020_CHICAGO_MINT_2P5KM_YHUZ98_04Z
+    family_identity = POST2020_MINT_GRIB_FAMILY if is_min else POST2020_GRIB_FAMILY
+    archive_prefix = "mint" if is_min else "maxt"
+    expected_name_hour = "03" if is_min else "02"
     executable, executable_sha256 = _resolve_wgrib2(getattr(args, "wgrib2_bin", None))
     scan_start = args.start_date - timedelta(days=3)
     rows: list[WeatherCalibrationResidual] = []
@@ -407,18 +429,20 @@ def _collect_post2020_raw_grib(
     extraction_hashes: list[str] = []
     checkpoint_path = args.checkpoint or args.output.with_suffix(".checkpoint.json")
     for archive_day in _dates(scan_start, args.end_date):
-        aws_url = _aws_index_url(archive_day)
+        aws_url = _aws_index_url(archive_day, CalibrationMeasurement(args.measurement))
         requests.append(aws_url)
         try:
             names = _aws_candidates(
                 _get(aws_url, cache=cache / "aws" / f"{archive_day:%Y%m%d}.xml"),
-                CalibrationFamily.POST2020_CHICAGO_MAXT_2P5KM_YGUZ98_03Z,
+                family,
             )
-            candidates = tuple(name for name in names if name.rsplit("_", 1)[-1][8:10] == "02")
+            candidates = tuple(
+                name for name in names if name.rsplit("_", 1)[-1][8:10] == expected_name_hour
+            )
             valid: list[tuple[str, str, bytes, Any, str]] = []
             candidate_errors: list[str] = []
             for name in candidates:
-                url = f"https://{AWS_HOST}/wmo/maxt/{archive_day:%Y/%m/%d}/{name}"
+                url = f"https://{AWS_HOST}/wmo/{archive_prefix}/{archive_day:%Y/%m/%d}/{name}"
                 raw_path = cache / "raw-grib" / f"{name}.grib2"
                 try:
                     raw = _get(url, cache=raw_path)
@@ -430,7 +454,7 @@ def _collect_post2020_raw_grib(
                             "acquired_at": acquired,
                             "byte_length": len(raw),
                             "sha256": raw_hash,
-                            "family_identity": POST2020_GRIB_FAMILY,
+                            "family_identity": family_identity,
                             "research_only": True,
                             "production_influence": "0",
                             "cache_status": _cache_origin(raw_path),
@@ -438,27 +462,45 @@ def _collect_post2020_raw_grib(
                     )
                     extraction = _run_wgrib2(executable, raw_path, station)
                     extraction_hash = _sha256(extraction.encode())
-                    evidence = parse_wgrib2_max_t_evidence(
-                        extraction,
-                        family_identity=POST2020_GRIB_FAMILY,
-                        extraction_policy_version=EXTRACTION_POLICY_VERSION,
-                        wgrib2_version=WGRIB2_VERSION,
-                        raw_grib_sha256=raw_hash,
-                        extraction_sha256=extraction_hash,
-                    )
+                    if is_min:
+                        evidence = parse_wgrib2_min_t_evidence(
+                            extraction,
+                            family_identity=family_identity,
+                            extraction_policy_version=MINT_EXTRACTION_POLICY_VERSION,
+                            wgrib2_version=WGRIB2_VERSION,
+                            raw_grib_sha256=raw_hash,
+                            extraction_sha256=extraction_hash,
+                        )
+                    else:
+                        evidence = parse_wgrib2_max_t_evidence(
+                            extraction,
+                            family_identity=family_identity,
+                            extraction_policy_version=EXTRACTION_POLICY_VERSION,
+                            wgrib2_version=WGRIB2_VERSION,
+                            raw_grib_sha256=raw_hash,
+                            extraction_sha256=extraction_hash,
+                        )
                     validate_kmdw_points(evidence, station.latitude, station.longitude)
                     valid.append((name, url, raw, evidence, extraction_hash))
                 except (ForecastError, ET.ParseError, UnicodeError) as exc:
                     candidate_errors.append(f"{name}: {exc}")
             if len(valid) != 1:
-                reason = "zero or multiple valid 03Z YGUZ98 candidates"
+                reason = (
+                    "zero or multiple valid 04Z YHUZ98 candidates"
+                    if is_min
+                    else "zero or multiple valid 03Z YGUZ98 candidates"
+                )
                 if valid:
                     reason += "; valid candidates=" + ",".join(item[0] for item in valid)
                 if candidate_errors:
                     reason += "; " + " | ".join(candidate_errors)
                 raise ForecastError(reason)
             _name, _url, _raw, evidence, extraction_hash = valid[0]
-            residuals = build_grib_residuals(evidence, source, outcome, acquired)
+            residuals = (
+                build_min_t_grib_residuals(evidence, source, outcome, acquired)
+                if is_min
+                else build_grib_residuals(evidence, source, outcome, acquired)
+            )
             rows.extend(
                 row
                 for row in residuals
@@ -473,7 +515,7 @@ def _collect_post2020_raw_grib(
             {
                 "source": args.source,
                 "measurement": args.measurement,
-                "family": POST2020_GRIB_FAMILY,
+                "family": family_identity,
                 "requested_target_start_date": args.start_date.isoformat(),
                 "requested_target_end_date": args.end_date.isoformat(),
                 "actual_catalog_scan_start_date": scan_start.isoformat(),
@@ -492,13 +534,13 @@ def _collect_post2020_raw_grib(
     )
     artifact = build_coverage_artifact(
         source=source.settlement_product_id,
-        measurement=CalibrationMeasurement.DAILY_MAX.value,
+        measurement=args.measurement,
         requested_target_start_date=args.start_date,
         requested_target_end_date=args.end_date,
         actual_catalog_scan_start_date=scan_start,
         actual_catalog_scan_end_date=args.end_date,
         authority_identity=source.authority_identity,
-        product_family_identity=POST2020_GRIB_FAMILY,
+        product_family_identity=family_identity,
         status="COMPLETE",
         aws_discovery_requests=tuple(requests),
         archive_catalog_requests=(),
@@ -516,14 +558,16 @@ def _collect_post2020_raw_grib(
                 "wgrib2_version": WGRIB2_VERSION,
                 "executable_path": executable,
                 "executable_sha256": executable_sha256,
-                "extraction_policy_version": EXTRACTION_POLICY_VERSION,
+                "extraction_policy_version": MINT_EXTRACTION_POLICY_VERSION
+                if is_min
+                else EXTRACTION_POLICY_VERSION,
                 "extraction_sha256": tuple(extraction_hashes),
             },
         ),
         usable_outcome_count=sum(
             1
             for observation in outcome.observations
-            if observation.measurement is CalibrationMeasurement.DAILY_MAX
+            if observation.measurement is CalibrationMeasurement(args.measurement)
             and observation.usable
             and args.start_date <= observation.local_date <= args.end_date
         ),
@@ -535,7 +579,7 @@ def _collect_post2020_raw_grib(
         {
             "source": args.source,
             "measurement": args.measurement,
-            "family": POST2020_GRIB_FAMILY,
+            "family": family_identity,
             "requested_target_start_date": args.start_date.isoformat(),
             "requested_target_end_date": args.end_date.isoformat(),
             "actual_catalog_scan_start_date": scan_start.isoformat(),
@@ -581,15 +625,17 @@ def _run_wgrib2(executable: str, raw_path: Path, station: Any) -> str:
 
 
 def _resolve_wgrib2(requested: str | None) -> tuple[str, str | None]:
+    executable: str
     if requested is not None:
         candidate = Path(requested)
         if not candidate.is_file() or not os.access(candidate, os.X_OK):
             raise ForecastError("explicit wgrib2 path is not an executable regular file")
         executable = requested
     else:
-        executable = shutil.which("wgrib2")
-        if executable is None:
+        resolved = shutil.which("wgrib2")
+        if resolved is None:
             raise ForecastError("wgrib2 3.8.0 is required for post-2020 raw GRIB collection")
+        executable = resolved
     version_output = subprocess.run(  # noqa: S603 — path is explicit or shutil.which output.
         [executable, "-version"],
         capture_output=True,
@@ -646,7 +692,7 @@ def _cache_origin(path: Path) -> str:
             value = json.loads(metadata.read_text())
             origin = value.get("cache_origin")
             if origin in {"DOWNLOADED", "REUSED"}:
-                return origin
+                return cast(str, origin)
         except (OSError, json.JSONDecodeError, AttributeError) as exc:
             raise ForecastError("raw GRIB cache metadata is corrupt") from exc
         raise ForecastError("raw GRIB cache metadata is malformed")
@@ -683,7 +729,7 @@ def _write_immutable(path: Path, payload: dict[str, Any]) -> None:
         _atomic_write(path, encoded.encode())
 
 
-def _dates(start: date, end: date):
+def _dates(start: date, end: date) -> Iterator[date]:
     current = start
     while current <= end:
         yield current
@@ -696,7 +742,9 @@ def main() -> None:
     )
     parser.add_argument("--source", required=True, choices=["CLIMDW"])
     parser.add_argument(
-        "--measurement", required=True, choices=[CalibrationMeasurement.DAILY_MAX.value]
+        "--measurement",
+        required=True,
+        choices=[measurement.value for measurement in CalibrationMeasurement],
     )
     parser.add_argument(
         "--family", required=True, choices=[family.value for family in CalibrationFamily]
