@@ -84,10 +84,40 @@ fair value, market-ready probability, edge, EV, signal, sizing, allocation, or
 order input. It is not integrated with `Forecast`, independent probability,
 Event Edge, market blending, portfolio, risk, or execution.
 
+## Holdout execution incident and corrected replay
+
+The first attempted final-holdout execution used TRAIN only because the runner
+passed `training_end=TRAIN_END` to the residual-population loader. It produced
+542 rows per horizon instead of the required artifact-specific 725 rows per
+horizon through `VALIDATION_END`. The original evidence is preserved and
+marked invalid as frozen-holdout evidence; it must not be used as pristine
+holdout evidence.
+
+The protocol-corrected replay used the exact TRAIN + VALIDATION manifest
+populations. For this artifact, the corrected population count was 725 per
+horizon. The corrected replay passed all three CRPS gates and all nine
+coverage gates. No model or policy tuning occurred between the incorrect and
+corrected runs. The corrected replay is useful non-pristine empirical
+evidence only: 2026 is explicitly not a pristine holdout because its outcomes
+had already been exposed, and it is not independently confirmed.
+
+Local evidence hashes:
+
+- Original incorrect run: `243714686a39f7c3f6dd31673d90f4581027503b1ffce8bb9c49d82309209520`
+- Incident record: `10b4f352b8a0c6f470c36f31fd94a93ba66f5cf8cb4b1212011dc57e10bd268a`
+- Protocol-corrected replay: `744b20bc17f59e6c64d10a8e35b73368c0c702bc9d162cc8ee78188312354f85`
+
+Final-holdout execution is now being structurally hardened. The supported
+evaluation boundary accepts a typed `WeatherResidualPopulation` and validates
+its frozen TRAIN + VALIDATION identity, exact manifest membership, horizon,
+dates, counts, research-only status, and zero production influence before it
+constructs an empirical distribution. The bare-distribution evaluator is
+private/internal only.
+
 ## Not yet accepted empirical performance
 
-The full 2024-01-01 through 2026-07-31 artifact is being collected separately
-and was not accessed for this implementation. Therefore this milestone does
-not state that the model is accepted, the holdout passed, probability is
-calibrated, or forecast skill is proved. Those claims require separate local
-evaluation of the complete artifact under the frozen manifest and gates above.
+The 2026 period is not a pristine holdout because outcomes were already
+exposed. This milestone does not state that the model is accepted, probability
+is calibrated, or forecast skill is proved. The corrected replay is empirical
+non-pristine evidence under the frozen manifest and gates, not an independent
+confirmation.

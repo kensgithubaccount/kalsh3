@@ -12,7 +12,12 @@ from services.market_universe.domain import stable_hash
 
 from .domain import ForecastError
 from .weather_calibration_coverage import LeadBucket
-from .weather_probability import INTERVAL_LEVELS, ZERO, EmpiricalResidualDistribution
+from .weather_probability import (
+    INTERVAL_LEVELS,
+    ZERO,
+    EmpiricalResidualDistribution,
+    WeatherResidualPopulation,
+)
 
 POLICY_VERSION = "m27c-part2b2-weather-evaluation-v2"
 TRAIN_START = date(2024, 1, 1)
@@ -190,6 +195,90 @@ def validate_walk_forward_training(
 
 
 def evaluate_frozen_horizon(
+    *,
+    population: WeatherResidualPopulation,
+    rows: tuple[EvaluationRow, ...],
+    manifest: WeatherEvaluationSplitManifest,
+    lead_bucket: LeadBucket,
+    exact_midpoint_seconds: int,
+) -> HorizonEvaluation:
+    """Evaluate the frozen holdout only from the frozen TRAIN + VALIDATION population."""
+    _validate_final_holdout_population(
+        population=population,
+        rows=rows,
+        manifest=manifest,
+        lead_bucket=lead_bucket,
+        exact_midpoint_seconds=exact_midpoint_seconds,
+    )
+    return _evaluate_frozen_horizon(
+        residuals=EmpiricalResidualDistribution(population.residuals),
+        rows=rows,
+        manifest=manifest,
+        lead_bucket=lead_bucket,
+        exact_midpoint_seconds=exact_midpoint_seconds,
+    )
+
+
+def _validate_final_holdout_population(
+    *,
+    population: WeatherResidualPopulation,
+    rows: tuple[EvaluationRow, ...],
+    manifest: WeatherEvaluationSplitManifest,
+    lead_bucket: LeadBucket,
+    exact_midpoint_seconds: int,
+) -> None:
+    identity = population.identity
+    if identity.training_start != TRAIN_START or identity.training_end != VALIDATION_END:
+        raise ForecastError("final holdout population is not frozen TRAIN + VALIDATION")
+    if identity.lead_bucket is not lead_bucket:
+        raise ForecastError("final holdout population crosses horizon")
+    if identity.exact_midpoint_seconds != exact_midpoint_seconds:
+        raise ForecastError("final holdout population midpoint conflicts")
+    if (
+        not isinstance(population.production_influence, Decimal)
+        or population.production_influence != ZERO
+    ):
+        raise ForecastError("final holdout population has production influence")
+    if population.research_only is not True:
+        raise ForecastError("final holdout population is not research-only")
+    if not (
+        len(population.rows)
+        == len(population.residual_ids)
+        == len(population.residuals)
+        == identity.sample_count
+    ):
+        raise ForecastError("final holdout population identity/count mismatch")
+    row_ids = tuple(row.residual_id for row in population.rows)
+    if set(row_ids) != set(population.residual_ids) or len(set(row_ids)) != len(row_ids):
+        raise ForecastError("final holdout population row IDs mismatch")
+    residual_by_id = dict(zip(population.residual_ids, population.residuals, strict=True))
+    if residual_by_id != {row.residual_id: row.residual_deg_f for row in population.rows}:
+        raise ForecastError("final holdout population residuals mismatch")
+    if any(
+        row.lead_to_valid_coordinate_seconds != exact_midpoint_seconds
+        or row.local_target_date >= HOLDOUT_START
+        or row.research_only is not True
+        or not isinstance(row.production_influence, Decimal)
+        or row.production_influence != ZERO
+        for row in population.rows
+    ):
+        raise ForecastError("final holdout population contains invalid row provenance")
+
+    train_or_validation = set(manifest.train_ids) | set(manifest.validation_ids)
+    expected_ids = {
+        row.residual_id
+        for row in rows
+        if row.residual_id in train_or_validation
+        and row.lead_bucket is lead_bucket
+        and row.exact_midpoint_seconds == exact_midpoint_seconds
+    }
+    if set(population.residual_ids) != expected_ids:
+        raise ForecastError("final holdout population does not match TRAIN + VALIDATION manifest")
+    if set(population.residual_ids) & set(manifest.holdout_ids):
+        raise ForecastError("final holdout population contains holdout identity")
+
+
+def _evaluate_frozen_horizon(
     *,
     residuals: EmpiricalResidualDistribution,
     rows: tuple[EvaluationRow, ...],
