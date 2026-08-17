@@ -51,6 +51,9 @@ class CanaryStore:
               CREATE TABLE IF NOT EXISTS production_fill_counter(
                 singleton INTEGER PRIMARY KEY CHECK(singleton=1), real_fill_count INTEGER NOT NULL CHECK(real_fill_count BETWEEN 0 AND 50));
               INSERT OR IGNORE INTO production_fill_counter VALUES(1,0);
+              CREATE TABLE IF NOT EXISTS production_submission_counter(
+                singleton INTEGER PRIMARY KEY CHECK(singleton=1), real_submission_count INTEGER NOT NULL CHECK(real_submission_count BETWEEN 0 AND 1));
+              INSERT OR IGNORE INTO production_submission_counter VALUES(1,0);
               CREATE TABLE IF NOT EXISTS canary_events(
                 event_id INTEGER PRIMARY KEY AUTOINCREMENT, happened_at TEXT NOT NULL,
                 event_type TEXT NOT NULL, reference_hash TEXT NOT NULL, actor TEXT NOT NULL);
@@ -193,6 +196,11 @@ class CanaryStore:
         try:
             with self._connect() as db:
                 db.execute("BEGIN IMMEDIATE")
+                used = db.execute(
+                    "SELECT real_submission_count FROM production_submission_counter WHERE singleton=1"
+                ).fetchone()
+                if used is None or int(used[0]) != 0:
+                    return False
                 db.execute(
                     "INSERT INTO canary_sessions(session_id,preview_id,approval_id,client_order_id,state,created_at) VALUES(?,?,?,?,?,?)",
                     (
@@ -207,6 +215,24 @@ class CanaryStore:
             return True
         except sqlite3.IntegrityError:
             return False
+
+    def record_submission_attempt(self, *, session_id: str, mode: str) -> None:
+        """Consume the global v1 opening-order budget at submission boundary."""
+        if mode != "REAL_PRODUCTION":
+            raise ValueError("only real production submission attempts consume this budget")
+        with self._connect() as db:
+            db.execute("BEGIN IMMEDIATE")
+            row = db.execute(
+                "SELECT state FROM canary_sessions WHERE session_id=?", (session_id,)
+            ).fetchone()
+            if row is None:
+                raise ValueError("unknown canary session")
+            changed = db.execute(
+                "UPDATE production_submission_counter SET real_submission_count=1 "
+                "WHERE singleton=1 AND real_submission_count=0"
+            ).rowcount
+            if changed != 1:
+                raise ValueError("global one-order experimental canary limit already used")
 
     def record_fill(self, session_id: str, *, filled: Decimal, mode: str) -> None:
         if mode != "REAL_PRODUCTION":
