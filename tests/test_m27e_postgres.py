@@ -16,13 +16,21 @@ from services.operations.postgres_stores import (
 )
 from tests.test_production_execution_m15_complete import envelope
 
-DSN = os.environ.get("M27E_POSTGRES_DSN")
-pytestmark = pytest.mark.skipif(not DSN, reason="M27E_POSTGRES_DSN is not set")
+POSTGRES_DSN_ENV = "KALSH3_TEST_POSTGRES_DSN"
+DSN = os.environ.get(POSTGRES_DSN_ENV)
+
+pytestmark = [
+    pytest.mark.postgres,
+    pytest.mark.skipif(
+        not DSN,
+        reason=f"{POSTGRES_DSN_ENV} is not set",
+    ),
+]
 NOW = datetime(2026, 8, 17, 12, tzinfo=UTC)
 
 
 def open_process(index: int) -> bool:
-    dsn = os.environ["M27E_POSTGRES_DSN"]
+    dsn = os.environ[POSTGRES_DSN_ENV]
     store = PostgresCanaryStore(dsn)
     return store.open_session(
         session_id=f"process-session-{index}",

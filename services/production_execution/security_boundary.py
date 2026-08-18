@@ -5,10 +5,11 @@ from __future__ import annotations
 import base64
 import os
 import subprocess
+from collections.abc import Callable
 from contextlib import suppress
 from dataclasses import dataclass
 from datetime import UTC, datetime
-from typing import Protocol
+from typing import Protocol, cast
 
 from services.risk_engine.authorization import RiskAuthorization
 
@@ -202,13 +203,21 @@ def _rsa_pss_sha256(private_key_pem: bytes, message: bytes) -> bytes:
     pathname, and is closed as soon as OpenSSL exits.  The key is never placed in argv,
     the environment, the repository, or a persistent temporary file.
     """
-    if hasattr(os, "memfd_create") and os.path.exists("/proc/self/fd"):
-        return _sign_from_memfd(private_key_pem, message)
+    memfd_create = _get_memfd_create()
+    if memfd_create is not None and os.path.exists("/proc/self/fd"):
+        return _sign_from_memfd(memfd_create, private_key_pem, message)
     return _sign_from_pipe(private_key_pem, message)
 
 
-def _sign_from_memfd(private_key_pem: bytes, message: bytes) -> bytes:
-    descriptor = os.memfd_create("m15-ephemeral-key", flags=0)  # type: ignore[attr-defined]
+def _get_memfd_create() -> Callable[[str, int], int] | None:
+    """Portable typed lookup: present on Linux, absent on macOS, and monkeypatch-visible."""
+    return cast("Callable[[str, int], int] | None", getattr(os, "memfd_create", None))
+
+
+def _sign_from_memfd(
+    memfd_create: Callable[[str, int], int], private_key_pem: bytes, message: bytes
+) -> bytes:
+    descriptor = memfd_create("m15-ephemeral-key", 0)
     try:
         os.write(descriptor, private_key_pem)
         os.lseek(descriptor, 0, os.SEEK_SET)
