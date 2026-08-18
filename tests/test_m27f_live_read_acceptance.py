@@ -84,15 +84,10 @@ class FakeAccountTransport:
                 },
             )
         if "limits" in path:
-            return HttpResponse(
-                200,
-                {
-                    "usage_tier": "basic",
-                    "read": {"refill_rate": 10, "bucket_capacity": 20},
-                    "write": {"refill_rate": 5, "bucket_capacity": 10},
-                    "grants": [],
-                },
-            )
+            # Matches the real live discovery: this least-privilege candidate receives
+            # HTTP 403 from /account/limits. M27F must never call this path at all -- if
+            # this branch is ever hit, something regressed and reconciliation must not pass.
+            return HttpResponse(403, {})
         field = (
             "market_positions"
             if "positions" in path
@@ -198,15 +193,35 @@ def test_correct_candidate_and_complete_reads_pass_every_gate() -> None:
     assert evidence.candidate_authority.server_subaccount == 0
     assert {read.name: read.classification for read in evidence.reads} == {
         "balance": "SUCCESS",
-        "limits": "SUCCESS",
         "positions": "SUCCESS",
         "orders": "SUCCESS",
         "fills": "SUCCESS",
         "settlements": "SUCCESS",
     }
     assert evidence.reconciliation.classification == "PASS"
+    assert evidence.reconciliation.subaccount_binding_verified is True
     assert evidence.subaccount == 0
     assert evidence.environment == "PRODUCTION"
+
+
+def test_required_reads_are_exactly_the_five_portfolio_endpoints() -> None:
+    """M27F's read set is exactly balance/positions/orders/fills/settlements -- no more, no less."""
+    evidence = run()
+    assert {read.name for read in evidence.reads} == {
+        "balance",
+        "positions",
+        "orders",
+        "fills",
+        "settlements",
+    }
+
+
+def test_reconciliation_has_no_limits_field() -> None:
+    """The evidence schema must not carry a misleading `limits_succeeded` field any more."""
+    evidence = run()
+    payload = evidence.reconciliation.to_json()
+    assert "limits_succeeded" not in payload
+    assert "limits" not in json.dumps(evidence.to_json())
 
 
 def test_evidence_json_is_secret_free() -> None:
@@ -306,6 +321,94 @@ def test_candidate_no_longer_calls_api_keys() -> None:
     assert all(API_KEYS_PATH not in path for path in account_transport.paths)
 
 
+def test_candidate_revoked_despite_valid_old_attestation_cannot_pass() -> None:
+    """A previously-PASS attestation never substitutes for a live signature on every run."""
+    evidence = run(
+        account_overrides={
+            "balance?": [HttpResponse(401, {})],
+            "positions?": [HttpResponse(401, {})],
+            "orders?": [HttpResponse(401, {})],
+            "fills?": [HttpResponse(401, {})],
+            "settlements?": [HttpResponse(401, {})],
+        }
+    )
+    assert evidence.candidate_authority.classification == "PASS"
+    assert all(read.classification == "AUTH_FAILURE" for read in evidence.reads)
+    assert evidence.reconciliation.classification == "BLOCKED"
+    assert evidence.reconciliation.succeeded is False
+
+
+@pytest.mark.parametrize("endpoint", ["balance", "positions", "orders", "fills", "settlements"])
+def test_candidate_401_on_any_required_portfolio_endpoint_blocks_reconciliation(
+    endpoint: str,
+) -> None:
+    evidence = run(account_overrides={f"{endpoint}?": [HttpResponse(401, {})]})
+    read = next(item for item in evidence.reads if item.name == endpoint)
+    assert read.classification == "AUTH_FAILURE"
+    assert evidence.reconciliation.classification != "PASS"
+
+
+# --------------------------------------------------------------------------------------
+# M27F must never call GET /account/limits: it is account-tier metadata with no subaccount
+# parameter and is out of scope for this narrow candidate's acceptance contract (see the
+# module docstring's second live-discovery entry). The fake transport's "limits" branch
+# always returns HTTP 403, matching the real discovery -- these tests prove that branch is
+# structurally unreachable, not merely untriggered by luck.
+# --------------------------------------------------------------------------------------
+
+
+def test_account_limits_is_never_requested_even_though_it_would_403() -> None:
+    account_transport = FakeAccountTransport()
+    evidence = _real_run_live_read_acceptance(
+        key_id="candidate",
+        private_key_pem=b"synthetic-pem-not-real",
+        authority_attestation=build_attestation(),
+        account_transport=account_transport,
+        signer_factory=FakeSigner,
+        clock_ms=lambda: 123,
+    )
+    assert evidence.reconciliation.classification == "PASS"
+    assert all("account/limits" not in path for path in account_transport.paths)
+    assert sum("account/limits" in path for path in account_transport.paths) == 0
+    assert {read.name for read in evidence.reads} == {
+        "balance",
+        "positions",
+        "orders",
+        "fills",
+        "settlements",
+    }
+
+
+def test_exact_candidate_request_sequence_contains_no_limits_or_api_keys_calls() -> None:
+    account_transport = FakeAccountTransport()
+    _real_run_live_read_acceptance(
+        key_id="candidate",
+        private_key_pem=b"synthetic-pem-not-real",
+        authority_attestation=build_attestation(),
+        account_transport=account_transport,
+        signer_factory=FakeSigner,
+        clock_ms=lambda: 123,
+    )
+    assert len(account_transport.paths) == 5
+    for path in account_transport.paths:
+        assert "account/limits" not in path
+        assert API_KEYS_PATH not in path
+
+
+def test_fixed_subaccount_zero_request_paths_preserved_for_every_portfolio_read() -> None:
+    account_transport = FakeAccountTransport()
+    _real_run_live_read_acceptance(
+        key_id="candidate",
+        private_key_pem=b"synthetic-pem-not-real",
+        authority_attestation=build_attestation(),
+        account_transport=account_transport,
+        signer_factory=FakeSigner,
+        clock_ms=lambda: 123,
+    )
+    assert len(account_transport.paths) == 5
+    assert all("subaccount=0" in path for path in account_transport.paths)
+
+
 # --------------------------------------------------------------------------------------
 # Regression matching the real M27F live discovery: a broad management credential can
 # list /api_keys and produce a PASS attestation, the least-privilege candidate itself
@@ -339,6 +442,35 @@ def test_regression_candidate_401_on_api_keys_but_passes_via_management_attestat
     assert evidence.candidate_authority.classification == "PASS"
     assert evidence.candidate_authority.source == "EXTERNAL_SERVER_ATTESTATION"
     assert evidence.reconciliation.classification == "PASS"
+
+
+def test_regression_exact_real_discovery_limits_403_but_reconciliation_passes() -> None:
+    """Reproduces the exact 2026-08-18 live evidence this revision was written against.
+
+    authority attestation PASS; balance/positions/orders/fills/settlements all PASS;
+    /account/limits would return HTTP 403 if called. Expected: M27F reconciliation PASS,
+    and /account/limits is called exactly zero times.
+    """
+    account_transport = FakeAccountTransport()
+    evidence = _real_run_live_read_acceptance(
+        key_id="candidate",
+        private_key_pem=b"synthetic-pem-not-real",
+        authority_attestation=build_attestation(),
+        account_transport=account_transport,
+        signer_factory=FakeSigner,
+        clock_ms=lambda: 123,
+    )
+    assert evidence.candidate_authority.classification == "PASS"
+    assert {read.name: read.classification for read in evidence.reads} == {
+        "balance": "SUCCESS",
+        "positions": "SUCCESS",
+        "orders": "SUCCESS",
+        "fills": "SUCCESS",
+        "settlements": "SUCCESS",
+    }
+    assert evidence.reconciliation.classification == "PASS"
+    account_limits_call_count = sum("account/limits" in path for path in account_transport.paths)
+    assert account_limits_call_count == 0
 
 
 # --------------------------------------------------------------------------------------
@@ -408,6 +540,93 @@ def test_endpoint_failure_classification_never_becomes_empty_success(
         assert read.pagination_complete is True
 
 
+@pytest.mark.parametrize(
+    "balance_payload",
+    [
+        {"portfolio_value": 100125, "updated_ts": 1_700_000_000},
+        {"balance": "100000", "portfolio_value": 100125, "updated_ts": 1_700_000_000},
+        {"balance": 100000, "portfolio_value": "100125", "updated_ts": 1_700_000_000},
+        {"balance": 100000, "portfolio_value": 100125, "updated_ts": "not-a-timestamp"},
+        {
+            "balance": 100000,
+            "portfolio_value": 100125,
+            "updated_ts": 1_700_000_000,
+            "balance_breakdown": "not-a-list",
+        },
+        {
+            "balance": 100000,
+            "portfolio_value": 100125,
+            "updated_ts": 1_700_000_000,
+            "balance_breakdown": ["not-an-object"],
+        },
+    ],
+    ids=[
+        "missing_balance_field",
+        "balance_field_is_string",
+        "portfolio_value_field_is_string",
+        "updated_ts_field_is_string",
+        "balance_breakdown_not_a_list",
+        "balance_breakdown_item_not_an_object",
+    ],
+)
+def test_balance_malformed_schema_fails_reconciliation(balance_payload: dict[str, Any]) -> None:
+    evidence = run(account_overrides={"balance?": [HttpResponse(200, balance_payload)]})
+    balance = next(item for item in evidence.reads if item.name == "balance")
+    assert balance.classification == "SCHEMA_OR_HTTP_FAILURE"
+    assert evidence.reconciliation.classification == "BLOCKED"
+    assert evidence.reconciliation.balance_succeeded is False
+
+
+@pytest.mark.parametrize("bool_field", ["balance", "portfolio_value", "updated_ts"])
+def test_balance_bool_values_rejected_where_integer_required(bool_field: str) -> None:
+    payload = {"balance": 100000, "portfolio_value": 100125, "updated_ts": 1_700_000_000}
+    payload[bool_field] = True
+    evidence = run(account_overrides={"balance?": [HttpResponse(200, payload)]})
+    balance = next(item for item in evidence.reads if item.name == "balance")
+    assert balance.classification == "SCHEMA_OR_HTTP_FAILURE"
+    assert evidence.reconciliation.classification == "BLOCKED"
+
+
+def test_balance_never_stores_raw_account_values_in_evidence() -> None:
+    """Schema validation must prove shape without leaking the actual balance figures."""
+    evidence = run(
+        account_overrides={
+            "balance?": [
+                HttpResponse(200, {"balance": 424242, "portfolio_value": 999999, "updated_ts": 1})
+            ]
+        }
+    )
+    dumped = json.dumps(evidence.to_json())
+    assert "424242" not in dumped
+    assert "999999" not in dumped
+
+
+_COLLECTION_FIELD = {
+    "positions": "market_positions",
+    "orders": "orders",
+    "fills": "fills",
+    "settlements": "settlements",
+}
+
+
+@pytest.mark.parametrize(
+    "endpoint", ["positions", "orders", "fills", "settlements"], ids=lambda e: e
+)
+def test_collection_pagination_failure_blocks_reconciliation(endpoint: str) -> None:
+    field = _COLLECTION_FIELD[endpoint]
+    evidence = run(
+        account_overrides={
+            f"{endpoint}?": [
+                HttpResponse(200, {field: [], "cursor": "same"}),
+                HttpResponse(200, {field: [], "cursor": "same"}),
+            ]
+        }
+    )
+    read = next(item for item in evidence.reads if item.name == endpoint)
+    assert read.classification == "PAGINATION_FAILURE"
+    assert evidence.reconciliation.classification == "BLOCKED"
+
+
 def test_one_endpoint_failure_does_not_hide_other_successes() -> None:
     evidence = run(account_overrides={"orders?": [HttpResponse(401, {})]})
     by_name = {read.name: read.classification for read in evidence.reads}
@@ -448,6 +667,13 @@ def test_stale_evidence_fails_reconciliation_even_when_every_read_succeeds() -> 
     assert evidence.candidate_authority.classification == "PASS"
     assert evidence.reconciliation.fresh is False
     assert evidence.reconciliation.classification == "FAIL"
+
+
+def test_acquisition_exactly_at_30s_boundary_still_passes() -> None:
+    clock = _clock_sequence(0, 30)
+    evidence = run(clock=clock)
+    assert evidence.reconciliation.fresh is True
+    assert evidence.reconciliation.classification == "PASS"
 
 
 # --------------------------------------------------------------------------------------

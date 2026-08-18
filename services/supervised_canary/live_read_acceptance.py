@@ -6,11 +6,11 @@ never calls a mutating Kalshi endpoint.  It performs exactly two things, in orde
 1. Independent, structural re-validation of a previously generated, secret-free candidate
    authority attestation (:mod:`services.supervised_canary.authority_attestation`) -- it is
    never merely trusted; every field is re-checked here against the exact live policy.
-2. GET-only authenticated account reads (balance, limits, positions, orders, fills,
-   settlements) using the reviewed M25/M27 :class:`KalshiAccountClient` boundary, reused
-   directly rather than a second HTTP stack.
+2. GET-only authenticated *portfolio* reads (balance, positions, orders, fills, settlements)
+   using the reviewed M25/M27 :class:`KalshiAccountClient` boundary, reused directly rather
+   than a second HTTP stack.
 
-Live discovery (2026-08-18): the least-privilege candidate credential
+Live discovery (2026-08-18, first pass): the least-privilege candidate credential
 (``scopes = {"read", "write::trade"}``, ``subaccount = 0``) itself receives ``HTTP 401`` from
 ``GET /trade-api/v2/api_keys`` -- it is not entitled to enumerate account API-key metadata,
 even its own. The earlier design, where this module asked the *candidate* to sign that call
@@ -20,6 +20,18 @@ validate. This module no longer calls, or accepts a transport capable of calling
 ``GET /api_keys`` at all: candidate-authority proof is now produced out of band by a separate
 management credential (see :mod:`authority_attestation`) and supplied here only as an
 already-rendered, secret-free artifact.
+
+Live discovery (2026-08-18, second pass): with a valid attestation supplied, the same
+candidate receives ``HTTP 403`` from ``GET /account/limits``. Kalshi's portfolio endpoints
+(``balance``/``positions``/``orders``/``fills``/``settlements``) accept an explicit
+``subaccount`` parameter; ``/account/limits`` is account-tier metadata for the authenticated
+user with no ``subaccount`` parameter at all, and is not entitled to the least-privilege
+candidate. This module therefore never calls ``GET /account/limits``: it is account-level
+metadata, not a subaccount-scoped portfolio read, and is out of scope for what this narrow
+candidate needs to prove. Subaccount-0 attribution instead comes from the attestation's
+server-reported ``subaccount`` plus the structurally fixed ``?subaccount=0`` request paths
+:class:`KalshiAccountClient` already uses for every portfolio call -- see
+``subaccount_binding_verified`` below.
 
 The candidate private key is only ever accepted through an inherited file descriptor.  It is
 never written to argv, an environment variable, a log, an exception message, or the evidence
@@ -51,7 +63,6 @@ from services.kalshi_account_gateway.client import (
     UpstreamUnavailable,
     UrllibReadTransport,
 )
-from services.kalshi_account_gateway.models import AccountSnapshot, SnapshotValidationError
 from services.kalshi_account_gateway.production_read_credentials import (
     ReadSigner,
     read_private_key_fd,
@@ -60,8 +71,8 @@ from services.production_execution.credentials import REQUIRED_LIVE_WRITE_SUBACC
 
 from .authority_attestation import validate_attestation_for_candidate
 
-SOFTWARE_VERSION = "kalsh3.m27f.live-read-acceptance/2"
-SCHEMA = "kalsh3.m27f.live-read-acceptance.v2"
+SOFTWARE_VERSION = "kalsh3.m27f.live-read-acceptance/3"
+SCHEMA = "kalsh3.m27f.live-read-acceptance.v3"
 USER_DATA_FRESHNESS = timedelta(seconds=30)
 
 # The candidate authority proof now always comes from an independently generated,
@@ -82,6 +93,36 @@ _READ_FAILURES: dict[type[Exception], str] = {
 def _hash_json(value: Any) -> str:
     canonical = json.dumps(value, sort_keys=True, separators=(",", ":"), default=str)
     return hashlib.sha256(canonical.encode()).hexdigest()
+
+
+def _validate_balance_schema(payload: dict[str, Any]) -> None:
+    """Prove ``payload`` is a current, well-shaped balance response without storing values.
+
+    Raises :class:`AccountGatewayError` (classified ``SCHEMA_OR_HTTP_FAILURE``, same as any
+    other malformed-response rejection) on the first violation. Never records ``balance`` or
+    ``portfolio_value`` themselves anywhere -- only that their types were acceptable.
+    """
+    if isinstance(payload.get("balance"), bool) or not isinstance(payload.get("balance"), int):
+        raise AccountGatewayError("balance field must be an integer")
+    if isinstance(payload.get("portfolio_value"), bool) or not isinstance(
+        payload.get("portfolio_value"), int
+    ):
+        raise AccountGatewayError("portfolio_value field must be an integer")
+    if isinstance(payload.get("updated_ts"), bool) or not isinstance(
+        payload.get("updated_ts"), int
+    ):
+        raise AccountGatewayError("updated_ts field must be an integer")
+    breakdown = payload.get("balance_breakdown")
+    if breakdown is not None and (
+        not isinstance(breakdown, list) or any(not isinstance(item, dict) for item in breakdown)
+    ):
+        raise AccountGatewayError("balance_breakdown must be an array of objects")
+
+
+def _validated_balance(client: KalshiAccountClient) -> dict[str, Any]:
+    payload = client.get_balance()
+    _validate_balance_schema(payload)
+    return payload
 
 
 @dataclass(frozen=True, slots=True)
@@ -132,14 +173,27 @@ class CandidateAuthorityResult:
 
 @dataclass(frozen=True, slots=True)
 class ReconciliationResult:
+    """M27F-specific reconciliation over the five required subaccount-0 portfolio reads.
+
+    There is deliberately no ``limits_succeeded`` field: ``GET /account/limits`` is
+    account-tier metadata with no ``subaccount`` parameter, is not part of this candidate's
+    acceptance contract, and is never called (see module docstring). ``subaccount_binding_verified``
+    does *not* mean a ``subaccount`` field was found inside a portfolio response body -- none
+    of these responses carry one. It means: the independently re-validated authority
+    attestation reported ``server_subaccount == 0`` for this exact candidate key, every
+    required portfolio read was issued against the structurally fixed ``?subaccount=0``
+    request path :class:`KalshiAccountClient` always uses, and every one of those reads
+    succeeded. That is the strongest subaccount-0 attribution obtainable from GET-only
+    evidence; it is never claimed to be a value independently echoed back by the server.
+    """
+
     classification: str
     balance_succeeded: bool
-    limits_succeeded: bool
     open_orders_complete: bool
     positions_complete: bool
     fills_complete: bool
     settlements_complete: bool
-    subaccount_consistent: bool
+    subaccount_binding_verified: bool
     fresh: bool
     reason: str | None = None
 
@@ -225,19 +279,25 @@ def _read_lookup(reads: tuple[EndpointReadResult, ...], name: str) -> EndpointRe
 
 def _reconcile(
     reads: tuple[EndpointReadResult, ...],
-    snapshot: AccountSnapshot | None,
-    snapshot_error: str | None,
+    authority: CandidateAuthorityResult,
     started_at: datetime,
     completed_at: datetime,
 ) -> ReconciliationResult:
+    """Reconcile the five required subaccount-0 portfolio reads. Never calls ``/account/limits``.
+
+    Only invoked once the caller has already confirmed ``authority.succeeded`` -- see
+    :func:`run_live_read_acceptance`, which returns a ``BLOCKED`` result directly, without
+    calling this function or attempting any read, when the attestation itself fails. The
+    ``authority.succeeded`` check below is therefore always true in practice; it is kept so
+    ``subaccount_binding_verified`` documents its own derivation in full rather than relying on
+    an invariant enforced only by the caller.
+    """
     balance = _read_lookup(reads, "balance")
-    limits = _read_lookup(reads, "limits")
     orders = _read_lookup(reads, "orders")
     positions = _read_lookup(reads, "positions")
     fills = _read_lookup(reads, "fills")
     settlements = _read_lookup(reads, "settlements")
     balance_ok = balance is not None and balance.succeeded
-    limits_ok = limits is not None and limits.succeeded
     orders_ok = orders is not None and orders.succeeded and orders.pagination_complete is True
     positions_ok = (
         positions is not None and positions.succeeded and positions.pagination_complete is True
@@ -249,34 +309,32 @@ def _reconcile(
         and settlements.pagination_complete is True
     )
     fresh = completed_at - started_at <= USER_DATA_FRESHNESS
-    subaccount_consistent = snapshot is not None and snapshot.subaccount == 0
-    all_reads_complete = all(
-        (balance_ok, limits_ok, orders_ok, positions_ok, fills_ok, settlements_ok)
+    all_reads_complete = all((balance_ok, orders_ok, positions_ok, fills_ok, settlements_ok))
+    subaccount_binding_verified = (
+        authority.succeeded
+        and authority.server_subaccount == REQUIRED_LIVE_WRITE_SUBACCOUNT
+        and all_reads_complete
     )
-    if snapshot_error is not None:
-        classification = "FAIL"
-        reason: str | None = snapshot_error
-    elif not all_reads_complete:
+    if not all_reads_complete:
         classification = "BLOCKED"
-        reason = "one or more required authenticated reads did not complete"
+        reason: str | None = "one or more required authenticated portfolio reads did not complete"
     elif not fresh:
         classification = "FAIL"
         reason = "evidence exceeded the 30 second user-data freshness bound"
-    elif not subaccount_consistent:
+    elif not subaccount_binding_verified:
         classification = "FAIL"
-        reason = "account data was not attributable to subaccount 0"
+        reason = "candidate was not verifiably bound to subaccount 0"
     else:
         classification = "PASS"
         reason = None
     return ReconciliationResult(
         classification,
         balance_ok,
-        limits_ok,
         orders_ok,
         positions_ok,
         fills_ok,
         settlements_ok,
-        subaccount_consistent,
+        subaccount_binding_verified,
         fresh,
         reason,
     )
@@ -339,7 +397,6 @@ def run_live_read_acceptance(
                 False,
                 False,
                 False,
-                False,
                 reason="candidate authority attestation did not pass",
             ),
         )
@@ -355,48 +412,14 @@ def run_live_read_acceptance(
     signer = signer_factory(key_id, private_key_pem)
     client = KalshiAccountClient(signer, account_transport, clock_ms=clock_ms, max_retries=0)
     reads: list[EndpointReadResult] = []
-    balance_payload = _attempt_read(reads, "balance", client.get_balance, clock)
-    limits_payload = _attempt_read(reads, "limits", client.get_limits, clock)
-    positions_payload = _attempt_read(
-        reads, "positions", lambda: client.get_collection("positions"), clock
-    )
-    orders_payload = _attempt_read(reads, "orders", lambda: client.get_collection("orders"), clock)
-    fills_payload = _attempt_read(reads, "fills", lambda: client.get_collection("fills"), clock)
-    settlements_payload = _attempt_read(
-        reads, "settlements", lambda: client.get_collection("settlements"), clock
-    )
-
-    snapshot: AccountSnapshot | None = None
-    snapshot_error: str | None = None
-    if all(
-        payload is not None
-        for payload in (
-            balance_payload,
-            limits_payload,
-            positions_payload,
-            orders_payload,
-            fills_payload,
-            settlements_payload,
-        )
-    ):
-        try:
-            snapshot = AccountSnapshot.from_payloads(
-                {
-                    "balance": balance_payload,
-                    "limits": limits_payload,
-                    "positions": positions_payload,
-                    "orders": orders_payload,
-                    "fills": fills_payload,
-                    "settlements": settlements_payload,
-                },
-                clock(),
-                client.read_budget,
-            )
-        except SnapshotValidationError as exc:
-            snapshot_error = str(exc)
+    _attempt_read(reads, "balance", lambda: _validated_balance(client), clock)
+    _attempt_read(reads, "positions", lambda: client.get_collection("positions"), clock)
+    _attempt_read(reads, "orders", lambda: client.get_collection("orders"), clock)
+    _attempt_read(reads, "fills", lambda: client.get_collection("fills"), clock)
+    _attempt_read(reads, "settlements", lambda: client.get_collection("settlements"), clock)
 
     completed_at = clock()
-    reconciliation = _reconcile(tuple(reads), snapshot, snapshot_error, started_at, completed_at)
+    reconciliation = _reconcile(tuple(reads), authority, started_at, completed_at)
     return LiveReadAcceptanceEvidence(
         SCHEMA,
         SOFTWARE_VERSION,
