@@ -63,20 +63,25 @@ def test_m16_global_submission_and_concurrent_unresolved_uniqueness() -> None:
         assert sum(pool.map(open_process, range(3))) == 1
     reset_database()
 
-    def open_one(index: int) -> bool:
-        return store.open_session(
-            session_id=f"session-{index}",
+    def open_one(index: int) -> tuple[str, bool]:
+        session_id = f"session-{index}"
+        opened = store.open_session(
+            session_id=session_id,
             preview_id=f"preview-{index}",
             approval_id=f"approval-{index}",
             client_order_id=f"client-{index}",
             now=NOW,
         )
+        return session_id, opened
 
     with ThreadPoolExecutor(max_workers=4) as pool:
-        assert sum(pool.map(open_one, range(4))) == 1
-    store.record_submission_attempt(session_id="session-0", mode="REAL_PRODUCTION")
+        results = list(pool.map(open_one, range(4)))
+    winners = [session_id for session_id, opened in results if opened]
+    assert len(winners) == 1
+    winner = winners[0]
+    store.record_submission_attempt(session_id=winner, mode="REAL_PRODUCTION")
     with pytest.raises(ValueError, match="global one-order"):
-        store.record_submission_attempt(session_id="session-0", mode="REAL_PRODUCTION")
+        store.record_submission_attempt(session_id=winner, mode="REAL_PRODUCTION")
 
 
 def test_postgres_transaction_rollback_and_restart_recovery() -> None:
