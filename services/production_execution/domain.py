@@ -158,7 +158,7 @@ def validate_operation(operation: Operation, method: str, path: str) -> None:
         suffix = path.removeprefix(root + "/").split("/")
         valid_id = bool(suffix and _ORDER_ID.fullmatch(suffix[0]))
         if operation == Operation.CANCEL:
-            valid = method == "DELETE" and len(suffix) == 1 and valid_id
+            valid = method == "DELETE" and len(suffix) == 1 and valid_id and suffix[0] != "batched"
         elif operation == Operation.AMEND:
             valid = method == "POST" and len(suffix) == 2 and suffix[1] == "amend" and valid_id
         elif operation == Operation.DECREASE:

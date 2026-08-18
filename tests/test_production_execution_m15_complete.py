@@ -68,7 +68,7 @@ def key() -> ProductionWriteCredential:
         check=True,
     )
     return ProductionWriteCredential(
-        "fixture-key", result.stdout, frozenset({"read", "write"}), fixture_only=True
+        "fixture-key", result.stdout, frozenset({"read", "write::trade"}), fixture_only=True
     )
 
 

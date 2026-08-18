@@ -72,6 +72,25 @@
 - Production armed: no
 - Autonomous trading: off
 
+## M27E live supervised canary readiness follow-up (2026-08-17)
+
+- `IMPLEMENTATION_REVIEW_STATUS`: **SAFE FOR INDEPENDENT REVIEW**.
+- `REAL_MONEY_CANARY_READINESS`: **BLOCKED**.
+- Fresh public API compatibility: **PASS**. Current official documentation artifacts
+  returned 13/13 HTTP 200; artifact SHA256 is recorded in the M27E review.
+- Fresh public exchange status: **PASS**, HTTP 200.
+- Fresh public CLIMDW discovery: **PASS**, HTTP 200, complete cursor pagination, zero open
+  markets. M27D shadow: **ABSTAIN_NO_OPEN_MARKET**.
+- PostgreSQL runtime and concurrency: **PASS** against ephemeral localhost PostgreSQL 18.6,
+  including process/thread races, rollback, reconnect, restart, and ambiguous recovery.
+- Synthetic signer runtime: **PASS**. Live credential/signer validation remains blocked.
+- Production read acceptance, account reconciliation, deployment, human acceptance, and
+  real-money authorization remain **BLOCKED_BY_CREDENTIAL** or **NOT TESTED** as shown by
+  `python -m services.supervised_canary.readiness_report`.
+- Production write credential: **NO / NOT INSTALLED**. Production armed: **NO / DISARMED**.
+- Real order/mutation: **NO**. Frozen weather files: unchanged. See
+  `docs/reviews/M27E_LIVE_CANARY_READINESS.md`.
+
 ## M6 acceptance
 
 - Kalshi historical contract: MOCK VERIFIED against externally supplied current official facts.

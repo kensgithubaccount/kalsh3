@@ -13,7 +13,9 @@ dependencies = [
 ]
 
 [dependency-groups]
-dev = []
+dev = [
+    "psycopg[binary]>=3.2,<4",
+]
 
 [tool.hatch.build.targets.wheel]
 packages = ["services"]

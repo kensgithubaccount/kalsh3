@@ -2,6 +2,15 @@
 
 from dataclasses import dataclass, field
 
+# Per current official Kalshi API-key scope documentation (docs.kalshi.com/api-reference
+# /api-keys), "write" is a broad parent scope granting every write endpoint, including
+# fund transfers and block-trade acceptance. "write::trade" is an independently grantable
+# child scope that permits only order create/cancel/amend/decrease -- exactly the M16
+# supervised-canary trade-lifecycle surface -- without transfer or block-trade authority.
+# "read" (the broad read parent) covers balance/orders/positions/fills/settlements/limits.
+REQUIRED_LIVE_WRITE_SCOPES: frozenset[str] = frozenset({"read", "write::trade"})
+REQUIRED_LIVE_WRITE_SUBACCOUNT = 0
+
 
 @dataclass(frozen=True, slots=True, repr=False)
 class ProductionWriteCredential:
@@ -15,8 +24,8 @@ class ProductionWriteCredential:
     def __post_init__(self) -> None:
         if self.credential_class != "PRODUCTION_WRITE" or self.environment != "PRODUCTION":
             raise ValueError("credential-domain confusion")
-        if self.scopes != frozenset({"read", "write"}):
-            raise ValueError("explicit read and write scopes required")
+        if self.scopes != REQUIRED_LIVE_WRITE_SCOPES:
+            raise ValueError("exact read and write::trade scopes are required")
         if not self.key_id or not self.private_key_pem:
             raise ValueError("complete credential required")
 

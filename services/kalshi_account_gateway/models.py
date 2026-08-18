@@ -126,7 +126,10 @@ class AccountSnapshot:
             raise SnapshotValidationError("balance metadata is incomplete")
         _balance_breakdown(breakdown)
         cash = _cents(balance.get("balance"), "balance")
-        _money(balance.get("balance_dollars"), "balance_dollars")
+        # Current production balance schema is integer cents; older accepted
+        # responses may also include the redundant fixed-point field.
+        if "balance_dollars" in balance:
+            _money(balance.get("balance_dollars"), "balance_dollars")
         portfolio = _cents(balance.get("portfolio_value"), "portfolio_value")
         if cash < 0 or portfolio < 0:
             raise SnapshotValidationError("negative account totals are unsupported")

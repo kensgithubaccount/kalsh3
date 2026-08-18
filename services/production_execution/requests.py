@@ -19,6 +19,16 @@ def _fixed(value: Decimal) -> str:
     return format(value, "f")
 
 
+def _wire_stp(value: str) -> str:
+    # M13's historical policy label is retained internally, but current Kalshi V2
+    # accepts only the wire values documented for event orders.
+    translated = {"cancel_newest": "taker_at_cross", "CANCEL_NEWEST": "taker_at_cross"}
+    result = translated.get(value, value)
+    if result not in {"taker_at_cross", "maker"}:
+        raise ValueError("unsupported current Kalshi V2 self-trade prevention type")
+    return result
+
+
 def create_envelope(
     *,
     execution_id: str,
@@ -46,11 +56,18 @@ def create_envelope(
 ) -> ProductionRequestEnvelope:
     if outcome_side not in {"YES", "NO"}:
         raise ValueError("canonical YES or NO outcome required")
+    if tif not in {"fill_or_kill", "good_till_canceled", "immediate_or_cancel"}:
+        raise ValueError("unsupported current Kalshi V2 time in force")
+    if post_only and tif != "good_till_canceled":
+        raise ValueError("current Kalshi V2 post-only orders require good_till_canceled")
+    if expiration is not None and tif != "good_till_canceled":
+        raise ValueError("current Kalshi V2 expiration requires good_till_canceled")
     # V2 quotes YES. Buying NO is economically selling YES at the complement.
     side = "bid" if outcome_side == "YES" else "ask"
     v2_price = price if outcome_side == "YES" else Decimal(1) - price
     if not Decimal(0) < v2_price < Decimal(1) or quantity <= 0:
         raise ValueError("invalid fixed-point order economics")
+    wire_stp = _wire_stp(stp)
     body: dict[str, object] = {
         "ticker": ticker,
         "client_order_id": client_order_id,
@@ -58,7 +75,7 @@ def create_envelope(
         "count": _fixed(quantity),
         "price": _fixed(v2_price),
         "time_in_force": tif,
-        "self_trade_prevention_type": stp,
+        "self_trade_prevention_type": wire_stp,
         "post_only": post_only,
         "cancel_order_on_pause": cancel_on_pause,
         "reduce_only": reduce_only,
@@ -91,7 +108,7 @@ def create_envelope(
         post_only=post_only,
         reduce_only=reduce_only,
         cancel_order_on_pause=cancel_on_pause,
-        self_trade_prevention_type=stp,
+        self_trade_prevention_type=wire_stp,
         order_group_id=order_group_id,
         exchange_index=0,
         subaccount=0,
