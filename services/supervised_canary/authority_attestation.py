@@ -43,6 +43,14 @@ from pathlib import Path
 from typing import Any
 
 from services.kalshi_account_gateway.auth import RequestSigner
+from services.kalshi_account_gateway.candidate_authority import (
+    CANDIDATE_AUTHORITY_ATTESTATION_SCHEMA as SCHEMA,
+)
+from services.kalshi_account_gateway.candidate_authority import (
+    KNOWN_KALSHI_API_KEY_SCOPES,
+    AttestationValidation,
+    validate_candidate_authority_attestation,
+)
 from services.kalshi_account_gateway.production_read_credentials import (
     API_KEYS_PATH,
     PRODUCTION_ORIGIN,
@@ -56,9 +64,7 @@ from services.production_execution.credentials import (
     REQUIRED_LIVE_WRITE_SCOPES,
     REQUIRED_LIVE_WRITE_SUBACCOUNT,
 )
-from services.production_execution.enrollment import KNOWN_KALSHI_API_KEY_SCOPES
 
-SCHEMA = "kalsh3.m27f.candidate-authority.v1"
 SOFTWARE_VERSION = "kalsh3.m27f.candidate-authority/1"
 ENVIRONMENT = "PRODUCTION"
 
@@ -259,106 +265,24 @@ def _classify(
     )
 
 
-@dataclass(frozen=True, slots=True)
-class AttestationValidation:
-    """Independent, structural re-validation of a stored attestation artifact.
-
-    Used by the M27F consumer so it never merely trusts an artifact's own ``classification``
-    field -- every field the artifact claims is re-checked against the exact live policy
-    before any candidate account read is attempted.
-    """
-
-    classification: str
-    server_scopes: tuple[str, ...] | None
-    server_subaccount: int | None
-    reason: str | None = None
-
-    @property
-    def succeeded(self) -> bool:
-        return self.classification == "PASS"
-
-
-def _invalid(
-    reason: str,
-    *,
-    scopes: tuple[str, ...] | None = None,
-    subaccount: int | None = None,
-) -> AttestationValidation:
-    return AttestationValidation("FAIL", scopes, subaccount, reason)
-
-
 def validate_attestation_for_candidate(
     payload: object, *, candidate_key_id: str
 ) -> AttestationValidation:
     """Require every field of a candidate-authority attestation before trusting it.
 
-    Fails closed on: wrong/missing schema, non-``PRODUCTION`` environment, wrong
-    source origin/path, a key-ID-hash mismatch against ``candidate_key_id``, malformed or
-    non-exact scopes/subaccount, any ``unique_matches`` other than exactly 1, and a
-    ``classification`` other than ``"PASS"``. No time-based expiry is applied here --
-    an attestation's validity is scoped to the exact candidate key ID hash it names, not to
-    a TTL (see module docstring / M27F review for the reasoning).
+    Thin wrapper around the shared, neutral
+    :func:`services.kalshi_account_gateway.candidate_authority.validate_candidate_authority_attestation`
+    -- see that function's docstring for the exact fail-closed policy. Sharing one reviewed
+    validator, rather than each M27F/M27G consumer keeping its own subtly different copy, is
+    deliberate; see that neutral module's docstring for the layering reasoning (M27G must not
+    depend back on this package).
     """
-    if not isinstance(payload, dict):
-        return _invalid("authority attestation malformed")
-    if payload.get("schema") != SCHEMA:
-        return _invalid("authority attestation schema mismatch")
-    if not isinstance(payload.get("software_version"), str) or not payload["software_version"]:
-        return _invalid("authority attestation malformed")
-    if payload.get("environment") != ENVIRONMENT:
-        return _invalid("authority attestation environment mismatch")
-    if not isinstance(payload.get("observed_at"), str) or not payload["observed_at"]:
-        return _invalid("authority attestation malformed")
-    source = payload.get("source")
-    if (
-        not isinstance(source, dict)
-        or source.get("origin") != PRODUCTION_ORIGIN
-        or source.get("path") != API_KEYS_PATH
-    ):
-        return _invalid("authority attestation source mismatch")
-    candidate = payload.get("candidate")
-    if not isinstance(candidate, dict):
-        return _invalid("authority attestation candidate metadata malformed")
-    key_id_hash = candidate.get("key_id_hash")
-    expected_hash = hashlib.sha256(candidate_key_id.encode()).hexdigest()
-    if not isinstance(key_id_hash, str) or key_id_hash != expected_hash:
-        return _invalid("authority attestation candidate key id mismatch")
-    raw_scopes = candidate.get("server_scopes")
-    if (
-        not isinstance(raw_scopes, list)
-        or not raw_scopes
-        or any(type(item) is not str for item in raw_scopes)
-        or len(raw_scopes) != len(set(raw_scopes))
-    ):
-        return _invalid("authority attestation scopes malformed")
-    scopes = tuple(sorted(raw_scopes))
-    subaccount = candidate.get("server_subaccount")
-    if subaccount is not None and (type(subaccount) is bool or type(subaccount) is not int):
-        return _invalid("authority attestation subaccount malformed", scopes=scopes)
-    unique_matches = candidate.get("unique_matches")
-    if type(unique_matches) is bool or not isinstance(unique_matches, int):
-        return _invalid(
-            "authority attestation match count malformed", scopes=scopes, subaccount=subaccount
-        )
-    if payload.get("classification") != "PASS":
-        return _invalid("authority attestation did not pass", scopes=scopes, subaccount=subaccount)
-    if frozenset(raw_scopes) != REQUIRED_LIVE_WRITE_SCOPES:
-        return _invalid(
-            "authority attestation scopes are not exactly read and write::trade",
-            scopes=scopes,
-            subaccount=subaccount,
-        )
-    if subaccount != REQUIRED_LIVE_WRITE_SUBACCOUNT:
-        return _invalid(
-            "authority attestation subaccount is not 0", scopes=scopes, subaccount=subaccount
-        )
-    if unique_matches != 1:
-        return _invalid(
-            "authority attestation match count is not exactly one",
-            scopes=scopes,
-            subaccount=subaccount,
-        )
-    return AttestationValidation("PASS", scopes, subaccount, None)
+    return validate_candidate_authority_attestation(
+        payload,
+        candidate_key_id=candidate_key_id,
+        expected_scopes=REQUIRED_LIVE_WRITE_SCOPES,
+        expected_subaccount=REQUIRED_LIVE_WRITE_SUBACCOUNT,
+    )
 
 
 def _parser() -> argparse.ArgumentParser:

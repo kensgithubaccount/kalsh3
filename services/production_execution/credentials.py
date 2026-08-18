@@ -41,5 +41,21 @@ class CredentialHealth:
 
 
 def enrollment_available() -> bool:
-    """M15 intentionally has no reachable enrollment path."""
+    """Whether ordinary application runtime can reach a real write-credential install path.
+
+    Still ``False`` after M27G. This is deliberate, not an oversight: M27G adds a real
+    install *code path* (``ProtectedWriteCredentialStore.install_real_credential`` /
+    ``services.production_execution.enrollment.install_production_write_credential`` /
+    ``enrollment_cli.py``), but that path is reachable only by an operator manually invoking
+    the CLI with real secrets, a real authority attestation, and fresh live-read evidence --
+    none of which exist anywhere in this repository or its runtime. Flipping this function to
+    ``True`` would tell unrelated runtime/UI code ("is enrollment generally available right
+    now?") that live enrollment is reachable through ordinary operation, which is false: no
+    automated path, schedule, request handler, or dashboard action calls
+    ``install_production_write_credential``. The narrower, explicit signal that a real install
+    is *architecturally possible* (given secrets this repository never holds) is the existence
+    of ``install_real_credential``/``install_production_write_credential`` themselves -- an
+    operator-release capability, not a generally-available one -- not a boolean flag that
+    other code could branch on.
+    """
     return False
