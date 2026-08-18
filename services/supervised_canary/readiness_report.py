@@ -10,10 +10,11 @@ from __future__ import annotations
 import argparse
 import json
 from dataclasses import fields
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
-from typing import Literal
+from typing import Any, Literal
 
+from .live_read_acceptance import USER_DATA_FRESHNESS
 from .readiness import ReadinessSnapshot
 
 _DISPLAY_NAMES = {
@@ -31,7 +32,11 @@ Status = Literal["PASS", "FAIL", "NOT TESTED", "NOT INSTALLED", "BLOCKED_BY_CRED
 
 
 def operator_evidence(
-    *, public_evidence: Path | None = None, postgres_verified: bool = False
+    *,
+    public_evidence: Path | None = None,
+    postgres_verified: bool = False,
+    live_read_evidence: Path | None = None,
+    now: datetime | None = None,
 ) -> dict[str, tuple[Status, str]]:
     evidence: dict[str, tuple[Status, str]] = {
         "PUBLIC_API_COMPATIBILITY": ("PASS", "current official docs reviewed; no auth call"),
@@ -40,6 +45,10 @@ def operator_evidence(
         "POSTGRESQL_RUNTIME": ("NOT TESTED", "integration runtime not supplied"),
         "POSTGRESQL_CONCURRENCY": ("NOT TESTED", "integration runtime not supplied"),
         "SYNTHETIC_SIGNER_RUNTIME": ("PASS", "macOS pipe and Linux memfd tests passed"),
+        "CANDIDATE_KEY_AUTHENTICATED_GET": (
+            "NOT TESTED",
+            "no M27F live read acceptance evidence supplied",
+        ),
         "AUTHENTICATED_PRODUCTION_BALANCE": (
             "BLOCKED_BY_CREDENTIAL",
             "approved production read credential is absent",
@@ -53,6 +62,10 @@ def operator_evidence(
             "approved production read credential is absent",
         ),
         "AUTHENTICATED_FILLS": (
+            "BLOCKED_BY_CREDENTIAL",
+            "approved production read credential is absent",
+        ),
+        "AUTHENTICATED_SETTLEMENTS": (
             "BLOCKED_BY_CREDENTIAL",
             "approved production read credential is absent",
         ),
@@ -95,7 +108,91 @@ def operator_evidence(
             "PASS",
             "race, rollback, restart, and recovery integration passed",
         )
+    if live_read_evidence is not None:
+        _apply_live_read_evidence(
+            evidence,
+            json.loads(live_read_evidence.read_text()),
+            now=now or datetime.now(UTC),
+        )
     return evidence
+
+
+_READ_GATE_BY_ENDPOINT = {
+    "balance": "AUTHENTICATED_PRODUCTION_BALANCE",
+    "orders": "AUTHENTICATED_OPEN_ORDERS",
+    "positions": "AUTHENTICATED_POSITIONS",
+    "fills": "AUTHENTICATED_FILLS",
+    "settlements": "AUTHENTICATED_SETTLEMENTS",
+}
+
+
+def _consumption_fresh(payload: dict[str, Any], now: datetime) -> bool:
+    """Re-check M27F evidence age at the moment it is consumed, not just at creation.
+
+    The creation-time rule (``completed_at - started_at <= 30s``, enforced inside
+    ``live_read_acceptance._reconcile``) only proves the read sweep itself was quick. It says
+    nothing about how long ago that sweep happened relative to *now*. A previously fresh,
+    successful artifact must not permanently unlock live-read gates, so this independently
+    re-derives ``0 <= now - completed_at <= 30s`` from the stored timestamp. Anything else --
+    missing, malformed, timezone-naive, or a future ``completed_at`` -- fails closed.
+    """
+    raw = payload.get("completed_at")
+    if not isinstance(raw, str):
+        return False
+    try:
+        completed_at = datetime.fromisoformat(raw)
+    except ValueError:
+        return False
+    if completed_at.tzinfo is None or completed_at.utcoffset() is None:
+        return False
+    age = now - completed_at
+    return timedelta(0) <= age <= USER_DATA_FRESHNESS
+
+
+def _apply_live_read_evidence(
+    evidence: dict[str, tuple[Status, str]], payload: object, *, now: datetime
+) -> None:
+    """Unlock only the M27F gates a fresh, valid evidence artifact actually proves right now.
+
+    This never touches PRODUCTION_WRITE_CREDENTIAL, PRODUCTION_ARMED, REAL_MUTATION, or
+    REAL_SIGNER_VALIDATION: authenticated GET acceptance is not the isolated production
+    execution signer runtime with an installed write credential, so that distinction is
+    preserved even when every read gate here passes.
+
+    A stale artifact (per ``_consumption_fresh``) is left exactly as it would be if no
+    evidence had been supplied at all -- it is not rewritten, and no gate it would otherwise
+    unlock is allowed to PASS. This keeps the stored artifact intact as historical evidence
+    that a read once succeeded, without letting it count as current live readiness.
+    """
+    if not isinstance(payload, dict):
+        return
+    if not _consumption_fresh(payload, now):
+        return
+    authority = payload.get("candidate_authority")
+    if isinstance(authority, dict) and authority.get("classification") == "PASS":
+        evidence["CANDIDATE_KEY_AUTHENTICATED_GET"] = (
+            "PASS",
+            f"key_id_hash={authority.get('key_id_hash')}",
+        )
+    reads = payload.get("reads")
+    by_name = (
+        {item.get("name"): item for item in reads if isinstance(item, dict)}
+        if isinstance(reads, list)
+        else {}
+    )
+    for endpoint, gate in _READ_GATE_BY_ENDPOINT.items():
+        read = by_name.get(endpoint)
+        if isinstance(read, dict) and read.get("classification") == "SUCCESS":
+            evidence[gate] = (
+                "PASS",
+                f"count={read.get('count')} payload_sha256={read.get('payload_sha256')}",
+            )
+    reconciliation = payload.get("reconciliation")
+    if isinstance(reconciliation, dict) and reconciliation.get("classification") == "PASS":
+        evidence["ACCOUNT_RECONCILIATION"] = (
+            "PASS",
+            "complete fresh authenticated read set reconciled to subaccount 0",
+        )
 
 
 def gate_status(name: str, value: bool | None) -> str:
@@ -128,11 +225,18 @@ def render_readiness(
 
 
 def render_operator_readiness(
-    *, public_evidence: Path | None = None, postgres_verified: bool = False
+    *,
+    public_evidence: Path | None = None,
+    postgres_verified: bool = False,
+    live_read_evidence: Path | None = None,
+    now: datetime | None = None,
 ) -> str:
     lines = ["M27E / M16 GRANULAR READINESS", "production_state: DISARMED"]
     for name, (status, reason) in operator_evidence(
-        public_evidence=public_evidence, postgres_verified=postgres_verified
+        public_evidence=public_evidence,
+        postgres_verified=postgres_verified,
+        live_read_evidence=live_read_evidence,
+        now=now,
     ).items():
         lines.append(f"{status:22} {name}: {reason}")
     for name in (
@@ -164,10 +268,13 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="Print every M16 live readiness gate")
     parser.add_argument("--public-evidence", type=Path)
     parser.add_argument("--postgres-verified", action="store_true")
+    parser.add_argument("--live-read-evidence", type=Path)
     args = parser.parse_args()
     print(
         render_operator_readiness(
-            public_evidence=args.public_evidence, postgres_verified=args.postgres_verified
+            public_evidence=args.public_evidence,
+            postgres_verified=args.postgres_verified,
+            live_read_evidence=args.live_read_evidence,
         )
     )
 
