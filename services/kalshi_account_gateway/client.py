@@ -12,7 +12,6 @@ from datetime import UTC, datetime
 from typing import Any, Protocol
 from urllib.parse import unquote, urlsplit
 
-from .auth import RequestSigner
 from .models import AccountSnapshot
 
 BASE_URL = "https://external-api.kalshi.com"
@@ -43,6 +42,10 @@ class ReadTransport(Protocol):
     def get(
         self, path: str, headers: Mapping[str, str], *, timeout_seconds: float
     ) -> HttpResponse: ...
+
+
+class Signer(Protocol):
+    def headers(self, timestamp_ms: int, method: str, request_target: str) -> dict[str, str]: ...
 
 
 class UrllibReadTransport:
@@ -142,7 +145,7 @@ class KalshiAccountClient:
 
     def __init__(
         self,
-        signer: RequestSigner,
+        signer: Signer,
         transport: ReadTransport,
         *,
         clock_ms: Callable[[], int] = lambda: time.time_ns() // 1_000_000,
@@ -216,6 +219,16 @@ class KalshiAccountClient:
             seen.add(next_cursor)
             cursor = next_cursor
 
+    def get_balance(self) -> dict[str, Any]:
+        return self._get("/trade-api/v2/portfolio/balance?subaccount=0")
+
+    def get_limits(self) -> dict[str, Any]:
+        return self._get("/trade-api/v2/account/limits")
+
+    def get_collection(self, name: str) -> list[dict[str, Any]]:
+        path, field = COLLECTIONS[name]
+        return self._all_pages(path, field)
+
     def verify_exact_read_scope(self, expected_key_id: str) -> None:
         payload = self._get("/trade-api/v2/api_keys")
         keys = payload.get("api_keys")
@@ -238,11 +251,9 @@ class KalshiAccountClient:
     def refresh(self, expected_key_id: str) -> AccountSnapshot:
         """Fetch a complete snapshot; page failures never return partial data."""
         self.verify_exact_read_scope(expected_key_id)
-        balance = self._get("/trade-api/v2/portfolio/balance?subaccount=0")
-        limits = self._get("/trade-api/v2/account/limits")
-        payloads: dict[str, Any] = {"balance": balance, "limits": limits}
-        for name, (path, field) in COLLECTIONS.items():
-            payloads[name] = self._all_pages(path, field)
+        payloads: dict[str, Any] = {"balance": self.get_balance(), "limits": self.get_limits()}
+        for name in COLLECTIONS:
+            payloads[name] = self.get_collection(name)
         return AccountSnapshot.from_payloads(payloads, datetime.now(UTC), self.read_budget)
 
 

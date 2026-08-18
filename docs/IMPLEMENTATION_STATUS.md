@@ -62,6 +62,7 @@
 | M27C Part 2B3 Prospective Blind Weather Confirmation Freeze | Implemented; protocol frozen before period; research-only | Immutable protocol identity predeclares 2026-09-01 through 2027-03-31, with August 2026 operations-only blackout, exact frozen model identities, TRAIN + VALIDATION boundary through 2025-12-31, and unchanged CRPS/Bonferroni policy. A separate forecast-only evidence boundary rejects outcomes, residuals, evaluation metrics, market data, mismatched source semantics, and nonzero production influence without importing GHCN outcome acquisition. Jan-Jul 2026 remains corrected but non-pristine and is not independent prospective confirmation; outcomes are deferred until after 2027-03-31. No weather-model tuning, trading, settlement, or production claim. See `reviews/M27C_PART2B3_PROSPECTIVE_BLIND_WEATHER_CONFIRMATION.md`. |
 | M27C Part 2C1 TWC Settlement Mapping Evidence | Implemented; no-go research result; research-only | Separate immutable evidence types distinguish Kalshi authority, TWC vintaged/current values, Kalshi settlement-implied predicates, and GHCN comparisons. Strict loaders reject wrong authority, unofficial TWC data, malformed hashes, unknown fields, August/prospective dates, fabricated point values, and nonzero production influence. Public official documentation establishes API-key historical access but not Kalshi's TWC product/station/day/rounding/revision semantics; no authoritative TWC values or complete historical settlement-implied observations were available. `NO_AUTHORITATIVE_TWC_VALUE_EVIDENCE`; `UNVALIDATED_GHCND_PROXY` remains unchanged. See `reviews/M27C_TWC_SETTLEMENT_MAPPING.md`. |
 | M27D Supervised Experimental Weather Canary | Implemented; shadow-only; independent review required | Typed August-only (`2026-08-18` through `2026-08-31`) TAKER_NOW candidate boundary reuses M27A evidence and preserves M13/M15/M16 separation. Predeclared 20pp `research_probability_discrepancy`, frozen model allowlist, current evidence freshness, boundary-mass rejection, exact one-contract cap, deterministic selection, stronger acknowledgement hash, and durable one-submission counter are implemented. No write credential, arm, order, settlement validation, fair-value/edge/EV/alpha claim, or real canary completion. See `reviews/M27D_SUPERVISED_EXPERIMENTAL_WEATHER_CANARY.md`. |
+| M27F Live Authenticated Read Acceptance | Implemented; offline/synthetic-transport verified; live acceptance pending | Reuses the reviewed M27E candidate-authority boundary (`verify_live_write_credential_authority` / `require_live_write_authority` against `GET /trade-api/v2/api_keys`, exact `{"read","write::trade"}`/subaccount 0) and the M25/M21/M22 `KalshiAccountClient` GET-only transport for balance/limits/positions/orders/fills/settlements, split into reusable public methods without changing `refresh()` behavior (all 50 pre-existing account-gateway tests unchanged). New operator-only `python -m services.supervised_canary.live_read_acceptance` CLI accepts the private key only via an inherited fd (never argv/env), never installs a credential, and produces a secret-free JSON evidence artifact (hashes/counts/classifications only). `readiness_report.py` can unlock `CANDIDATE_KEY_AUTHENTICATED_GET` and the per-endpoint `AUTHENTICATED_*`/`ACCOUNT_RECONCILIATION` gates only from a fresh, complete artifact, while `PRODUCTION_WRITE_CREDENTIAL`/`PRODUCTION_ARMED`/`REAL_MUTATION`/`REAL_SIGNER_VALIDATION` remain untouched. `enrollment_available()` remains `False` and `ProtectedWriteCredentialStore.install()` still requires `fixture_only`. No real credential, live call, or mutation in this milestone. See `reviews/M27F_LIVE_AUTHENTICATED_READ_ACCEPTANCE.md`. |
 
 ## Runtime truth
 
@@ -90,6 +91,39 @@
 - Production write credential: **NO / NOT INSTALLED**. Production armed: **NO / DISARMED**.
 - Real order/mutation: **NO**. Frozen weather files: unchanged. See
   `docs/reviews/M27E_LIVE_CANARY_READINESS.md`.
+
+## M27F live authenticated read acceptance follow-up (2026-08-18)
+
+- Branch was found checked out from a stale pre-M27E commit and reset to `origin/main`
+  (`1d6612b`) before implementation began; the stale commit's tree was already identical to
+  content on `main`, so nothing was lost.
+- Reused, unmodified: the M27E candidate-authority boundary
+  (`verify_live_write_credential_authority` / `require_live_write_authority`) and the
+  M25/M21/M22 `KalshiAccountClient` GET-only account transport. `KalshiAccountClient` gained
+  public `get_balance`/`get_limits`/`get_collection` methods so `refresh()`'s
+  read-only-specific scope check can be bypassed for M27F's `{"read","write::trade"}`
+  candidate without weakening it for the existing read-only credential path; `refresh()`'s
+  own behavior and all 50 pre-existing tests are unchanged.
+- New `python -m services.supervised_canary.live_read_acceptance` CLI: private key via
+  inherited fd only (never argv/env), never installs a credential, GET-only, secret-free JSON
+  evidence artifact (hashes/counts/classifications, key ID hash, never the PEM or raw ID).
+- Reconciliation only reports `PASS` when candidate authority passed, all six reads
+  (balance/limits/positions/orders/fills/settlements) completed with full pagination, the
+  resulting `AccountSnapshot` validated, and total acquisition time is `<= 30s`; any partial
+  or stale evidence reports `BLOCKED`/`FAIL`, never a false `PASS`.
+- `readiness_report.py` can now unlock `CANDIDATE_KEY_AUTHENTICATED_GET` and the per-endpoint
+  `AUTHENTICATED_*`/`ACCOUNT_RECONCILIATION` gates from a fresh, valid M27F artifact, while
+  `PRODUCTION_WRITE_CREDENTIAL` (**NOT INSTALLED**), `PRODUCTION_ARMED` (**FAIL/DISARMED**),
+  `REAL_MUTATION` (**NOT TESTED**), and `REAL_SIGNER_VALIDATION`
+  (**BLOCKED_BY_CREDENTIAL**) are never touched by this evidence.
+- `enrollment_available()` remains `False`; `ProtectedWriteCredentialStore.install()` still
+  requires `credential.fixture_only`; there is still no merged
+  `services/production_execution/enrollment_cli.py`.
+- 36 focused adversarial tests (candidate-authority matrix, per-endpoint failure
+  classification, pagination, freshness, secret handling, readiness-gate unlocking) plus the
+  full 1304-test suite pass. No real credential, live authenticated call, or mutation was
+  attempted; frozen weather files are unchanged. See
+  `docs/reviews/M27F_LIVE_AUTHENTICATED_READ_ACCEPTANCE.md`.
 
 ## M6 acceptance
 
