@@ -14,6 +14,10 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any, Literal
 
+from services.production_execution.installed_credential_verification import (
+    validate_installed_credential_evidence_for_readiness,
+)
+
 from .live_read_acceptance import USER_DATA_FRESHNESS
 from .readiness import ReadinessSnapshot
 
@@ -36,6 +40,7 @@ def operator_evidence(
     public_evidence: Path | None = None,
     postgres_verified: bool = False,
     live_read_evidence: Path | None = None,
+    write_credential_evidence: Path | None = None,
     now: datetime | None = None,
 ) -> dict[str, tuple[Status, str]]:
     evidence: dict[str, tuple[Status, str]] = {
@@ -112,6 +117,12 @@ def operator_evidence(
         _apply_live_read_evidence(
             evidence,
             json.loads(live_read_evidence.read_text()),
+            now=now or datetime.now(UTC),
+        )
+    if write_credential_evidence is not None:
+        _apply_write_credential_evidence(
+            evidence,
+            json.loads(write_credential_evidence.read_text()),
             now=now or datetime.now(UTC),
         )
     return evidence
@@ -195,6 +206,42 @@ def _apply_live_read_evidence(
         )
 
 
+def _apply_write_credential_evidence(
+    evidence: dict[str, tuple[Status, str]], payload: object, *, now: datetime
+) -> None:
+    """Unlock only PRODUCTION_WRITE_CREDENTIAL / REAL_SIGNER_VALIDATION from M27H evidence.
+
+    Never touches PRODUCTION_ARMED or REAL_MUTATION, and never implicitly unlocks any other
+    gate (market_tradable, rules_current, compliance_clear, the M13/M14/M15 final trade gates,
+    etc.) -- this function writes to exactly two dictionary keys. Never trusts the artifact's
+    own stored ``classification`` -- see ``validate_installed_credential_evidence_for_readiness``,
+    which independently re-derives both flags from the artifact's structural fields. A
+    structurally invalid artifact leaves both gates exactly as they would be with no evidence
+    supplied at all.
+
+    Gemini delta repair: this report never inspects the live protected store directly, so a
+    structurally valid but stale artifact proves nothing about whether the store still holds
+    that credential *right now* -- it could since have been deleted, corrupted, replaced, or had
+    its permissions changed. Both gates are therefore independently freshness-gated by
+    ``validate_installed_credential_evidence_for_readiness`` (30 seconds, matching every other
+    live-evidence gate in this repository): a stale artifact -- however well-formed -- leaves
+    both ``PRODUCTION_WRITE_CREDENTIAL`` and ``REAL_SIGNER_VALIDATION`` exactly at their
+    fail-closed defaults, never ``PASS``.
+    """
+    check = validate_installed_credential_evidence_for_readiness(payload, now=now)
+    if check.credential_installed:
+        key_id_hash = payload.get("key_id_hash") if isinstance(payload, dict) else None
+        evidence["PRODUCTION_WRITE_CREDENTIAL"] = (
+            "PASS",
+            f"fresh committed installation independently re-validated; key_id_hash={key_id_hash}",
+        )
+    if check.signer_verified_fresh:
+        evidence["REAL_SIGNER_VALIDATION"] = (
+            "PASS",
+            "fresh local real-signer self-test independently re-validated",
+        )
+
+
 def gate_status(name: str, value: bool | None) -> str:
     if name == "write_credential_installed" and value is not True:
         return "NOT INSTALLED"
@@ -229,6 +276,7 @@ def render_operator_readiness(
     public_evidence: Path | None = None,
     postgres_verified: bool = False,
     live_read_evidence: Path | None = None,
+    write_credential_evidence: Path | None = None,
     now: datetime | None = None,
 ) -> str:
     lines = ["M27E / M16 GRANULAR READINESS", "production_state: DISARMED"]
@@ -236,6 +284,7 @@ def render_operator_readiness(
         public_evidence=public_evidence,
         postgres_verified=postgres_verified,
         live_read_evidence=live_read_evidence,
+        write_credential_evidence=write_credential_evidence,
         now=now,
     ).items():
         lines.append(f"{status:22} {name}: {reason}")
@@ -269,12 +318,14 @@ def main() -> None:
     parser.add_argument("--public-evidence", type=Path)
     parser.add_argument("--postgres-verified", action="store_true")
     parser.add_argument("--live-read-evidence", type=Path)
+    parser.add_argument("--write-credential-evidence", type=Path)
     args = parser.parse_args()
     print(
         render_operator_readiness(
             public_evidence=args.public_evidence,
             postgres_verified=args.postgres_verified,
             live_read_evidence=args.live_read_evidence,
+            write_credential_evidence=args.write_credential_evidence,
         )
     )
 
