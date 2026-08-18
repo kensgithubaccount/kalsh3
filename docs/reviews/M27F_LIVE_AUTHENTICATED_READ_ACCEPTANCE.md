@@ -1,201 +1,239 @@
 # M27F -- Live Authenticated Read Acceptance
 
-Date: 2026-08-18
-Branch: `feat/m27f-live-authenticated-read-acceptance`
+Date: 2026-08-18 (candidate-authority attestation split follow-up)
+Branch: `feat/m27f-authority-attestation-fix`
 Production mutations: none
 
-## Starting point correction
+## Live discovery that forced this revision
 
-The branch was initially checked out from a stale `feat/m27c-daily-min-calibration` commit
-rather than the M27E merge (`1d6612b9ec4fe2627037351905ca956d77d2836f`) this milestone was
-supposed to build on. That commit's tree was identical to the equivalent squash-merged commit
-already on `main`, so nothing was lost; the branch was reset to `origin/main` (`1d6612b`)
-before any M27F work began.
+A real least-privilege candidate key was generated with `scopes = {"read", "write::trade"}`,
+`subaccount = 0`. Live GET-only diagnostics against production established:
 
-## Goal
+| Call | Credential | Result |
+|---|---|---|
+| `GET /trade-api/v2/api_keys` | broad temporary bootstrap credential | `HTTP 200`; exactly one matching candidate record: `scopes=read,write::trade`, `subaccount=0` |
+| `GET /trade-api/v2/portfolio/balance?subaccount=0` | candidate credential | PASS |
+| `GET /trade-api/v2/api_keys` | candidate credential | `HTTP 401` |
 
-Build the smallest operator-controlled path that can validate the eventual least-privilege
-production canary credential (`scopes = {"read", "write::trade"}`, `subaccount = 0`,
-`environment = PRODUCTION`) and perform complete authenticated read acceptance -- balance,
-open orders, positions, fills, settlements -- against the real Kalshi production account,
-without ever installing the write credential, arming production, or calling a mutating
-endpoint.
+The original M27F design (this review's earlier revision) had the *candidate* sign its own
+`GET /api_keys` call to prove its own scopes/subaccount
+(`verify_live_write_credential_authority` / `require_live_write_authority`, reused from
+M27E). Against the real least-privilege candidate this produced
+`candidate_authority=FAIL`, `reconciliation=BLOCKED`, `reads=0` -- not because the candidate
+lacked read/write::trade authority, but because it is not entitled to enumerate account
+API-key metadata, even its own. That surface is reserved to a broader account-management
+identity. No credential was installed, production remained DISARMED, and no mutation/order
+occurred while this was discovered.
 
-## Reused read boundaries
+The fix is **not** to broaden the candidate's scopes. It is to split candidate-authority proof
+from candidate live-read acceptance into two separate operator boundaries.
 
-Nothing about the authority or transport boundary was invented fresh:
+## Two operator boundaries
 
-- **Candidate authority.** `services.production_execution.enrollment.verify_live_write_credential_authority`
-  and `require_live_write_authority` (M27E, unchanged) authenticate as the candidate key
-  against `GET /trade-api/v2/api_keys` and enforce the exact server-reported scope set
-  `{"read", "write::trade"}` and `subaccount == 0`. M27F calls these functions directly; it
-  does not reimplement or relax any part of that check.
-- **Account reads.** `services.kalshi_account_gateway.client.KalshiAccountClient` (M25/M21/M22)
-  already implements the fixed-origin (`https://external-api.kalshi.com`), redirect-rejecting,
-  size- and timeout-bounded, JSON-only GET transport for balance, limits, positions, orders,
-  fills, and settlements, with cursor pagination that rejects repeated/malformed cursors and
-  never turns a failed page into an empty result. M27F reuses this class as-is for the actual
-  reads, rather than building a second HTTP stack.
+### A. Candidate authority attestation (new: `authority_attestation.py`)
 
-The only change to reused code is a non-behavioral split inside `KalshiAccountClient`:
-`get_balance()`, `get_limits()`, and `get_collection(name)` are now public methods that
-`refresh()` composes exactly as before (same paths, same order, same retry/pagination
-semantics -- all 50 pre-existing `tests/test_account_gateway.py` cases pass unmodified). This
-split exists because `refresh()`'s built-in `verify_exact_read_scope()` requires scopes to be
-exactly `{"read"}`, which is correct for the M25B read-only credential but wrong for M27F's
-`{"read", "write::trade"}` candidate -- M27F's own (stricter) M27E authority check already
-proved the candidate's scopes before any read is attempted, so the read path must not run a
-second, incompatible scope check. `client.py`'s signer parameter is also now typed against a
-local `Signer` protocol instead of the concrete `RequestSigner` class, so a synthetic test
-signer can be injected without touching production wiring.
+A separately authorized *management* credential (a broader, distinct bootstrap key -- never
+the candidate's) performs exactly one GET-only call:
 
-## Candidate credential handling
-
-The new operator CLI is
-`python -m services.supervised_canary.live_read_acceptance`:
-
-```sh
-python -m services.supervised_canary.live_read_acceptance \
-  --key-id-file /secure/operator/key_id.txt \
-  --private-key-fd 3 \
-  --output /secure/operator/m27f-live-read-evidence.json \
-  3< /secure/operator/key.pem
+```
+GET /trade-api/v2/api_keys
 ```
 
-- The key ID (not secret) comes from a small operator-supplied file.
-- The private key is read only from the inherited file descriptor via the existing
-  `services.kalshi_account_gateway.production_read_credentials.read_private_key_fd` helper
-  (unchanged, size-bounded). It never appears in argv, an environment variable, or the shell's
-  command line.
-- Nothing is installed: `run_live_read_acceptance` never calls
-  `ProtectedWriteCredentialStore.install`, never constructs a `SealedCredentialPackage`, and
-  the credential/PEM live only in local Python variables for the duration of the process.
-- `ProductionWriteCredential.__repr__` and `RequestSigner`'s `repr(field=False)` PEM field
-  were already secret-free (M27E); the new `CandidateAuthorityResult`, `EndpointReadResult`,
-  and `LiveReadAcceptanceEvidence` dataclasses carry only hashes, counts, classifications, and
-  timestamps -- never the PEM, never the raw key ID (only its SHA-256 hash). This is exercised
-  by `test_evidence_json_is_secret_free` and the CLI-level PEM-leak tests.
-- This milestone does not execute the CLI against a real credential; all coverage uses
-  synthetic/local transport fixtures (`FakeAuthorityTransport`, `FakeAccountTransport`,
-  `FakeSigner`).
+signed by the management credential, and locates the expected candidate by (non-secret) key
+ID. It produces a secret-free `CandidateAuthorityAttestation` artifact
+(schema `kalsh3.m27f.candidate-authority.v1`) recording the candidate's server-reported
+scopes/subaccount, a unique-match count, and a `PASS`/`FAIL` classification -- never a raw
+key ID, private key, signature, header, or account value.
 
-## Authenticated read surface
+**The candidate's private key is never an input to this module at all.** The generator's
+only inputs are the management key ID (file), the management private key (inherited fd,
+exactly as M25's `read_private_key_fd` boundary already requires), and the candidate's key
+ID (file, non-secret). This keeps the broad management credential and the narrow candidate
+credential out of the same process by construction, not by convention -- there is no
+parameter through which a candidate private key could flow into
+`generate_candidate_authority_attestation` or its CLI.
 
-Exact endpoints, all GET-only, all through the fixed `https://external-api.kalshi.com`
-origin:
+The transport parameter is `ProductionReadTransport` (reused from M27E's
+`production_read_credentials.py`, unmodified) -- a GET-only protocol with no mutating method,
+so no write call is even expressible here. Scope parsing reuses
+`KNOWN_KALSHI_API_KEY_SCOPES` from `production_execution/enrollment.py` (imported, not
+modified) and the exact `REQUIRED_LIVE_WRITE_SCOPES` / `REQUIRED_LIVE_WRITE_SUBACCOUNT`
+policy from `production_execution/credentials.py` (imported, not modified).
 
-| Read | Path |
-|---|---|
-| Candidate authority | `GET /trade-api/v2/api_keys` |
-| Balance | `GET /trade-api/v2/portfolio/balance?subaccount=0` |
-| Limits | `GET /trade-api/v2/account/limits` |
-| Positions | `GET /trade-api/v2/portfolio/positions?subaccount=0[&cursor=...]` |
-| Open orders | `GET /trade-api/v2/portfolio/orders?subaccount=0[&cursor=...]` |
-| Fills | `GET /trade-api/v2/portfolio/fills?subaccount=0[&cursor=...]` |
-| Settlements | `GET /trade-api/v2/portfolio/settlements?subaccount=0[&cursor=...]` |
+Operator CLI:
 
-Pagination (positions/orders/fills/settlements) consumes every page, rejects a repeated or
-non-string cursor, and only returns once a page reports an empty/absent cursor -- a mid-
-pagination HTTP or schema failure discards the pages already collected rather than returning
-a partial list, so a failed read can never present itself as an empty account. Each of the six
-reads is attempted and classified independently (`SUCCESS`, `AUTH_FAILURE`, `RATE_LIMITED`,
-`UPSTREAM_UNAVAILABLE`, `PAGINATION_FAILURE`, `SCHEMA_OR_HTTP_FAILURE`), so one endpoint's
-failure never hides in, or is hidden by, another endpoint's success. `KalshiAccountClient` is
-constructed with `max_retries=0` for this acceptance path specifically, so no automatic retry
-can mask a failure's real cause.
+```sh
+python -m services.supervised_canary.authority_attestation \
+  --management-key-id-file /secure/operator/management_key_id.txt \
+  --candidate-key-id-file /secure/operator/candidate_key_id.txt \
+  --management-private-key-fd 3 \
+  --output /secure/operator/candidate-authority-attestation.json \
+  3< /secure/operator/management_key.pem
+```
 
-## Reconciliation
+### B. M27F live read acceptance (revised: `live_read_acceptance.py`)
 
-`ReconciliationResult` only reports `PASS` when all of the following hold:
+M27F no longer asks the candidate to call `GET /api_keys` at all -- the function that used to
+accept an `authority_transport` now has no such parameter (confirmed by
+`test_candidate_no_longer_calls_api_keys`, which inspects the function signature). Instead it
+receives:
 
-- the candidate authority check passed;
-- balance, limits, positions, orders, fills, and settlements each returned `SUCCESS`, with
-  the four collections' pagination each fully complete;
-- the resulting `AccountSnapshot` (M25 domain model, unchanged) validated cleanly -- e.g. a
-  malformed money field or legacy schema shape fails reconciliation even if every individual
-  HTTP call returned 200;
-- `completed_at - started_at <= 30s` (the M16 `ReadinessSnapshot.missing()` freshness target,
-  reused verbatim rather than re-derived); and
-- the snapshot's subaccount is exactly 0 -- structurally guaranteed here because every read
-  path is hardcoded to `subaccount=0` and `AccountSnapshot.from_payloads` fixes
-  `subaccount=0` by construction, not by trusting a response field.
+- the candidate key ID (existing local file input, unchanged);
+- the candidate private key (existing inherited fd, unchanged);
+- the previously generated, secret-free candidate-authority attestation (new: parsed JSON,
+  supplied via `--authority-attestation`).
 
-If any required read did not complete, the classification is `BLOCKED` (not a silent pass);
-if every read completed but the set is stale or fails snapshot validation, it is `FAIL`. A
-missing or partial evidence source is never reported as reconciled.
+Before any account read is attempted, `validate_attestation_for_candidate` independently
+re-checks every field of the attestation -- it never merely trusts the artifact's own
+`classification`:
 
-This milestone does not maintain a local order/position journal to compare against exchange
-state, so "no unknown local-vs-exchange order/position state" has no independent local source
-to check against in M27F's scope -- it is not claimed as a separate passing gate; only the
-authenticated-read completeness and freshness claims above are made.
+- schema is exactly `kalsh3.m27f.candidate-authority.v1`;
+- `environment` is exactly `PRODUCTION`;
+- `source.origin`/`source.path` match the fixed production `GET /api_keys` origin/path;
+- the attestation's `candidate.key_id_hash` equals `SHA-256(supplied candidate key ID)`;
+- `candidate.server_scopes` is exactly `{"read", "write::trade"}`;
+- `candidate.server_subaccount` is exactly `0`;
+- `candidate.unique_matches` is exactly `1`;
+- `classification` is exactly `"PASS"`;
+- no field is missing or malformed.
 
-## Evidence artifact
+If any check fails, the attestation is classified `FAIL`, **zero** candidate account reads
+are attempted, and reconciliation is `BLOCKED` -- fail closed, exactly as the prior
+candidate-calls-`/api_keys` design failed closed on an authority rejection. If every check
+passes, the candidate performs only the existing GET-only balance/limits/positions/orders/
+fills/settlements reads (unchanged `KalshiAccountClient` boundary), with exact
+`subaccount=0` behavior, existing pagination/reconciliation rules, existing creation-time
+`<=30s` account-snapshot freshness, and existing consumption-time `<=30s` readiness
+freshness all preserved unmodified.
 
-`LiveReadAcceptanceEvidence.to_json()` (schema `kalsh3.m27f.live-read-acceptance.v1`) contains
-only: schema/software version, environment, subaccount, a SHA-256 hash of the key ID,
-acquisition/completion timestamps, the candidate-authority classification plus server-reported
-scopes/subaccount (never the PEM or raw key ID), and, per read, its classification, item
-count, pagination completeness, a canonical SHA-256 hash of the returned payload, timestamps,
-and a sanitized failure reason where applicable. No PEM, signing header, or raw account content
-is ever written. `test_evidence_json_is_secret_free` and the CLI PEM-leak tests assert this
-directly.
+`CandidateAuthorityResult` now carries `source = "EXTERNAL_SERVER_ATTESTATION"` in the
+evidence artifact, so the final M27F evidence clearly distinguishes the attestation-sourced
+authority proof from the candidate's own fresh authenticated account reads -- it never
+implies the candidate itself successfully accessed `/api_keys`.
 
-## Readiness report
+Evidence schema bumped to `kalsh3.m27f.live-read-acceptance.v2` / software version
+`kalsh3.m27f.live-read-acceptance/2` to reflect the authority-source change; no other
+evidence field shape changed, and `readiness_report.py`'s existing gate-unlocking logic
+(which only reads `candidate_authority.classification` and the per-endpoint `reads`) needed
+no changes.
 
-`services.supervised_canary.readiness_report.operator_evidence` and
-`render_operator_readiness` gained an optional `live_read_evidence` path (also
-`--live-read-evidence` on the existing `readiness_report` CLI). When a fresh, valid M27F
-artifact is supplied:
+## Authority attestation lifetime semantics
 
-- `CANDIDATE_KEY_AUTHENTICATED_GET` and each of `AUTHENTICATED_PRODUCTION_BALANCE`,
-  `AUTHENTICATED_OPEN_ORDERS`, `AUTHENTICATED_POSITIONS`, `AUTHENTICATED_FILLS`,
-  `AUTHENTICATED_SETTLEMENTS` flip to `PASS` only for the specific reads that artifact proves
-  succeeded;
-- `ACCOUNT_RECONCILIATION` flips to `PASS` only when the artifact's own reconciliation
-  classification is `PASS` (never on partial or stale evidence);
-- `PRODUCTION_WRITE_CREDENTIAL` (`NOT INSTALLED`), `PRODUCTION_ARMED` (`FAIL`/`DISARMED`),
-  `REAL_MUTATION` (`NOT TESTED`), and `REAL_SIGNER_VALIDATION` (`BLOCKED_BY_CREDENTIAL`) are
-  never touched by this evidence -- authenticated GET acceptance is explicitly not the
-  isolated production execution signer runtime with an installed write credential, and the
-  report does not conflate the two.
+The M16/M27F 30-second **user-data** freshness rule is deliberately **not** applied to the
+authority attestation. That rule bounds how stale a *portfolio snapshot* may be before it is
+treated as current account state; an authority attestation describes credential authority,
+not account/portfolio data, so the same clock-based bound does not apply to it. Applying it
+anyway would require inventing an arbitrary TTL this review explicitly declined to invent.
 
-`test_readiness_report_partial_evidence_never_falsely_passes` and
-`test_readiness_report_stale_evidence_never_passes_reconciliation` cover the two ways an
-almost-complete artifact could otherwise be over-credited.
+Instead, the attestation's validity is bound structurally rather than temporally:
 
-## Live enrollment gap (unchanged, intentionally)
+- **it remains valid only for the exact key ID hash it names.** `validate_attestation_for_candidate`
+  compares `SHA-256(candidate_key_id)` against the artifact's `key_id_hash` exactly; an
+  attestation generated for one key ID never validates for a different one
+  (`test_validate_rejects_attestation_bound_to_a_different_key_id`).
+- **deletion/replacement cannot silently transfer authority.** Kalshi's documented API-key
+  surface (`docs.kalshi.com/api-reference/api-keys`) exposes create/generate/get/delete, with
+  no documented scope/subaccount *update* operation -- a key's scopes/subaccount cannot
+  change in place. If a key is deleted and a new one generated, the new key gets a new key
+  ID, so its hash will not match the old attestation, and a fresh attestation must be
+  generated for it.
+- **the candidate must still authenticate successfully on every M27F run.** The attestation
+  only proves the candidate's server-reported *authority* (scopes/subaccount); it never
+  substitutes for the candidate's own live signature on each balance/limits/positions/
+  orders/fills/settlements call. If the candidate key were revoked after the attestation was
+  generated, those live calls would fail with `AUTH_FAILURE` on their own merits, independent
+  of the attestation.
+- **a malformed or mismatched attestation always fails closed** -- there is no code path that
+  treats a missing, malformed, or non-matching field as an implicit pass.
 
-- `services/production_execution/credentials.py::enrollment_available()` still returns
-  `False`.
-- `ProtectedWriteCredentialStore.install()` still raises unless `credential.fixture_only` is
-  `True` -- confirmed unmodified by this milestone's diff.
-- There is still no merged `services/production_execution/enrollment_cli.py`. Real credential
-  enrollment remains the next, separately reviewed operator-release milestone after
-  authenticated read acceptance is independently accepted.
+No expiry timestamp is checked or invented on the attestation itself. This is a deliberate
+choice, not an omission, for the reasons above; if a future reviewer wants a time-based
+attestation TTL, that is a distinct policy decision this milestone intentionally leaves open
+rather than picking an arbitrary number.
 
-## Frozen weather / M27D boundary
+## Evidence schema: `kalsh3.m27f.candidate-authority.v1`
 
-No file under `services/forecasting/` was touched, and `services/supervised_canary/m27d.py`,
-`workflow.py`, and `store.py` were neither imported nor modified -- M27F's evidence path has
-no dependency on the M27D one-submission budget or trade-selection policy.
+```json
+{
+  "schema": "kalsh3.m27f.candidate-authority.v1",
+  "software_version": "kalsh3.m27f.candidate-authority/1",
+  "environment": "PRODUCTION",
+  "observed_at": "2026-08-18T12:00:00+00:00",
+  "source": {
+    "origin": "https://external-api.kalshi.com",
+    "path": "/trade-api/v2/api_keys"
+  },
+  "classification": "PASS",
+  "candidate": {
+    "key_id_hash": "<sha256 hex>",
+    "server_scopes": ["read", "write::trade"],
+    "server_subaccount": 0,
+    "unique_matches": 1
+  },
+  "reason": null
+}
+```
 
-## Verification
+No raw bootstrap/management key ID, no raw management private key, no raw candidate key ID,
+no signature, no header, and no account data ever appears in this artifact --
+`test_attestation_json_is_secret_free` and `test_failure_reasons_are_secret_free` assert this
+directly, including across the full adversarial matrix.
 
-- `ruff check .`: pass.
-- `ruff format --check .`: pass.
-- `mypy` (strict, `services` package): pass, 203 source files.
-- `pytest -q` (full suite): 1304 passed, 3 skipped (`KALSH3_TEST_POSTGRES_DSN` not set --
-  pre-existing, unrelated to this milestone).
-- `git diff --check`: clean.
-- Focused M27F suite (`tests/test_m27f_live_read_acceptance.py`, 36 cases): candidate-authority
-  adversarial matrix (wrong/duplicate key ID, broad write, extra scope, missing
-  `write::trade`, null/wrong subaccount, 401/403/redirect/timeout/malformed/oversized), one
-  test per read-failure class per endpoint, pagination/repeated-cursor/incomplete-pagination,
-  freshness, secret-handling (PEM absent from evidence/exceptions/CLI output, fd fully
-  consumed), and readiness-report gate unlocking (no evidence / partial evidence / stale
-  evidence / complete evidence) -- all pass.
-- No real credential was used, no authenticated live call was made, and no mutation was
-  attempted.
+## Compartmentalization / operator sequence
+
+1. A temporary broad bootstrap credential exists (as it did during live discovery).
+2. The reviewed `authority_attestation` CLI performs exactly one `GET /api_keys` with that
+   bootstrap credential and locates the candidate.
+3. A secret-free candidate authority artifact is written.
+4. The broad bootstrap credential is revoked.
+5. Future M27F live-read runs use only the authority artifact plus the narrow candidate
+   credential -- the broad bootstrap key is never a runtime dependency of ordinary canary
+   operation, only of the one-time (or per-rotation) attestation step.
+
+## Reused, unmodified boundaries
+
+- `services.kalshi_account_gateway.production_read_credentials`: `PRODUCTION_ORIGIN`,
+  `API_KEYS_PATH`, `ProductionReadTransport`, `ReadSigner`, `UrllibProductionReadTransport`,
+  `read_private_key_fd` -- all imported as-is by the new `authority_attestation.py`.
+- `services.production_execution.enrollment.KNOWN_KALSHI_API_KEY_SCOPES` and
+  `services.production_execution.credentials.{REQUIRED_LIVE_WRITE_SCOPES,
+  REQUIRED_LIVE_WRITE_SUBACCOUNT}` -- imported, not modified. `verify_live_write_credential_authority`
+  / `require_live_write_authority` (the M27E functions the *candidate* used to call directly)
+  are no longer invoked by M27F, but remain unmodified in `enrollment.py` for any future
+  caller that legitimately needs a key to attest to its own metadata.
+- `services.kalshi_account_gateway.client.KalshiAccountClient` (M25/M21/M22): completely
+  unmodified by this revision.
+- `git diff -- services/production_execution` and `git diff -- services/forecasting` are both
+  empty for this revision -- no production-execution, enrollment, security-boundary, or
+  frozen-weather file was touched.
+
+## Tests
+
+- `tests/test_m27f_candidate_authority_attestation.py` (new, 30 cases): unique-match PASS,
+  zero/duplicate matches, wrong scopes (missing `write::trade` / broad `write` / extra
+  scope), wrong subaccount (null/nonzero), management 401/403, redirect, transport exception,
+  five malformed-response shapes, GET-only transport-protocol assertion, exactly-once
+  transport call assertion, secret-free artifact and failure-reason assertions, independent
+  consumer-side re-validation (including the different-key-id and tampered-classification
+  cases), no-time-based-expiry assertion, and CLI secret-handling/argument-surface tests.
+- `tests/test_m27f_live_read_acceptance.py` (59 cases): happy path; a 17-case invalid-attestation
+  adversarial matrix (missing/malformed attestation, wrong schema/environment/source, wrong
+  key-id hash, wrong/broad/extra scopes, null/wrong subaccount, zero/duplicate matches, the
+  attestation's own classification being `FAIL`, and malformed software-version/observed-at)
+  that all assert zero reads and `BLOCKED` reconciliation; a structural regression test that
+  the consumer function has no `authority_transport` parameter and never requests
+  `/api_keys` through the account transport; a regression test reproducing the exact live
+  discovery (management attestation PASS, simulated candidate 401 on `/api_keys`, M27F still
+  passes via the attestation); the full pre-existing per-endpoint failure/pagination/
+  freshness/readiness-gate matrix, adapted to the new `authority_attestation` parameter; and
+  CLI tests including a new malformed-attestation-file case.
+- Full suite: `1357 passed, 3 skipped` (`KALSH3_TEST_POSTGRES_DSN` not set -- pre-existing,
+  unrelated).
+- `ruff check .`: pass. `ruff format --check .`: pass. `mypy` (strict): pass, 204 source
+  files. `git diff --check`: clean.
+
+No real credential was used, no authenticated live call was made, and no mutation was
+attempted while producing this revision.
 
 ## Safety
 
@@ -210,6 +248,6 @@ no dependency on the M27D one-submission budget or trade-selection policy.
 ## Review disposition
 
 **SAFE FOR INDEPENDENT REVIEW**. This does not authorize credential enrollment, arming, or
-any production mutation. It establishes the read-acceptance and reconciliation machinery a
-future real candidate credential would need to pass before the separate write-credential
-enrollment milestone can even be considered.
+any production mutation. It corrects a real live-discovery gap in the read-acceptance and
+reconciliation machinery a future real candidate credential would need to pass before the
+separate write-credential enrollment milestone can even be considered.

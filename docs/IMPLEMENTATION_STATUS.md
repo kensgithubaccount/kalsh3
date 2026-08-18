@@ -62,7 +62,7 @@
 | M27C Part 2B3 Prospective Blind Weather Confirmation Freeze | Implemented; protocol frozen before period; research-only | Immutable protocol identity predeclares 2026-09-01 through 2027-03-31, with August 2026 operations-only blackout, exact frozen model identities, TRAIN + VALIDATION boundary through 2025-12-31, and unchanged CRPS/Bonferroni policy. A separate forecast-only evidence boundary rejects outcomes, residuals, evaluation metrics, market data, mismatched source semantics, and nonzero production influence without importing GHCN outcome acquisition. Jan-Jul 2026 remains corrected but non-pristine and is not independent prospective confirmation; outcomes are deferred until after 2027-03-31. No weather-model tuning, trading, settlement, or production claim. See `reviews/M27C_PART2B3_PROSPECTIVE_BLIND_WEATHER_CONFIRMATION.md`. |
 | M27C Part 2C1 TWC Settlement Mapping Evidence | Implemented; no-go research result; research-only | Separate immutable evidence types distinguish Kalshi authority, TWC vintaged/current values, Kalshi settlement-implied predicates, and GHCN comparisons. Strict loaders reject wrong authority, unofficial TWC data, malformed hashes, unknown fields, August/prospective dates, fabricated point values, and nonzero production influence. Public official documentation establishes API-key historical access but not Kalshi's TWC product/station/day/rounding/revision semantics; no authoritative TWC values or complete historical settlement-implied observations were available. `NO_AUTHORITATIVE_TWC_VALUE_EVIDENCE`; `UNVALIDATED_GHCND_PROXY` remains unchanged. See `reviews/M27C_TWC_SETTLEMENT_MAPPING.md`. |
 | M27D Supervised Experimental Weather Canary | Implemented; shadow-only; independent review required | Typed August-only (`2026-08-18` through `2026-08-31`) TAKER_NOW candidate boundary reuses M27A evidence and preserves M13/M15/M16 separation. Predeclared 20pp `research_probability_discrepancy`, frozen model allowlist, current evidence freshness, boundary-mass rejection, exact one-contract cap, deterministic selection, stronger acknowledgement hash, and durable one-submission counter are implemented. No write credential, arm, order, settlement validation, fair-value/edge/EV/alpha claim, or real canary completion. See `reviews/M27D_SUPERVISED_EXPERIMENTAL_WEATHER_CANARY.md`. |
-| M27F Live Authenticated Read Acceptance | Implemented; offline/synthetic-transport verified; live acceptance pending | Reuses the reviewed M27E candidate-authority boundary (`verify_live_write_credential_authority` / `require_live_write_authority` against `GET /trade-api/v2/api_keys`, exact `{"read","write::trade"}`/subaccount 0) and the M25/M21/M22 `KalshiAccountClient` GET-only transport for balance/limits/positions/orders/fills/settlements, split into reusable public methods without changing `refresh()` behavior (all 50 pre-existing account-gateway tests unchanged). New operator-only `python -m services.supervised_canary.live_read_acceptance` CLI accepts the private key only via an inherited fd (never argv/env), never installs a credential, and produces a secret-free JSON evidence artifact (hashes/counts/classifications only). `readiness_report.py` can unlock `CANDIDATE_KEY_AUTHENTICATED_GET` and the per-endpoint `AUTHENTICATED_*`/`ACCOUNT_RECONCILIATION` gates only from a fresh, complete artifact, while `PRODUCTION_WRITE_CREDENTIAL`/`PRODUCTION_ARMED`/`REAL_MUTATION`/`REAL_SIGNER_VALIDATION` remain untouched. `enrollment_available()` remains `False` and `ProtectedWriteCredentialStore.install()` still requires `fixture_only`. No real credential, live call, or mutation in this milestone. See `reviews/M27F_LIVE_AUTHENTICATED_READ_ACCEPTANCE.md`. |
+| M27F Live Authenticated Read Acceptance | Implemented; offline/synthetic-transport verified; live acceptance pending | Live production discovery found the candidate itself (`{"read","write::trade"}`, subaccount 0) receives `HTTP 401` from `GET /trade-api/v2/api_keys` -- it cannot prove its own scopes to itself. Split candidate-authority proof into a new operator-only `services/supervised_canary/authority_attestation.py`: a separate, broader management credential performs exactly one GET-only `GET /api_keys` call and produces a secret-free `kalsh3.m27f.candidate-authority.v1` attestation (never receives or touches the candidate's private key). `live_read_acceptance.py` no longer calls, or has a transport capable of calling, `/api_keys`; it independently re-validates a supplied attestation (schema, classification, key-ID hash, exact scopes/subaccount, unique match, source) before any account read, and reuses the unmodified M25/M21/M22 `KalshiAccountClient` GET-only transport for balance/limits/positions/orders/fills/settlements. No time-based expiry is applied to the attestation (scoped instead to the exact candidate key-ID hash); documented rationale in the review. `readiness_report.py` gate-unlocking logic is unchanged. `enrollment_available()` remains `False`, `ProtectedWriteCredentialStore.install()` still requires `fixture_only`, and `services/production_execution` is untouched (`git diff` empty). No real credential, live call, or mutation in this milestone. See `reviews/M27F_LIVE_AUTHENTICATED_READ_ACCEPTANCE.md`. |
 
 ## Runtime truth
 
@@ -123,6 +123,45 @@
   classification, pagination, freshness, secret handling, readiness-gate unlocking) plus the
   full 1304-test suite pass. No real credential, live authenticated call, or mutation was
   attempted; frozen weather files are unchanged. See
+  `docs/reviews/M27F_LIVE_AUTHENTICATED_READ_ACCEPTANCE.md`.
+
+## M27F candidate-authority attestation split (2026-08-18)
+
+- Live GET-only diagnostics against real production established: a broad temporary bootstrap
+  credential's `GET /trade-api/v2/api_keys` returned `HTTP 200` and exactly one matching
+  candidate record (`scopes=read,write::trade`, `subaccount=0`); the candidate credential's
+  own `GET /trade-api/v2/portfolio/balance?subaccount=0` PASSED; but the candidate
+  credential's own `GET /trade-api/v2/api_keys` returned `HTTP 401`. The least-privilege
+  candidate cannot prove its own authority by calling `/api_keys` itself -- the M27E/M27F
+  design that asked it to do so was structurally incompatible with the least-privilege
+  candidate it was meant to validate. No credential installed, production stayed DISARMED, no
+  mutation/order occurred while this was discovered.
+- New `services/supervised_canary/authority_attestation.py`: a separate management
+  credential performs exactly one GET-only `GET /api_keys` call and produces a secret-free
+  `kalsh3.m27f.candidate-authority.v1` attestation. The candidate's private key is never an
+  input to this module -- only its (non-secret) key ID, so the broad management credential
+  and the narrow candidate credential structurally cannot end up in the same process.
+- `live_read_acceptance.py` no longer calls, or has a transport capable of calling,
+  `GET /api_keys` (removed `authority_transport` parameter entirely). It now takes an
+  `authority_attestation` payload and independently re-validates every field (schema,
+  classification, key-ID hash, exact scopes/subaccount, unique match, source) before any
+  candidate account read -- the artifact's own classification is never merely trusted. Evidence
+  schema bumped to `kalsh3.m27f.live-read-acceptance.v2`; `candidate_authority.source` is now
+  always `EXTERNAL_SERVER_ATTESTATION` in the evidence artifact.
+- No time-based expiry is applied to the attestation. Its validity is scoped to the exact
+  candidate key-ID hash it names (Kalshi's documented API-key surface has no scope/subaccount
+  update operation, so a key's authority cannot change in place; a deleted/replaced key gets
+  a new ID whose hash will not match). The candidate must still authenticate successfully on
+  every M27F run regardless of the attestation. Rationale documented in the review rather than
+  an arbitrary TTL being invented.
+- `KalshiAccountClient`, `readiness_report.py`, and every file under `services/production_execution`
+  and `services/forecasting` are unmodified by this revision (`git diff` empty for both
+  directories).
+- 89 focused tests (30 new attestation-generator/validator tests + 59 revised M27F consumer
+  tests, including a structural regression proving the consumer has no `/api_keys`-capable
+  transport and a regression reproducing the exact live discovery) plus the full 1357-test
+  suite pass; `ruff check`, `ruff format --check`, and `mypy` (204 source files) all pass. No
+  real credential, live authenticated call, or mutation was attempted. See
   `docs/reviews/M27F_LIVE_AUTHENTICATED_READ_ACCEPTANCE.md`.
 
 ## M6 acceptance
