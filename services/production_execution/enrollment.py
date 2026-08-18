@@ -66,7 +66,7 @@ from services.kalshi_account_gateway.candidate_authority import (
     AttestationValidation,
     validate_candidate_authority_attestation,
 )
-from services.neutral_security import SecretBox
+from services.neutral_security import SecretBox, SecretStorageError
 
 from .credentials import (
     REQUIRED_LIVE_WRITE_SCOPES,
@@ -217,6 +217,67 @@ class ProtectedWriteCredentialStore:
             marker_ok = False
         return marker_ok and self.master_key_path.exists() and self.record_path.exists()
 
+    def _decode_committed_credential(self, lock: _StoreLock) -> ProductionWriteCredential:
+        """Private decrypt of the exact committed installation. Not a public API.
+
+        Gemini M27H delta repair (2026-08-18): this was previously a *public*
+        ``read_committed_credential_for_verification`` method. That was rejected -- a public
+        method on this store, combined with the already-public :meth:`exclusive`, let any
+        future runtime code reconstruct a usable, decrypted ``ProductionWriteCredential`` with
+        no architectural barrier beyond "remember to hold the lock first". This method is now
+        private by both convention (leading underscore) and by contract: its only sanctioned
+        caller is the verification closure in :func:`services.production_execution.
+        installed_credential_verification.verify_installed_write_credential`, which uses the
+        returned credential only to (a) independently bind it to the candidate authority
+        attestation by key ID, (b) run the existing real-signer self-test, and (c) compute
+        secret-free hashes -- the credential itself is discarded when that function returns; it
+        is never stored, returned, logged, or handed to caller-supplied code. See that module's
+        docstring and ``test_m27h_installed_credential_verification.py``'s
+        ``test_decode_helper_is_referenced_only_by_its_defining_module_and_m27h`` /
+        ``test_store_exposes_no_public_credential_returning_api``, which fail if this contract
+        is ever violated again. Python has no true access control and this module makes no
+        claim of memory zeroization -- the containment here is architectural (no public return
+        path, no generic callback primitive), not cryptographic erasure.
+
+        Requires the caller to already hold this store's exclusive transaction lock (see
+        :meth:`exclusive`) -- there is no unlocked path to it.
+
+        Fails closed on: no committed installation, a malformed or wrong-length master key, a
+        corrupt or tampered encrypted record (authenticated decryption failure), a malformed
+        decoded record, and -- fixture confusion -- a sealed record that was written by the
+        always-available *fixture* install path (:meth:`install`) rather than the reviewed
+        real-installation path (:meth:`install_real_credential`). Real installations made
+        before this field existed have no ``fixture_only`` key at all and are treated as real
+        (``.get(..., False)``), so this never invalidates the credential already installed by
+        M27G.
+        """
+        self._require_lock(lock)
+        if not self.is_installed():
+            raise PermissionError("no committed production write credential is installed")
+        master = self.master_key_path.read_bytes()
+        if len(master) != 32:
+            raise PermissionError("stored master key is malformed")
+        try:
+            payload = json.loads(SecretBox(master).open(self.record_path.read_text()))
+        except (SecretStorageError, ValueError, OSError, UnicodeError) as exc:
+            raise PermissionError("installed credential record could not be decrypted") from exc
+        if not isinstance(payload, dict):
+            raise PermissionError("installed credential record is malformed")
+        key_id, private_key_pem = payload.get("key_id"), payload.get("private_key_pem")
+        if not isinstance(key_id, str) or not key_id or not isinstance(private_key_pem, str):
+            raise PermissionError("installed credential record is malformed")
+        if payload.get("fixture_only") is True:
+            raise PermissionError(
+                "installed credential store holds a fixture credential, not a real one"
+            )
+        try:
+            private_key_bytes = private_key_pem.encode("ascii")
+            return ProductionWriteCredential(
+                key_id, private_key_bytes, REQUIRED_LIVE_WRITE_SCOPES, fixture_only=False
+            )
+        except (UnicodeError, ValueError) as exc:
+            raise PermissionError("installed credential record is malformed") from exc
+
     @contextmanager
     def exclusive(self) -> Iterator[_StoreLock]:
         """Acquire the store's cross-process exclusive transaction lock.
@@ -322,6 +383,7 @@ class ProtectedWriteCredentialStore:
             {
                 "key_id": credential.key_id,
                 "private_key_pem": credential.private_key_pem.decode("ascii"),
+                "fixture_only": credential.fixture_only,
             },
             sort_keys=True,
         ).encode("ascii")
