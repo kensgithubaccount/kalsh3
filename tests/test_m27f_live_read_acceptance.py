@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import hashlib
+import inspect
 import json
 import os
 from collections.abc import Mapping
@@ -10,7 +12,12 @@ from typing import Any
 import pytest
 
 from services.kalshi_account_gateway.client import AccountGatewayError, HttpResponse
-from services.kalshi_account_gateway.production_read_credentials import ProductionReadReply
+from services.kalshi_account_gateway.production_read_credentials import (
+    API_KEYS_PATH,
+    PRODUCTION_ORIGIN,
+    ProductionReadReply,
+)
+from services.supervised_canary import authority_attestation as attestation_mod
 from services.supervised_canary import live_read_acceptance as m27f
 from services.supervised_canary.readiness_report import operator_evidence
 
@@ -25,7 +32,7 @@ class FakeSigner:
 
 
 class FakeAuthorityTransport:
-    """Fake ``GET /trade-api/v2/api_keys`` boundary transport."""
+    """Fake ``GET /trade-api/v2/api_keys`` boundary transport (management side only)."""
 
     def __init__(self, reply: ProductionReadReply | Exception) -> None:
         self.reply = reply
@@ -112,6 +119,44 @@ def _clock_sequence(*deltas_seconds: float) -> Any:
     return clock
 
 
+def build_attestation(
+    *,
+    candidate_key_id: str = "candidate",
+    schema: str = attestation_mod.SCHEMA,
+    software_version: str | None = attestation_mod.SOFTWARE_VERSION,
+    environment: str = "PRODUCTION",
+    observed_at: str | None = "2026-08-18T12:00:00+00:00",
+    source_origin: str = PRODUCTION_ORIGIN,
+    source_path: str = API_KEYS_PATH,
+    classification: str = "PASS",
+    key_id_hash: str | None = None,
+    scopes: list[str] | None = ("read", "write::trade"),
+    subaccount: int | None = 0,
+    unique_matches: int | None = 1,
+) -> dict[str, Any]:
+    """A valid-by-default candidate authority attestation payload for the M27F consumer.
+
+    Every keyword lets a single test knock exactly one field off the happy path.
+    """
+    if key_id_hash is None:
+        key_id_hash = hashlib.sha256(candidate_key_id.encode()).hexdigest()
+    return {
+        "schema": schema,
+        "software_version": software_version,
+        "environment": environment,
+        "observed_at": observed_at,
+        "source": {"origin": source_origin, "path": source_path},
+        "classification": classification,
+        "candidate": {
+            "key_id_hash": key_id_hash,
+            "server_scopes": list(scopes) if scopes is not None else None,
+            "server_subaccount": subaccount,
+            "unique_matches": unique_matches,
+        },
+        "reason": None,
+    }
+
+
 # Captured once, before any test monkeypatches ``m27f.run_live_read_acceptance`` --
 # this helper must always call the real implementation, never whatever the module
 # attribute currently points at, or a monkeypatched fake calling ``run()`` would recurse
@@ -121,16 +166,16 @@ _real_run_live_read_acceptance = m27f.run_live_read_acceptance
 
 def run(
     *,
-    authority_reply: ProductionReadReply | Exception | None = None,
+    authority_attestation: Any = "__default__",
     account_overrides: dict[str, list[HttpResponse | Exception]] | None = None,
     clock: Any = None,
 ) -> m27f.LiveReadAcceptanceEvidence:
-    if authority_reply is None:
-        authority_reply = api_keys_reply([VALID_KEY_RECORD])
+    if authority_attestation == "__default__":
+        authority_attestation = build_attestation()
     kwargs: dict[str, Any] = {
         "key_id": "candidate",
         "private_key_pem": b"synthetic-pem-not-real",
-        "authority_transport": FakeAuthorityTransport(authority_reply),
+        "authority_attestation": authority_attestation,
         "account_transport": FakeAccountTransport(account_overrides),
         "signer_factory": FakeSigner,
         "clock_ms": lambda: 123,
@@ -148,6 +193,7 @@ def run(
 def test_correct_candidate_and_complete_reads_pass_every_gate() -> None:
     evidence = run()
     assert evidence.candidate_authority.classification == "PASS"
+    assert evidence.candidate_authority.source == "EXTERNAL_SERVER_ATTESTATION"
     assert evidence.candidate_authority.server_scopes == ("read", "write::trade")
     assert evidence.candidate_authority.server_subaccount == 0
     assert {read.name: read.classification for read in evidence.reads} == {
@@ -174,78 +220,125 @@ def test_evidence_json_is_secret_free() -> None:
 
 
 # --------------------------------------------------------------------------------------
-# Candidate authority adversarial matrix -- reused M27E boundary must fail closed and no
-# read may ever be attempted when authority does not PASS.
+# Candidate authority attestation adversarial matrix (M27F consumer side) -- a stored
+# attestation is never merely trusted; every field is independently re-checked, and no
+# read may ever be attempted unless every check passes.
 # --------------------------------------------------------------------------------------
 
 
 @pytest.mark.parametrize(
-    "authority_reply",
+    "attestation",
     [
-        api_keys_reply([{"api_key_id": "someone-else", "scopes": ["read"], "subaccount": 0}]),
-        api_keys_reply([VALID_KEY_RECORD, VALID_KEY_RECORD]),
-        api_keys_reply([{"api_key_id": "candidate", "scopes": ["read", "write"], "subaccount": 0}]),
-        api_keys_reply(
-            [
-                {
-                    "api_key_id": "candidate",
-                    "scopes": ["read", "write::trade", "write::transfer"],
-                    "subaccount": 0,
-                }
-            ]
-        ),
-        api_keys_reply([{"api_key_id": "candidate", "scopes": ["read"], "subaccount": 0}]),
-        api_keys_reply(
-            [{"api_key_id": "candidate", "scopes": ["read", "write::trade"], "subaccount": None}]
-        ),
-        api_keys_reply(
-            [{"api_key_id": "candidate", "scopes": ["read", "write::trade"], "subaccount": 1}]
-        ),
-        api_keys_reply([VALID_KEY_RECORD], status=401),
-        api_keys_reply([VALID_KEY_RECORD], status=403),
-        ProductionReadReply(302, b"", location="https://attacker.example"),
-        TimeoutError("synthetic timeout"),
-        ProductionReadReply(200, b"not-json"),
+        None,
+        "not-a-dict",
+        build_attestation(schema="kalsh3.m27f.candidate-authority.v0"),
+        build_attestation(environment="SANDBOX"),
+        build_attestation(source_origin="https://attacker.example"),
+        build_attestation(source_path="/trade-api/v2/other"),
+        build_attestation(key_id_hash="0" * 64),
+        build_attestation(scopes=["read"]),
+        build_attestation(scopes=["read", "write"]),
+        build_attestation(scopes=["read", "write::trade", "write::transfer"]),
+        build_attestation(subaccount=None),
+        build_attestation(subaccount=1),
+        build_attestation(unique_matches=0),
+        build_attestation(unique_matches=2),
+        build_attestation(classification="FAIL"),
+        build_attestation(software_version=None),
+        build_attestation(observed_at=None),
     ],
     ids=[
-        "wrong_key_id",
-        "duplicate_key_id",
+        "missing_attestation",
+        "malformed_not_a_dict",
+        "wrong_schema",
+        "wrong_environment",
+        "wrong_source_origin",
+        "wrong_source_path",
+        "wrong_candidate_key_id_hash",
+        "missing_write_trade",
         "broad_write",
         "extra_scope",
-        "missing_write_trade",
         "null_subaccount",
         "wrong_subaccount",
-        "http_401",
-        "http_403",
-        "redirect",
-        "timeout",
-        "malformed_json",
+        "zero_matches",
+        "duplicate_matches",
+        "attestation_itself_failed",
+        "malformed_software_version",
+        "malformed_observed_at",
     ],
 )
-def test_authority_failure_never_reaches_account_reads(authority_reply: Any) -> None:
-    evidence = run(authority_reply=authority_reply)
+def test_invalid_attestation_never_reaches_account_reads(attestation: Any) -> None:
+    evidence = run(authority_attestation=attestation)
     assert evidence.candidate_authority.classification == "FAIL"
     assert evidence.reads == ()
     assert evidence.reconciliation.classification == "BLOCKED"
 
 
-def test_oversized_authority_response_fails_closed() -> None:
-    from services.kalshi_account_gateway.production_read_credentials import (
-        ProductionCredentialError,
-    )
-
-    evidence = run(
-        authority_reply=ProductionCredentialError("production verification response too large")
-    )
-    assert evidence.candidate_authority.classification == "FAIL"
-    assert evidence.reads == ()
-    assert evidence.reconciliation.classification == "BLOCKED"
-
-
-def test_correct_candidate_metadata_is_recorded_on_pass() -> None:
+def test_valid_attestation_metadata_is_recorded_on_pass() -> None:
     evidence = run()
     assert evidence.candidate_authority.reason is None
     assert evidence.candidate_authority.key_id_hash != "candidate"
+
+
+def test_candidate_balance_failure_still_fails_even_with_valid_attestation() -> None:
+    evidence = run(account_overrides={"balance?": [HttpResponse(401, {})]})
+    assert evidence.candidate_authority.classification == "PASS"
+    balance = next(item for item in evidence.reads if item.name == "balance")
+    assert balance.classification == "AUTH_FAILURE"
+    assert evidence.reconciliation.classification == "BLOCKED"
+
+
+def test_candidate_no_longer_calls_api_keys() -> None:
+    """Structural regression: the consumer has no transport capable of calling /api_keys."""
+    parameters = inspect.signature(m27f.run_live_read_acceptance).parameters
+    assert "authority_transport" not in parameters
+    assert "authority_attestation" in parameters
+    account_transport = FakeAccountTransport()
+    evidence = _real_run_live_read_acceptance(
+        key_id="candidate",
+        private_key_pem=b"synthetic-pem-not-real",
+        authority_attestation=build_attestation(),
+        account_transport=account_transport,
+        signer_factory=FakeSigner,
+        clock_ms=lambda: 123,
+    )
+    assert evidence.reconciliation.classification == "PASS"
+    assert all(API_KEYS_PATH not in path for path in account_transport.paths)
+
+
+# --------------------------------------------------------------------------------------
+# Regression matching the real M27F live discovery: a broad management credential can
+# list /api_keys and produce a PASS attestation, the least-privilege candidate itself
+# would be rejected (401) if it tried the same call, and M27F still passes end-to-end
+# using only the attestation plus the candidate's own permitted account GETs.
+# --------------------------------------------------------------------------------------
+
+
+def test_regression_candidate_401_on_api_keys_but_passes_via_management_attestation() -> None:
+    management_transport = FakeAuthorityTransport(api_keys_reply([VALID_KEY_RECORD]))
+    attestation = attestation_mod.generate_candidate_authority_attestation(
+        management_key_id="bootstrap-management-key",
+        management_private_key_pem=b"synthetic-management-pem",
+        candidate_key_id="candidate",
+        transport=management_transport,
+        timestamp_ms=123,
+        clock=lambda: datetime(2026, 8, 18, 12, 0, 0, tzinfo=UTC),
+        signer_factory=FakeSigner,
+    )
+    assert attestation.classification == "PASS"
+    assert management_transport.calls == [(PRODUCTION_ORIGIN, API_KEYS_PATH)]
+
+    # Real discovery: the candidate itself receives HTTP 401 from the same endpoint.
+    candidate_transport = FakeAuthorityTransport(api_keys_reply([VALID_KEY_RECORD], status=401))
+    candidate_reply = candidate_transport.get(
+        PRODUCTION_ORIGIN, API_KEYS_PATH, {}, timeout_seconds=10
+    )
+    assert candidate_reply.status == 401
+
+    evidence = run(authority_attestation=attestation.to_json())
+    assert evidence.candidate_authority.classification == "PASS"
+    assert evidence.candidate_authority.source == "EXTERNAL_SERVER_ATTESTATION"
+    assert evidence.reconciliation.classification == "PASS"
 
 
 # --------------------------------------------------------------------------------------
@@ -426,7 +519,9 @@ def test_readiness_report_stale_evidence_never_passes_reconciliation(tmp_path: P
 
 # --------------------------------------------------------------------------------------
 # Consumption-time freshness -- loading a stored artifact later must re-check staleness,
-# independently of whether the sweep itself was quick when it was created.
+# independently of whether the sweep itself was quick when it was created. This bound
+# applies to the M27F account-read evidence itself, not to the authority attestation (see
+# the authority-attestation lifetime tests in test_m27f_candidate_authority_attestation.py).
 # --------------------------------------------------------------------------------------
 
 
@@ -529,9 +624,26 @@ def test_readiness_report_partial_failed_artifact_never_passes_even_when_fresh(
     assert statuses["ACCOUNT_RECONCILIATION"][0] != "PASS"
 
 
+def test_readiness_report_and_final_evidence_never_reveal_production_gates_prematurely() -> None:
+    """Production installation/arming/mutation gates are never touched by read evidence."""
+    evidence = run()
+    dumped = json.dumps(evidence.to_json())
+    assert "PRODUCTION_WRITE_CREDENTIAL" not in dumped
+    statuses = operator_evidence()
+    assert statuses["PRODUCTION_WRITE_CREDENTIAL"][0] == "NOT INSTALLED"
+    assert statuses["PRODUCTION_ARMED"][0] == "FAIL"
+    assert statuses["REAL_MUTATION"][0] == "NOT TESTED"
+
+
 # --------------------------------------------------------------------------------------
 # CLI: private key handling
 # --------------------------------------------------------------------------------------
+
+
+def _write_attestation(tmp_path: Path) -> Path:
+    path = tmp_path / "attestation.json"
+    path.write_text(json.dumps(build_attestation()))
+    return path
 
 
 def test_cli_reads_key_only_from_file_and_fd_never_argv(
@@ -539,6 +651,7 @@ def test_cli_reads_key_only_from_file_and_fd_never_argv(
 ) -> None:
     key_id_file = tmp_path / "key_id.txt"
     key_id_file.write_text("candidate\n")
+    attestation_file = _write_attestation(tmp_path)
     output = tmp_path / "evidence.json"
     read_fd, write_fd = os.pipe()
     os.write(write_fd, b"synthetic-pem-bytes")
@@ -557,6 +670,8 @@ def test_cli_reads_key_only_from_file_and_fd_never_argv(
             str(key_id_file),
             "--private-key-fd",
             str(read_fd),
+            "--authority-attestation",
+            str(attestation_file),
             "--output",
             str(output),
         ]
@@ -564,6 +679,7 @@ def test_cli_reads_key_only_from_file_and_fd_never_argv(
     assert exit_code == 0
     assert calls["key_id"] == "candidate"
     assert calls["private_key_pem"] == b"synthetic-pem-bytes"
+    assert calls["authority_attestation"] == build_attestation()
     written = json.loads(output.read_text())
     assert "synthetic-pem-bytes" not in json.dumps(written)
     captured = capsys.readouterr()
@@ -584,6 +700,7 @@ def test_cli_fd_is_fully_consumed_leaving_a_clean_eof(
     """
     key_id_file = tmp_path / "key_id.txt"
     key_id_file.write_text("candidate")
+    attestation_file = _write_attestation(tmp_path)
     output = tmp_path / "evidence.json"
     read_fd, write_fd = os.pipe()
     os.write(write_fd, b"pem-bytes")
@@ -595,6 +712,8 @@ def test_cli_fd_is_fully_consumed_leaving_a_clean_eof(
             str(key_id_file),
             "--private-key-fd",
             str(read_fd),
+            "--authority-attestation",
+            str(attestation_file),
             "--output",
             str(output),
         ]
@@ -609,6 +728,7 @@ def test_cli_empty_key_id_file_fails_closed_and_writes_no_output(
 ) -> None:
     key_id_file = tmp_path / "key_id.txt"
     key_id_file.write_text("   \n")
+    attestation_file = _write_attestation(tmp_path)
     output = tmp_path / "evidence.json"
     read_fd, write_fd = os.pipe()
     os.write(write_fd, b"pem-bytes")
@@ -619,6 +739,8 @@ def test_cli_empty_key_id_file_fails_closed_and_writes_no_output(
             str(key_id_file),
             "--private-key-fd",
             str(read_fd),
+            "--authority-attestation",
+            str(attestation_file),
             "--output",
             str(output),
         ]
@@ -636,11 +758,12 @@ def test_cli_authority_failure_writes_sanitized_failing_evidence(
 ) -> None:
     key_id_file = tmp_path / "key_id.txt"
     key_id_file.write_text("candidate")
+    attestation_file = _write_attestation(tmp_path)
     output = tmp_path / "evidence.json"
     read_fd, write_fd = os.pipe()
     os.write(write_fd, b"pem-bytes")
     os.close(write_fd)
-    failing = run(authority_reply=api_keys_reply([VALID_KEY_RECORD], status=401))
+    failing = run(authority_attestation=build_attestation(classification="FAIL"))
     monkeypatch.setattr(m27f, "run_live_read_acceptance", lambda **kwargs: failing)
     exit_code = m27f.main(
         [
@@ -648,6 +771,8 @@ def test_cli_authority_failure_writes_sanitized_failing_evidence(
             str(key_id_file),
             "--private-key-fd",
             str(read_fd),
+            "--authority-attestation",
+            str(attestation_file),
             "--output",
             str(output),
         ]
@@ -656,4 +781,30 @@ def test_cli_authority_failure_writes_sanitized_failing_evidence(
     written = json.loads(output.read_text())
     assert written["candidate_authority"]["classification"] == "FAIL"
     assert written["reads"] == []
+    os.close(read_fd)
+
+
+def test_cli_malformed_attestation_json_fails_closed(tmp_path: Path) -> None:
+    key_id_file = tmp_path / "key_id.txt"
+    key_id_file.write_text("candidate")
+    attestation_file = tmp_path / "attestation.json"
+    attestation_file.write_text("not-json")
+    output = tmp_path / "evidence.json"
+    read_fd, write_fd = os.pipe()
+    os.write(write_fd, b"pem-bytes")
+    os.close(write_fd)
+    exit_code = m27f.main(
+        [
+            "--key-id-file",
+            str(key_id_file),
+            "--private-key-fd",
+            str(read_fd),
+            "--authority-attestation",
+            str(attestation_file),
+            "--output",
+            str(output),
+        ]
+    )
+    assert exit_code == 2
+    assert not output.exists()
     os.close(read_fd)

@@ -3,12 +3,23 @@
 This module never installs the production write credential, never arms production, and
 never calls a mutating Kalshi endpoint.  It performs exactly two things, in order:
 
-1. The reviewed M27E candidate-authority check (``verify_live_write_credential_authority`` /
-   ``require_live_write_authority``) against ``GET /trade-api/v2/api_keys`` -- unchanged and
-   reused as-is.
+1. Independent, structural re-validation of a previously generated, secret-free candidate
+   authority attestation (:mod:`services.supervised_canary.authority_attestation`) -- it is
+   never merely trusted; every field is re-checked here against the exact live policy.
 2. GET-only authenticated account reads (balance, limits, positions, orders, fills,
    settlements) using the reviewed M25/M27 :class:`KalshiAccountClient` boundary, reused
    directly rather than a second HTTP stack.
+
+Live discovery (2026-08-18): the least-privilege candidate credential
+(``scopes = {"read", "write::trade"}``, ``subaccount = 0``) itself receives ``HTTP 401`` from
+``GET /trade-api/v2/api_keys`` -- it is not entitled to enumerate account API-key metadata,
+even its own. The earlier design, where this module asked the *candidate* to sign that call
+directly (``verify_live_write_credential_authority`` / ``require_live_write_authority``), was
+therefore structurally incompatible with the least-privilege candidate it was meant to
+validate. This module no longer calls, or accepts a transport capable of calling,
+``GET /api_keys`` at all: candidate-authority proof is now produced out of band by a separate
+management credential (see :mod:`authority_attestation`) and supplied here only as an
+already-rendered, secret-free artifact.
 
 The candidate private key is only ever accepted through an inherited file descriptor.  It is
 never written to argv, an environment variable, a log, an exception message, or the evidence
@@ -42,31 +53,20 @@ from services.kalshi_account_gateway.client import (
 )
 from services.kalshi_account_gateway.models import AccountSnapshot, SnapshotValidationError
 from services.kalshi_account_gateway.production_read_credentials import (
-    ProductionCredentialError,
-    ProductionReadTransport,
     ReadSigner,
-    UrllibProductionReadTransport,
     read_private_key_fd,
 )
-from services.production_execution.credentials import (
-    REQUIRED_LIVE_WRITE_SCOPES,
-    REQUIRED_LIVE_WRITE_SUBACCOUNT,
-    ProductionWriteCredential,
-)
-from services.production_execution.enrollment import (
-    WriteCredentialAuthorityError,
-    require_live_write_authority,
-    verify_live_write_credential_authority,
-)
+from services.production_execution.credentials import REQUIRED_LIVE_WRITE_SUBACCOUNT
 
-SOFTWARE_VERSION = "kalsh3.m27f.live-read-acceptance/1"
-SCHEMA = "kalsh3.m27f.live-read-acceptance.v1"
+from .authority_attestation import validate_attestation_for_candidate
+
+SOFTWARE_VERSION = "kalsh3.m27f.live-read-acceptance/2"
+SCHEMA = "kalsh3.m27f.live-read-acceptance.v2"
 USER_DATA_FRESHNESS = timedelta(seconds=30)
 
-# Failures from the candidate-authority boundary itself: the M27E-reviewed metadata check
-# (WriteCredentialAuthorityError) and any concrete transport-boundary failure such as an
-# oversized response (ProductionCredentialError). Both carry only generic, secret-free text.
-_AUTHORITY_FAILURES = (WriteCredentialAuthorityError, ProductionCredentialError)
+# The candidate authority proof now always comes from an independently generated,
+# out-of-band attestation -- never from the candidate calling GET /api_keys itself.
+AUTHORITY_SOURCE = "EXTERNAL_SERVER_ATTESTATION"
 
 # Failures from an individual authenticated account read; each is classified separately so a
 # failure on one endpoint never disguises itself as another endpoint's empty success.
@@ -114,6 +114,7 @@ class CandidateAuthorityResult:
     server_subaccount: int | None
     started_at: datetime
     completed_at: datetime
+    source: str = AUTHORITY_SOURCE
     reason: str | None = None
 
     def to_json(self) -> dict[str, Any]:
@@ -285,71 +286,39 @@ def run_live_read_acceptance(
     *,
     key_id: str,
     private_key_pem: bytes,
-    authority_transport: ProductionReadTransport,
+    authority_attestation: object,
     account_transport: ReadTransport,
     clock: Callable[[], datetime] = lambda: datetime.now(UTC),
     clock_ms: Callable[[], int] = lambda: time.time_ns() // 1_000_000,
     signer_factory: Callable[[str, bytes], ReadSigner] = RequestSigner,
 ) -> LiveReadAcceptanceEvidence:
-    """Verify candidate write-credential authority, then perform bounded GET-only reads.
+    """Validate a pre-generated candidate authority attestation, then perform bounded GET reads.
+
+    ``authority_attestation`` is the parsed JSON of a
+    :class:`services.supervised_canary.authority_attestation.CandidateAuthorityAttestation`
+    produced by a separate, out-of-band operator run against a broader management credential.
+    This function never calls, and has no transport capable of calling, ``GET /api_keys`` --
+    the candidate is never asked to prove its own authority live. The attestation is
+    independently re-validated (schema, classification, key-ID-hash match, exact scopes,
+    exact subaccount, unique match count, source) before any account read is attempted; a
+    stale, forged, or mismatched attestation is never merely trusted.
 
     Never installs a credential, never arms production, and never issues a mutating call.
     A failed authenticated read is never reinterpreted as a successful empty account.
     """
     started_at = clock()
     key_id_hash = hashlib.sha256(key_id.encode()).hexdigest()
-    credential = ProductionWriteCredential(
-        key_id=key_id,
-        private_key_pem=private_key_pem,
-        scopes=REQUIRED_LIVE_WRITE_SCOPES,
-    )
-    try:
-        proof = verify_live_write_credential_authority(
-            authority_transport,
-            credential,
-            timestamp_ms=clock_ms(),
-            signer_factory=signer_factory,
-        )
-    except _AUTHORITY_FAILURES as exc:
-        completed_at = clock()
-        authority = CandidateAuthorityResult(
-            "FAIL", key_id_hash, None, None, started_at, completed_at, reason=str(exc)
-        )
-        return LiveReadAcceptanceEvidence(
-            SCHEMA,
-            SOFTWARE_VERSION,
-            "PRODUCTION",
-            REQUIRED_LIVE_WRITE_SUBACCOUNT,
-            key_id_hash,
-            started_at,
-            completed_at,
-            authority,
-            (),
-            ReconciliationResult(
-                "BLOCKED",
-                False,
-                False,
-                False,
-                False,
-                False,
-                False,
-                False,
-                False,
-                reason="candidate authority check did not pass",
-            ),
-        )
-    try:
-        require_live_write_authority(proof, expected_key_id=credential.key_id)
-    except WriteCredentialAuthorityError as exc:
+    validation = validate_attestation_for_candidate(authority_attestation, candidate_key_id=key_id)
+    if not validation.succeeded:
         completed_at = clock()
         authority = CandidateAuthorityResult(
             "FAIL",
             key_id_hash,
-            tuple(sorted(proof.scopes)),
-            proof.subaccount,
+            validation.server_scopes,
+            validation.server_subaccount,
             started_at,
             completed_at,
-            reason=str(exc),
+            reason=validation.reason,
         )
         return LiveReadAcceptanceEvidence(
             SCHEMA,
@@ -371,14 +340,14 @@ def run_live_read_acceptance(
                 False,
                 False,
                 False,
-                reason="candidate authority check did not pass",
+                reason="candidate authority attestation did not pass",
             ),
         )
     authority = CandidateAuthorityResult(
         "PASS",
         key_id_hash,
-        tuple(sorted(proof.scopes)),
-        proof.subaccount,
+        validation.server_scopes,
+        validation.server_subaccount,
         started_at,
         clock(),
     )
@@ -446,11 +415,14 @@ def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description=(
             "M27F operator-only live authenticated production read acceptance. GET-only: "
-            "never installs a write credential, never arms production, never mutates."
+            "never installs a write credential, never arms production, never mutates. Never "
+            "calls GET /api_keys itself -- consumes a pre-generated candidate authority "
+            "attestation instead (see authority_attestation.py)."
         )
     )
     parser.add_argument("--key-id-file", required=True, type=Path)
     parser.add_argument("--private-key-fd", required=True, type=int)
+    parser.add_argument("--authority-attestation", required=True, type=Path)
     parser.add_argument("--output", required=True, type=Path)
     return parser
 
@@ -462,10 +434,11 @@ def main(argv: list[str] | None = None) -> int:
         if not key_id:
             raise ValueError("key id file is empty")
         private_key_pem = read_private_key_fd(args.private_key_fd)
+        authority_attestation = json.loads(args.authority_attestation.read_text())
         evidence = run_live_read_acceptance(
             key_id=key_id,
             private_key_pem=private_key_pem,
-            authority_transport=UrllibProductionReadTransport(),
+            authority_attestation=authority_attestation,
             account_transport=UrllibReadTransport(),
         )
     except Exception as exc:  # boundary: never leak details, only a sanitized class name
