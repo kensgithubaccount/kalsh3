@@ -63,6 +63,7 @@
 | M27C Part 2C1 TWC Settlement Mapping Evidence | Implemented; no-go research result; research-only | Separate immutable evidence types distinguish Kalshi authority, TWC vintaged/current values, Kalshi settlement-implied predicates, and GHCN comparisons. Strict loaders reject wrong authority, unofficial TWC data, malformed hashes, unknown fields, August/prospective dates, fabricated point values, and nonzero production influence. Public official documentation establishes API-key historical access but not Kalshi's TWC product/station/day/rounding/revision semantics; no authoritative TWC values or complete historical settlement-implied observations were available. `NO_AUTHORITATIVE_TWC_VALUE_EVIDENCE`; `UNVALIDATED_GHCND_PROXY` remains unchanged. See `reviews/M27C_TWC_SETTLEMENT_MAPPING.md`. |
 | M27D Supervised Experimental Weather Canary | Implemented; shadow-only; independent review required | Typed August-only (`2026-08-18` through `2026-08-31`) TAKER_NOW candidate boundary reuses M27A evidence and preserves M13/M15/M16 separation. Predeclared 20pp `research_probability_discrepancy`, frozen model allowlist, current evidence freshness, boundary-mass rejection, exact one-contract cap, deterministic selection, stronger acknowledgement hash, and durable one-submission counter are implemented. No write credential, arm, order, settlement validation, fair-value/edge/EV/alpha claim, or real canary completion. See `reviews/M27D_SUPERVISED_EXPERIMENTAL_WEATHER_CANARY.md`. |
 | M27F Live Authenticated Read Acceptance | Implemented; offline/synthetic-transport verified; live acceptance pending | Live production discovery found the candidate itself (`{"read","write::trade"}`, subaccount 0) receives `HTTP 401` from `GET /trade-api/v2/api_keys` -- it cannot prove its own scopes to itself. Split candidate-authority proof into a new operator-only `services/supervised_canary/authority_attestation.py`: a separate, broader management credential performs exactly one GET-only `GET /api_keys` call and produces a secret-free `kalsh3.m27f.candidate-authority.v1` attestation (never receives or touches the candidate's private key). `live_read_acceptance.py` no longer calls, or has a transport capable of calling, `/api_keys`; it independently re-validates a supplied attestation (schema, classification, key-ID hash, exact scopes/subaccount, unique match, source) before any account read, and reuses the unmodified M25/M21/M22 `KalshiAccountClient` GET-only transport for the required subaccount-0 portfolio reads. A further live discovery found the same candidate receives `HTTP 403` from `GET /account/limits` (account-tier metadata with no `subaccount` parameter, out of scope for this candidate); M27F now never calls it, reconciliation derives `subaccount_binding_verified` from the attestation plus the fixed `?subaccount=0` request paths instead of a hardcoded `AccountSnapshot`, and evidence schema is `kalsh3.m27f.live-read-acceptance.v3`. No time-based expiry is applied to the attestation (scoped instead to the exact candidate key-ID hash); documented rationale in the review. `readiness_report.py` gate-unlocking logic is unchanged (there was never a separate limits gate). `enrollment_available()` remains `False`, `ProtectedWriteCredentialStore.install()` still requires `fixture_only`, and `services/production_execution` is untouched (`git diff` empty). No real credential, live call, or mutation in this milestone. See `reviews/M27F_LIVE_AUTHENTICATED_READ_ACCEPTANCE.md`. |
+| M27G Protected Write-Credential Enrollment + Real Signer Validation | Code/test/review only; no live enrollment run | Removed the obsolete candidate-self-verification (`verify_live_write_credential_authority` / `require_live_write_authority` / `WriteCredentialServerProof`) from `services/production_execution/enrollment.py` -- live discovery proved the candidate gets `HTTP 401` calling `GET /api_keys` itself. Authority proof now comes from independently re-validating two operator-supplied, secret-free artifacts against the exact candidate key ID: the M27F `kalsh3.m27f.candidate-authority.v1` attestation and a **fresh** `kalsh3.m27f.live-read-acceptance.v3` evidence artifact (freshness re-derived at installation time, not creation time -- historical evidence never authorizes install). The shared structural attestation validator moved to a new neutral module, `services/kalshi_account_gateway/candidate_authority.py` (zero dependency on either `production_execution` or `supervised_canary`), so `production_execution` does not depend back on `supervised_canary` even though `supervised_canary` already depends on `production_execution`. `ProtectedWriteCredentialStore.install_real_credential` (fixture-only `install()` unchanged) requires a distinct `OperatorReleaseAuthorization` bound to an exact candidate fingerprint and owns its entire transaction -- including the real-signer self-test -- under one cross-process `fcntl.flock` exclusive lock (see the M27G delta-repair follow-up below). New non-network `services/production_execution/signer_self_test.py` reuses `security_boundary._rsa_pss_sha256` unmodified to sign a fixed domain-separated non-request challenge and verify it locally via `openssl pkey -pubout` / `dgst -verify`; it can never produce a valid mutating-request signature, never touches transport or the journal. New operator-only `enrollment_cli.py`: private key via inherited FD only, secret-free receipt, prints `PRODUCTION_ARMED: DISARMED` / `REAL_MUTATION: NOT TESTED` / `ORDER_SENT: NO`. `SignAndSendBoundary.production_execute`/`offline_fixture_execute` are byte-for-byte unchanged; no arm CLI added. `enrollment_available()` remains `False` by design (an operator-release capability, not general availability); `readiness_report.py` is unchanged in this milestone (no real receipt exists yet to wire in). 73 focused adversarial tests (13 dedicated to cross-process locking); full M27F/M15/M16 suites and full suite pass; `services/forecasting` untouched. See `reviews/M27G_PROTECTED_WRITE_ENROLLMENT.md`. |
 
 ## Runtime truth
 
@@ -219,6 +220,82 @@
 - No real credential, live authenticated call, credential installation, arming, or mutation
   was attempted while producing this revision. See
   `docs/reviews/M27F_LIVE_AUTHENTICATED_READ_ACCEPTANCE.md`.
+
+## M27G protected write-credential enrollment (2026-08-18)
+
+- Removed the obsolete candidate-self-verification path from
+  `services/production_execution/enrollment.py`
+  (`verify_live_write_credential_authority` / `require_live_write_authority` /
+  `WriteCredentialServerProof`, which authenticated as the candidate to call `GET /api_keys` --
+  the exact call M27F's live discovery proved returns `HTTP 401`). Authority proof now comes
+  from independently re-validating two operator-supplied, secret-free artifacts against the
+  exact candidate key ID: the M27F `kalsh3.m27f.candidate-authority.v1` attestation and a
+  **fresh** `kalsh3.m27f.live-read-acceptance.v3` evidence artifact, re-checked for freshness
+  at installation time (not creation time).
+- New neutral module `services/kalshi_account_gateway/candidate_authority.py` holds the shared
+  structural attestation validator, `KNOWN_KALSHI_API_KEY_SCOPES`, and `USER_DATA_FRESHNESS`;
+  zero dependency on either `production_execution` or `supervised_canary`, so
+  `production_execution` does not depend back on `supervised_canary` even though
+  `supervised_canary` already depends on `production_execution`.
+- New non-network `services/production_execution/signer_self_test.py`: reuses
+  `security_boundary._rsa_pss_sha256` unmodified to sign a fixed domain-separated non-request
+  challenge and verify it locally via `openssl pkey -pubout` / `dgst -verify`; structurally can
+  never produce a valid mutating-request signature; never touches transport or the journal.
+- New operator-only `enrollment_cli.py`: private key via inherited FD only; secret-free
+  receipt; prints `PRODUCTION_ARMED: DISARMED` / `REAL_MUTATION: NOT TESTED` / `ORDER_SENT: NO`.
+- `SignAndSendBoundary.production_execute`/`offline_fixture_execute` untouched; no arm CLI.
+  `enrollment_available()` remains `False` by design. `readiness_report.py` unchanged (no real
+  receipt exists yet to wire in).
+
+### Gemini delta repair: cross-process install/rollback safety (2026-08-18)
+
+- Gemini review found the original `_seal_and_write` / `rollback_failed_install` design had a
+  cross-process TOCTOU race: two installers could both observe `is_installed() == False`
+  before either published, `_atomic_bytes`'s `os.replace` could silently clobber a destination,
+  and a failed installer's blind `unlink(missing_ok=True)` could delete a
+  concurrently-succeeding installer's valid artifacts. Verdict: **ROLLBACK SAFETY not
+  accepted, IMPLEMENTATION_REVIEW_STATUS not safe**; all other review categories accepted.
+- Fix: every write-capable `ProtectedWriteCredentialStore` operation now runs inside one
+  `fcntl.flock(LOCK_EX)` exclusive lock (`store.exclusive()`) on a dedicated lock file in the
+  0700 store directory, held for the *entire* transaction -- state inspection, sealed writes,
+  the real-signer self-test, and commit-or-rollback -- and released only in `finally` (also
+  released automatically by the kernel on process crash/exit). `install()` (fixture) and
+  `install_real_credential()` (real, now taking a `self_test` callable and owning the whole
+  transaction) are the only two write-capable entry points and share this same lock -- no
+  second, unlocked writer path exists.
+- `_atomic_bytes`/`_atomic_text` (temp-file + `os.replace`, which can silently overwrite) were
+  replaced by `_create_only_bytes`/`_create_only_text`: a direct `O_CREAT | O_EXCL` open on the
+  destination itself, so the kernel atomically refuses to create a file that already exists --
+  true no-overwrite, not check-then-write. Safe without its own locking because it is only ever
+  called from inside the store's exclusive lock.
+- A new commit marker (`installed.marker`, fixed content, published strictly last) makes
+  `is_installed()` require a complete, *committed* set, not merely "some files exist." A
+  process that crashes between writing the sealed artifacts and writing the marker leaves
+  state that reports as NOT installed (fail closed); only a later transaction, under the same
+  exclusive lock, may clear it and retry, and it can never touch a committed installation
+  (gated by the same `is_installed()` check).
+- The public `rollback_failed_install()` is removed entirely. Rollback (`_discard_install`) is
+  now private, requires a `_StoreLock` token that only `exclusive()` can mint, and is only
+  reachable from inside `install_real_credential`'s own lock span right after that same
+  transaction's own `_begin_install` -- so it can only ever remove that transaction's own
+  just-written, never-committed artifacts.
+- 13 new dedicated concurrency tests use real threads contending on the same `fcntl.flock`
+  (per-open-file-description, so genuine kernel contention even within one test process, no
+  subprocesses or Postgres needed): two concurrent real installers (exactly one succeeds, the
+  self-test never overlaps -- proven via an active-transaction counter); a forced-to-fail
+  installer A with a concurrent installer B synchronized via `threading.Event`s (B proven to
+  not even enter its transaction until A rolls back and releases the lock); a successful
+  installer A followed by a rejected B with A's artifacts proven byte-for-byte unchanged;
+  fixture-vs-real races; rollback-never-touches-pre-existing-installation; a forced partial
+  write failure recovered by the next transaction; four parametrized partial/corrupt-state
+  scenarios (`is_installed()` false for all, each recoverable under the lock); lock release
+  after an exception; and lock file permission/no-secret-content checks. 73 total M27G tests
+  (up from 60); full M27F/M15/M16 suites and the full test suite pass unchanged;
+  `git diff -- services/production_execution/security_boundary.py`,
+  `git diff -- services/supervised_canary/live_read_acceptance.py`, and
+  `git diff -- services/forecasting` all remain empty. No real credential, network call, or
+  mutation was attempted while producing this repair. See
+  `docs/reviews/M27G_PROTECTED_WRITE_ENROLLMENT.md`.
 
 ## M6 acceptance
 
