@@ -5,6 +5,7 @@ from __future__ import annotations
 import base64
 import os
 import subprocess
+from contextlib import suppress
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Protocol
@@ -194,8 +195,20 @@ class SignAndSendBoundary:
 
 
 def _rsa_pss_sha256(private_key_pem: bytes, message: bytes) -> bytes:
-    """RSA key stays in an anonymous in-memory file descriptor, never a filesystem path."""
-    descriptor = os.memfd_create("m15-ephemeral-key", flags=0)
+    """Sign without a persistent key file on Linux or macOS.
+
+    Linux keeps its historical anonymous-memory implementation where available.  macOS
+    has no ``memfd_create``; its pipe-backed inherited descriptor is short-lived, has no
+    pathname, and is closed as soon as OpenSSL exits.  The key is never placed in argv,
+    the environment, the repository, or a persistent temporary file.
+    """
+    if hasattr(os, "memfd_create") and os.path.exists("/proc/self/fd"):
+        return _sign_from_memfd(private_key_pem, message)
+    return _sign_from_pipe(private_key_pem, message)
+
+
+def _sign_from_memfd(private_key_pem: bytes, message: bytes) -> bytes:
+    descriptor = os.memfd_create("m15-ephemeral-key", flags=0)  # type: ignore[attr-defined]
     try:
         os.write(descriptor, private_key_pem)
         os.lseek(descriptor, 0, os.SEEK_SET)
@@ -221,3 +234,56 @@ def _rsa_pss_sha256(private_key_pem: bytes, message: bytes) -> bytes:
         return result.stdout
     finally:
         os.close(descriptor)
+
+
+def _write_all(descriptor: int, value: bytes) -> None:
+    remaining = memoryview(value)
+    while remaining:
+        written = os.write(descriptor, remaining)
+        if written <= 0:
+            raise BoundaryError("production signer key transfer failed")
+        remaining = remaining[written:]
+
+
+def _sign_from_pipe(private_key_pem: bytes, message: bytes) -> bytes:
+    read_fd, write_fd = os.pipe()
+    process: subprocess.Popen[bytes] | None = None
+    try:
+        process = subprocess.Popen(
+            [
+                "/usr/bin/openssl",
+                "dgst",
+                "-sha256",
+                "-sigopt",
+                "rsa_padding_mode:pss",
+                "-sigopt",
+                "rsa_pss_saltlen:digest",
+                "-sign",
+                f"/dev/fd/{read_fd}",
+            ],
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            close_fds=True,
+            pass_fds=(read_fd,),
+        )
+        os.close(read_fd)
+        read_fd = -1
+        _write_all(write_fd, private_key_pem)
+        os.close(write_fd)
+        write_fd = -1
+        stdout, _ = process.communicate(input=message)
+        if process.returncode != 0:
+            raise BoundaryError("production signer cryptographic operation failed")
+        return stdout
+    except (OSError, subprocess.SubprocessError) as exc:
+        if process is not None:
+            with suppress(OSError, subprocess.SubprocessError):
+                process.kill()
+                process.communicate()
+        raise BoundaryError("production signer cryptographic operation failed") from exc
+    finally:
+        if read_fd >= 0:
+            os.close(read_fd)
+        if write_fd >= 0:
+            os.close(write_fd)
