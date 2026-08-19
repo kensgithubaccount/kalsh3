@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import ast
+import base64
+import hashlib
 import json
 import subprocess
 from dataclasses import replace
@@ -12,7 +14,14 @@ import pytest
 
 from services.forecasting.weather_probability import physical_temperature_proxy_probability
 from services.forecasting.weather_prospective import FROZEN_MODEL_IDENTITIES
+from services.market_universe import public_read
+from services.market_universe.domain import Market
+from services.market_universe.market_snapshot import acquire_market_snapshot
 from services.market_universe.pricing import PriceLadder
+from services.opportunity_engine.authoritative_economics import (
+    AuthoritativeMarketEconomicsBinding,
+    build_authoritative_market_economics,
+)
 from services.opportunity_engine.books import OutcomeSide, walk_depth
 from services.opportunity_engine.fees import current_event_formula_policy
 from services.opportunity_engine.live_economics import (
@@ -91,6 +100,7 @@ def _economics(
     ticker: str = "M",
     price: str = ".300",
     no_price: str = ".650",
+    market_rules_hash: str = "rules",
 ) -> tuple[MarketEconomicsEvidence, CurrentSeriesFeeObservation, EventFeeOverride, object]:
     ladder = PriceLadder.parse("deci_cent", [{"start": "0.0000", "end": "1.0000", "step": ".001"}])
     book_raw = {
@@ -103,7 +113,7 @@ def _economics(
         ladder=ladder,
         source_id=f"snapshot-{ticker}",
         observed_at=now,
-        market_rules_hash="rules",
+        market_rules_hash=market_rules_hash,
     )
     series_observation = CurrentSeriesFeeObservation.parse(_series_payload(now), observed_at=now)
     event = EventFeeOverride.parse({})
@@ -124,7 +134,7 @@ def _economics(
         event_ticker="E" if ticker == "M" else f"E-{ticker}",
         series_ticker="CLIMDW",
         market_source_id="market-source",
-        market_rules_hash="rules",
+        market_rules_hash=market_rules_hash,
         market_metadata_hash="metadata",
         price_range_hash=observed.price_range_hash,
         event_fee_hash=regime.event_metadata_hash,
@@ -279,6 +289,131 @@ def _public_payload(
     }
 
 
+def _raw_market(
+    ticker: str = "M", event_ticker: str = "E", **overrides: object
+) -> dict[str, object]:
+    raw: dict[str, object] = {
+        "ticker": ticker,
+        "event_ticker": event_ticker,
+        "market_type": "binary",
+        "status": "active",
+        "rules_primary": "YES if the measured value is at least 80 units.",
+        "rules_secondary": "Use the final published report.",
+        "settlement_sources": [{"name": "NWS"}],
+        "strike_type": "greater",
+        "floor_strike": "80",
+        "cap_strike": None,
+        "functional_strike": None,
+        "custom_strike": None,
+        "early_close_condition": "none",
+        "price_level_structure": "linear_cent",
+        "title": "Will the measured value be at least 80 units?",
+        "is_provisional": False,
+        "volume_fp": "0",
+        "open_interest_fp": "0",
+    }
+    raw.update(overrides)
+    return raw
+
+
+def _snapshot_transport(raw_market: dict[str, object], *, observed_at: datetime, status: int = 200):
+    body = json.dumps({"market": raw_market}, sort_keys=True).encode()
+
+    def transport(ticker: str) -> tuple[dict[str, object], bytes]:
+        evidence: dict[str, object] = {
+            "path": f"{public_read.BASE}/markets/{ticker}",
+            "observed_at": observed_at.isoformat(),
+            "status": status,
+            "body_sha256": hashlib.sha256(body).hexdigest(),
+            "bytes": len(body),
+            "classification": "SUCCESS" if status == 200 else "HTTP_OR_NETWORK_FAILURE",
+        }
+        if status == 200:
+            evidence["payload"] = json.loads(body)
+        return evidence, body
+
+    return transport
+
+
+def _snapshot_payload(
+    now: datetime,
+    *,
+    ticker: str = "M",
+    raw_market: dict[str, object] | None = None,
+    observed_at: datetime | None = None,
+) -> dict[str, object]:
+    """Build a serialized ``AuthoritativeMarketSnapshot`` -- the shared shape used by both the
+    current side (M27J) and the expected side (embedded in an M27A authoritative binding)."""
+    raw_market = raw_market if raw_market is not None else _raw_market(ticker)
+    observed_at = observed_at or now
+    snapshot = acquire_market_snapshot(
+        ticker,
+        clock=lambda: observed_at,
+        transport=_snapshot_transport(raw_market, observed_at=observed_at),
+    )
+    assert snapshot.succeeded, snapshot.reason
+    return snapshot.to_json()
+
+
+def _authoritative_economics(
+    now: datetime,
+    *,
+    ticker: str = "M",
+    event_ticker: str = "E",
+    quantity: Decimal = Decimal("1.00"),
+    price: str = ".300",
+    no_price: str = ".650",
+    raw_market: dict[str, object] | None = None,
+    snapshot_observed_at: datetime | None = None,
+    economics_observed_at: datetime | None = None,
+) -> tuple[
+    MarketEconomicsEvidence,
+    AuthoritativeMarketEconomicsBinding,
+    dict[str, object],
+    CurrentSeriesFeeObservation,
+    EventFeeOverride,
+    object,
+]:
+    """Build economics through the AUTHORITATIVE path (never the legacy caller-supplied-hash
+    path): derives ``market_rules_hash`` exclusively from an independently-validated
+    ``AuthoritativeMarketSnapshot``."""
+    raw_market = raw_market if raw_market is not None else _raw_market(ticker, event_ticker)
+    economics_observed_at = economics_observed_at or now
+    snapshot_payload = _snapshot_payload(
+        now, ticker=ticker, raw_market=raw_market, observed_at=snapshot_observed_at
+    )
+    ladder = PriceLadder.parse("deci_cent", [{"start": "0.0000", "end": "1.0000", "step": ".001"}])
+    book_raw = {
+        "ticker": ticker,
+        "orderbook_fp": {"yes_dollars": [[price, "5"]], "no_dollars": [[no_price, "5"]]},
+    }
+    series_observation = CurrentSeriesFeeObservation.parse(_series_payload(now), observed_at=now)
+    event = EventFeeOverride.parse({})
+    regime = resolve_current_fee_regime(series_observation, event)
+    policy = current_event_formula_policy(
+        fee_type=regime.fee_type, fee_multiplier=regime.fee_multiplier
+    )
+    economics, binding = build_authoritative_market_economics(
+        snapshot_payload=snapshot_payload,
+        expected_market_ticker=ticker,
+        expected_event_ticker=event_ticker,
+        series_ticker="CLIMDW",
+        market_source_id="market-source",
+        raw_orderbook=book_raw,
+        ladder=ladder,
+        orderbook_source_id=f"snapshot-{ticker}",
+        orderbook_observed_at=now,
+        series_fee_observation_id=regime.series_observation_id,
+        resolved_fee_regime_id=regime.regime_id,
+        event_fee_hash=regime.event_metadata_hash,
+        fee_policy=policy,
+        fee_regime=regime,
+        requested_quantity=quantity,
+        economics_observed_at=economics_observed_at,
+    )
+    return economics, binding, snapshot_payload, series_observation, event, regime
+
+
 def _exposure(
     market_ticker: str,
     now: datetime,
@@ -424,8 +559,18 @@ class Context:
     def __init__(self, tmp_path: Path) -> None:
         probability, forecast = _weather()
         self.now = forecast.forecast_reference_time + timedelta(seconds=10)
-        economics, series_observation, event_override, regime = _economics(now=self.now)
+        self.raw_market = _raw_market()
+        (
+            economics,
+            binding,
+            expected_snapshot_payload,
+            series_observation,
+            event_override,
+            regime,
+        ) = _authoritative_economics(self.now, raw_market=self.raw_market)
         self.probability, self.forecast, self.economics = probability, forecast, economics
+        self.binding = binding
+        self.expected_snapshot_payload = expected_snapshot_payload
         self.series_observation = series_observation
         self.event_override = event_override
         self.fee_regime = regime
@@ -443,6 +588,12 @@ class Context:
         self.m27h_path.write_text(json.dumps(self.m27h_payload))
         self.public_path = tmp_path / "public.json"
         self.public_path.write_text(json.dumps(_public_payload(self.now, self.candidate)))
+        self.m27j_payload = _snapshot_payload(self.now, raw_market=self.raw_market)
+        self.m27j_path = tmp_path / "m27j.json"
+        self.m27j_path.write_text(json.dumps(self.m27j_payload))
+        self.m27a_binding_payload = self.binding.to_json()
+        self.m27a_binding_path = tmp_path / "m27a_binding.json"
+        self.m27a_binding_path.write_text(json.dumps(self.m27a_binding_payload))
 
         self.exposure = _exposure(self.candidate.market_ticker, self.now)
 
@@ -482,6 +633,18 @@ class Context:
 
 def _rewrite_public_path(ctx: Context, payload: dict[str, object]) -> Path:
     path = ctx.public_path.parent / "public_override.json"
+    path.write_text(json.dumps(payload))
+    return path
+
+
+def _rewrite_m27j_path(ctx: Context, payload: dict[str, object]) -> Path:
+    path = ctx.m27j_path.parent / "m27j_override.json"
+    path.write_text(json.dumps(payload))
+    return path
+
+
+def _rewrite_binding_path(ctx: Context, payload: dict[str, object]) -> Path:
+    path = ctx.m27a_binding_path.parent / "m27a_binding_override.json"
     path.write_text(json.dumps(payload))
     return path
 
@@ -717,19 +880,330 @@ def test_stale_current_market_evidence_blocks_market_open_current(tmp_path: Path
 
 
 # ---------------------------------------------------------------------------
-# Gemini FINAL delta repair: rules currentness must fail closed, always
+# Rules currentness -- requires BOTH an authoritative economics-market binding AND fresh
+# current-side M27J evidence. A bare ``economics.market_rules_hash`` match is never sufficient
+# (Gemini M27J delta repair, mandatory adversarial case).
 # ---------------------------------------------------------------------------
 
 
-def test_rules_current_is_always_blocked_with_no_arguments() -> None:
-    """No evidence of any kind can move this gate -- the function takes none."""
-    import inspect
+def test_no_evidence_at_all_blocks_rules_current(tmp_path: Path) -> None:
+    ctx = Context(tmp_path)
+    result = m27i.build_preflight(**ctx.kwargs())
+    rules_current = result.artifact.gates.results["rules_current"]
+    assert not rules_current.passed
+    assert rules_current.reason == m27i.NO_AUTHORITATIVE_CURRENT_RULES_IDENTITY
+    assert result.artifact.state != "PREFLIGHT_READY"
 
-    signature = inspect.signature(m27i._rules_current_gate)
-    assert not signature.parameters
-    result = m27i._rules_current_gate()
-    assert not result.passed
-    assert result.reason == m27i.NO_AUTHORITATIVE_CURRENT_RULES_IDENTITY
+
+def test_binding_without_current_m27j_blocks_rules_current(tmp_path: Path) -> None:
+    ctx = Context(tmp_path)
+    result = m27i.build_preflight(**ctx.kwargs(m27a_binding_evidence_path=ctx.m27a_binding_path))
+    rules_current = result.artifact.gates.results["rules_current"]
+    assert not rules_current.passed
+    assert rules_current.reason == m27i.NO_AUTHORITATIVE_CURRENT_RULES_IDENTITY
+
+
+def test_current_m27j_without_binding_blocks_rules_current(tmp_path: Path) -> None:
+    """MANDATORY Gemini adversarial case: fresh current M27J evidence alone, with no
+    authoritative binding, must still leave ``rules_current`` BLOCKED."""
+    ctx = Context(tmp_path)
+    result = m27i.build_preflight(**ctx.kwargs(m27j_evidence_path=ctx.m27j_path))
+    rules_current = result.artifact.gates.results["rules_current"]
+    assert not rules_current.passed
+    assert rules_current.reason == m27i.NO_AUTHORITATIVE_CURRENT_RULES_IDENTITY
+    assert result.artifact.state != "PREFLIGHT_READY"
+
+
+def test_arbitrary_legacy_economics_hash_matching_current_m27j_still_blocks(tmp_path: Path) -> None:
+    """MANDATORY Gemini adversarial case: a caller can trivially set
+    ``economics.market_rules_hash`` (via the legacy, still-valid-for-research
+    ``normalize_live_orderbook`` path) to equal today's M27J hash and obtain ``H == H``. That
+    equality alone must never unlock ``rules_current`` -- only an independently re-validated
+    authoritative binding, absent here, can."""
+    ctx = Context(tmp_path)
+    current_rules_hash = Market.parse(ctx.raw_market).rules_hash
+    legacy_economics, _series, _event, _regime = _economics(
+        now=ctx.now, market_rules_hash=current_rules_hash
+    )
+    assert legacy_economics.market_rules_hash == current_rules_hash
+    inputs = ((ctx.probability, ctx.forecast, legacy_economics),)
+    result = m27i.build_preflight(
+        **ctx.kwargs(candidate_inputs=inputs, m27j_evidence_path=ctx.m27j_path)
+    )
+    rules_current = result.artifact.gates.results["rules_current"]
+    assert not rules_current.passed
+    assert rules_current.reason == m27i.NO_AUTHORITATIVE_CURRENT_RULES_IDENTITY
+    assert result.artifact.state != "PREFLIGHT_READY"
+
+
+def test_exact_binding_and_current_match_unlocks_rules_current_and_reaches_preflight_ready(
+    tmp_path: Path,
+) -> None:
+    ctx = Context(tmp_path)
+    result = m27i.build_preflight(
+        **ctx.kwargs(
+            m27j_evidence_path=ctx.m27j_path, m27a_binding_evidence_path=ctx.m27a_binding_path
+        )
+    )
+    artifact = result.artifact
+    assert artifact.gates.results["rules_current"].passed, artifact.gates.results[
+        "rules_current"
+    ].reason
+    assert artifact.state == "PREFLIGHT_READY", artifact.gates.missing
+    rendered = m27i.render_preflight(artifact)
+    assert "RULES CURRENTNESS: PASS" in rendered
+    assert "PREFLIGHT_READY" in rendered
+
+
+def test_current_m27j_mismatch_after_valid_binding_blocks(tmp_path: Path) -> None:
+    """H1 expected (binding) + H2 current => BLOCKED (continuity broken)."""
+    ctx = Context(tmp_path)
+    changed_market = _raw_market(rules_primary="YES if the measured value is at least 999 units.")
+    mismatched_current = _snapshot_payload(ctx.now, raw_market=changed_market)
+    path = _rewrite_m27j_path(ctx, mismatched_current)
+    result = m27i.build_preflight(
+        **ctx.kwargs(m27j_evidence_path=path, m27a_binding_evidence_path=ctx.m27a_binding_path)
+    )
+    rules_current = result.artifact.gates.results["rules_current"]
+    assert not rules_current.passed
+    assert "no longer matches" in (rules_current.reason or "")
+    assert result.artifact.state != "PREFLIGHT_READY"
+
+
+def test_stale_current_m27j_after_valid_binding_blocks(tmp_path: Path) -> None:
+    ctx = Context(tmp_path)
+    stale_payload = _snapshot_payload(
+        ctx.now, raw_market=ctx.raw_market, observed_at=ctx.now - timedelta(seconds=45)
+    )
+    path = _rewrite_m27j_path(ctx, stale_payload)
+    result = m27i.build_preflight(
+        **ctx.kwargs(m27j_evidence_path=path, m27a_binding_evidence_path=ctx.m27a_binding_path)
+    )
+    assert not result.artifact.gates.results["rules_current"].passed
+    assert result.artifact.state != "PREFLIGHT_READY"
+    assert "rules_current" in result.artifact.missing_gates
+
+
+def test_malformed_current_m27j_after_valid_binding_blocks(tmp_path: Path) -> None:
+    ctx = Context(tmp_path)
+    malformed = dict(ctx.m27j_payload)
+    malformed["rules_hash"] = "not-the-real-hash"
+    path = _rewrite_m27j_path(ctx, malformed)
+    result = m27i.build_preflight(
+        **ctx.kwargs(m27j_evidence_path=path, m27a_binding_evidence_path=ctx.m27a_binding_path)
+    )
+    assert not result.artifact.gates.results["rules_current"].passed
+    assert result.artifact.state != "PREFLIGHT_READY"
+
+
+def test_forged_rules_current_field_in_m27j_evidence_is_inert(tmp_path: Path) -> None:
+    ctx = Context(tmp_path)
+    tampered = dict(ctx.m27j_payload)
+    tampered["rules_current"] = True
+    path = _rewrite_m27j_path(ctx, tampered)
+    result = m27i.build_preflight(
+        **ctx.kwargs(m27j_evidence_path=path, m27a_binding_evidence_path=ctx.m27a_binding_path)
+    )
+    assert not result.artifact.gates.results["rules_current"].passed
+
+
+def test_preflight_expiry_capped_to_m27j_expiry(tmp_path: Path) -> None:
+    ctx = Context(tmp_path)
+    tight_observed = ctx.now - timedelta(seconds=29)
+    tight_payload = _snapshot_payload(
+        ctx.now, raw_market=ctx.raw_market, observed_at=tight_observed
+    )
+    path = _rewrite_m27j_path(ctx, tight_payload)
+    result = m27i.build_preflight(**ctx.kwargs(m27j_evidence_path=path))
+    assert result.artifact.expires_at <= ctx.now + timedelta(seconds=1)
+    assert result.artifact.expires_at == datetime.fromisoformat(tight_payload["expires_at"])
+
+
+# ---------------------------------------------------------------------------
+# Authoritative economics-market binding -- adversarial attacks (Gemini section 12)
+# ---------------------------------------------------------------------------
+
+
+def test_binding_wrong_economics_evidence_id_blocks(tmp_path: Path) -> None:
+    ctx = Context(tmp_path)
+    tampered = dict(ctx.m27a_binding_payload)
+    tampered["economics_evidence_id"] = "not-" + str(tampered["economics_evidence_id"])
+    path = _rewrite_binding_path(ctx, tampered)
+    result = m27i.build_preflight(
+        **ctx.kwargs(m27j_evidence_path=ctx.m27j_path, m27a_binding_evidence_path=path)
+    )
+    assert not result.artifact.gates.results["rules_current"].passed
+    assert result.artifact.state != "PREFLIGHT_READY"
+
+
+def test_binding_references_different_market_snapshot_blocks(tmp_path: Path) -> None:
+    ctx = Context(tmp_path)
+    other_snapshot = _snapshot_payload(
+        ctx.now, ticker="OTHER", raw_market=_raw_market(ticker="OTHER", event_ticker="OTHER-E")
+    )
+    tampered = dict(ctx.m27a_binding_payload)
+    tampered["expected_snapshot"] = other_snapshot
+    path = _rewrite_binding_path(ctx, tampered)
+    result = m27i.build_preflight(
+        **ctx.kwargs(m27j_evidence_path=ctx.m27j_path, m27a_binding_evidence_path=path)
+    )
+    assert not result.artifact.gates.results["rules_current"].passed
+
+
+def test_binding_expected_snapshot_body_tampered_blocks(tmp_path: Path) -> None:
+    ctx = Context(tmp_path)
+    tampered_body = json.dumps(
+        {"market": _raw_market(rules_primary="TAMPERED")}, sort_keys=True
+    ).encode()
+    tampered = dict(ctx.m27a_binding_payload)
+    tampered["expected_snapshot"] = dict(tampered["expected_snapshot"])
+    tampered["expected_snapshot"]["raw_body_b64"] = base64.b64encode(tampered_body).decode()
+    path = _rewrite_binding_path(ctx, tampered)
+    result = m27i.build_preflight(
+        **ctx.kwargs(m27j_evidence_path=ctx.m27j_path, m27a_binding_evidence_path=path)
+    )
+    assert not result.artifact.gates.results["rules_current"].passed
+
+
+def test_binding_expected_snapshot_body_sha_tampered_blocks(tmp_path: Path) -> None:
+    ctx = Context(tmp_path)
+    tampered = dict(ctx.m27a_binding_payload)
+    tampered["expected_snapshot"] = dict(tampered["expected_snapshot"])
+    tampered["expected_snapshot"]["body_sha256"] = "e" * 64
+    path = _rewrite_binding_path(ctx, tampered)
+    result = m27i.build_preflight(
+        **ctx.kwargs(m27j_evidence_path=ctx.m27j_path, m27a_binding_evidence_path=path)
+    )
+    assert not result.artifact.gates.results["rules_current"].passed
+
+
+def test_binding_expected_snapshot_stamped_rules_hash_tampered_blocks(tmp_path: Path) -> None:
+    ctx = Context(tmp_path)
+    tampered = dict(ctx.m27a_binding_payload)
+    tampered["expected_snapshot"] = dict(tampered["expected_snapshot"])
+    tampered["expected_snapshot"]["rules_hash"] = "f" * 64
+    path = _rewrite_binding_path(ctx, tampered)
+    result = m27i.build_preflight(
+        **ctx.kwargs(m27j_evidence_path=ctx.m27j_path, m27a_binding_evidence_path=path)
+    )
+    assert not result.artifact.gates.results["rules_current"].passed
+
+
+def test_binding_expected_ticker_wrong_blocks(tmp_path: Path) -> None:
+    ctx = Context(tmp_path)
+    tampered = dict(ctx.m27a_binding_payload)
+    tampered["market_ticker"] = "WRONG"
+    path = _rewrite_binding_path(ctx, tampered)
+    result = m27i.build_preflight(
+        **ctx.kwargs(m27j_evidence_path=ctx.m27j_path, m27a_binding_evidence_path=path)
+    )
+    assert not result.artifact.gates.results["rules_current"].passed
+
+
+def test_binding_expected_event_wrong_blocks(tmp_path: Path) -> None:
+    ctx = Context(tmp_path)
+    tampered = dict(ctx.m27a_binding_payload)
+    tampered["event_ticker"] = "WRONG-E"
+    path = _rewrite_binding_path(ctx, tampered)
+    result = m27i.build_preflight(
+        **ctx.kwargs(m27j_evidence_path=ctx.m27j_path, m27a_binding_evidence_path=path)
+    )
+    assert not result.artifact.gates.results["rules_current"].passed
+
+
+def test_builder_rejects_snapshot_acquired_after_economics(tmp_path: Path) -> None:
+    from services.opportunity_engine.domain import OpportunityError
+
+    ctx = Context(tmp_path)
+    late_snapshot = _snapshot_payload(
+        ctx.now, raw_market=ctx.raw_market, observed_at=ctx.now + timedelta(seconds=1)
+    )
+    ladder = PriceLadder.parse("deci_cent", [{"start": "0.0000", "end": "1.0000", "step": ".001"}])
+    with pytest.raises(OpportunityError, match="after the economics evaluation"):
+        build_authoritative_market_economics(
+            snapshot_payload=late_snapshot,
+            expected_market_ticker="M",
+            expected_event_ticker="E",
+            series_ticker="CLIMDW",
+            market_source_id="market-source",
+            raw_orderbook={
+                "ticker": "M",
+                "orderbook_fp": {"yes_dollars": [[".300", "5"]], "no_dollars": [[".650", "5"]]},
+            },
+            ladder=ladder,
+            orderbook_source_id="snapshot-M",
+            orderbook_observed_at=ctx.now,
+            series_fee_observation_id=ctx.fee_regime.series_observation_id,
+            resolved_fee_regime_id=ctx.fee_regime.regime_id,
+            event_fee_hash=ctx.fee_regime.event_metadata_hash,
+            fee_policy=ctx.economics.replay_input.fee_policy,
+            fee_regime=ctx.fee_regime,
+            requested_quantity=Decimal("1.00"),
+            economics_observed_at=ctx.now,
+        )
+
+
+def test_binding_validator_rejects_snapshot_that_does_not_match_economics_market_observed_at(
+    tmp_path: Path,
+) -> None:
+    """A binding cannot swap in a fresher (or older) expected snapshot post-hoc -- the binding's
+    ``market_observed_at`` and the live ``economics.market_observed_at`` must agree with the
+    embedded snapshot's own true acquisition time."""
+    ctx = Context(tmp_path)
+    other_snapshot = _snapshot_payload(
+        ctx.now, raw_market=ctx.raw_market, observed_at=ctx.now - timedelta(seconds=1)
+    )
+    tampered = dict(ctx.m27a_binding_payload)
+    tampered["expected_snapshot"] = other_snapshot
+    tampered["market_observed_at"] = other_snapshot["observed_at"]
+    path = _rewrite_binding_path(ctx, tampered)
+    result = m27i.build_preflight(
+        **ctx.kwargs(m27j_evidence_path=ctx.m27j_path, m27a_binding_evidence_path=path)
+    )
+    assert not result.artifact.gates.results["rules_current"].passed
+
+
+def test_binding_orderbook_source_hash_mismatch_blocks(tmp_path: Path) -> None:
+    ctx = Context(tmp_path)
+    tampered = dict(ctx.m27a_binding_payload)
+    tampered["orderbook_source_hash"] = "different-hash"
+    path = _rewrite_binding_path(ctx, tampered)
+    result = m27i.build_preflight(
+        **ctx.kwargs(m27j_evidence_path=ctx.m27j_path, m27a_binding_evidence_path=path)
+    )
+    assert not result.artifact.gates.results["rules_current"].passed
+
+
+def test_binding_price_range_hash_mismatch_blocks(tmp_path: Path) -> None:
+    ctx = Context(tmp_path)
+    tampered = dict(ctx.m27a_binding_payload)
+    tampered["price_range_hash"] = "different-hash"
+    path = _rewrite_binding_path(ctx, tampered)
+    result = m27i.build_preflight(
+        **ctx.kwargs(m27j_evidence_path=ctx.m27j_path, m27a_binding_evidence_path=path)
+    )
+    assert not result.artifact.gates.results["rules_current"].passed
+
+
+def test_binding_metadata_hash_mismatch_blocks(tmp_path: Path) -> None:
+    ctx = Context(tmp_path)
+    tampered = dict(ctx.m27a_binding_payload)
+    tampered["market_metadata_hash"] = "different-hash"
+    path = _rewrite_binding_path(ctx, tampered)
+    result = m27i.build_preflight(
+        **ctx.kwargs(m27j_evidence_path=ctx.m27j_path, m27a_binding_evidence_path=path)
+    )
+    assert not result.artifact.gates.results["rules_current"].passed
+
+
+def test_market_open_current_remains_independent_of_rules_current(tmp_path: Path) -> None:
+    """A market can be open and executable while rules_current fails, and vice versa."""
+    ctx = Context(tmp_path)
+    result = m27i.build_preflight(**ctx.kwargs())
+    assert result.artifact.gates.results["market_open_current"].passed
+    assert result.artifact.gates.results["book_executable"].passed
+    assert result.artifact.gates.results["market_tradable"].passed
+    assert not result.artifact.gates.results["rules_current"].passed
 
 
 def test_open_market_evidence_does_not_unlock_rules_current(tmp_path: Path) -> None:
@@ -749,7 +1223,7 @@ def test_matching_market_rules_hash_cannot_self_prove_rules_current(tmp_path: Pa
     ctx = Context(tmp_path)
     # sanity: candidate carries a rules-derived identity
     assert ctx.candidate.eligibility.contract_identity
-    assert ctx.economics.market_rules_hash == "rules"
+    assert ctx.economics.market_rules_hash == Market.parse(ctx.raw_market).rules_hash
     result = m27i.build_preflight(**ctx.kwargs())
     assert not result.artifact.gates.results["rules_current"].passed
 
@@ -1409,6 +1883,7 @@ def _source(path: Path) -> str:
     [
         Path("services/supervised_canary/m27i.py"),
         Path("services/supervised_canary/candidate_exposure_check.py"),
+        Path("services/supervised_canary/m27j.py"),
     ],
 )
 def test_no_mutation_or_network_write_source(path: Path) -> None:

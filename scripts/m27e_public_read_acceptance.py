@@ -1,5 +1,12 @@
 """Bounded unauthenticated Kalshi production read acceptance for M27E.
 
+Thin CLI/operator wrapper only: the reusable bounded public GET transport itself lives in
+:mod:`services.market_universe.public_read` (fixed origin, bounded size, no redirects, GET-only)
+and is shared with M27J's authoritative market-snapshot acquisition -- this script owns only the
+M27E-specific business logic (exchange status / series / paginated open-markets acceptance) and
+the CLI entrypoint that writes the evidence file. Dependency direction is ``scripts -> services``
+only; no ``services`` module ever imports from ``scripts``.
+
 Only fixed public GET paths are reachable.  The output is an immutable, secret-free
 JSON evidence bundle suitable for the M27D shadow input review.
 """
@@ -8,58 +15,33 @@ from __future__ import annotations
 
 import argparse
 import hashlib
-import http.client
 import json
-import ssl
 import sys
 from datetime import UTC, datetime
 from pathlib import Path
 from urllib.parse import urlencode
 
-HOST = "external-api.kalshi.com"
-BASE = "/trade-api/v2"
-MAX_RESPONSE_BYTES = 8_000_000
+from services.market_universe.public_read import (
+    BASE,
+    HOST,
+    MAX_RESPONSE_BYTES,
+    PublicReadFailure,
+    get,
+    get_market,
+    get_market_with_body,
+)
 
-
-class PublicReadFailure(RuntimeError):
-    pass
-
-
-def get(path: str) -> dict[str, object]:
-    if not path.startswith(BASE + "/") or ".." in path.split("/") or "//" in path:
-        raise PublicReadFailure("path is outside fixed public read authority")
-    connection = http.client.HTTPSConnection(HOST, timeout=10, context=ssl.create_default_context())
-    observed_at = datetime.now(UTC)
-    try:
-        connection.request("GET", path, headers={"Accept": "application/json"})
-        response = connection.getresponse()
-        body = response.read(MAX_RESPONSE_BYTES + 1)
-        if len(body) > MAX_RESPONSE_BYTES:
-            raise PublicReadFailure("response exceeded bounded size")
-        evidence: dict[str, object] = {
-            "path": path,
-            "observed_at": observed_at.isoformat(),
-            "status": response.status,
-            "body_sha256": hashlib.sha256(body).hexdigest(),
-            "bytes": len(body),
-        }
-        if response.status != 200:
-            evidence["classification"] = "HTTP_OR_NETWORK_FAILURE"
-            evidence["body_preview"] = body[:200].decode("utf-8", errors="replace")
-            return evidence
-        try:
-            payload = json.loads(body)
-        except (UnicodeDecodeError, json.JSONDecodeError) as exc:
-            raise PublicReadFailure(f"schema failure: invalid JSON: {exc}") from exc
-        if not isinstance(payload, dict):
-            raise PublicReadFailure("schema failure: response is not an object")
-        evidence["classification"] = "SUCCESS"
-        evidence["payload"] = payload
-        return evidence
-    except (OSError, TimeoutError, http.client.HTTPException) as exc:
-        raise PublicReadFailure(f"HTTP/network failure: {exc}") from exc
-    finally:
-        connection.close()
+__all__ = [
+    "BASE",
+    "HOST",
+    "MAX_RESPONSE_BYTES",
+    "PublicReadFailure",
+    "get",
+    "get_market",
+    "get_market_with_body",
+    "main",
+    "paged_markets",
+]
 
 
 def paged_markets() -> dict[str, object]:
@@ -83,11 +65,19 @@ def paged_markets() -> dict[str, object]:
             raise PublicReadFailure("schema failure: markets array missing")
         next_cursor = payload.get("cursor")
         if next_cursor in (None, ""):
+            market_count = 0
+            for page_item in pages:
+                page_payload = page_item.get("payload")
+                page_markets = (
+                    page_payload.get("markets") if isinstance(page_payload, dict) else None
+                )
+                if isinstance(page_markets, list):
+                    market_count += len(page_markets)
             return {
                 "classification": "SUCCESS",
                 "pages": pages,
                 "pagination_complete": True,
-                "market_count": sum(len(p["payload"]["markets"]) for p in pages),
+                "market_count": market_count,
             }
         if not isinstance(next_cursor, str) or next_cursor in seen:
             raise PublicReadFailure("pagination incomplete: missing or repeated cursor")
