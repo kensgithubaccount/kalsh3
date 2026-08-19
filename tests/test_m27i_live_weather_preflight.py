@@ -1940,6 +1940,102 @@ def test_no_unconditional_pass_literal_in_readiness_gates() -> None:
     assert not offenders, f"gates constructed with an unconditional literal True: {offenders}"
 
 
+# ---------------------------------------------------------------------------
+# Operator output truthfulness (M27I.1): render_preflight must only claim what
+# this module itself independently proves about THIS operation, never a global
+# production arm-state claim it never inspects.
+# ---------------------------------------------------------------------------
+
+
+_M27I_SCOPE_LINES = (
+    "M27I_REQUEST_TYPE: READ_ONLY",
+    "M27I_ARM_ACTION: NONE",
+    "M27I_MUTATION: NO",
+    "M27I_CANARY_BURN_ACTION: NONE",
+    "M27I_FINAL_ACK_ACTION: NONE",
+)
+
+_FALSE_GLOBAL_STATE_TOKENS = (
+    "production_state: DISARMED",
+    "PRODUCTION_ARMED",
+    "PRODUCTION_WRITE_CREDENTIAL",
+)
+
+
+def test_render_preflight_emits_only_m27i_scoped_execution_facts(tmp_path: Path) -> None:
+    ctx = Context(tmp_path)
+    result = m27i.build_preflight(**ctx.kwargs())
+    rendered = m27i.render_preflight(result.artifact)
+    for line in _M27I_SCOPE_LINES:
+        assert line in rendered
+    for token in _FALSE_GLOBAL_STATE_TOKENS:
+        assert token not in rendered
+
+
+def test_render_preflight_blocked_path_emits_only_m27i_scoped_execution_facts(
+    tmp_path: Path,
+) -> None:
+    """The BLOCKED path (this fixture is blocked solely on ``rules_current``) must carry the
+    same truthful, scoped execution facts as PREFLIGHT_READY -- never a global state claim."""
+    ctx = Context(tmp_path)
+    result = m27i.build_preflight(**ctx.kwargs())
+    assert result.artifact.state == "BLOCKED"
+    rendered = m27i.render_preflight(result.artifact)
+    for line in _M27I_SCOPE_LINES:
+        assert line in rendered
+    for token in _FALSE_GLOBAL_STATE_TOKENS:
+        assert token not in rendered
+
+
+def test_render_preflight_abstain_path_emits_only_m27i_scoped_execution_facts(
+    tmp_path: Path,
+) -> None:
+    """The ABSTAIN early return must not skip the truthful M27I execution-boundary lines."""
+    ctx = Context(tmp_path)
+    result = m27i.build_preflight(**ctx.kwargs(candidate_inputs=()))
+    assert result.artifact.state == "ABSTAIN"
+    rendered = m27i.render_preflight(result.artifact)
+    for line in _M27I_SCOPE_LINES:
+        assert line in rendered
+    for token in _FALSE_GLOBAL_STATE_TOKENS:
+        assert token not in rendered
+    assert f"reason: {result.artifact.abstain_reason}" in rendered
+
+
+def test_render_preflight_ready_path_emits_only_m27i_scoped_execution_facts(
+    tmp_path: Path,
+) -> None:
+    ctx = Context(tmp_path)
+    result = m27i.build_preflight(
+        **ctx.kwargs(
+            m27j_evidence_path=ctx.m27j_path, m27a_binding_evidence_path=ctx.m27a_binding_path
+        )
+    )
+    assert result.artifact.state == "PREFLIGHT_READY", result.artifact.gates.missing
+    rendered = m27i.render_preflight(result.artifact)
+    for line in _M27I_SCOPE_LINES:
+        assert line in rendered
+    for token in _FALSE_GLOBAL_STATE_TOKENS:
+        assert token not in rendered
+    # Existing PREFLIGHT_READY/rules-current rendering semantics remain unchanged.
+    assert "RULES CURRENTNESS: PASS" in rendered
+    assert "PREFLIGHT_READY" in rendered
+
+
+def test_rules_current_rendering_remains_separate_from_market_open_and_book_executable(
+    tmp_path: Path,
+) -> None:
+    ctx = Context(tmp_path)
+    result = m27i.build_preflight(**ctx.kwargs())
+    artifact = result.artifact
+    assert artifact.state == "BLOCKED"
+    assert artifact.missing_gates == ("rules_current",)
+    rendered = m27i.render_preflight(artifact)
+    assert "MARKET OPEN/CURRENT: PASS" in rendered
+    assert "BOOK EXECUTABLE: PASS" in rendered
+    assert "RULES CURRENTNESS: BLOCKED" in rendered
+
+
 def test_frozen_files_have_no_working_tree_changes() -> None:
     frozen = (
         "services/supervised_canary/m27d.py",

@@ -1284,9 +1284,12 @@ def build_preflight(
     public_evidence = _public_market_evidence(public_evidence_path, candidate, now)
     book_executable = _market_currentness(candidate, economics, now)
     market_open_current = public_evidence.market_open_current
-    # "Open/executable now" (provable) is deliberately kept separate from "rules currently
-    # verified" (not provable -- see ``_rules_current_gate``). Do NOT fold ``rules_current`` into
-    # this: that is exactly the false-authority alias Gemini's FINAL delta review rejected.
+    # "Open/executable now" (``market_tradable``) is deliberately kept separate from "rules
+    # currently verified" (``rules_current``, see ``_rules_current_gate``): the latter is
+    # independently provable only when BOTH the authoritative expected-side economics binding
+    # validates and fresh M27J current-side evidence validates and matches it. Do NOT fold
+    # ``rules_current`` into this: that is exactly the false-authority alias Gemini's FINAL delta
+    # review rejected.
     market_tradable = GateResult(
         book_executable.passed and market_open_current.passed,
         book_executable.reason if not book_executable.passed else market_open_current.reason,
@@ -1410,7 +1413,17 @@ def render_preflight(artifact: PreflightArtifact) -> str:
         "M27I LIVE WEATHER CANARY PREFLIGHT",
         f"schema: {artifact.schema}",
         f"state: {artifact.state}",
-        "production_state: DISARMED",
+        # Scoped strictly to what this renderer itself can prove about THIS operation --
+        # render_preflight never independently inspects or proves global production arm state,
+        # so it must never claim one (no ``production_state``/``PRODUCTION_ARMED``/
+        # ``PRODUCTION_WRITE_CREDENTIAL`` line here). These five lines are M27I's own reviewed,
+        # in-module guarantee: read-only, no arm action, no mutation, no canary-burn consumption,
+        # no final-acknowledgement consumption.
+        "M27I_REQUEST_TYPE: READ_ONLY",
+        "M27I_ARM_ACTION: NONE",
+        "M27I_MUTATION: NO",
+        "M27I_CANARY_BURN_ACTION: NONE",
+        "M27I_FINAL_ACK_ACTION: NONE",
     ]
     if artifact.state == "ABSTAIN":
         lines.append(f"reason: {artifact.abstain_reason}")
@@ -1433,8 +1446,15 @@ def render_preflight(artifact: PreflightArtifact) -> str:
     )
     # Rendered explicitly and separately -- never collapsed into one line -- so a human reading
     # this output can never conflate "the exchange currently reports this market open/executable"
-    # (provable) with "current rules identity is verified" (not provable in this repository yet;
-    # see module docstring). A BLOCKED result here must never be misread as "market unavailable".
+    # (``market_open_current``/``book_executable``, folded into ``market_tradable``) with
+    # "current rules identity is verified" (``rules_current``). ``rules_current`` is
+    # independently provable only when BOTH the authoritative expected-side economics binding
+    # validates (see :func:`_rules_current_gate`/:func:`services.opportunity_engine.
+    # authoritative_economics.validate_authoritative_economics_market_binding`) AND fresh M27J
+    # current-side evidence validates and matches that binding's independently re-derived rules
+    # hash (see :func:`services.supervised_canary.m27j.validate_current_rules_for_candidate`) --
+    # absence, failure, staleness, or a mismatch on either side still blocks ``rules_current``.
+    # A BLOCKED result here must never be misread as "market unavailable".
     gate_results = artifact.gates.results
     market_open = gate_results.get("market_open_current")
     if market_open is not None:
