@@ -300,6 +300,30 @@ class CanaryStore:
                 )
         return tuple(str(row[0]) for row in rows)
 
+    def submission_budget_used(self) -> bool:
+        """Read-only: has the global one-real-order experimental canary budget been spent?
+
+        Never mutates. Used by preflight-only consumers (M27I) that must prove the burn token
+        is still available without themselves reserving or consuming it.
+        """
+        with self._connect() as db:
+            row = db.execute(
+                "SELECT real_submission_count FROM production_submission_counter WHERE singleton=1"
+            ).fetchone()
+            return row is None or int(row[0]) != 0
+
+    def unresolved_canary_present(self) -> bool:
+        """Read-only: is there any canary session in a non-terminal state right now?
+
+        Mirrors the same terminal/non-terminal state set ``one_unresolved_canary`` enforces at
+        the database level; never mutates.
+        """
+        placeholders = ",".join("?" * len(UNRESOLVED))
+        query = f"SELECT 1 FROM canary_sessions WHERE state IN ({placeholders}) LIMIT 1"  # noqa: S608 -- UNRESOLVED is a fixed internal constant tuple, never user input
+        with self._connect() as db:
+            row = db.execute(query, UNRESOLVED).fetchone()
+            return row is not None
+
     @staticmethod
     def _event(db: sqlite3.Connection, kind: str, reference: str, actor: str) -> None:
         db.execute(
