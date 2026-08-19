@@ -32,12 +32,17 @@ def main() -> None:
     if markets.get("market_count") == 0:
         print("ABSTAIN_NO_OPEN_MARKET")
         print(
-            "fresh CLIMDW open-market query succeeded with complete pagination; "
+            "fresh KXHIGHCHI market discovery succeeded with complete pagination; "
+            "contract settlement location identifier remains CLIMDW; "
             f"evidence_sha256={hashlib.sha256(args.public_evidence.read_bytes()).hexdigest()}"
         )
         return
     print("ABSTAIN_NO_VALID_FORECAST")
-    print("fresh open CLIMDW market exists but no reviewed current forecast bundle was supplied")
+    print(
+        "fresh active KXHIGHCHI market exists; "
+        "contract settlement location identifier remains CLIMDW; "
+        "no reviewed current forecast bundle was supplied"
+    )
 
 
 if __name__ == "__main__":

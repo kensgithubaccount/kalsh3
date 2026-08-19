@@ -536,7 +536,7 @@ def _market_currentness(
 _M27E_SCHEMA = "kalsh3.m27e.public-read.v1"
 _M27E_HOST = "https://external-api.kalshi.com"
 _EXCHANGE_STATUS_PATH = "/trade-api/v2/exchange/status"
-_TRADABLE_MARKET_STATUSES = frozenset({"open"})
+_TRADABLE_MARKET_STATUSES = frozenset({"active"})
 
 
 @dataclass(frozen=True, slots=True)
@@ -605,8 +605,9 @@ def _market_open_gate(
 
     Reuses the same reviewed, fixed-origin, GET-only ``markets`` pagination evidence already
     produced by ``scripts/m27e_public_read_acceptance.py`` -- no new transport. Proves only the
-    exact ticker/event pair is present, uniquely identified, and currently ``open`` as of a few
-    seconds ago -- market *existence and status*, nothing more.
+    exact ticker/event pair is present, uniquely identified, and currently ``active`` (the
+    canonical live-observed tradable/discoverable status) as of a few seconds ago -- market
+    *existence and status*, nothing more.
 
     This is deliberately NOT ``rules_current``: it never claims market rules text is
     byte-identical to what economics evidence assumed. Ticker/event/status existence is not a
