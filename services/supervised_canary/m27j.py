@@ -153,7 +153,7 @@ def main(argv: list[str] | None = None) -> int:
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(json.dumps(evidence.to_json(), sort_keys=True, indent=2) + "\n")
     print(f"classification={evidence.classification} rules_hash={evidence.rules_hash}")
-    print("PRODUCTION_WRITE_CREDENTIAL: NOT INSTALLED  PRODUCTION_ARMED: DISARMED")
+    print("M27J_CREDENTIAL_ACCESS: NO  M27J_MUTATION: NO  M27J_REQUEST_TYPE: PUBLIC_GET_ONLY")
     return 0 if evidence.succeeded else 2
 
 
