@@ -212,6 +212,37 @@ def test_acquisition_success_derives_hash_from_canonical_parser() -> None:
     assert evidence.host == m27j.HOST
 
 
+def test_main_cli_output_is_truthful_and_makes_exactly_one_get(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """M27J's CLI must never assert facts it does not itself independently establish -- it does
+    not inspect global credential-installation or production-arming state, so it must only ever
+    print what this exact operation guarantees about itself."""
+    raw_market = _raw_market()
+    body = _body(raw_market)
+    calls: list[str] = []
+
+    def fake_get_raw(path: str) -> tuple[bytes, int, datetime]:
+        calls.append(path)
+        return body, 200, NOW
+
+    monkeypatch.setattr(public_read, "_get_raw", fake_get_raw)
+    output_path = tmp_path / "evidence.json"
+    exit_code = m27j.main(["--ticker", "M", "--output", str(output_path)])
+    assert exit_code == 0
+
+    # Exactly one public GET, at the exact expected path -- no incidental/extra network activity.
+    assert calls == [f"{public_read.BASE}/markets/M"]
+
+    captured = capsys.readouterr()
+    assert "M27J_CREDENTIAL_ACCESS: NO" in captured.out
+    assert "M27J_MUTATION: NO" in captured.out
+    assert "PRODUCTION_WRITE_CREDENTIAL" not in captured.out
+    assert "PRODUCTION_ARMED" not in captured.out
+
+
 def test_acquisition_no_credentials_or_auth_header_required() -> None:
     """``get_market_with_body`` never accepts or sends any credential material."""
     import inspect
