@@ -232,7 +232,7 @@ def _public_payload(
     *,
     trading_active: bool = True,
     exchange_active: bool = True,
-    market_status: str = "open",
+    market_status: str = "active",
     market_ticker: str | None = None,
     event_ticker: str | None = None,
     observed_at: datetime | None = None,
@@ -253,7 +253,7 @@ def _public_payload(
             "payload": {"trading_active": trading_active, "exchange_active": exchange_active},
         },
         "series": {
-            "path": "/trade-api/v2/series/CLIMDW",
+            "path": "/trade-api/v2/series/KXHIGHCHI",
             "observed_at": stamp,
             "status": 200,
             "body_sha256": "f" * 64,
@@ -267,7 +267,7 @@ def _public_payload(
             "market_count": 1,
             "pages": [
                 {
-                    "path": "/trade-api/v2/markets?series_ticker=CLIMDW&status=open&limit=1000",
+                    "path": "/trade-api/v2/markets?series_ticker=KXHIGHCHI&limit=1000",
                     "observed_at": stamp,
                     "status": 200,
                     "body_sha256": "g" * 64,
@@ -867,6 +867,48 @@ def test_current_market_closed_blocks_market_open_current(tmp_path: Path) -> Non
     assert result.artifact.state == "BLOCKED"
     assert "market_open_current" in result.artifact.missing_gates
     assert "market_tradable" in result.artifact.missing_gates
+
+
+def test_current_market_finalized_status_blocks_market_open_current(tmp_path: Path) -> None:
+    """The live-observed canonical non-tradable status (408/420 live markets were 'finalized')
+    must never be treated as tradable/discoverable."""
+    ctx = Context(tmp_path)
+    payload = _public_payload(ctx.now, ctx.candidate, market_status="finalized")
+    path = _rewrite_public_path(ctx, payload)
+    result = m27i.build_preflight(**ctx.kwargs(public_evidence_path=path))
+    assert result.artifact.state == "BLOCKED"
+    assert "market_open_current" in result.artifact.missing_gates
+    assert "market_tradable" in result.artifact.missing_gates
+
+
+@pytest.mark.parametrize(
+    "status", ["determined", "disputed", "amended", "initialized", "inactive", "unknown_status"]
+)
+def test_current_market_arbitrary_non_active_status_blocks_market_open_current(
+    tmp_path: Path, status: str
+) -> None:
+    ctx = Context(tmp_path)
+    payload = _public_payload(ctx.now, ctx.candidate, market_status=status)
+    path = _rewrite_public_path(ctx, payload)
+    result = m27i.build_preflight(**ctx.kwargs(public_evidence_path=path))
+    assert result.artifact.state == "BLOCKED"
+    assert "market_open_current" in result.artifact.missing_gates
+
+
+def test_market_open_gate_passes_on_exact_canonical_active_status(tmp_path: Path) -> None:
+    """The exact canonical live-observed status string 'active' unlocks market_open_current."""
+    ctx = Context(tmp_path)
+    payload = _public_payload(ctx.now, ctx.candidate, market_status="active")
+    result, observed_at = m27i._market_open_gate(payload["markets"], ctx.candidate, ctx.now)
+    assert result.passed
+    assert observed_at is not None
+
+
+def test_market_open_gate_blocks_on_finalized_status(tmp_path: Path) -> None:
+    ctx = Context(tmp_path)
+    payload = _public_payload(ctx.now, ctx.candidate, market_status="finalized")
+    result, _observed_at = m27i._market_open_gate(payload["markets"], ctx.candidate, ctx.now)
+    assert not result.passed
 
 
 def test_stale_current_market_evidence_blocks_market_open_current(tmp_path: Path) -> None:

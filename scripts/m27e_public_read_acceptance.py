@@ -32,9 +32,11 @@ from services.market_universe.public_read import (
 )
 
 __all__ = [
+    "ACTIVE_MARKET_STATUS",
     "BASE",
     "HOST",
     "MAX_RESPONSE_BYTES",
+    "SERIES_TICKER",
     "PublicReadFailure",
     "get",
     "get_market",
@@ -43,13 +45,24 @@ __all__ = [
     "paged_markets",
 ]
 
+# Current live Chicago daily-high-temperature weather series (proven live 2026-08-19; see
+# /Users/ksyme/.kalsh3/evidence/m27k/recent-kxhighchi-contract-20260819T154532Z.json). CLIMDW is
+# stale and no longer the live series -- this is the only series ticker this module queries.
+SERIES_TICKER = "KXHIGHCHI"
+
+# Canonical currently-tradable/discoverable raw market status, as live-observed on this series.
+# A ``status=`` API query filter has NOT been live-validated for this series and must never be
+# assumed -- discovery always fetches the complete unfiltered page set and filters client-side on
+# this exact raw status string.
+ACTIVE_MARKET_STATUS = "active"
+
 
 def paged_markets() -> dict[str, object]:
     pages: list[dict[str, object]] = []
     cursor = ""
     seen: set[str] = set()
     while True:
-        query = {"series_ticker": "CLIMDW", "status": "open", "limit": "1000"}
+        query = {"series_ticker": SERIES_TICKER, "limit": "1000"}
         if cursor:
             query["cursor"] = cursor
         page = get(BASE + "/markets?" + urlencode(query))
@@ -66,18 +79,25 @@ def paged_markets() -> dict[str, object]:
         next_cursor = payload.get("cursor")
         if next_cursor in (None, ""):
             market_count = 0
+            total_returned = 0
             for page_item in pages:
                 page_payload = page_item.get("payload")
                 page_markets = (
                     page_payload.get("markets") if isinstance(page_payload, dict) else None
                 )
                 if isinstance(page_markets, list):
-                    market_count += len(page_markets)
+                    total_returned += len(page_markets)
+                    market_count += sum(
+                        1
+                        for market in page_markets
+                        if isinstance(market, dict) and market.get("status") == ACTIVE_MARKET_STATUS
+                    )
             return {
                 "classification": "SUCCESS",
                 "pages": pages,
                 "pagination_complete": True,
                 "market_count": market_count,
+                "total_returned": total_returned,
             }
         if not isinstance(next_cursor, str) or next_cursor in seen:
             raise PublicReadFailure("pagination incomplete: missing or repeated cursor")
@@ -95,7 +115,7 @@ def main() -> None:
             "host": "https://" + HOST,
             "started_at": datetime.now(UTC).isoformat(),
             "exchange_status": get(BASE + "/exchange/status"),
-            "series": get(BASE + "/series/CLIMDW"),
+            "series": get(BASE + "/series/" + SERIES_TICKER),
             "markets": paged_markets(),
         }
     except PublicReadFailure as exc:

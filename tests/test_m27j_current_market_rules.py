@@ -423,7 +423,7 @@ def test_m27e_script_behavior_unchanged_via_shared_transport(
         calls.append(path)
         return {
             "classification": "SUCCESS",
-            "payload": {"markets": [{"ticker": "M"}], "cursor": ""},
+            "payload": {"markets": [{"ticker": "M", "status": "active"}], "cursor": ""},
         }
 
     monkeypatch.setattr(public_reads, "get", fake_get)
