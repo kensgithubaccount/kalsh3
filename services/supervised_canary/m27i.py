@@ -70,19 +70,52 @@ metadata hash, orderbook, or an old ``MarketEconomicsEvidence``) is authoritativ
 rules-text identity -- using any of them to "prove" rules currentness would be inventing
 authority, not consuming it.
 
-This module therefore now keeps two claims cleanly separate:
+This module therefore keeps two claims cleanly separate:
 
 * ``market_open_current`` / ``book_executable`` (folded together into ``market_tradable``):
   the honest, still-provable claim that the exchange currently reports this exact market open
   and that its displayed book still supports the candidate's price/quantity right now.
-* ``rules_current``: **always** ``BLOCKED`` with reason ``NO_AUTHORITATIVE_CURRENT_RULES_IDENTITY``,
-  because no reviewed authority for current rules identity exists in this repository yet. This is
-  not a bug to be worked around here -- see the remaining-blockers note in the final response for
-  the exact authority a future milestone must build.
+* ``rules_current``: the *rules identity* claim -- never derived here from market existence,
+  status, metadata hash, orderbook, or any other proxy, because none of those is that authority.
 
-Because ``rules_current`` is a required gate, M27I cannot currently reach ``PREFLIGHT_READY`` --
-not even on an otherwise-perfect synthetic happy path. That is the correct, intended outcome for
-this repository's current evidence set, not a regression.
+M27J delta (2026-08-18): a dedicated authority for current rules identity now exists --
+:mod:`services.supervised_canary.m27j`. It performs a single fresh, bounded, unauthenticated
+PUBLIC GET of the exact-market endpoint, and independently re-derives that market's rules hash
+through the same canonical :meth:`services.market_universe.domain.Market.parse` this repository
+already uses everywhere else a rules hash is computed.
+
+Gemini M27J DELTA repair (2026-08-18) -- expected-side authority:
+
+The first M27J delta compared M27J's fresh current rules hash directly against
+``economics.market_rules_hash``. Gemini correctly rejected that: ``economics.market_rules_hash``
+is caller-supplied at the legacy :func:`services.opportunity_engine.live_economics.
+normalize_live_orderbook` call site -- a caller can simply copy today's M27J hash into economics
+and trivially obtain ``H == H``, proving nothing about where that hash actually came from. This
+module now requires BOTH independently validated sides before ``rules_current`` can PASS:
+
+* an **authoritative economics-market binding**
+  (:func:`services.opportunity_engine.authoritative_economics.
+  validate_authoritative_economics_market_binding`) -- proof that the exact
+  ``MarketEconomicsEvidence`` in use was built, via
+  :func:`services.opportunity_engine.authoritative_economics.build_authoritative_market_economics`,
+  from an independently re-validated live market snapshot acquired at (or immediately before)
+  economics-evaluation time, never a bare stamped string; and
+* fresh **current-side M27J evidence**
+  (:func:`services.supervised_canary.m27j.validate_current_rules_for_candidate`), compared not
+  against ``economics.market_rules_hash`` but against the rules hash the binding validator itself
+  independently re-derived from the expected snapshot's raw bytes.
+
+No authoritative binding supplied -- even when a legacy, caller-fabricated
+``economics.market_rules_hash`` happens to equal the current M27J hash -- leaves
+``rules_current`` ``BLOCKED``. This is the mandatory adversarial case: legacy
+``MarketEconomicsEvidence`` (still valid for research, unmodified, see
+:mod:`services.opportunity_engine.live_economics`) is never sufficient for live-canary rules
+authority on its own. The old fail-closed default is unchanged in every other respect: no M27J
+evidence, stale M27J evidence, a malformed artifact, or a changed rules hash all still leave
+``rules_current`` ``BLOCKED``. Only an exact, fresh, independently re-derived match on both sides
+unlocks it. Because ``rules_current`` remains a required gate, M27I can now reach
+``PREFLIGHT_READY`` on an otherwise-perfect path, but only when both authorities are supplied and
+agree.
 """
 
 from __future__ import annotations
@@ -103,6 +136,9 @@ from services.forecasting.weather_probability import (
     PhysicalTemperatureProxyProbability,
 )
 from services.forecasting.weather_prospective import FAMILY, FROZEN_MODEL_IDENTITIES
+from services.opportunity_engine.authoritative_economics import (
+    validate_authoritative_economics_market_binding,
+)
 from services.opportunity_engine.books import OutcomeSide
 from services.opportunity_engine.domain import OpportunityError
 from services.opportunity_engine.live_economics import (
@@ -126,6 +162,7 @@ from services.risk_engine.domain import (
 )
 from services.risk_engine.domain import content_hash as _risk_content_hash
 
+from . import m27j
 from .candidate_exposure_check import CandidateExposureEvidence
 from .live_read_acceptance import USER_DATA_FRESHNESS
 from .m27d import (
@@ -193,10 +230,10 @@ GATE_NAMES: tuple[str, ...] = (
     "m13_verified",
 )
 
-# Gemini FINAL delta repair: no reviewed source in this repository is authoritative for *current
-# rules identity* (see module docstring). ``rules_current`` is therefore always this fixed,
-# evidence-independent BLOCKED result -- never derived from market existence, status, metadata
-# hash, orderbook, or any other proxy, because none of those is that authority.
+# Reason used when this exact preflight run supplied no M27J current-rules evidence at all.
+# ``rules_current`` is never derived from market existence, status, metadata hash, orderbook, or
+# any other proxy, because none of those is authoritative current rules identity -- only
+# validated M27J evidence (see :mod:`services.supervised_canary.m27j`) is.
 NO_AUTHORITATIVE_CURRENT_RULES_IDENTITY = "NO_AUTHORITATIVE_CURRENT_RULES_IDENTITY"
 
 
@@ -572,11 +609,9 @@ def _market_open_gate(
     seconds ago -- market *existence and status*, nothing more.
 
     This is deliberately NOT ``rules_current``: it never claims market rules text is
-    byte-identical to what economics evidence assumed. No reviewed source in this repository
-    exposes a live rules-identity hash comparable to
-    :attr:`MarketEconomicsEvidence.market_rules_hash`, and ticker/event/status existence is not a
-    substitute for that authority (Gemini FINAL delta repair -- see module docstring and
-    :func:`_rules_current_gate`).
+    byte-identical to what economics evidence assumed. Ticker/event/status existence is not a
+    substitute for that authority -- see :mod:`services.supervised_canary.m27j` and
+    :func:`_rules_current_gate`.
     """
     fallback = GateResult(False, "no fresh, valid public current-market evidence")
     if (
@@ -642,17 +677,58 @@ def _public_market_evidence(
     )
 
 
-def _rules_current_gate() -> GateResult:
-    """Rules currentness -- always BLOCKED; no reviewed authority for it exists yet.
+def _rules_current_gate(
+    m27j_payload: dict[str, Any] | None,
+    m27a_binding_payload: dict[str, Any] | None,
+    candidate: ExperimentalCandidate,
+    economics: MarketEconomicsEvidence,
+    now: datetime,
+) -> GateResult:
+    """Rules currentness -- requires BOTH an authoritative expected-side binding and fresh
+    current-side M27J evidence. Never compares against a bare ``economics.market_rules_hash``
+    string.
 
-    Deliberately takes no evidence: any input (market existence/status, market metadata hash,
-    orderbook, an old :class:`MarketEconomicsEvidence`, or a caller-injected ``rules_hash``/
-    ``rules_current`` field in a JSON artifact) would be *manufacturing* authority, not consuming
-    it -- exactly what Gemini's FINAL delta review rejected. This gate can only ever change to a
-    real, evidence-derived check once a future milestone builds and reviews a fixed-origin
-    current-rules-identity source and wires it here; until then it must stay fail-closed.
+    Never re-derives or re-parses rules identity itself -- that duplication is exactly what the
+    module docstring forbids. The expected side delegates to :func:`services.opportunity_engine.
+    authoritative_economics.validate_authoritative_economics_market_binding`, which independently
+    re-validates the binding's embedded market snapshot and cross-checks it against the live
+    ``economics`` object in use (evidence_id, ticker/event, rules/metadata hash, orderbook source
+    hash, price-range hash, and acquisition/evaluation timestamp ordering) -- never trusting the
+    binding's own stamped fields in isolation. Only the rules hash *that validator itself
+    independently re-derived* is ever used as the expected comparison target for the current
+    side, via :func:`services.supervised_canary.m27j.validate_current_rules_for_candidate`.
+
+    No binding supplied is fail-closed -- **even when a legacy, caller-fabricated**
+    ``economics.market_rules_hash`` **happens to equal the current M27J hash**: that equality
+    proves nothing about provenance, and using it to unlock this gate is exactly the "inventing
+    authority, not consuming it" mistake the module docstring forbids. No M27J evidence, a stale
+    artifact, a malformed artifact, or a rules hash that no longer matches all likewise fail
+    closed; a caller-injected ``rules_current``/``rules_hash`` field anywhere is inert (both
+    validators reject any unexpected field on their evidence payloads outright).
     """
-    return GateResult(False, NO_AUTHORITATIVE_CURRENT_RULES_IDENTITY)
+    if m27a_binding_payload is None:
+        return GateResult(False, NO_AUTHORITATIVE_CURRENT_RULES_IDENTITY)
+    binding_result = validate_authoritative_economics_market_binding(
+        m27a_binding_payload,
+        economics=economics,
+        expected_market_ticker=candidate.market_ticker,
+        expected_event_ticker=candidate.event_ticker,
+    )
+    if not binding_result.succeeded:
+        return GateResult(False, binding_result.reason)
+    if m27j_payload is None:
+        return GateResult(False, NO_AUTHORITATIVE_CURRENT_RULES_IDENTITY)
+    expected_rules_hash = binding_result.rules_hash
+    if expected_rules_hash is None:  # pragma: no cover - PASS always carries rules_hash
+        return GateResult(False, "authoritative binding validation result incomplete")
+    result = m27j.validate_current_rules_for_candidate(
+        m27j_payload,
+        expected_market_ticker=candidate.market_ticker,
+        expected_event_ticker=candidate.event_ticker,
+        expected_rules_hash=expected_rules_hash,
+        now=now,
+    )
+    return GateResult(result.succeeded, None if result.succeeded else result.reason)
 
 
 # ---------------------------------------------------------------------------
@@ -1077,6 +1153,7 @@ def _compute_expiry(
     exchange_status_observed_at: datetime | None,
     series_fee_observation: CurrentSeriesFeeObservation | None,
     event_fee_observed_at: datetime | None,
+    m27j_payload: dict[str, Any] | None,
 ) -> datetime:
     deadlines: list[datetime] = [now + PREFLIGHT_TTL, candidate.eligibility.expires_at]
     deadlines.append(economics.orderbook_observed_at + MAX_BOOK_AGE)
@@ -1104,6 +1181,12 @@ def _compute_expiry(
         deadlines.append(series_fee_observation.observed_at + FEE_FRESHNESS)
     if event_fee_observed_at is not None:
         deadlines.append(event_fee_observed_at + FEE_FRESHNESS)
+    if m27j_payload is not None:
+        # The preflight can never extend the rules proof: cap to M27J's own stamped expiry
+        # (never a fresh window computed here) if that field parses at all.
+        m27j_expires = _parse_timestamp(m27j_payload.get("expires_at"))
+        if m27j_expires is not None:
+            deadlines.append(m27j_expires)
     return min(deadlines)
 
 
@@ -1147,6 +1230,8 @@ def build_preflight(
     m27f_evidence_path: Path | None = None,
     m27h_evidence_path: Path | None = None,
     public_evidence_path: Path | None = None,
+    m27j_evidence_path: Path | None = None,
+    m27a_binding_evidence_path: Path | None = None,
     current_series_fee_observation: CurrentSeriesFeeObservation | None = None,
     current_event_fee_override: EventFeeOverride | None = None,
     current_event_fee_observed_at: datetime | None = None,
@@ -1185,6 +1270,8 @@ def build_preflight(
 
     m27f_payload = _load_json(m27f_evidence_path)
     m27h_payload = _load_json(m27h_evidence_path)
+    m27j_payload = _load_json(m27j_evidence_path)
+    m27a_binding_payload = _load_json(m27a_binding_evidence_path)
 
     account_gates = _account_gates(
         m27f_evidence_path=m27f_evidence_path,
@@ -1204,7 +1291,9 @@ def build_preflight(
         book_executable.passed and market_open_current.passed,
         book_executable.reason if not book_executable.passed else market_open_current.reason,
     )
-    rules_current = _rules_current_gate()
+    rules_current = _rules_current_gate(
+        m27j_payload, m27a_binding_payload, candidate, economics, now
+    )
 
     fee_verified = _fee_gate(
         economics,
@@ -1283,6 +1372,7 @@ def build_preflight(
         exchange_status_observed_at=public_evidence.exchange_status_observed_at,
         series_fee_observation=current_series_fee_observation,
         event_fee_observed_at=current_event_fee_observed_at,
+        m27j_payload=m27j_payload,
     )
     if expires_at <= now:
         ready = False
