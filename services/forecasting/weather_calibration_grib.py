@@ -89,6 +89,39 @@ class RawGribEvidence:
     extraction_sha256: str = ""
 
 
+def validate_raw_grib_max_t_evidence(evidence: RawGribEvidence) -> None:
+    """Authoritatively re-derive the reviewed 03Z MaxT invariants from a
+    `RawGribEvidence`, regardless of how it was constructed.
+
+    `RawGribEvidence` is a public, directly-constructible dataclass, so a
+    caller must never trust that a given instance actually passed through
+    `parse_wgrib2_max_t_evidence`.  This function performs the exact same
+    structural checks that function applies after parsing, operating only on
+    the evidence object's own fields.
+    """
+    if evidence.family_identity != POST2020_GRIB_FAMILY:
+        raise ForecastError("raw GRIB evidence has an unsupported family")
+    if evidence.wgrib2_version != "3.8.0":
+        raise ForecastError("wgrib2 version is not the reviewed version")
+    records = evidence.records
+    if len(records) != 3:
+        raise ForecastError("raw GRIB must contain exactly three MaxT records")
+    ordered = tuple(sorted(records, key=lambda record: record.record_number))
+    if tuple(record.record_number for record in ordered) != (1, 2, 3):
+        raise ForecastError("raw GRIB record numbering is not exactly 1,2,3")
+    if records != ordered:
+        raise ForecastError("raw GRIB records are not physically ordered 1,2,3")
+    reference = ordered[0].reference_time
+    _require_utc(reference, "reference time")
+    if reference.hour != 3 or reference.minute or reference.second or reference.microsecond:
+        raise ForecastError("raw GRIB reference time is not the reviewed 03Z cycle")
+    expected_offsets = ((9, 21), (33, 45), (57, 69))
+    for record, (start_hours, end_hours) in zip(ordered, expected_offsets, strict=True):
+        _validate_record(record, reference, start_hours, end_hours)
+    if any(left.interval_end > right.interval_start for left, right in pairwise(ordered)):
+        raise ForecastError("raw GRIB intervals overlap")
+
+
 def parse_wgrib2_max_t_evidence(
     text: str,
     *,
@@ -104,27 +137,16 @@ def parse_wgrib2_max_t_evidence(
     if wgrib2_version != "3.8.0":
         raise ForecastError("wgrib2 version is not the reviewed version")
     records = _parse_records(text)
-    if len(records) != 3:
-        raise ForecastError("raw GRIB must contain exactly three MaxT records")
-    ordered = tuple(sorted(records, key=lambda record: record.record_number))
-    if tuple(record.record_number for record in ordered) != (1, 2, 3):
-        raise ForecastError("raw GRIB record numbering is not exactly 1,2,3")
-    reference = ordered[0].reference_time
-    if reference.hour != 3 or reference.minute or reference.second or reference.microsecond:
-        raise ForecastError("raw GRIB reference time is not the reviewed 03Z cycle")
-    expected_offsets = ((9, 21), (33, 45), (57, 69))
-    for record, (start_hours, end_hours) in zip(ordered, expected_offsets, strict=True):
-        _validate_record(record, reference, start_hours, end_hours)
-    if any(left.interval_end > right.interval_start for left, right in pairwise(ordered)):
-        raise ForecastError("raw GRIB intervals overlap")
-    return RawGribEvidence(
+    evidence = RawGribEvidence(
         family_identity,
-        ordered,
+        tuple(sorted(records, key=lambda record: record.record_number)),
         extraction_policy_version,
         wgrib2_version,
         raw_grib_sha256,
         extraction_sha256,
     )
+    validate_raw_grib_max_t_evidence(evidence)
+    return evidence
 
 
 def parse_wgrib2_min_t_evidence(
@@ -148,6 +170,7 @@ def parse_wgrib2_min_t_evidence(
     if tuple(record.record_number for record in ordered) != (1, 2, 3):
         raise ForecastError("raw GRIB record numbering is not exactly 1,2,3")
     reference = ordered[0].reference_time
+    _require_utc(reference, "reference time")
     if reference.hour != 4 or reference.minute or reference.second or reference.microsecond:
         raise ForecastError("raw GRIB reference time is not the reviewed 04Z cycle")
     # The first reviewed MinT record is the 0-12 forecast product but its
@@ -487,6 +510,11 @@ def _longitude(value: Decimal) -> Decimal:
     return value - Decimal("360") if value > Decimal("180") else value
 
 
+def _require_utc(value: datetime, label: str) -> None:
+    if value.tzinfo is None or value.utcoffset() != timedelta(0):
+        raise ForecastError(f"raw GRIB {label} is not UTC")
+
+
 def _validate_record(record: RawGribRecord, reference: datetime, start: int, end: int) -> None:
     _validate_record_for_measurement(
         record, reference, start, end, "TMAX", EXPECTED_PARAMETER, "MaxT"
@@ -502,6 +530,10 @@ def _validate_record_for_measurement(
     parameter: tuple[int, int, int],
     label: str,
 ) -> None:
+    _require_utc(record.reference_time, "record reference time")
+    _require_utc(record.interval_start, "interval start")
+    _require_utc(record.interval_end, "interval end")
+    _require_utc(record.verification_time, "verification time")
     if record.reference_time != reference:
         raise ForecastError("raw GRIB records have different reference times")
     if record.variable != variable or record.level != "2 m above ground":
@@ -519,9 +551,12 @@ def _validate_record_for_measurement(
         raise ForecastError("raw GRIB interval duration is not the reviewed duration")
     if record.verification_time != record.interval_end:
         raise ForecastError("raw GRIB verification time is not interval end")
-    if record.lead_to_interval_start_seconds != start * 3600:
+    # Exact datetime equality (not integer-truncated total_seconds()) so a
+    # fractional/subsecond offset cannot hide inside int(total_seconds())'s
+    # truncation and still pass as an on-the-hour horizon.
+    if record.interval_start != reference + timedelta(hours=start):
         raise ForecastError("raw GRIB interval start horizon is unexpected")
-    if record.lead_to_interval_end_seconds != end * 3600:
+    if record.interval_end != reference + timedelta(hours=end):
         raise ForecastError("raw GRIB interval end horizon is unexpected")
     if (
         record.grid_template != EXPECTED_GRID_TEMPLATE
