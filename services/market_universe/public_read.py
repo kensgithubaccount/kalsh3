@@ -2,9 +2,10 @@
 
 This is the SINGLE reviewed transport implementation for every public (no credential) read this
 repository performs against the exchange -- the M27E exchange-status/series/markets acceptance
-script, M27J's authoritative market-snapshot acquisition, and the orderbook snapshot layer
-(:mod:`services.market_universe.orderbook_snapshot`) all depend on this module, never on each
-other or on a second transport configuration.
+script, M27J's authoritative market-snapshot acquisition, the orderbook snapshot layer
+(:mod:`services.market_universe.orderbook_snapshot`), and the event snapshot layer
+(:mod:`services.market_universe.event_snapshot`) all depend on this module, never on each other or
+on a second transport configuration.
 
 Dependency direction: ``scripts/`` may import this ``services`` module; this module (and no other
 ``services`` module) must never import anything from ``scripts/``.
@@ -12,12 +13,12 @@ Dependency direction: ``scripts/`` may import this ``services`` module; this mod
 PUBLIC GET only: no credentials, no Authorization header, fixed production host, TLS, no
 redirects (``http.client`` never follows them on its own -- a 3xx response simply surfaces as its
 own HTTP status), bounded timeout, bounded response size. ``get``/``get_market``/
-``get_market_with_body`` are one path segment for a market ticker only (no query strings, no path
-traversal). ``get_orderbook_with_body`` is the one deliberate exception: it issues exactly one
-fixed query parameter (``tickers=<exact ticker>``) against the batch orderbook endpoint for
-exactly one ticker -- never a caller-supplied or multi-ticker query, never a second HTTP
-implementation, and every other guarantee (fixed host, GET-only, no redirects, bounded size)
-still applies identically.
+``get_market_with_body``/``get_event_with_body`` are one path segment for a market or event
+ticker only (no query strings, no path traversal). ``get_orderbook_with_body`` is the one
+deliberate exception: it issues exactly one fixed query parameter (``tickers=<exact ticker>``)
+against the batch orderbook endpoint for exactly one ticker -- never a caller-supplied or
+multi-ticker query, never a second HTTP implementation, and every other guarantee (fixed host,
+GET-only, no redirects, bounded size) still applies identically.
 """
 
 from __future__ import annotations
@@ -117,6 +118,22 @@ def get_market_with_body(ticker: str) -> tuple[dict[str, object], bytes]:
 def get_market(ticker: str) -> dict[str, object]:
     evidence, _body = get_market_with_body(ticker)
     return evidence
+
+
+def get_event_with_body(event_ticker: str) -> tuple[dict[str, object], bytes]:
+    """Bounded GET of the exact single-event endpoint; returns evidence and the exact raw bytes.
+
+    Exact-event read, GET-only, reusing :func:`_get_raw` -- never a second transport
+    configuration. Mirrors :func:`get_market_with_body` exactly, for the analogous single-event
+    endpoint (``/events/<ticker>``). The raw bytes are returned (in addition to the same evidence
+    shape ``get()`` produces) only so a caller can cryptographically bind its own downstream
+    parsing to the exact bytes received; this function itself never parses event metadata.
+    """
+    if not _TICKER_RE.fullmatch(event_ticker):
+        raise PublicReadFailure("ticker is not a well-formed exact event ticker")
+    path = f"{BASE}/events/{event_ticker}"
+    body, status, observed_at = _get_raw(path)
+    return _evidence_from_body(path, body, status, observed_at), body
 
 
 def get_orderbook_with_body(ticker: str) -> tuple[dict[str, object], bytes]:
