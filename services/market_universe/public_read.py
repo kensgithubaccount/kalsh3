@@ -2,16 +2,22 @@
 
 This is the SINGLE reviewed transport implementation for every public (no credential) read this
 repository performs against the exchange -- the M27E exchange-status/series/markets acceptance
-script and M27J's authoritative market-snapshot acquisition both depend on this module, never on
-each other or on a second transport configuration.
+script, M27J's authoritative market-snapshot acquisition, and the orderbook snapshot layer
+(:mod:`services.market_universe.orderbook_snapshot`) all depend on this module, never on each
+other or on a second transport configuration.
 
 Dependency direction: ``scripts/`` may import this ``services`` module; this module (and no other
 ``services`` module) must never import anything from ``scripts/``.
 
 PUBLIC GET only: no credentials, no Authorization header, fixed production host, TLS, no
 redirects (``http.client`` never follows them on its own -- a 3xx response simply surfaces as its
-own HTTP status), bounded timeout, bounded response size, one path segment for a market ticker
-(no query strings, no path traversal).
+own HTTP status), bounded timeout, bounded response size. ``get``/``get_market``/
+``get_market_with_body`` are one path segment for a market ticker only (no query strings, no path
+traversal). ``get_orderbook_with_body`` is the one deliberate exception: it issues exactly one
+fixed query parameter (``tickers=<exact ticker>``) against the batch orderbook endpoint for
+exactly one ticker -- never a caller-supplied or multi-ticker query, never a second HTTP
+implementation, and every other guarantee (fixed host, GET-only, no redirects, bounded size)
+still applies identically.
 """
 
 from __future__ import annotations
@@ -22,6 +28,7 @@ import json
 import re
 import ssl
 from datetime import UTC, datetime
+from urllib.parse import urlencode
 
 HOST = "external-api.kalshi.com"
 BASE = "/trade-api/v2"
@@ -110,3 +117,20 @@ def get_market_with_body(ticker: str) -> tuple[dict[str, object], bytes]:
 def get_market(ticker: str) -> dict[str, object]:
     evidence, _body = get_market_with_body(ticker)
     return evidence
+
+
+def get_orderbook_with_body(ticker: str) -> tuple[dict[str, object], bytes]:
+    """Bounded GET of the batch orderbook endpoint for exactly one ticker; returns evidence and
+    the exact raw bytes, mirroring :func:`get_market_with_body`'s exact pattern.
+
+    The wire endpoint (``/markets/orderbooks``) is batch-shaped, but this function only ever
+    requests exactly one ticker via one fixed query parameter it constructs itself -- no
+    caller-supplied query, no alternate host, no second HTTP implementation. Reuses
+    ``_TICKER_RE``/``_get_raw``/``_evidence_from_body`` verbatim, exactly like
+    :func:`get_market_with_body` does; this function itself never parses orderbook levels.
+    """
+    if not _TICKER_RE.fullmatch(ticker):
+        raise PublicReadFailure("ticker is not a well-formed exact market ticker")
+    path = f"{BASE}/markets/orderbooks?" + urlencode({"tickers": ticker})
+    body, status, observed_at = _get_raw(path)
+    return _evidence_from_body(path, body, status, observed_at), body
