@@ -28,6 +28,7 @@ of everything prior passes covered:
 from __future__ import annotations
 
 import ast
+import hashlib
 import json
 import subprocess
 from datetime import date
@@ -73,9 +74,9 @@ NON_03Z_EXTRACTION = _extraction().replace(
 )
 
 
-def test_software_version_is_final_frozen_value() -> None:
+def test_software_version_is_final_reviewed_value() -> None:
     assert selector.SOFTWARE_VERSION == (
-        "kalsh3.scripts.select_parse_verified_current_weather_source/3"
+        "kalsh3.scripts.select_parse_verified_current_weather_source/4"
     )
 
 
@@ -83,14 +84,15 @@ def test_serialized_json_emits_exact_software_version() -> None:
     result = selector._result(DAY, ZERO_VALID, "no candidates")
     serialized = json.dumps(selector._result_to_json(result))
     assert json.loads(serialized)["software_version"] == (
-        "kalsh3.scripts.select_parse_verified_current_weather_source/3"
+        "kalsh3.scripts.select_parse_verified_current_weather_source/4"
     )
 
 
 def test_production_module_has_no_stale_freeze_markers() -> None:
     source = Path("scripts/select_parse_verified_current_weather_source.py").read_text()
-    for marker in ("UNREVIEWED", "NOT FROZEN", "DEVELOPMENT ONLY"):
-        assert marker not in source
+    assert "UNREVIEWED" not in source
+    assert "NOT FROZEN" not in source
+    assert "DEVELOPMENT ONLY" not in source
 
 
 def _object_bytes(name: str, *, padding: int = 16) -> bytes:
@@ -98,6 +100,12 @@ def _object_bytes(name: str, *, padding: int = 16) -> bytes:
     # the fake wgrib2 below reads this marker back out of the snapshot file to pick which
     # extraction text to return for which candidate, since the real subprocess.run is faked.
     return b"GRIB" + name.encode() + b"\x00" * padding
+
+
+def _wmo_wrapped_object_bytes(name: str) -> bytes:
+    return (
+        f"****{len(name):010d}****\nYGUZ98 KWBN {name[-6:]}\r\r\n****0000100000****\nYGUC0\r\r\n"
+    ).encode() + _object_bytes(name)
 
 
 def _fake_transport(
@@ -302,6 +310,113 @@ def test_single_content_valid_candidate_is_accepted(
     assert result.candidate_errors == ()
     assert result.blocked_candidate_errors == ()
     assert result.wgrib2_executable_sha256 is not None
+
+
+def test_wmo_wrapper_reaches_wgrib2_with_exact_complete_bytes_and_hash(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    raw = _wmo_wrapped_object_bytes(NAME_A)
+    received: list[bytes] = []
+
+    def run(command: object, *args: object, **kwargs: object) -> subprocess.CompletedProcess[str]:
+        assert isinstance(command, list)
+        if "-version" in command:
+            return subprocess.CompletedProcess(command, 0, "3.8.0\n", "")
+        received.append(Path(command[1]).read_bytes())
+        return subprocess.CompletedProcess(command, 0, GOOD_EXTRACTION, "")
+
+    monkeypatch.setattr(subprocess, "run", run)
+    result = _select((NAME_A,), tmp_path, object_bytes={NAME_A: raw})
+
+    assert result.classification == SUCCESS
+    assert received == [raw]
+    assert result.selected is not None
+    assert result.selected.raw_bytes is raw
+    assert result.selected.raw_byte_length == len(raw)
+    assert result.selected.raw_sha256 == hashlib.sha256(raw).hexdigest()
+
+
+@pytest.mark.parametrize("order", [(NAME_A, NAME_B), (NAME_B, NAME_A)])
+def test_wrapper_valid_plus_invalid_competitor_is_success_in_any_order(
+    order: tuple[str, str], tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    wrapped = _wmo_wrapped_object_bytes(NAME_A)
+    monkeypatch.setattr(
+        subprocess,
+        "run",
+        _fake_subprocess_run(
+            {
+                b"GRIB" + NAME_A.encode(): GOOD_EXTRACTION,
+                _object_bytes(NAME_B): NON_03Z_EXTRACTION,
+            }
+        ),
+    )
+    result = _select(
+        order,
+        tmp_path,
+        object_bytes={NAME_A: wrapped, NAME_B: _object_bytes(NAME_B)},
+    )
+    assert result.classification == SUCCESS
+    assert result.selected_name == NAME_A
+
+
+@pytest.mark.parametrize("order", [(NAME_A, NAME_B), (NAME_B, NAME_A)])
+def test_two_wrapper_valid_candidates_remain_multiple_in_any_order(
+    order: tuple[str, str], tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    bodies = {NAME_A: _wmo_wrapped_object_bytes(NAME_A), NAME_B: _wmo_wrapped_object_bytes(NAME_B)}
+    monkeypatch.setattr(
+        subprocess,
+        "run",
+        _fake_subprocess_run(
+            {
+                b"GRIB" + NAME_A.encode(): GOOD_EXTRACTION,
+                b"GRIB" + NAME_B.encode(): GOOD_EXTRACTION,
+            }
+        ),
+    )
+    result = _select(order, tmp_path, object_bytes=bodies)
+    assert result.classification == MULTIPLE_VALID
+    assert result.selected is None
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        b'<?xml version="1.0"?><Error/>' + b"GRIB" + NAME_A.encode(),
+        b"<html><body>error</body></html>" + b"GRIB" + NAME_A.encode(),
+    ],
+)
+def test_wrapper_or_html_runner_rejection_is_content_invalid(
+    body: bytes, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(
+        subprocess,
+        "run",
+        _fake_subprocess_run(
+            {b"GRIB" + NAME_A.encode(): ""},
+            nonzero_exit_markers={b"GRIB" + NAME_A.encode()},
+        ),
+    )
+    result = _select((NAME_A,), tmp_path, object_bytes={NAME_A: body})
+    assert result.classification == ZERO_VALID
+    assert result.selected is None
+
+
+def test_oversized_wmo_wrapper_is_rejected_before_temp_file_and_wgrib2(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    body = _wmo_wrapped_object_bytes(NAME_A) + b"x" * MAX_RAW_GRIB_BYTES
+    monkeypatch.setattr(subprocess, "run", _version_only_run("oversized wrapper reached wgrib2"))
+    result = _select((NAME_A,), tmp_path, object_bytes={NAME_A: body})
+    assert result.classification == ZERO_VALID
+    assert result.selected is None
+
+
+def test_selector_has_no_offset_zero_or_first_grib_slicing_gate() -> None:
+    source = Path("scripts/select_parse_verified_current_weather_source.py").read_text()
+    assert 'startswith(b"GRIB")' not in source
+    assert 'find(b"GRIB")' not in source
 
 
 def test_one_parser_invalid_one_valid_is_success(

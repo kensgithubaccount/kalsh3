@@ -1,7 +1,8 @@
 """Parse-verified current-cycle multi-candidate source selection for
 POST2020_CHICAGO_MAXT_2P5KM_YGUZ98_03Z.
 
-Reviewed and frozen-policy-aligned parse-verified selector. It exists to close a gap identified
+Reviewed parse-verified current-weather selector. Complete bounded WMO-wrapped source objects are
+passed unchanged to reviewed wgrib2 validation. It exists to close a gap identified
 by a live-preflight postmortem: the reviewed current-cycle acquisition layer
 (:mod:`services.forecasting.weather_current_cycle_acquisition`) resolves multiple
 filename-eligible AWS candidates by FILENAME ALONE and fails closed on any ambiguity
@@ -34,8 +35,8 @@ preferred over mirroring wherever it is possible).
 Operational-failure semantics: every per-candidate evaluation step is classified into exactly one
 of three outcomes -- ``CONTENT_VALID`` (fully, conclusively evaluated and accepted by the frozen
 semantic authority), ``CONTENT_INVALID`` (fully, conclusively evaluated and rejected for a
-deterministic, reproducible reason: the frozen semantic authority, the size bound, the
-GRIB-magic-header sniff, an unsafe candidate-controlled name failing the strict filename grammar
+deterministic, reproducible reason: the frozen semantic authority, the size bound, an
+unsafe candidate-controlled name failing the strict filename grammar
 -- see :func:`_safe_object_url` -- or the reviewed ``_run_wgrib2`` non-zero-exit
 ``ForecastError("wgrib2 extraction failed")``, mirroring the frozen historical collector's own
 ``_collect_post2020_raw_grib``, which treats that exact same exception as an ordinary
@@ -150,7 +151,7 @@ from services.forecasting.weather_current_cycle_acquisition import (
 )
 from services.forecasting.weather_prospective_capture import KMDW_LATITUDE, KMDW_LONGITUDE
 
-SOFTWARE_VERSION = "kalsh3.scripts.select_parse_verified_current_weather_source/3"
+SOFTWARE_VERSION = "kalsh3.scripts.select_parse_verified_current_weather_source/4"
 
 # Mirrors services.forecasting.weather_current_cycle_acquisition's own
 # _FILENAME_PREFIX/_FILENAME_HOUR_SUFFIX exactly -- redeclared, not imported (both are private
@@ -438,20 +439,18 @@ def _evaluate_candidate(
     url = fetched.url
     assert raw is not None and url is not None  # noqa: S101 -- narrows for type checkers
 
-    # Deterministic, reproducible structural rejections -- mirrors the frozen sibling's own
-    # OVERSIZED_BODY / "not GRIB2-shaped" checks (services.forecasting.
-    # weather_current_cycle_acquisition.acquire_current_cycle_raw_grib), which classify both the
-    # exact same way this does: a definitive rejection of this one object, not an inconclusive
-    # operational fault. Never a tiebreaker input -- see module docstring.
+    # Filename, URL, and size authority still reuse current-cycle acquisition. Complete-object
+    # content handling intentionally mirrors the historical collector: WMO objects may contain a
+    # text envelope before embedded GRIB messages, so the exact downloaded bytes are written
+    # unchanged and wgrib2—not an offset-zero magic check—is the reviewed content-format
+    # authority. The legacy current-cycle acquisition gate remains unchanged and is not used by
+    # this selector. Never a tiebreaker input -- see module docstring.
     if len(raw) > MAX_RAW_GRIB_BYTES:
         return _invalid(
             name,
             f"{name}: object response exceeded the bounded size "
             f"({len(raw)} > {MAX_RAW_GRIB_BYTES})",
         )
-    if not raw.startswith(b"GRIB"):
-        return _invalid(name, f"{name}: object bytes are not GRIB2-shaped")
-
     try:
         raw_sha256 = _sha256(raw)
     except Exception as exc:

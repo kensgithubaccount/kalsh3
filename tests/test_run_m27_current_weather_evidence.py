@@ -20,6 +20,7 @@ from scripts.select_parse_verified_current_weather_source import (
     MULTIPLE_VALID,
     ZERO_VALID,
 )
+from services.forecasting.domain import ForecastError
 from services.forecasting.weather_current_cycle_acquisition import aws_index_url
 from tests.test_m27c_weather_calibration_grib import _extraction
 from tests.test_weather_current_cycle_acquisition import GOOD_NAME, _index_xml
@@ -183,12 +184,35 @@ def test_zero_filename_candidates_stop_without_object_wgrib2_or_builder(
 def test_zero_content_valid_candidates_stop_without_downstream(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    raw_body = b"not-grib"
+    transport_calls: list[str] = []
+    runner_calls: list[list[str]] = []
+
     monkeypatch.setattr(
         cli, "build_current_weather_forecast_evidence", lambda *a, **k: pytest.fail("builder")
     )
-    result = _compose(tmp_path, monkeypatch, _transport(body=b"not-grib"))
+
+    def reject_invalid_body(
+        command: object, *args: object, **kwargs: object
+    ) -> subprocess.CompletedProcess[str]:
+        assert isinstance(command, list)
+        if "-version" in command:
+            return subprocess.CompletedProcess(command, 0, "3.8.0\n", "")
+        runner_calls.append(command)
+        assert Path(command[1]).read_bytes() == raw_body
+        raise ForecastError("simulated wgrib2 rejection")
+
+    monkeypatch.setattr(subprocess, "run", reject_invalid_body)
+    result = compose(
+        DAY,
+        transport=_transport(body=raw_body, calls=transport_calls),
+        wgrib2_bin=_fake_wgrib2_bin(tmp_path),
+    )
     assert result["classification"] == ZERO_VALID
     assert result["records"] is None
+    assert len(transport_calls) == 2
+    assert len(runner_calls) == 1
+    assert raw_body.decode() not in json.dumps(result)
 
 
 def test_multiple_valid_candidates_stop_without_downstream(
