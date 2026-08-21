@@ -1,9 +1,8 @@
 """Parse-verified current-cycle multi-candidate source selection for
 POST2020_CHICAGO_MAXT_2P5KM_YGUZ98_03Z.
 
-UNREVIEWED, NOT FROZEN, DEVELOPMENT ONLY. This module has not been through the same review this
-repository's "frozen" modules have. It exists to close a gap identified by a live-preflight
-postmortem: the reviewed current-cycle acquisition layer
+Reviewed and frozen-policy-aligned parse-verified selector. It exists to close a gap identified
+by a live-preflight postmortem: the reviewed current-cycle acquisition layer
 (:mod:`services.forecasting.weather_current_cycle_acquisition`) resolves multiple
 filename-eligible AWS candidates by FILENAME ALONE and fails closed on any ambiguity
 (``select_candidate_object_name``), while the reviewed HISTORICAL collector
@@ -151,7 +150,7 @@ from services.forecasting.weather_current_cycle_acquisition import (
 )
 from services.forecasting.weather_prospective_capture import KMDW_LATITUDE, KMDW_LONGITUDE
 
-SOFTWARE_VERSION = "kalsh3.scripts.select_parse_verified_current_weather_source/3-UNREVIEWED"
+SOFTWARE_VERSION = "kalsh3.scripts.select_parse_verified_current_weather_source/3"
 
 # Mirrors services.forecasting.weather_current_cycle_acquisition's own
 # _FILENAME_PREFIX/_FILENAME_HOUR_SUFFIX exactly -- redeclared, not imported (both are private
@@ -853,8 +852,8 @@ def _live_transport(url: str) -> bytes:  # pragma: no cover - exercised only by 
 def main(argv: list[str] | None = None) -> int:  # pragma: no cover - thin CLI wrapper
     parser = argparse.ArgumentParser(
         description=(
-            "UNREVIEWED development CLI: parse-verified multi-candidate current-cycle source "
-            "selection for POST2020_CHICAGO_MAXT_2P5KM_YGUZ98_03Z. No credentials, no Kalshi, "
+            "Parse-verified multi-candidate current-cycle source selector for "
+            "POST2020_CHICAGO_MAXT_2P5KM_YGUZ98_03Z. No credentials, no Kalshi, "
             "no economics, no execution. Live network only through the real transport wired "
             "here -- never run this against live network without separate explicit "
             "authorization."

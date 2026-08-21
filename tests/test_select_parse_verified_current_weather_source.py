@@ -28,6 +28,7 @@ of everything prior passes covered:
 from __future__ import annotations
 
 import ast
+import json
 import subprocess
 from datetime import date
 from pathlib import Path
@@ -70,6 +71,26 @@ GOOD_EXTRACTION = _extraction()
 NON_03Z_EXTRACTION = _extraction().replace(
     "reference = 20240615030000", "reference = 20240615020000"
 )
+
+
+def test_software_version_is_final_frozen_value() -> None:
+    assert selector.SOFTWARE_VERSION == (
+        "kalsh3.scripts.select_parse_verified_current_weather_source/3"
+    )
+
+
+def test_serialized_json_emits_exact_software_version() -> None:
+    result = selector._result(DAY, ZERO_VALID, "no candidates")
+    serialized = json.dumps(selector._result_to_json(result))
+    assert json.loads(serialized)["software_version"] == (
+        "kalsh3.scripts.select_parse_verified_current_weather_source/3"
+    )
+
+
+def test_production_module_has_no_stale_freeze_markers() -> None:
+    source = Path("scripts/select_parse_verified_current_weather_source.py").read_text()
+    for marker in ("UNREVIEWED", "NOT FROZEN", "DEVELOPMENT ONLY"):
+        assert marker not in source
 
 
 def _object_bytes(name: str, *, padding: int = 16) -> bytes:
