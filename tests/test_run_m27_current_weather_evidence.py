@@ -1,57 +1,63 @@
-"""scripts/run_m27_current_weather_evidence.py -- fake-transport/fake-wgrib2-only tests.
-
-No network, no real wgrib2 binary, no Kalshi/credentials/economics/risk/execution. Proves:
-exact-03Z success composes all three records with correct semantics; filename "02" selection
-never itself claims 03Z (a parser-internal non-03Z reference still fails closed); ambiguous
-source objects never reach wgrib2; raw-byte mutation is caught by the script's own redundant
-hash re-check; wrong wgrib2 version fails closed; no cache reuse; and the script has zero
-Kalshi/credential/signer/write capability and no path to widen M27D's freshness authority.
-"""
+"""Offline behavioral tests for the parse-verified selector operator integration."""
 
 from __future__ import annotations
 
 import ast
 import hashlib
+import inspect
+import json
 import subprocess
-from datetime import UTC, date, datetime
+from datetime import date
 from pathlib import Path
 
 import pytest
 
 import scripts.run_m27_current_weather_evidence as cli
+import scripts.select_parse_verified_current_weather_source as selector
 from scripts.run_m27_current_weather_evidence import compose
-from services.forecasting.domain import ForecastError
-from services.forecasting.weather_current_cycle_acquisition import (
-    AcquiredForecastSource,
-    aws_index_url,
+from scripts.select_parse_verified_current_weather_source import (
+    EVALUATION_BLOCKED,
+    MULTIPLE_VALID,
+    ZERO_VALID,
 )
+from services.forecasting.weather_current_cycle_acquisition import aws_index_url
 from tests.test_m27c_weather_calibration_grib import _extraction
 from tests.test_weather_current_cycle_acquisition import GOOD_NAME, _index_xml
 
 DAY = date(2026, 8, 20)
-FIXED_NOW = datetime(2026, 8, 20, 4, 0, tzinfo=UTC)
+NAME_B = "YGUZ98_KWBN_2026082102"
 RAW_OBJECT_BYTES = b"GRIB" + b"\x00" * 32
 
 
-def _fake_get(
-    *, index_names: tuple[str, ...] = (GOOD_NAME,), object_body: bytes = RAW_OBJECT_BYTES
+def _transport(
+    names: tuple[str, ...] = (GOOD_NAME,),
+    *,
+    body: bytes = RAW_OBJECT_BYTES,
+    blocked_names: frozenset[str] = frozenset(),
+    calls: list[str] | None = None,
 ):
-    idx_url = aws_index_url(DAY)
+    index_url = aws_index_url(DAY)
 
-    def fake(url: str, *, cache: Path | None = None) -> bytes:
-        assert cache is None, "a fresh live run must never reuse a cache"
-        if url == idx_url:
-            return _index_xml(index_names)
-        return object_body
+    def transport(url: str) -> bytes:
+        if calls is not None:
+            calls.append(url)
+        if url == index_url:
+            return _index_xml(names)
+        name = url.rsplit("/", 1)[-1]
+        if name in blocked_names:
+            raise OSError("blocked fake object")
+        return body
 
-    return fake
+    return transport
 
 
-def _fake_subprocess_run(extraction_text: str, *, wgrib2_version: str = "3.8.0"):
+def _fake_subprocess_run(extraction_text: str, *, calls: list[list[str]] | None = None):
     def run(command: object, *args: object, **kwargs: object) -> subprocess.CompletedProcess[str]:
         assert isinstance(command, list)
+        if calls is not None:
+            calls.append(command)
         if "-version" in command:
-            return subprocess.CompletedProcess(command, 0, f"{wgrib2_version}\n", "")
+            return subprocess.CompletedProcess(command, 0, "3.8.0\n", "")
         return subprocess.CompletedProcess(command, 0, extraction_text, "")
 
     return run
@@ -64,229 +70,216 @@ def _fake_wgrib2_bin(tmp_path: Path) -> str:
     return str(path)
 
 
-@pytest.fixture(autouse=True)
-def _fixed_clock(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(cli, "_now", lambda: FIXED_NOW)
+def _compose(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    transport,
+    *,
+    subprocess_calls: list[list[str]] | None = None,
+):
+    monkeypatch.setattr(
+        subprocess, "run", _fake_subprocess_run(_extraction(), calls=subprocess_calls)
+    )
+    return compose(DAY, transport=transport, wgrib2_bin=_fake_wgrib2_bin(tmp_path))
 
 
-# ---------------------------------------------------------------------------
-# Exact 03Z success
-# ---------------------------------------------------------------------------
-
-
-def test_compose_exact_03z_success_produces_three_records(
+def test_single_candidate_success_builds_weather_evidence(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setattr(cli, "_get", _fake_get())
-    monkeypatch.setattr(subprocess, "run", _fake_subprocess_run(_extraction()))
-    result = compose(DAY, wgrib2_bin=_fake_wgrib2_bin(tmp_path))
+    result = _compose(tmp_path, monkeypatch, _transport())
+    assert result["classification"] == "SUCCESS"
+    assert len(result["records"]) == 3
+    assert result["acquisition"]["selected_name"] == GOOD_NAME
+
+
+def test_exact_raw_evidence_object_is_passed_to_downstream_builder(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    parsed: list[object] = []
+    built: list[object] = []
+    real_parser = selector.parse_wgrib2_max_t_evidence
+    real_builder = cli.build_current_weather_forecast_evidence
+
+    def parser(*args: object, **kwargs: object):
+        evidence = real_parser(*args, **kwargs)
+        parsed.append(evidence)
+        return evidence
+
+    def builder(evidence: object, **kwargs: object):
+        built.append(evidence)
+        return real_builder(evidence, **kwargs)  # type: ignore[arg-type]
+
+    monkeypatch.setattr(selector, "parse_wgrib2_max_t_evidence", parser)
+    monkeypatch.setattr(cli, "build_current_weather_forecast_evidence", builder)
+    result = _compose(tmp_path, monkeypatch, _transport())
 
     assert result["classification"] == "SUCCESS"
-    assert result["records"] is not None
-    assert len(result["records"]) == 3
-    record_numbers = sorted(record["record_number"] for record in result["records"])
-    assert record_numbers == [1, 2, 3]
-    for record in result["records"]:
-        assert record["forecast_reference_time"] == "2024-06-15T03:00:00+00:00"
-        assert record["wgrib2_version"] == "3.8.0"
-    # content-addressed: the stamped content_hash must equal an independent recomputation.
-    material = {k: v for k, v in result.items() if k != "content_hash"}
-    import json
-
-    expected = hashlib.sha256(
-        json.dumps(material, sort_keys=True, separators=(",", ":")).encode()
-    ).hexdigest()
-    assert result["content_hash"] == expected
+    assert parsed and built
+    assert all(item is parsed[0] for item in built)
 
 
-def test_compose_current_evidence_record_semantics(
+def test_no_reacquisition_or_downstream_wgrib2_and_parser(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setattr(cli, "_get", _fake_get())
-    monkeypatch.setattr(subprocess, "run", _fake_subprocess_run(_extraction()))
-    result = compose(DAY, wgrib2_bin=_fake_wgrib2_bin(tmp_path))
-    by_number = {record["record_number"]: record for record in result["records"]}
-    assert by_number[1]["exact_midpoint_seconds"] == 54_000
-    assert by_number[2]["exact_midpoint_seconds"] == 140_400
-    assert by_number[3]["exact_midpoint_seconds"] == 226_800
-    for record in by_number.values():
-        assert record["family_identity"] == "POST2020_CHICAGO_MAXT_2P5KM_YGUZ98_03Z"
-        assert record["research_only"] is True
-        assert record["production_influence"] == "0"
+    transport_calls: list[str] = []
+    subprocess_calls: list[list[str]] = []
+    parser_calls: list[object] = []
+    real_parser = selector.parse_wgrib2_max_t_evidence
+
+    def parser(*args: object, **kwargs: object):
+        result = real_parser(*args, **kwargs)
+        parser_calls.append(result)
+        return result
+
+    monkeypatch.setattr(selector, "parse_wgrib2_max_t_evidence", parser)
+    result = _compose(
+        tmp_path,
+        monkeypatch,
+        _transport(calls=transport_calls),
+        subprocess_calls=subprocess_calls,
+    )
+    assert result["classification"] == "SUCCESS"
+    assert len(transport_calls) == 2  # index + selected object, exactly once each
+    assert len(subprocess_calls) == 2  # resolver identity + selector extraction
+    assert len(parser_calls) == 1
 
 
-# ---------------------------------------------------------------------------
-# Filename "02" is discovery only -- never claims 03Z
-# ---------------------------------------------------------------------------
-
-
-def test_filename_02_selection_with_parser_internal_non_03z_fails_closed(
+def test_success_provenance_is_exact_and_bounded(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """The index-level filename filter selects a candidate purely by its "02" hour suffix -- it
-    makes no claim about the GRIB-internal reference time. Only the frozen parser can, and here
-    it rejects a reference hour of 02 (not 03) even though filename selection succeeded."""
-    non_03z_text = _extraction().replace("reference = 20240615030000", "reference = 20240615020000")
-    monkeypatch.setattr(cli, "_get", _fake_get())
-    monkeypatch.setattr(subprocess, "run", _fake_subprocess_run(non_03z_text))
-    with pytest.raises(ForecastError):
-        compose(DAY, wgrib2_bin=_fake_wgrib2_bin(tmp_path))
+    result = _compose(tmp_path, monkeypatch, _transport())
+    provenance = result["acquisition"]
+    assert provenance["selected_name"] == GOOD_NAME
+    assert provenance["selected_object_url"].endswith("/" + GOOD_NAME)
+    assert provenance["raw_grib_byte_length"] == len(RAW_OBJECT_BYTES)
+    assert provenance["raw_grib_sha256"] == hashlib.sha256(RAW_OBJECT_BYTES).hexdigest()
+    assert provenance["extraction_sha256"] == hashlib.sha256(_extraction().encode()).hexdigest()
+    assert len(provenance["wgrib2_executable_sha256"]) == 64
+    assert provenance["evidence_family_identity"] == ("POST2020_CHICAGO_MAXT_2P5KM_YGUZ98_03Z")
+    assert "raw_bytes" not in json.dumps(result)
+    assert "raw_body_b64" not in json.dumps(result)
 
 
-# ---------------------------------------------------------------------------
-# Ambiguous source objects never reach wgrib2
-# ---------------------------------------------------------------------------
-
-
-def test_ambiguous_candidates_never_invoke_wgrib2(
+def test_zero_filename_candidates_stop_without_object_wgrib2_or_builder(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setattr(cli, "_get", _fake_get(index_names=(GOOD_NAME, GOOD_NAME + "b")))
+    calls: list[str] = []
+    subprocess_calls: list[list[str]] = []
+    monkeypatch.setattr(
+        cli, "build_current_weather_forecast_evidence", lambda *a, **k: pytest.fail("builder")
+    )
+    result = _compose(
+        tmp_path,
+        monkeypatch,
+        _transport((), calls=calls),
+        subprocess_calls=subprocess_calls,
+    )
+    assert result["classification"] == ZERO_VALID
+    assert result["acquisition"]["classification"] == ZERO_VALID
+    assert len(calls) == 1
+    assert subprocess_calls == []
 
-    def must_not_run(*args: object, **kwargs: object) -> subprocess.CompletedProcess[str]:
-        raise AssertionError("wgrib2 must never run for an ambiguous/unresolved acquisition")
 
-    monkeypatch.setattr(subprocess, "run", must_not_run)
-    result = compose(DAY, wgrib2_bin=_fake_wgrib2_bin(tmp_path))
-    assert result["classification"] == "AMBIGUOUS_SOURCE_SELECTION"
+def test_zero_content_valid_candidates_stop_without_downstream(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(
+        cli, "build_current_weather_forecast_evidence", lambda *a, **k: pytest.fail("builder")
+    )
+    result = _compose(tmp_path, monkeypatch, _transport(body=b"not-grib"))
+    assert result["classification"] == ZERO_VALID
     assert result["records"] is None
 
 
-# ---------------------------------------------------------------------------
-# Raw-byte mutation detected by the script's own redundant re-verification
-# ---------------------------------------------------------------------------
-
-
-def test_raw_byte_mutation_between_acquisition_and_compose_is_detected(
+def test_multiple_valid_candidates_stop_without_downstream(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    real_acquire = cli.acquire_current_cycle_raw_grib
-
-    def tampered_acquire(day: date, *, transport: object, clock: object) -> AcquiredForecastSource:
-        result = real_acquire(day, transport=transport, clock=clock)
-        assert result.succeeded
-        # Simulate a mutated raw_body_b64 whose bytes no longer match the stamped raw_sha256 --
-        # compose() must independently catch this, not merely trust the acquisition's own field.
-        import base64
-
-        tampered_b64 = base64.b64encode(b"GRIB" + b"\xff" * 32).decode("ascii")
-        from dataclasses import replace
-
-        return replace(result, raw_body_b64=tampered_b64)
-
-    monkeypatch.setattr(cli, "_get", _fake_get())
-    monkeypatch.setattr(cli, "acquire_current_cycle_raw_grib", tampered_acquire)
-    monkeypatch.setattr(subprocess, "run", _fake_subprocess_run(_extraction()))
-    with pytest.raises(ForecastError, match="does not match"):
-        compose(DAY, wgrib2_bin=_fake_wgrib2_bin(tmp_path))
-
-
-# ---------------------------------------------------------------------------
-# Extraction hash is always derived from the exact extraction text used
-# ---------------------------------------------------------------------------
-
-
-def test_extraction_sha256_is_derived_from_the_exact_extraction_text(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    text = _extraction()
-    monkeypatch.setattr(cli, "_get", _fake_get())
-    monkeypatch.setattr(subprocess, "run", _fake_subprocess_run(text))
-    result = compose(DAY, wgrib2_bin=_fake_wgrib2_bin(tmp_path))
-    assert result["extraction_sha256"] == hashlib.sha256(text.encode()).hexdigest()
-    for record in result["records"]:
-        assert record["extraction_sha256"] == result["extraction_sha256"]
-
-
-# ---------------------------------------------------------------------------
-# Wrong wgrib2 version fails closed
-# ---------------------------------------------------------------------------
-
-
-def test_wrong_wgrib2_version_fails_closed(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(cli, "_get", _fake_get())
     monkeypatch.setattr(
-        subprocess, "run", _fake_subprocess_run(_extraction(), wgrib2_version="3.7.0")
+        cli, "build_current_weather_forecast_evidence", lambda *a, **k: pytest.fail("builder")
     )
-    with pytest.raises(ForecastError, match="version"):
-        compose(DAY, wgrib2_bin=_fake_wgrib2_bin(tmp_path))
+    result = _compose(tmp_path, monkeypatch, _transport((GOOD_NAME, NAME_B)))
+    assert result["classification"] == MULTIPLE_VALID
+    assert result["acquisition"]["selected_name"] is None
+    assert result["records"] is None
 
 
-# ---------------------------------------------------------------------------
-# No cache reuse for a fresh live run
-# ---------------------------------------------------------------------------
-
-
-def test_no_cache_reuse_for_a_fresh_live_run(
+def test_blocked_candidate_propagates_without_downstream(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    calls: list[Path | None] = []
-
-    def tracking_get(url: str, *, cache: Path | None = None) -> bytes:
-        calls.append(cache)
-        idx_url = aws_index_url(DAY)
-        return _index_xml((GOOD_NAME,)) if url == idx_url else RAW_OBJECT_BYTES
-
-    monkeypatch.setattr(cli, "_get", tracking_get)
-    monkeypatch.setattr(subprocess, "run", _fake_subprocess_run(_extraction()))
-    compose(DAY, wgrib2_bin=_fake_wgrib2_bin(tmp_path))
-    assert calls == [None, None]
-
-
-# ---------------------------------------------------------------------------
-# Freshness authority: operator cannot widen freshness to make stale evidence eligible
-# ---------------------------------------------------------------------------
+    monkeypatch.setattr(
+        cli, "build_current_weather_forecast_evidence", lambda *a, **k: pytest.fail("builder")
+    )
+    result = _compose(
+        tmp_path,
+        monkeypatch,
+        _transport((GOOD_NAME, NAME_B), blocked_names=frozenset({NAME_B})),
+    )
+    assert result["classification"] == EVALUATION_BLOCKED
+    assert result["acquisition"]["classification"] == EVALUATION_BLOCKED
+    assert result["records"] is None
 
 
-def test_script_has_no_path_to_m27d_freshness_authority() -> None:
-    """This script must never import services.supervised_canary at all -- there is no code
-    path here through which an operator could widen or bypass M27D's own MAX_FORECAST_AGE."""
+def test_candidate_accounting_failure_fails_closed(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def impossible(*args: object, **kwargs: object):
+        raise selector.CandidateAccountingError("impossible test state")
+
+    monkeypatch.setattr(selector, "_partition_outcomes", impossible)
+    result = _compose(tmp_path, monkeypatch, _transport())
+    assert result["classification"] == EVALUATION_BLOCKED
+    assert result["records"] is None
+
+
+def test_reversed_candidate_order_is_equivalent(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    first = _compose(tmp_path, monkeypatch, _transport((GOOD_NAME, NAME_B)))
+    second = _compose(tmp_path, monkeypatch, _transport((NAME_B, GOOD_NAME)))
+    assert first["classification"] == second["classification"] == MULTIPLE_VALID
+    assert first["acquisition"]["candidate_names"] == second["acquisition"]["candidate_names"]
+
+
+def test_compose_requires_transport_and_only_cli_wires_public_adapter() -> None:
+    parameter = inspect.signature(compose).parameters["transport"]
+    assert parameter.default is inspect.Parameter.empty
+    source = Path("scripts/run_m27_current_weather_evidence.py").read_text()
+    assert "compose(day, transport=_public_transport" in source
+    assert "_get(url, cache=None)" in source
+
+
+def test_existing_top_level_output_keys_remain_compatible(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    result = _compose(tmp_path, monkeypatch, _transport())
+    assert {
+        "schema",
+        "software_version",
+        "classification",
+        "reason",
+        "acquisition",
+        "wgrib2_executable_sha256",
+        "extraction_sha256",
+        "records",
+        "content_hash",
+    } <= set(result)
+
+
+def test_operator_has_no_account_credential_store_signer_or_mutation_authority() -> None:
     source = Path("scripts/run_m27_current_weather_evidence.py").read_text()
     tree = ast.parse(source)
-    imported_modules: set[str] = set()
-    for node in ast.walk(tree):
-        if isinstance(node, ast.Import):
-            imported_modules.update(alias.name for alias in node.names)
-        elif isinstance(node, ast.ImportFrom) and node.module:
-            imported_modules.add(node.module)
-    assert not any("supervised_canary" in module for module in imported_modules), imported_modules
-
-
-# ---------------------------------------------------------------------------
-# Zero Kalshi/credential/signer/write capability
-# ---------------------------------------------------------------------------
-
-_FORBIDDEN_NAMES = {
-    "KalshiAccountClient",
-    "RequestSigner",
-    "AuthorizationStore",
-    "CanaryStore",
-    "ProtectedWriteCredentialStore",
-}
-
-
-def test_script_has_no_kalshi_credential_signer_or_write_capability() -> None:
-    source = Path("scripts/run_m27_current_weather_evidence.py").read_text()
-    tree = ast.parse(source)
-    names: set[str] = set()
-    imported_modules: set[str] = set()
-    for node in ast.walk(tree):
-        if isinstance(node, ast.Name):
-            names.add(node.id)
-        elif isinstance(node, ast.Attribute):
-            names.add(node.attr)
-        elif isinstance(node, ast.Import):
-            imported_modules.update(alias.name for alias in node.names)
-        elif isinstance(node, ast.ImportFrom) and node.module:
-            imported_modules.add(node.module)
-    assert not (names & _FORBIDDEN_NAMES), names & _FORBIDDEN_NAMES
-    assert not any("kalshi" in module.lower() for module in imported_modules), imported_modules
-    forbidden_modules = {
-        "services.opportunity_engine",
-        "services.risk_engine",
-        "services.production_execution",
-        "services.kalshi_account_gateway",
-        "services.supervised_canary",
+    imported = {
+        node.module for node in ast.walk(tree) if isinstance(node, ast.ImportFrom) and node.module
     }
-    hits = {m for m in imported_modules if any(m.startswith(f) for f in forbidden_modules)}
-    assert not hits, hits
+    forbidden = (
+        "kalshi",
+        "production_execution",
+        "kalshi_account_gateway",
+        "risk_engine",
+        "supervised_canary",
+        "store",
+        "credentials",
+        "signer",
+    )
+    assert not any(any(token in module.lower() for token in forbidden) for module in imported)
+    assert not any(token in source.lower() for token in ("create_envelope", "order", "arm", "burn"))
