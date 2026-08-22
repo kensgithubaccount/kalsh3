@@ -8,7 +8,12 @@ import pytest
 from services.production_execution.requests import create_envelope
 from services.risk_engine.authorization import AuthorizationState, RiskAuthorization
 from services.supervised_canary.domain import HumanCanaryApproval, HumanCanaryPreview
-from services.supervised_canary.m27i import GATE_NAMES, GateResult, PreflightArtifact, PreflightGates
+from services.supervised_canary.m27i import (
+    GATE_NAMES,
+    GateResult,
+    PreflightArtifact,
+    PreflightGates,
+)
 from services.supervised_canary.m27o import M27OReleaseError, prepare_one_contract_release
 
 NOW = datetime(2026, 8, 22, 3, 20, tzinfo=UTC)
