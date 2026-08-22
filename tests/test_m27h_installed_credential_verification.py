@@ -445,13 +445,15 @@ def test_verify_installed_write_credential_never_returns_a_credential_object(
         assert not isinstance(field_value, bytes)  # no raw PEM/key bytes anywhere in evidence
 
 
-def test_decode_helper_is_referenced_only_by_its_defining_module_and_m27h() -> None:
-    """No ordinary runtime module -- and no module besides the store's own definition and the
-    one sanctioned M27H consumer -- ever references the private decrypt helper.
+def test_decode_helper_is_referenced_only_by_sanctioned_consumers() -> None:
+    """Only the store definition, M27H verifier, and narrow M27O live-canary boundary may
+    reference the private decrypt helper. No other runtime module may acquire plaintext
+    production credential material.
     """
     allowed = {
         Path("services/production_execution/enrollment.py"),
         Path("services/production_execution/installed_credential_verification.py"),
+        Path("services/production_execution/m27o_live_canary.py"),
     }
     offenders = [
         str(path)
@@ -459,7 +461,7 @@ def test_decode_helper_is_referenced_only_by_its_defining_module_and_m27h() -> N
         if path not in allowed and "_decode_committed_credential" in path.read_text()
     ]
     assert offenders == []
-    # sanity: the symbol really is used by both allowed files, so this test isn't vacuous
+    # sanity: the symbol really is used by every allowed file, so this test isn't vacuous
     for path in allowed:
         assert "_decode_committed_credential" in path.read_text()
 

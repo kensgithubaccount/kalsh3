@@ -31,10 +31,12 @@ Gemini M27H delta repair (2026-08-18), two blockers fixed here:
    ``ProductionWriteCredential``. Combined with the already-public ``store.exclusive()``, that
    was a de facto runtime credential-provider API in disguise. The store now exposes only a
    private :meth:`services.production_execution.enrollment.ProtectedWriteCredentialStore.
-   _decode_committed_credential`, called *only* from :func:`verify_installed_write_credential`
-   below; the decrypted credential lives solely in that function's local variables, is used
-   only to compute hashes / bind authority / run the signer self-test, and is never returned,
-   logged, or handed to caller-supplied code. There is deliberately no generic
+   _decode_committed_credential`. Its sanctioned consumers are deliberately limited to this
+   M27H verifier and the narrow M27O one-contract live-canary boundary. M27H uses the decrypted
+   credential only to compute hashes / bind authority / run the signer self-test; M27O may use
+   it only inside the protected credential-store lock to bind fresh M27H evidence and sign the
+   exact already-authorized request. Neither path returns, logs, serializes, persists, or hands
+   the credential to caller-supplied code. There is deliberately no generic
    ``with_credential(callback)`` primitive either -- that would just be the same escape under a
    different name (a caller could pass ``lambda cred: cred``). Python cannot guarantee memory
    zeroization; the containment here is architectural (no public return path), not

@@ -225,18 +225,20 @@ class ProtectedWriteCredentialStore:
         method on this store, combined with the already-public :meth:`exclusive`, let any
         future runtime code reconstruct a usable, decrypted ``ProductionWriteCredential`` with
         no architectural barrier beyond "remember to hold the lock first". This method is now
-        private by both convention (leading underscore) and by contract: its only sanctioned
-        caller is the verification closure in :func:`services.production_execution.
-        installed_credential_verification.verify_installed_write_credential`, which uses the
-        returned credential only to (a) independently bind it to the candidate authority
-        attestation by key ID, (b) run the existing real-signer self-test, and (c) compute
-        secret-free hashes -- the credential itself is discarded when that function returns; it
-        is never stored, returned, logged, or handed to caller-supplied code. See that module's
-        docstring and ``test_m27h_installed_credential_verification.py``'s
-        ``test_decode_helper_is_referenced_only_by_its_defining_module_and_m27h`` /
-        ``test_store_exposes_no_public_credential_returning_api``, which fail if this contract
-        is ever violated again. Python has no true access control and this module makes no
-        claim of memory zeroization -- the containment here is architectural (no public return
+        private by both convention (leading underscore) and by contract. Exactly two
+        production-execution consumers are sanctioned: (1)
+        :func:`services.production_execution.installed_credential_verification.
+        verify_installed_write_credential`, which uses it only for authority binding and the
+        local real-signer self-test; and (2)
+        :func:`services.production_execution.m27o_live_canary.execute_one_contract_live_canary`,
+        which may use it only while holding this store's exclusive lock, solely to bind fresh
+        M27H evidence and sign the one already-authorized M27O request. Neither consumer may
+        return, serialize, log, persist, or hand the decrypted credential to caller-supplied
+        code. ``test_m27h_installed_credential_verification.py`` enforces the exact sanctioned
+        file set together with
+        ``test_store_exposes_no_public_credential_returning_api``. Python has no true access
+        control and this module makes no claim of memory zeroization -- the containment here is
+        architectural (no public return
         path, no generic callback primitive), not cryptographic erasure.
 
         Requires the caller to already hold this store's exclusive transaction lock (see
