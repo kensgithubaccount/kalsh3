@@ -1,3 +1,5 @@
+import sqlite3
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
@@ -6,7 +8,13 @@ from pathlib import Path
 import pytest
 
 from services.production_execution.requests import create_envelope
-from services.risk_engine.authorization import AuthorizationState, RiskAuthorization
+from services.risk_engine.authorization import (
+    AuthorizationState,
+    AuthorizationStore,
+    FixedClock,
+    RiskAuthorization,
+)
+from services.risk_engine.domain import ComplianceState
 from services.supervised_canary.domain import HumanCanaryApproval, HumanCanaryPreview
 from services.supervised_canary.m27i import (
     GATE_NAMES,
@@ -14,7 +22,12 @@ from services.supervised_canary.m27i import (
     PreflightArtifact,
     PreflightGates,
 )
-from services.supervised_canary.m27o import M27OReleaseError, prepare_one_contract_release
+from services.supervised_canary.m27o import (
+    M27OReleaseError,
+    commit_atomic_release,
+    prepare_one_contract_release,
+)
+from services.supervised_canary.store import CanaryStore
 
 NOW = datetime(2026, 8, 22, 3, 20, tzinfo=UTC)
 
@@ -168,12 +181,12 @@ def preflight(p: HumanCanaryPreview, **changes: object) -> dict[str, object]:
     return PreflightArtifact(**values).to_json()  # type: ignore[arg-type]
 
 
-def valid_release():
+def release_material():
     p = preview()
     a = approval(p)
     r = risk_authorization()
     e = envelope(p, r)
-    return prepare_one_contract_release(
+    release = prepare_one_contract_release(
         preflight_payload=preflight(p),
         preview=p,
         approval=a,
@@ -181,6 +194,95 @@ def valid_release():
         risk_authorization=r,
         now=NOW,
     )
+    return p, a, r, e, release
+
+
+def valid_release():
+    return release_material()[-1]
+
+
+def seed_shared_stores(tmp_path: Path):
+    p, a, r, _, release = release_material()
+    path = tmp_path / "m27o-shared.db"
+    canary_store = CanaryStore(path)
+    authorization_store = AuthorizationStore(path, FixedClock(NOW))
+    authorization_store.set_compliance(
+        ComplianceState.CLEAR,
+        actor="test",
+        reason="M27O atomic commit test",
+    )
+    canary_store.add_preview(p)
+    canary_store.issue_approval(
+        a,
+        preview=p,
+        now=NOW,
+        authenticated_session=True,
+        recent_session=True,
+        password_valid=True,
+        totp_valid=True,
+        csrf_valid=True,
+        rate_limit_clear=True,
+    )
+    with sqlite3.connect(path) as db:
+        db.execute(
+            "INSERT INTO risk_authorizations("
+            "authorization_id,risk_decision_id,intent_hash,client_order_id,market_ticker,"
+            "event_id,portfolio_state_hash,policy_version,rules_version,safety_state_hash,"
+            "created_at,expires_at,state,production_execution_authorized"
+            ") VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,0)",
+            (
+                r.authorization_id,
+                r.risk_decision_id,
+                r.intent_hash,
+                p.client_order_id,
+                p.market_ticker,
+                p.event_ticker,
+                r.portfolio_state_hash,
+                r.policy_version,
+                r.rules_version,
+                r.safety_state_hash,
+                r.created_at.isoformat(),
+                r.expires_at.isoformat(),
+                r.state,
+            ),
+        )
+        db.execute(
+            "INSERT INTO risk_reservations("
+            "authorization_id,market_ticker,event_id,market_risk,event_risk,aggregate_risk,"
+            "cash_commitment,expires_at,active"
+            ") VALUES(?,?,?,?,?,?,?,?,1)",
+            (
+                r.authorization_id,
+                p.market_ticker,
+                p.event_ticker,
+                str(p.maximum_loss),
+                str(p.maximum_loss),
+                str(p.maximum_loss),
+                str(p.maximum_commitment),
+                r.expires_at.isoformat(),
+            ),
+        )
+    return path, canary_store, authorization_store, release
+
+
+def durable_states(path: Path):
+    with sqlite3.connect(path) as db:
+        approval_state = db.execute(
+            "SELECT state FROM canary_approvals WHERE approval_id='approval-m27o'"
+        ).fetchone()[0]
+        risk_state = db.execute(
+            "SELECT state FROM risk_authorizations WHERE authorization_id='risk-auth-m27o'"
+        ).fetchone()[0]
+        reservation_active = db.execute(
+            "SELECT active FROM risk_reservations WHERE authorization_id='risk-auth-m27o'"
+        ).fetchone()[0]
+        submission_count = db.execute(
+            "SELECT real_submission_count FROM production_submission_counter WHERE singleton=1"
+        ).fetchone()[0]
+        sessions = db.execute(
+            "SELECT state,possibly_submitted FROM canary_sessions"
+        ).fetchall()
+    return approval_state, risk_state, reservation_active, submission_count, sessions
 
 
 def test_valid_artifacts_bind_into_short_lived_one_contract_release() -> None:
@@ -190,6 +292,9 @@ def test_valid_artifacts_bind_into_short_lived_one_contract_release() -> None:
     assert release.exact_price == Decimal("0.5400")
     assert release.maximum_fee == Decimal("0.0174")
     assert release.expires_at == NOW + timedelta(seconds=4)
+    assert release.preview_id == "preview-m27o"
+    assert release.approval_id == "approval-m27o"
+    assert release.safety_state_hash == "safety-v1"
     assert release.content_hash
 
 
@@ -321,6 +426,112 @@ def test_m13_authorization_must_be_current_and_exactly_bound() -> None:
             risk_authorization=wrong_intent,
             now=NOW,
         )
+
+
+def test_atomic_commit_consumes_all_one_shot_tokens_together(tmp_path: Path) -> None:
+    path, canary_store, authorization_store, release = seed_shared_stores(tmp_path)
+
+    commit = commit_atomic_release(
+        release=release,
+        canary_store=canary_store,
+        authorization_store=authorization_store,
+        now=NOW,
+    )
+
+    assert commit.state == "SUBMISSION_PENDING"
+    assert commit.possibly_submitted is True
+    assert commit.release_hash == release.content_hash
+    assert commit.content_hash
+    assert durable_states(path) == (
+        "CONSUMED",
+        "CONSUMED",
+        0,
+        1,
+        [("SUBMISSION_PENDING", 1)],
+    )
+
+
+def test_atomic_commit_is_single_use_and_cannot_be_replayed(tmp_path: Path) -> None:
+    path, canary_store, authorization_store, release = seed_shared_stores(tmp_path)
+    commit_atomic_release(
+        release=release,
+        canary_store=canary_store,
+        authorization_store=authorization_store,
+        now=NOW,
+    )
+    before = durable_states(path)
+
+    with pytest.raises(M27OReleaseError):
+        commit_atomic_release(
+            release=release,
+            canary_store=canary_store,
+            authorization_store=authorization_store,
+            now=NOW,
+        )
+
+    assert durable_states(path) == before
+
+
+def test_atomic_commit_rejects_separate_databases_before_mutation(tmp_path: Path) -> None:
+    release = valid_release()
+    canary_store = CanaryStore(tmp_path / "canary.db")
+    authorization_store = AuthorizationStore(tmp_path / "risk.db", FixedClock(NOW))
+
+    with pytest.raises(M27OReleaseError, match="share one SQLite database"):
+        commit_atomic_release(
+            release=release,
+            canary_store=canary_store,
+            authorization_store=authorization_store,
+            now=NOW,
+        )
+
+    assert canary_store.submission_budget_used() is False
+
+
+def test_safety_change_rolls_back_every_token(tmp_path: Path) -> None:
+    path, canary_store, authorization_store, release = seed_shared_stores(tmp_path)
+    with sqlite3.connect(path) as db:
+        db.execute("UPDATE global_halt_state SET active=1 WHERE singleton=1")
+
+    before = durable_states(path)
+    with pytest.raises(M27OReleaseError, match="safety state changed"):
+        commit_atomic_release(
+            release=release,
+            canary_store=canary_store,
+            authorization_store=authorization_store,
+            now=NOW,
+        )
+
+    assert durable_states(path) == before
+    assert before == ("ISSUED", "ISSUED", 1, 0, [])
+
+
+def test_concurrent_atomic_commit_has_exactly_one_winner(tmp_path: Path) -> None:
+    path, canary_store, authorization_store, release = seed_shared_stores(tmp_path)
+
+    def attempt(_: int) -> bool:
+        try:
+            commit_atomic_release(
+                release=release,
+                canary_store=canary_store,
+                authorization_store=authorization_store,
+                now=NOW,
+            )
+        except M27OReleaseError:
+            return False
+        return True
+
+    with ThreadPoolExecutor(max_workers=4) as pool:
+        results = list(pool.map(attempt, range(4)))
+
+    assert sum(results) == 1
+    assert durable_states(path) == (
+        "CONSUMED",
+        "CONSUMED",
+        0,
+        1,
+        [("SUBMISSION_PENDING", 1)],
+    )
 
 
 def test_m27o_release_module_has_no_network_or_credential_surface() -> None:
