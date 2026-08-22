@@ -413,10 +413,67 @@ def test_resting_partial_or_identity_drift_never_terminally_reconciles(
     assert journal.recover()
 
 
+@pytest.mark.parametrize(
+    "positions",
+    [
+        [{"ticker": "KXHIGHCHI-26AUG22-B80.5", "position_fp": "1.00"}],
+        [{"ticker": "KXHIGHCHI-26AUG22-B80.5", "position_fp": "-0.50"}],
+        [
+            {"ticker": "KXHIGHCHI-26AUG22-B80.5", "position_fp": "-1.00"},
+            {"ticker": "KXHIGHCHI-26AUG22-B80.5", "position_fp": "-1.00"},
+        ],
+        [{"ticker": "KXHIGHCHI-26AUG22-B80.5", "position_fp": 1}],
+    ],
+)
+def test_full_fill_requires_exact_candidate_market_position(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    positions: list[dict[str, object]],
+) -> None:
+    result, env, *_rest, state, _store, journal = run_case(
+        tmp_path,
+        monkeypatch,
+        FakeReadTransport(
+            orders=[order()],
+            fills=[fill()],
+            positions=positions,
+        ),
+    )
+    assert result.classification == "UNKNOWN"
+    assert "position" in (result.reason or "")
+    assert result.reconciliation_required
+    assert session(state)[0] == "SUBMITTED_OR_UNKNOWN"
+    assert journal.recover() == (env.execution_id,)
+
+
+def test_zero_fill_requires_zero_candidate_market_position(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    result, env, *_rest, state, _store, journal = run_case(
+        tmp_path,
+        monkeypatch,
+        FakeReadTransport(
+            orders=[order(status="canceled", fill="0.00")],
+            fills=[],
+            positions=[{"ticker": "KXHIGHCHI-26AUG22-B80.5", "position_fp": "-1.00"}],
+        ),
+    )
+    assert result.classification == "UNKNOWN"
+    assert "position" in (result.reason or "")
+    assert result.reconciliation_required
+    assert session(state)[0] == "SUBMITTED_OR_UNKNOWN"
+    assert journal.recover() == (env.execution_id,)
+
+
 def test_fill_economics_violation_is_known_terminal_but_explicitly_flagged(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    transport = FakeReadTransport(orders=[order()], fills=[fill(no_price_dollars="0.5500")])
+    transport = FakeReadTransport(
+        orders=[order()],
+        fills=[fill(no_price_dollars="0.5500")],
+        positions=[{"ticker": "KXHIGHCHI-26AUG22-B80.5", "position_fp": "-1.00"}],
+    )
     result, *_rest, state, _store, journal = run_case(tmp_path, monkeypatch, transport)
     assert result.classification == "FILLED_POLICY_VIOLATION"
     assert "price or fee ceiling" in (result.reason or "")
@@ -431,7 +488,11 @@ def test_terminal_reconciliation_is_idempotent_and_fill_counter_cannot_double_in
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     env, r, c, state, store, journal = setup_case(tmp_path)
-    transport = FakeReadTransport(orders=[order()], fills=[fill()])
+    transport = FakeReadTransport(
+        orders=[order()],
+        fills=[fill()],
+        positions=[{"ticker": "KXHIGHCHI-26AUG22-B80.5", "position_fp": "-1.00"}],
+    )
     monkeypatch.setattr(rec, "UrllibReadTransport", lambda: transport)
     kwargs = dict(
         release=r,

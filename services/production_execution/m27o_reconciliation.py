@@ -266,11 +266,35 @@ def _read_account_state(
             del credential
 
 
+def _candidate_market_position(
+    *,
+    release: OneContractCanaryRelease,
+    positions: list[dict[str, object]],
+) -> tuple[Decimal | None, str | None]:
+    matches = [item for item in positions if item.get("ticker") == release.market_ticker]
+    if not matches:
+        return Decimal(0), None
+    if len(matches) != 1:
+        return None, "expected at most one candidate-market position row"
+
+    row = matches[0]
+    if "subaccount_number" in row and row.get("subaccount_number") != 0:
+        return None, "candidate-market position is not bound to subaccount 0"
+    try:
+        position = _decimal(row.get("position_fp"), "position position_fp")
+    except M27OReconciliationError as exc:
+        return None, str(exc)
+    if position < -ONE_CONTRACT or position > ONE_CONTRACT:
+        return None, "candidate-market position exceeds one-contract canary bounds"
+    return position, None
+
+
 def _execution_facts(
     *,
     release: OneContractCanaryRelease,
     orders: list[dict[str, object]],
     fills: list[dict[str, object]],
+    positions: list[dict[str, object]],
 ) -> _ExecutionFacts:
     matches = [item for item in orders if item.get("client_order_id") == release.client_order_id]
     if len(matches) != 1:
@@ -367,6 +391,22 @@ def _execution_facts(
             None,
             None,
         )
+
+    candidate_position, position_reason = _candidate_market_position(
+        release=release,
+        positions=positions,
+    )
+    if position_reason is not None or candidate_position is None:
+        return _ExecutionFacts(
+            "UNKNOWN",
+            position_reason or "candidate-market position could not be reconciled",
+            order_id,
+            str(status),
+            fill_total,
+            max_price,
+            fee_total,
+        )
+
     if status == "resting":
         return _ExecutionFacts(
             "UNKNOWN",
@@ -388,6 +428,17 @@ def _execution_facts(
                 max_price,
                 fee_total,
             )
+        expected_position = ONE_CONTRACT if release.selected_side == "YES" else -ONE_CONTRACT
+        if candidate_position != expected_position:
+            return _ExecutionFacts(
+                "UNKNOWN",
+                "candidate-market position disagrees with authenticated full fill",
+                order_id,
+                str(status),
+                fill_total,
+                max_price,
+                fee_total,
+            )
         classification = "FILLED"
         reason = None
         if max_price > release.exact_price or fee_total > release.maximum_fee:
@@ -397,7 +448,25 @@ def _execution_facts(
             classification, reason, order_id, str(status), fill_total, max_price, fee_total
         )
     if status == "canceled" and order_filled == 0 and fill_total == 0:
-        return _ExecutionFacts("NO_FILL", None, order_id, str(status), Decimal(0), None, Decimal(0))
+        if candidate_position != 0:
+            return _ExecutionFacts(
+                "UNKNOWN",
+                "candidate-market position disagrees with authenticated zero fill",
+                order_id,
+                str(status),
+                Decimal(0),
+                None,
+                Decimal(0),
+            )
+        return _ExecutionFacts(
+            "NO_FILL",
+            None,
+            order_id,
+            str(status),
+            Decimal(0),
+            None,
+            Decimal(0),
+        )
     return _ExecutionFacts(
         "UNKNOWN",
         "fill-or-kill order ended in a non-terminal or partial state",
@@ -547,7 +616,12 @@ def reconcile_one_contract_live_canary(
             reconciliation_required=True,
         )
 
-    facts = _execution_facts(release=release, orders=orders, fills=fills)
+    facts = _execution_facts(
+        release=release,
+        orders=orders,
+        fills=fills,
+        positions=positions,
+    )
     completed_at = _utc(clock.now())
     if facts.classification in {"FILLED", "FILLED_POLICY_VIOLATION", "NO_FILL"}:
         terminal_state = (
