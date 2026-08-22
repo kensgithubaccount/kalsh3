@@ -38,7 +38,7 @@ from services.production_execution.m27o_reconciliation import (
 from services.production_execution.store import ProductionJournal
 from services.risk_engine.authorization import AuthorizationStore, RiskAuthorization
 
-from .domain import HumanCanaryApproval, HumanCanaryPreview
+from .domain import ApprovalState, HumanCanaryApproval, HumanCanaryPreview
 from .m27o import (
     AtomicReleaseCommit,
     OneContractCanaryRelease,
@@ -147,10 +147,19 @@ def issue_operator_execution_authorization(
     if not hmac.compare_digest(confirmation, EXACT_REAL_MONEY_CONFIRMATION):
         raise M27OOperatorError("exact real-money confirmation phrase did not match")
     if preview.quantity != ONE_CONTRACT or preview.subaccount != 0:
-        raise M27OOperatorError("operator authorization requires exactly one subaccount-0 contract")
+        raise M27OOperatorError(
+            "operator authorization requires exactly one subaccount-0 contract"
+        )
+    if approval.state != ApprovalState.ISSUED:
+        raise M27OOperatorError("human approval is not ISSUED")
     if now >= preview.expires_at.astimezone(UTC) or now >= approval.expires_at.astimezone(UTC):
-        raise M27OOperatorError("preview or human approval expired before real-money authorization")
-    if approval.preview_hash != preview.content_hash or approval.candidate_id != preview.candidate_id:
+        raise M27OOperatorError(
+            "preview or human approval expired before real-money authorization"
+        )
+    if (
+        approval.preview_hash != preview.content_hash
+        or approval.candidate_id != preview.candidate_id
+    ):
         raise M27OOperatorError("human approval is not bound to the exact preview")
     side = preview.selected_outcome.removeprefix("BUY ")
     if side not in {"YES", "NO"}:
@@ -161,7 +170,9 @@ def issue_operator_execution_authorization(
         or approval.maximum_fee != preview.maximum_fee
         or approval.maximum_loss != preview.maximum_loss
     ):
-        raise M27OOperatorError("human approval economics changed before real-money authorization")
+        raise M27OOperatorError(
+            "human approval economics changed before real-money authorization"
+        )
     expires_at = min(
         now + AUTHORIZATION_TTL,
         preview.expires_at.astimezone(UTC),
@@ -209,7 +220,9 @@ def _validate_operator_authority(
         or authorization.preview_hash != release.preview_hash
         or authorization.approval_hash != release.approval_hash
     ):
-        raise M27OOperatorError("operator authorization does not match the exact M27O release")
+        raise M27OOperatorError(
+            "operator authorization does not match the exact M27O release"
+        )
 
 
 def run_operator_canary(
