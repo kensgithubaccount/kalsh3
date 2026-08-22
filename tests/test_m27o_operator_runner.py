@@ -9,9 +9,13 @@ from types import SimpleNamespace
 
 import pytest
 
-from services.supervised_canary.domain import HumanCanaryApproval, HumanCanaryPreview
-from services.supervised_canary.m27o import COMMIT_SCHEMA, AtomicReleaseCommit, OneContractCanaryRelease
 from services.supervised_canary import m27o_operator as operator
+from services.supervised_canary.domain import HumanCanaryApproval, HumanCanaryPreview
+from services.supervised_canary.m27o import (
+    COMMIT_SCHEMA,
+    AtomicReleaseCommit,
+    OneContractCanaryRelease,
+)
 
 NOW = datetime(2026, 8, 22, 4, 0, tzinfo=UTC)
 ONE = Decimal("1.00")
