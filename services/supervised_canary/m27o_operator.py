@@ -1,13 +1,13 @@
 """M27O operator-owned orchestration for exactly one supervised real-money canary.
 
-This module does not add a generic production executor.  It joins the already-reviewed M27O
+This module does not add a generic production executor. It joins the already-reviewed M27O
 A-D boundaries in their only permitted order after a second, explicit real-money human
 authorization has been bound to the exact M16 preview and approval.
 
 The human authorization deliberately exists *before* the five-second M13/M15 execution window:
 a person can inspect the exact candidate/side/price/fee/loss terms for up to sixty seconds,
 confirm the literal real-money phrase, and only then may the caller mint the short-lived risk
-authorization/envelope and invoke this runner.  The runner independently re-binds those fresh
+authorization/envelope and invoke this runner. The runner independently re-binds those fresh
 artifacts to that prior authorization before Phase B burns any durable token.
 
 There is no sender, transport, URL, host, method, private key, or raw credential argument.
@@ -216,6 +216,7 @@ def run_operator_canary(
     *,
     operator_authorization: OperatorExecutionAuthorization,
     preflight_payload: object,
+    m27h_payload: object,
     preview: HumanCanaryPreview,
     approval: HumanCanaryApproval,
     envelope: ProductionRequestEnvelope,
@@ -228,8 +229,8 @@ def run_operator_canary(
 ) -> OperatorCanaryRun:
     """Execute the sole reviewed M27O A->B->C->D sequence for one exact canary.
 
-    This function never retries Phase C.  If Phase C returns a possibly-sent outcome, Phase D
-    is invoked exactly once immediately.  An UNKNOWN reconciliation remains unresolved and may
+    This function never retries Phase C. If Phase C returns a possibly-sent outcome, Phase D
+    is invoked exactly once immediately. An UNKNOWN reconciliation remains unresolved and may
     later be re-run through the dedicated GET-only Phase-D recovery function; this runner can
     never issue a second opening order because Phase B has already burned the global v1 budget.
     """
@@ -259,9 +260,7 @@ def run_operator_canary(
         atomic_commit=commit,
         preflight_payload=preflight_payload,
         envelope=envelope,
-        m27h_payload=preflight_payload.get("m27h_payload")
-        if isinstance(preflight_payload, dict)
-        else None,
+        m27h_payload=m27h_payload,
         shared_state_path=canary_store.path,
         credential_store=credential_store,
         journal=journal,
