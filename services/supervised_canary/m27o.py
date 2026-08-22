@@ -18,7 +18,6 @@ import json
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from decimal import Decimal, InvalidOperation
-from typing import Any
 
 from services.production_execution.domain import Operation, ProductionRequestEnvelope, digest
 from services.risk_engine.authorization import AuthorizationState, RiskAuthorization
@@ -190,12 +189,19 @@ def prepare_one_contract_release(
         raise M27OReleaseError("M27I preflight market changed")
     if preflight_payload.get("selected_side") != expected_side:
         raise M27OReleaseError("M27I preflight side changed")
-    if _decimal(preflight_payload.get("executable_price"), "executable_price") != preview.limit_price:
+    if (
+        _decimal(preflight_payload.get("executable_price"), "executable_price")
+        != preview.limit_price
+    ):
         raise M27OReleaseError("M27I preflight executable price changed")
     if _decimal(preflight_payload.get("maximum_fee"), "maximum_fee") != preview.maximum_fee:
         raise M27OReleaseError("M27I preflight fee ceiling changed")
 
-    if envelope.operation != Operation.CREATE or envelope.method != "POST" or envelope.path != ORDER_PATH:
+    if (
+        envelope.operation != Operation.CREATE
+        or envelope.method != "POST"
+        or envelope.path != ORDER_PATH
+    ):
         raise M27OReleaseError("envelope is not the exact create-order operation")
     if envelope.quantity != ONE_CONTRACT or envelope.subaccount != 0:
         raise M27OReleaseError("envelope is not exactly one contract on subaccount 0")
@@ -222,7 +228,10 @@ def prepare_one_contract_release(
         raise M27OReleaseError("M13 authorization id changed")
     if risk_authorization.risk_decision_id != envelope.risk_decision_id:
         raise M27OReleaseError("M13 decision id changed")
-    if risk_authorization.intent_hash != approval.intent_hash or risk_authorization.intent_hash != envelope.intent_hash:
+    if (
+        risk_authorization.intent_hash != approval.intent_hash
+        or risk_authorization.intent_hash != envelope.intent_hash
+    ):
         raise M27OReleaseError("M13 intent binding changed")
     if risk_authorization.portfolio_state_hash != envelope.portfolio_state_hash:
         raise M27OReleaseError("M13 portfolio binding changed")
