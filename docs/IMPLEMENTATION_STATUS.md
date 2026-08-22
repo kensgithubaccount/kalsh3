@@ -652,3 +652,34 @@
   reconciliation is complete, does not claim production trading is enabled, and does not claim any bot P&L
   evidence exists — only that the existing account and system state are now presented truthfully and more
   legibly.
+
+## M27P create-only canary state bootstrap (2026-08-22)
+
+- Added operator-only `services/supervised_canary/m27o_state_bootstrap.py` to create the
+  single durable SQLite database shared by M16 `CanaryStore` and M13
+  `AuthorizationStore`, preserving M27O's atomic one-shot release requirement.
+- Bootstrap is local-only and non-networked. It accepts no Kalshi credential or private key,
+  imports no live Kalshi transport, cannot approve a canary, cannot issue M13 or M27O
+  authorization, cannot arm production, cannot burn the one-real-submission budget, and
+  cannot sign or send an order.
+- Creation requires the exact operator confirmation
+  `INITIALIZE DISARMED ONE-CONTRACT CANARY STATE WITH COMPLIANCE CLEAR`, plus explicit
+  actor and reason.
+- A successful fresh store must verify: production `DISARMED`; submission count `0`; fill
+  count `0`; global halt off; compliance `CLEAR`; all four kill states `NORMAL`; no durable
+  loss holds; and zero previews, approvals, canary sessions, risk authorizations, and risk
+  reservations.
+- The production-canary directory is `0700` and the database is `0600`. Existing database,
+  WAL, SHM, or rollback-journal artifacts fail closed rather than being overwritten or
+  repaired. Bootstrap WAL data is checkpointed before create-only publication.
+- Concurrent bootstrap attempts have exactly one winner through atomic create-only
+  publication.
+- Verification: Ruff PASS; 10/10 M27P bootstrap tests PASS; 41/41 existing M27O regression
+  tests PASS; guarded M27E/F/H/I/J/N/O + M13/M15/M16 regression PASS with `648 passed in
+  28.28s`, outbound sockets blocked, isolated HOME/XDG state, and real credential paths
+  hidden.
+- Real production canary state DB: **NOT CREATED**. Production write credential and candidate
+  credential: **UNTOUCHED**. Production remains **DISARMED**. M16 approval: **NONE**. M13
+  authorization: **NONE**. M27O execution authorization: **NONE**. Burn: **NONE**. Mutating
+  Kalshi call: **NONE**. Order sent: **NO**.
+- See `docs/reviews/M27P_CREATE_ONLY_CANARY_STATE_BOOTSTRAP.md`.
