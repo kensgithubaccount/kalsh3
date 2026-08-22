@@ -29,7 +29,7 @@ from decimal import Decimal, InvalidOperation
 from pathlib import Path
 from typing import Protocol
 
-from services.kalshi_account_gateway.auth import RequestSigner
+from services.kalshi_account_gateway.auth import AuthenticationError, RequestSigner
 from services.kalshi_account_gateway.client import (
     AccountGatewayError,
     KalshiAccountClient,
@@ -253,8 +253,10 @@ def _read_account_state(
             fills = client.get_collection("fills")
             positions = client.get_collection("positions")
             return orders, fills, positions
-        except AccountGatewayError as exc:
-            raise M27OReconciliationError("authenticated reconciliation GETs did not complete") from exc
+        except (AccountGatewayError, AuthenticationError) as exc:
+            raise M27OReconciliationError(
+                "authenticated reconciliation GETs did not complete"
+            ) from exc
         finally:
             try:
                 del client
@@ -284,10 +286,14 @@ def _execution_facts(
     order = matches[0]
     order_id = order.get("order_id")
     if not isinstance(order_id, str) or not _ORDER_ID.fullmatch(order_id):
-        return _ExecutionFacts("UNKNOWN", "matching order_id malformed", None, None, None, None, None)
+        return _ExecutionFacts(
+            "UNKNOWN", "matching order_id malformed", None, None, None, None, None
+        )
     status = order.get("status")
     if status not in {"executed", "canceled", "resting"}:
-        return _ExecutionFacts("UNKNOWN", "matching order status malformed", order_id, None, None, None, None)
+        return _ExecutionFacts(
+            "UNKNOWN", "matching order status malformed", order_id, None, None, None, None
+        )
     try:
         initial = _decimal(order.get("initial_count_fp"), "initial_count_fp")
         order_filled = _decimal(order.get("fill_count_fp"), "fill_count_fp")
@@ -303,7 +309,13 @@ def _execution_facts(
         or not Decimal(0) <= remaining <= ONE_CONTRACT
     ):
         return _ExecutionFacts(
-            "UNKNOWN", "matching order identity or quantity changed", order_id, str(status), None, None, None
+            "UNKNOWN",
+            "matching order identity or quantity changed",
+            order_id,
+            str(status),
+            None,
+            None,
+            None,
         )
 
     matching_fills = [item for item in fills if item.get("order_id") == order_id]
@@ -313,7 +325,9 @@ def _execution_facts(
     for item in matching_fills:
         try:
             count = _decimal(item.get("count_fp"), "fill count_fp")
-            price_field = "no_price_dollars" if release.selected_side == "NO" else "yes_price_dollars"
+            price_field = (
+                "no_price_dollars" if release.selected_side == "NO" else "yes_price_dollars"
+            )
             price = _decimal(item.get(price_field), f"fill {price_field}")
             fee = _decimal(item.get("fee_cost"), "fill fee_cost")
         except M27OReconciliationError as exc:
@@ -331,7 +345,13 @@ def _execution_facts(
             or fee < 0
         ):
             return _ExecutionFacts(
-                "UNKNOWN", "matching fill identity or economics malformed", order_id, str(status), None, None, None
+                "UNKNOWN",
+                "matching fill identity or economics malformed",
+                order_id,
+                str(status),
+                None,
+                None,
+                None,
             )
         fill_total += count
         fee_total += fee
@@ -339,16 +359,34 @@ def _execution_facts(
 
     if fill_total != order_filled:
         return _ExecutionFacts(
-            "UNKNOWN", "order fill count disagrees with authenticated fill records", order_id, str(status), None, None, None
+            "UNKNOWN",
+            "order fill count disagrees with authenticated fill records",
+            order_id,
+            str(status),
+            None,
+            None,
+            None,
         )
     if status == "resting":
         return _ExecutionFacts(
-            "UNKNOWN", "fill-or-kill canary unexpectedly remained resting", order_id, str(status), fill_total, max_price, fee_total
+            "UNKNOWN",
+            "fill-or-kill canary unexpectedly remained resting",
+            order_id,
+            str(status),
+            fill_total,
+            max_price,
+            fee_total,
         )
     if status == "executed" and order_filled == ONE_CONTRACT and remaining == 0:
         if fill_total != ONE_CONTRACT or max_price is None:
             return _ExecutionFacts(
-                "UNKNOWN", "executed order lacks exactly one contract of fills", order_id, str(status), fill_total, max_price, fee_total
+                "UNKNOWN",
+                "executed order lacks exactly one contract of fills",
+                order_id,
+                str(status),
+                fill_total,
+                max_price,
+                fee_total,
             )
         classification = "FILLED"
         reason = None
@@ -361,7 +399,13 @@ def _execution_facts(
     if status == "canceled" and order_filled == 0 and fill_total == 0:
         return _ExecutionFacts("NO_FILL", None, order_id, str(status), Decimal(0), None, Decimal(0))
     return _ExecutionFacts(
-        "UNKNOWN", "fill-or-kill order ended in a non-terminal or partial state", order_id, str(status), fill_total, max_price, fee_total
+        "UNKNOWN",
+        "fill-or-kill order ended in a non-terminal or partial state",
+        order_id,
+        str(status),
+        fill_total,
+        max_price,
+        fee_total,
     )
 
 
@@ -400,8 +444,8 @@ def _finalize_shared_state(
                     "SET real_fill_count=MIN(50,real_fill_count+1) WHERE singleton=1"
                 )
             db.execute(
-                "UPDATE canary_sessions SET filled_atoms=?,remaining_atoms=?,state='CANARY_COMPLETE',"
-                "possibly_submitted=0,resolved_at=? WHERE session_id=?",
+                "UPDATE canary_sessions SET filled_atoms=?,remaining_atoms=?,"
+                "state='CANARY_COMPLETE',possibly_submitted=0,resolved_at=? WHERE session_id=?",
                 (atoms, 1_000_000 - atoms, now.isoformat(), commit.session_id),
             )
             db.execute("UPDATE canary_runtime SET production_state='DISARMED' WHERE singleton=1")
@@ -497,8 +541,9 @@ def reconcile_one_contract_live_canary(
     facts = _execution_facts(release=release, orders=orders, fills=fills)
     completed_at = _utc(clock.now())
     if facts.classification in {"FILLED", "FILLED_POLICY_VIOLATION", "NO_FILL"}:
-        assert facts.filled_quantity is not None
         try:
+            if facts.filled_quantity is None:
+                raise M27OReconciliationError("terminal exchange evidence lacks filled quantity")
             _finalize_shared_state(
                 path=shared_state_path,
                 commit=atomic_commit,
@@ -510,7 +555,10 @@ def reconcile_one_contract_live_canary(
         except (M27OReconciliationError, sqlite3.Error) as exc:
             unknown = _ExecutionFacts(
                 "UNKNOWN",
-                f"terminal exchange evidence obtained but local finalize failed: {type(exc).__name__}",
+                (
+                    "terminal exchange evidence obtained but local finalize failed: "
+                    f"{type(exc).__name__}"
+                ),
                 facts.order_id,
                 facts.order_status,
                 facts.filled_quantity,

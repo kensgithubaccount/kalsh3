@@ -22,7 +22,10 @@ from services.production_execution.enrollment import (
     _candidate_fingerprint,
 )
 from services.production_execution.requests import create_envelope
-from services.production_execution.signer_self_test import SIGNER_SELF_TEST_DOMAIN, SignerSelfTestResult
+from services.production_execution.signer_self_test import (
+    SIGNER_SELF_TEST_DOMAIN,
+    SignerSelfTestResult,
+)
 from services.production_execution.store import ProductionJournal
 from services.risk_engine.authorization import AuthorizationStore, FixedClock
 from services.supervised_canary.m27o import AtomicReleaseCommit, OneContractCanaryRelease

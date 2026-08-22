@@ -225,17 +225,19 @@ class ProtectedWriteCredentialStore:
         method on this store, combined with the already-public :meth:`exclusive`, let any
         future runtime code reconstruct a usable, decrypted ``ProductionWriteCredential`` with
         no architectural barrier beyond "remember to hold the lock first". This method is now
-        private by both convention (leading underscore) and by contract. Exactly two
+        private by both convention (leading underscore) and by contract. Exactly three
         production-execution consumers are sanctioned: (1)
         :func:`services.production_execution.installed_credential_verification.
         verify_installed_write_credential`, which uses it only for authority binding and the
         local real-signer self-test; and (2)
         :func:`services.production_execution.m27o_live_canary.execute_one_contract_live_canary`,
         which may use it only while holding this store's exclusive lock, solely to bind fresh
-        M27H evidence and sign the one already-authorized M27O request. Neither consumer may
-        return, serialize, log, persist, or hand the decrypted credential to caller-supplied
-        code. ``test_m27h_installed_credential_verification.py`` enforces the exact sanctioned
-        file set together with
+        M27H evidence and sign the one already-authorized M27O request; and (3)
+        :mod:`services.production_execution.m27o_reconciliation`, which may use it only after
+        a possibly-sent canary, solely for authenticated GET-only recovery. None of these
+        consumers may return, serialize, log, persist, or hand the decrypted credential to
+        caller-supplied code. ``test_m27h_installed_credential_verification.py`` enforces the
+        exact sanctioned file set together with
         ``test_store_exposes_no_public_credential_returning_api``. Python has no true access
         control and this module makes no claim of memory zeroization -- the containment here is
         architectural (no public return
