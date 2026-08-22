@@ -279,9 +279,7 @@ def durable_states(path: Path):
         submission_count = db.execute(
             "SELECT real_submission_count FROM production_submission_counter WHERE singleton=1"
         ).fetchone()[0]
-        sessions = db.execute(
-            "SELECT state,possibly_submitted FROM canary_sessions"
-        ).fetchall()
+        sessions = db.execute("SELECT state,possibly_submitted FROM canary_sessions").fetchall()
     return approval_state, risk_state, reservation_active, submission_count, sessions
 
 

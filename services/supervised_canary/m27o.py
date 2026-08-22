@@ -30,7 +30,7 @@ from services.risk_engine.authorization import (
 
 from .domain import ApprovalState, HumanCanaryApproval, HumanCanaryPreview
 from .m27i import validate_preflight_artifact
-from .store import CanaryStore, UNRESOLVED
+from .store import UNRESOLVED, CanaryStore
 
 SCHEMA = "kalsh3.m27o.one-contract-release.v1"
 SOFTWARE_VERSION = "kalsh3.m27o.one-contract-release/2"
@@ -335,9 +335,7 @@ def prepare_one_contract_release(
     )
 
 
-def _shared_store_path(
-    canary_store: CanaryStore, authorization_store: AuthorizationStore
-) -> Path:
+def _shared_store_path(canary_store: CanaryStore, authorization_store: AuthorizationStore) -> Path:
     canary_path = canary_store.path.resolve()
     authorization_path = authorization_store.path.resolve()
     if canary_path != authorization_path:
@@ -348,9 +346,10 @@ def _shared_store_path(
 
 
 def _session_id(release: OneContractCanaryRelease) -> str:
-    return "m27o-" + hashlib.sha256(
-        f"{release.content_hash}|submission-session".encode()
-    ).hexdigest()[:32]
+    return (
+        "m27o-"
+        + hashlib.sha256(f"{release.content_hash}|submission-session".encode()).hexdigest()[:32]
+    )
 
 
 def commit_atomic_release(
@@ -446,15 +445,9 @@ def commit_atomic_release(
         if reservation is None or int(reservation[0]) != 1:
             raise M27OReleaseError("durable M13 risk reservation is not active")
 
-        halt = db.execute(
-            "SELECT active FROM global_halt_state WHERE singleton=1"
-        ).fetchone()
-        compliance = db.execute(
-            "SELECT state FROM compliance_state WHERE singleton=1"
-        ).fetchone()
-        kills = db.execute(
-            "SELECT category,level FROM durable_kill_states"
-        ).fetchall()
+        halt = db.execute("SELECT active FROM global_halt_state WHERE singleton=1").fetchone()
+        compliance = db.execute("SELECT state FROM compliance_state WHERE singleton=1").fetchone()
+        kills = db.execute("SELECT category,level FROM durable_kill_states").fetchall()
         loss_holds = db.execute(
             "SELECT weekly_review_required,monthly_review_required,experiment_halt_required "
             "FROM durable_loss_holds WHERE singleton=1"
@@ -498,8 +491,7 @@ def commit_atomic_release(
             (release.risk_authorization_id, now.isoformat()),
         ).rowcount
         reservation_changed = db.execute(
-            "UPDATE risk_reservations SET active=0 "
-            "WHERE authorization_id=? AND active=1",
+            "UPDATE risk_reservations SET active=0 WHERE authorization_id=? AND active=1",
             (release.risk_authorization_id,),
         ).rowcount
         budget_changed = db.execute(
