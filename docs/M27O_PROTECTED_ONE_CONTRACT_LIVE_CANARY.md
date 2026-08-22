@@ -1,6 +1,6 @@
 # M27O — Protected One-Contract Live Canary
 
-Status: implementation in progress
+Status: implementation complete; independent security review and operator runner pending
 Base: `78cd5596d19dd3f0675bd9843035128a4eded7af`
 
 ## Goal
@@ -85,7 +85,7 @@ budget is never restored automatically.
 
 This phase still has no credential access, signing, network transport, or order submission.
 
-### Phase C — high-trust sign/send (next)
+### Phase C — high-trust sign/send (implemented)
 
 A new narrow module inside `services.production_execution` will be the only live M27O credential
 consumer. It will:
@@ -133,12 +133,20 @@ Implemented:
   safety-state rollback, and concurrent one-winner behavior.
 - No network, credential, signer, arm, or order path in Phases A/B.
 
-Not yet implemented:
+Implemented additionally:
 
-- high-trust installed-credential execution module;
-- real transport reachability;
-- post-send live reconciliation wiring;
-- final independent security review and full-suite regression pass.
+- narrow high-trust one-contract production execution boundary;
+- fixed Kalshi V2 CREATE transport reachability;
+- fresh M27H credential/signer revalidation at send;
+- mandatory authenticated GET-only post-send order/fill/position reconciliation;
+- terminal FILLED, NO_FILL, UNKNOWN, and policy-violation handling;
+- permanent one-submission budget with no automatic mutation retry.
 
-Until those are implemented and reviewed, production remains DISARMED and no real order is
-reachable.
+Still required before the first real canary:
+
+- narrow operator runner that assembles and consumes the reviewed A-D boundaries;
+- final independent security review and full-suite regression pass;
+- merged-main verification;
+- fresh M27G/M27H/M27I evidence and explicit real-money authorization.
+
+The generic M15 production executor remains DISARMED.

@@ -420,7 +420,9 @@ def test_fill_economics_violation_is_known_terminal_but_explicitly_flagged(
     result, *_rest, state, _store, journal = run_case(tmp_path, monkeypatch, transport)
     assert result.classification == "FILLED_POLICY_VIOLATION"
     assert "price or fee ceiling" in (result.reason or "")
-    assert session(state)[0] == "CANARY_COMPLETE"
+    assert result.terminal_state == "CANARY_FAILED"
+    assert not result.reconciliation_required
+    assert session(state)[0] == "CANARY_FAILED"
     assert fill_counter(state) == 1
     assert journal.recover() == ()
 

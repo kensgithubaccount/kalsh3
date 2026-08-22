@@ -415,11 +415,14 @@ def _finalize_shared_state(
     commit: AtomicReleaseCommit,
     filled: Decimal,
     classification: str,
+    terminal_state: str,
     now: datetime,
 ) -> None:
     atoms = int(filled * Decimal(1_000_000))
     if atoms not in {0, 1_000_000}:
         raise M27OReconciliationError("only zero-fill or exactly-one-fill can terminally reconcile")
+    if terminal_state not in {"CANARY_COMPLETE", "CANARY_FAILED"}:
+        raise M27OReconciliationError("invalid terminal canary state")
     try:
         with sqlite3.connect(path, timeout=10) as db:
             db.execute("BEGIN IMMEDIATE")
@@ -445,8 +448,14 @@ def _finalize_shared_state(
                 )
             db.execute(
                 "UPDATE canary_sessions SET filled_atoms=?,remaining_atoms=?,"
-                "state='CANARY_COMPLETE',possibly_submitted=0,resolved_at=? WHERE session_id=?",
-                (atoms, 1_000_000 - atoms, now.isoformat(), commit.session_id),
+                "state=?,possibly_submitted=0,resolved_at=? WHERE session_id=?",
+                (
+                    atoms,
+                    1_000_000 - atoms,
+                    terminal_state,
+                    now.isoformat(),
+                    commit.session_id,
+                ),
             )
             db.execute("UPDATE canary_runtime SET production_state='DISARMED' WHERE singleton=1")
             db.execute(
@@ -541,6 +550,11 @@ def reconcile_one_contract_live_canary(
     facts = _execution_facts(release=release, orders=orders, fills=fills)
     completed_at = _utc(clock.now())
     if facts.classification in {"FILLED", "FILLED_POLICY_VIOLATION", "NO_FILL"}:
+        terminal_state = (
+            "CANARY_FAILED"
+            if facts.classification == "FILLED_POLICY_VIOLATION"
+            else "CANARY_COMPLETE"
+        )
         try:
             if facts.filled_quantity is None:
                 raise M27OReconciliationError("terminal exchange evidence lacks filled quantity")
@@ -549,6 +563,7 @@ def reconcile_one_contract_live_canary(
                 commit=atomic_commit,
                 filled=facts.filled_quantity,
                 classification=facts.classification,
+                terminal_state=terminal_state,
                 now=completed_at,
             )
             journal.transition(execution_id, "RECONCILED", possibly_sent=True)
@@ -588,7 +603,7 @@ def reconcile_one_contract_live_canary(
             orders=orders,
             fills=fills,
             positions=positions,
-            terminal_state="CANARY_COMPLETE",
+            terminal_state=terminal_state,
             reconciliation_required=False,
         )
 
