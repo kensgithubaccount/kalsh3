@@ -23,6 +23,8 @@ from services.production_execution.enrollment import (
 )
 from services.production_execution.installed_credential_verification import (
     INSTALLED_CREDENTIAL_EVIDENCE_SCHEMA,
+)
+from services.production_execution.installed_credential_verification import (
     SOFTWARE_VERSION as M27H_SOFTWARE_VERSION,
 )
 from services.production_execution.requests import create_envelope
@@ -33,7 +35,12 @@ from services.production_execution.signer_self_test import (
 from services.production_execution.store import ProductionJournal
 from services.production_execution.transport import ProductionTransportError
 from services.risk_engine.authorization import AuthorizationStore, FixedClock
-from services.supervised_canary.m27i import GATE_NAMES, GateResult, PreflightArtifact, PreflightGates
+from services.supervised_canary.m27i import (
+    GATE_NAMES,
+    GateResult,
+    PreflightArtifact,
+    PreflightGates,
+)
 from services.supervised_canary.m27o import AtomicReleaseCommit, OneContractCanaryRelease
 from services.supervised_canary.store import CanaryStore
 
@@ -81,7 +88,9 @@ def genkey() -> bytes:
     ).stdout
 
 
-def install_real_store(path: Path) -> tuple[ProtectedWriteCredentialStore, ProductionWriteCredential]:
+def install_real_store(
+    path: Path,
+) -> tuple[ProtectedWriteCredentialStore, ProductionWriteCredential]:
     store = ProtectedWriteCredentialStore(path)
     credential = ProductionWriteCredential(
         "m27o-real-key",
@@ -324,7 +333,9 @@ def setup_case(tmp_path: Path):
 def session_state(path: Path) -> str:
     with sqlite3.connect(path) as db:
         return str(
-            db.execute("SELECT state FROM canary_sessions WHERE session_id='m27o-live-session'").fetchone()[0]
+            db.execute(
+                "SELECT state FROM canary_sessions WHERE session_id='m27o-live-session'"
+            ).fetchone()[0]
         )
 
 

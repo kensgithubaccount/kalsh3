@@ -34,7 +34,7 @@ from typing import Protocol
 from services.supervised_canary.m27i import validate_preflight_artifact
 from services.supervised_canary.m27o import AtomicReleaseCommit, OneContractCanaryRelease
 
-from .domain import AuthorityClass, Operation, PRODUCTION_ORIGIN, ProductionRequestEnvelope, digest
+from .domain import PRODUCTION_ORIGIN, AuthorityClass, Operation, ProductionRequestEnvelope, digest
 from .enrollment import ProtectedWriteCredentialStore, _candidate_fingerprint
 from .installed_credential_verification import (
     validate_installed_credential_evidence_for_readiness,
@@ -244,15 +244,11 @@ def _validate_durable_phase_b(
                 "WHERE event_type='M27O_ATOMIC_RELEASE_COMMITTED' AND reference_hash=?",
                 (release.content_hash,),
             ).fetchone()
-            halt = db.execute(
-                "SELECT active FROM global_halt_state WHERE singleton=1"
-            ).fetchone()
+            halt = db.execute("SELECT active FROM global_halt_state WHERE singleton=1").fetchone()
             compliance = db.execute(
                 "SELECT state FROM compliance_state WHERE singleton=1"
             ).fetchone()
-            kills = db.execute(
-                "SELECT category,level FROM durable_kill_states"
-            ).fetchall()
+            kills = db.execute("SELECT category,level FROM durable_kill_states").fetchall()
             loss_holds = db.execute(
                 "SELECT weekly_review_required,monthly_review_required,experiment_halt_required "
                 "FROM durable_loss_holds WHERE singleton=1"
@@ -307,7 +303,9 @@ def _mark_submitted_or_unknown(path: Path, *, session_id: str, now: datetime) ->
                 (now.isoformat(), "M27O_LIVE_SEND_RECONCILIATION_REQUIRED", session_id, "M27O"),
             )
     except sqlite3.Error as exc:
-        raise LiveCanaryExecutionError("M27O canary reconciliation state could not be persisted") from exc
+        raise LiveCanaryExecutionError(
+            "M27O canary reconciliation state could not be persisted"
+        ) from exc
 
 
 def _unknown(
@@ -372,7 +370,9 @@ def execute_one_contract_live_canary(
         try:
             credential = credential_store._decode_committed_credential(lock)
         except PermissionError as exc:
-            raise LiveCanaryExecutionError("committed production write credential unavailable") from exc
+            raise LiveCanaryExecutionError(
+                "committed production write credential unavailable"
+            ) from exc
         try:
             if not isinstance(m27h_payload, dict):
                 raise LiveCanaryExecutionError("M27H payload malformed")
@@ -382,7 +382,9 @@ def execute_one_contract_live_canary(
                 m27h_payload.get("key_id_hash") != key_id_hash
                 or m27h_payload.get("credential_fingerprint") != fingerprint
             ):
-                raise LiveCanaryExecutionError("installed credential changed after M27H verification")
+                raise LiveCanaryExecutionError(
+                    "installed credential changed after M27H verification"
+                )
 
             if not journal.claim(envelope, version=BOUNDARY_VERSION):
                 raise LiveCanaryExecutionError("single-use production journal claim already exists")
@@ -391,7 +393,7 @@ def execute_one_contract_live_canary(
             message = f"{timestamp_ms}{envelope.method}{envelope.path}".encode()
             try:
                 signature = _rsa_pss_sha256(credential.private_key_pem, message)
-            except Exception as exc:
+            except Exception:
                 return _unknown(
                     journal=journal,
                     shared_state_path=shared_state_path,
