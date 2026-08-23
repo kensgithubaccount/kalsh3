@@ -17,8 +17,19 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import datetime
 
+from services.forecasting.weather_probability import (
+    CurrentWeatherForecastEvidence,
+    PhysicalTemperatureProxyProbability,
+)
+from services.opportunity_engine.live_economics import MarketEconomicsEvidence
+
 from .m27d import CandidateState, ExperimentalCandidate, select_experimental_candidate
-from .m27q_preflight_orchestrator_types import CandidateInput
+
+CandidateInput = tuple[
+    PhysicalTemperatureProxyProbability,
+    CurrentWeatherForecastEvidence,
+    MarketEconomicsEvidence,
+]
 
 
 class CandidateBindingError(RuntimeError):
