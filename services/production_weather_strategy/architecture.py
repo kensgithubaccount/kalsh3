@@ -60,7 +60,9 @@ class SourceCapability:
         if maximum_age_seconds <= 0:
             raise ProductionStrategyError("source freshness bound must be positive")
         normalized_roles = tuple(sorted(set(roles), key=lambda role: role.value))
-        normalized_domains = tuple(sorted(set(domain.strip() for domain in domains if domain.strip())))
+        normalized_domains = tuple(
+            sorted(set(domain.strip() for domain in domains if domain.strip()))
+        )
         if not normalized_domains:
             raise ProductionStrategyError("source domains cannot be empty")
         values = (
@@ -233,7 +235,9 @@ class HeritageBaseline:
     ) -> HeritageBaseline:
         if not source_system.strip() or not source_model_id.strip() or not family_id.strip():
             raise ProductionStrategyError("heritage baseline identity is incomplete")
-        evidence = tuple(sorted(set(item.strip() for item in evidence_manifest_ids if item.strip())))
+        evidence = tuple(
+            sorted(set(item.strip() for item in evidence_manifest_ids if item.strip()))
+        )
         if not evidence:
             raise ProductionStrategyError("heritage baseline requires evidence")
         if not frozen:
