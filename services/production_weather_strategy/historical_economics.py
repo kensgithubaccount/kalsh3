@@ -201,10 +201,9 @@ def evaluate_historical_opportunity(
 
     if not model_evidence_id.strip():
         raise HistoricalEconomicsError("model evidence id is required")
-    if (
-        not model_yes_probability.is_finite()
-        or not Decimal("0") <= model_yes_probability <= Decimal("1")
-    ):
+    if not model_yes_probability.is_finite() or not Decimal(
+        "0"
+    ) <= model_yes_probability <= Decimal("1"):
         raise HistoricalEconomicsError("model probability is outside [0,1]")
     if resolved_yes not in {0, 1}:
         raise HistoricalEconomicsError("resolved_yes must be binary")
