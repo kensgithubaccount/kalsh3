@@ -148,8 +148,14 @@ def reconstruct_checkpoint_economics(
         raise HistoricalEconomicsError("fee multiplier is invalid")
     try:
         policy = current_event_formula_policy(fee_type=fee_type, fee_multiplier=fee_multiplier)
+        if not policy.applies_at(quote.checkpoint_at):
+            raise HistoricalEconomicsError(
+                "reviewed fee policy does not apply at historical checkpoint"
+            )
         yes_fee = calculate_fee(policy, quote.yes_ask, Decimal("1"), maker=False).total_fee
         no_fee = calculate_fee(policy, quote.no_ask, Decimal("1"), maker=False).total_fee
+    except HistoricalEconomicsError:
+        raise
     except Exception as exc:
         raise HistoricalEconomicsError("historical fee reconstruction failed") from exc
     yes = _side_economics(TradeSide.YES, quote.yes_ask, yes_fee)
@@ -195,7 +201,10 @@ def evaluate_historical_opportunity(
 
     if not model_evidence_id.strip():
         raise HistoricalEconomicsError("model evidence id is required")
-    if not model_yes_probability.is_finite() or not Decimal("0") <= model_yes_probability <= Decimal("1"):
+    if (
+        not model_yes_probability.is_finite()
+        or not Decimal("0") <= model_yes_probability <= Decimal("1")
+    ):
         raise HistoricalEconomicsError("model probability is outside [0,1]")
     if resolved_yes not in {0, 1}:
         raise HistoricalEconomicsError("resolved_yes must be binary")
