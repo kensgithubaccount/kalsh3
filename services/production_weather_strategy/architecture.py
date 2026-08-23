@@ -295,9 +295,18 @@ class StrategyRegistry:
                 raise ProductionStrategyError("market family references unknown source")
             if missing_recipes:
                 raise ProductionStrategyError("market family references unknown model recipe")
+            for source_id in family.source_ids:
+                if family.domain not in source_map[source_id].domains:
+                    raise ProductionStrategyError("source does not support market domain")
             for recipe_id in family.model_recipe_ids:
-                if family.domain not in recipe_map[recipe_id].supported_domains:
+                recipe = recipe_map[recipe_id]
+                if family.domain not in recipe.supported_domains:
                     raise ProductionStrategyError("model recipe does not support market domain")
+                missing_features = set(recipe.required_feature_groups) - set(family.feature_groups)
+                if missing_features:
+                    raise ProductionStrategyError(
+                        "market family cannot satisfy model recipe feature requirements"
+                    )
 
         for baseline in heritage_baselines:
             if baseline.family_id not in family_map:
