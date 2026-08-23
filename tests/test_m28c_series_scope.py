@@ -122,7 +122,7 @@ def test_scoping_keeps_reviewed_series_and_records_unreviewed_location_exclusion
         ("KXHIGHPDX", "KXHIGHNY", "KXHIGHCHI"),
     )
 
-    assert client.calls == ["KXHIGHCHI", "KXHIGHPDX", "KXHIGHNY"]
+    assert client.calls == ["KXHIGHCHI", "KXHIGHNY", "KXHIGHPDX"]
     assert [row["ticker"] for row in rows] == sorted(row["ticker"] for row in rows)
     assert manifest.included_series_tickers == ("KXHIGHCHI", "KXHIGHNY")
     assert manifest.station_ids == ("CLIMDW", "CLINYC")
