@@ -12,6 +12,9 @@ Key invariants:
 * Kalshi's finalized binary result is the production training label.
 * The exact contract rule must independently bind the label to The Weather Company and a
   reviewed settlement location.
+* Both reviewed Weather Company rule grammars are exact: the original CLI-identifier form
+  and the August 2026 location-name form. The latter is accepted only when its location name
+  maps one-to-one to the frozen reviewed settlement-location authority.
 * Sibling contracts are grouped into one event/day unit before temporal splitting so one
   day's outcome cannot leak across train/validation/test windows.
 * A group is rejected if its binary labels cannot all be true for at least one possible
@@ -37,22 +40,38 @@ from services.historical_replay.archive import stable_hash
 
 from .contracts import TemporalSplit
 
-PARSER_VERSION = "m28b-authoritative-weather-settlement-v1"
-LABEL_AUTHORITY = "Kalshi finalized result + exact The Weather Company contract rule"
+PARSER_VERSION = "m28b-authoritative-weather-settlement-v2"
+LABEL_AUTHORITY = (
+    "Kalshi finalized result + exact The Weather Company contract rule + reviewed "
+    "settlement-location authority"
+)
 
 _CANDIDATE = re.compile(r"\b(?:maximum|minimum) temperature recorded at\b", re.IGNORECASE)
-_RULE = re.compile(
-    r"\AIf the (?P<measurement>maximum|minimum) temperature recorded at "
-    r"(?P<location>[^()]+?)\s*\((?P<identifier>CLI[A-Z]+)\) for "
-    r"(?P<date>[A-Z][a-z]{2} \d{1,2}, \d{4}), is "
+_PREDICATE = (
     r"(?:(?:between (?P<between_low>[+-]?(?:\d+(?:\.\d+)?|\.\d+))-"
     r"(?P<between_high>[+-]?(?:\d+(?:\.\d+)?|\.\d+)))|"
     r"(?:greater than (?P<greater>[+-]?(?:\d+(?:\.\d+)?|\.\d+)))|"
     r"(?:less than (?P<less>[+-]?(?:\d+(?:\.\d+)?|\.\d+))))"
-    rf"° fahrenheit according to {re.escape(SETTLEMENT_SOURCE)}, then the market "
+)
+_RULE_WITH_IDENTIFIER = re.compile(
+    r"\AIf the (?P<measurement>maximum|minimum) temperature recorded at "
+    r"(?P<location>[^()]+?)\s*\((?P<identifier>CLI[A-Z]+)\) for "
+    r"(?P<date>[A-Z][a-z]{2} \d{1,2}, \d{4}), is "
+    + _PREDICATE
+    + rf"° fahrenheit according to {re.escape(SETTLEMENT_SOURCE)}, then the market "
     r"resolves to Yes\.\Z"
 )
+_RULE_LOCATION_ONLY = re.compile(
+    r"\AResolves Yes if the (?P<measurement>maximum|minimum) temperature recorded at "
+    r"(?P<location>[^()]+?) for "
+    r"(?P<date>[A-Z][a-z]{2} \d{1,2}, \d{4}), is "
+    + _PREDICATE
+    + rf"° fahrenheit according to {re.escape(SETTLEMENT_SOURCE)}\.\Z"
+)
 _NUMBER = re.compile(r"[+-]?(?:\d+(?:\.\d*)?|\.\d+)\Z")
+_LOCATION_AUTHORITY = {item.location: item for item in SETTLEMENT_LOCATIONS.values()}
+if len(_LOCATION_AUTHORITY) != len(SETTLEMENT_LOCATIONS):
+    raise RuntimeError("reviewed settlement-location names must be unique")
 
 
 class HistoricalWeatherDatasetError(ValueError):
@@ -163,20 +182,32 @@ def parse_resolved_temperature_market(
     rule = row.get("rules_primary")
     if not isinstance(rule, str) or not _CANDIDATE.search(rule):
         return None
-    match = _RULE.fullmatch(rule)
-    if match is None:
-        raise HistoricalWeatherDatasetError("temperature-like market has unsupported exact rule")
 
-    identifier = match.group("identifier")
-    reviewed = SETTLEMENT_LOCATIONS.get(identifier)
-    if reviewed is None:
-        raise HistoricalWeatherDatasetError(
-            "temperature market uses an unreviewed settlement location"
-        )
-    if match.group("location").strip() != reviewed.location:
-        raise HistoricalWeatherDatasetError(
-            "temperature market location conflicts with reviewed authority"
-        )
+    match = _RULE_WITH_IDENTIFIER.fullmatch(rule)
+    if match is not None:
+        identifier = match.group("identifier")
+        reviewed = SETTLEMENT_LOCATIONS.get(identifier)
+        if reviewed is None:
+            raise HistoricalWeatherDatasetError(
+                "temperature market uses an unreviewed settlement location"
+            )
+        if match.group("location").strip() != reviewed.location:
+            raise HistoricalWeatherDatasetError(
+                "temperature market location conflicts with reviewed authority"
+            )
+    else:
+        match = _RULE_LOCATION_ONLY.fullmatch(rule)
+        if match is None:
+            raise HistoricalWeatherDatasetError(
+                "temperature-like market has unsupported exact rule"
+            )
+        location = match.group("location").strip()
+        reviewed = _LOCATION_AUTHORITY.get(location)
+        if reviewed is None:
+            raise HistoricalWeatherDatasetError(
+                "temperature market uses an unreviewed settlement location"
+            )
+        identifier = reviewed.identifier
 
     try:
         local_date = datetime.strptime(match.group("date"), "%b %d, %Y").date()
