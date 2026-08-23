@@ -312,7 +312,7 @@ def build_feature_dataset(
     test_ids = tuple(
         sorted({row.event_id for row in ordered if row.partition is TournamentPartition.TEST})
     )
-    material = (
+    dataset_material = (
         FEATURE_SCHEMA_VERSION,
         settlement_dataset.dataset_id,
         feature_schema_hash,
@@ -323,7 +323,7 @@ def build_feature_dataset(
         missing_market,
         missing_climate,
     )
-    digest = stable_hash(material)
+    digest = stable_hash(dataset_material)
     return TournamentFeatureDataset(
         dataset_id=digest,
         settlement_dataset_id=settlement_dataset.dataset_id,
