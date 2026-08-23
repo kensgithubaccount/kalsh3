@@ -44,13 +44,22 @@ from services.forecasting.weather_probability import (
     load_weather_residual_population,
     physical_temperature_proxy_probability,
 )
-from services.market_universe.event_snapshot import acquire_event_snapshot
+from services.market_universe.event_snapshot import (
+    AuthoritativeEventSnapshot,
+    acquire_event_snapshot,
+)
 from services.market_universe.m27e_public_acceptance import (
     acquire_public_acceptance,
     active_market_payloads,
 )
-from services.market_universe.market_snapshot import acquire_market_snapshot
-from services.market_universe.orderbook_snapshot import acquire_orderbook_snapshot
+from services.market_universe.market_snapshot import (
+    AuthoritativeMarketSnapshot,
+    acquire_market_snapshot,
+)
+from services.market_universe.orderbook_snapshot import (
+    AuthoritativeOrderbookSnapshot,
+    acquire_orderbook_snapshot,
+)
 from services.market_universe.pricing import PriceLadder
 from services.market_universe.public_read import PublicReadFailure
 from services.opportunity_engine.domain import OpportunityError
@@ -71,10 +80,10 @@ from .m27r_operator_runner import M27RMarketEvidence, M27RPublicEvidence
 SOFTWARE_VERSION = "kalsh3.m27r.public-evidence-adapter/1"
 
 PublicAcceptanceAcquirer = Callable[..., dict[str, object]]
-MarketSnapshotAcquirer = Callable[..., object]
-EventSnapshotAcquirer = Callable[..., object]
-OrderbookSnapshotAcquirer = Callable[..., object]
-RulesAcquirer = Callable[..., object]
+MarketSnapshotAcquirer = Callable[..., AuthoritativeMarketSnapshot]
+EventSnapshotAcquirer = Callable[..., AuthoritativeEventSnapshot]
+OrderbookSnapshotAcquirer = Callable[..., AuthoritativeOrderbookSnapshot]
+RulesAcquirer = Callable[..., AuthoritativeMarketSnapshot]
 
 
 class M27RPublicAdapterError(RuntimeError):
@@ -209,10 +218,16 @@ class GetOnlyPublicEvidenceProvider:
             clock=lambda: now,
         )
         if not all(
-            getattr(snapshot, "succeeded", False)
+            snapshot.succeeded
             for snapshot in (expected_market_snapshot, event_snapshot, orderbook_snapshot)
         ):
             return None
+        if (
+            expected_market_snapshot.body_sha256 is None
+            or event_snapshot.body_sha256 is None
+            or orderbook_snapshot.body_sha256 is None
+        ):
+            raise M27RPublicAdapterError("successful public snapshot is missing retained body hash")
 
         market = reconstruct_market(
             expected_market_snapshot.to_json(),
@@ -276,8 +291,10 @@ class GetOnlyPublicEvidenceProvider:
         # economics construction. M27I compares this evidence against the independently validated
         # expected-side M27A binding; it is never a caller-supplied H == H shortcut.
         current_rules = self.rules_acquirer(market_ticker, clock=lambda: now)
-        if not getattr(current_rules, "succeeded", False):
+        if not current_rules.succeeded:
             return None
+        if current_rules.body_sha256 is None:
+            raise M27RPublicAdapterError("successful current-rules snapshot is missing body hash")
 
         safe_ticker = market_ticker.replace("/", "_")
         binding_path = self.output_dir / f"m27a-binding-{safe_ticker}.json"
