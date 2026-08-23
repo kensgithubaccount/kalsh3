@@ -90,9 +90,7 @@ def _require_exact_m27f_artifact(
     try:
         stored = json.loads(path.read_text())
     except (OSError, json.JSONDecodeError) as exc:
-        raise M27QOrchestrationError(
-            "persisted M27F evidence is unavailable or malformed"
-        ) from exc
+        raise M27QOrchestrationError("persisted M27F evidence is unavailable or malformed") from exc
 
     expected = bundle.evidence.to_json()
     if _canonical_json(stored) != _canonical_json(expected):
@@ -131,9 +129,7 @@ def build_first_canary_preflight(
         raise M27QOrchestrationError("orchestration clock must be timezone-aware")
 
     if not isinstance(authorization_service_available, bool):
-        raise M27QOrchestrationError(
-            "authorization_service_available must be bool"
-        )
+        raise M27QOrchestrationError("authorization_service_available must be bool")
 
     selection = select_experimental_candidate(
         candidate_inputs,
@@ -170,14 +166,10 @@ def build_first_canary_preflight(
     )
 
     if not m27f_bundle.evidence.reconciliation.succeeded:
-        raise M27QOrchestrationError(
-            "same-sweep M27F reconciliation did not pass"
-        )
+        raise M27QOrchestrationError("same-sweep M27F reconciliation did not pass")
 
     if not candidate_exposure.succeeded:
-        raise M27QOrchestrationError(
-            "candidate-specific exposure evidence did not pass"
-        )
+        raise M27QOrchestrationError("candidate-specific exposure evidence did not pass")
 
     inspection = inspect_first_canary_state(
         state_path=state_path,

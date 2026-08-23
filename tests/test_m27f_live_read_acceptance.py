@@ -1037,7 +1037,6 @@ def test_cli_malformed_attestation_json_fails_closed(tmp_path: Path) -> None:
     os.close(read_fd)
 
 
-
 # --------------------------------------------------------------------------------------
 # M27Q transient account facts -- exact same M27F sweep, never persisted in the
 # secret-free M27F artifact.
@@ -1067,9 +1066,7 @@ def test_transient_account_facts_bind_to_exact_same_m27f_sweep() -> None:
     assert facts.settlement_count == 0
     assert facts.pristine_account_activity is True
 
-    balance_read = next(
-        item for item in bundle.evidence.reads if item.name == "balance"
-    )
+    balance_read = next(item for item in bundle.evidence.reads if item.name == "balance")
     assert facts.balance_payload_sha256 == balance_read.payload_sha256
 
     # The bundle performs the same exact five authenticated GETs as ordinary M27F.
@@ -1104,9 +1101,7 @@ def test_transient_account_facts_absent_when_m27f_reconciliation_blocks() -> Non
         key_id="candidate",
         private_key_pem=b"synthetic-pem-not-real",
         authority_attestation=build_attestation(),
-        account_transport=FakeAccountTransport(
-            {"orders?": [HttpResponse(401, {})]}
-        ),
+        account_transport=FakeAccountTransport({"orders?": [HttpResponse(401, {})]}),
         signer_factory=FakeSigner,
         clock_ms=lambda: 123,
     )
