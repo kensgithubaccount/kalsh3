@@ -8,13 +8,16 @@ from typing import Any, cast
 
 import pytest
 
-from services.supervised_canary.m27d import CandidateState
+from services.supervised_canary.m27d import CandidateState, ExperimentalCandidate
+from services.supervised_canary.m27q_state_inspection import inspect_first_canary_state
 from services.supervised_canary.m27r_operator_runner import (
+    M27RCandidateEvidence,
     M27ROperatorError,
     M27ROperatorRun,
     M27RPublicEvidence,
     run_readonly_operator_preflight,
 )
+from tests.test_m27q_preflight_orchestrator import _fixture
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 MODULE_PATH = REPO_ROOT / "services" / "supervised_canary" / "m27r_operator_runner.py"
@@ -52,6 +55,25 @@ class _ForbiddenCandidateProvider:
     def collect_candidate_evidence(self, **_: object) -> Any:
         self.calls += 1
         raise AssertionError("authenticated candidate phase must not run")
+
+
+class _FixtureCandidateProvider:
+    def __init__(self, evidence: M27RCandidateEvidence, candidate_id: str) -> None:
+        self.evidence = evidence
+        self.candidate_id = candidate_id
+        self.calls = 0
+
+    def collect_candidate_evidence(
+        self,
+        *,
+        candidate: ExperimentalCandidate,
+        public: M27RPublicEvidence,
+        now: datetime,
+    ) -> M27RCandidateEvidence:
+        del public, now
+        self.calls += 1
+        assert candidate.candidate_id == self.candidate_id
+        return self.evidence
 
 
 def test_zero_candidate_abstains_before_authenticated_phase() -> None:
@@ -103,6 +125,72 @@ def test_multiple_candidates_abstain_before_authenticated_phase(
     assert result.state == "ABSTAIN"
     assert result.authenticated_phase_performed is False
     assert result.execution_authorized is False
+
+
+def test_exact_one_fixture_reaches_real_m27q_preflight_without_state_mutation(
+    tmp_path: Path,
+) -> None:
+    values = _fixture(tmp_path)
+    now = cast(datetime, values["now"])
+    candidate_inputs = cast(Any, values["candidate_inputs"])
+    public_evidence = M27RPublicEvidence(
+        candidate_inputs=candidate_inputs,
+        public_evidence_path=cast(Path, values["public_evidence_path"]),
+        m27j_evidence_path=cast(Path, values["m27j_evidence_path"]),
+        m27a_binding_evidence_path=cast(Path, values["m27a_binding_evidence_path"]),
+        current_series_fee_observation=cast(Any, values["current_series_fee_observation"]),
+        current_event_fee_override=cast(Any, values["current_event_fee_override"]),
+        current_event_fee_observed_at=cast(datetime, values["current_event_fee_observed_at"]),
+    )
+    selected = cast(ExperimentalCandidate, cast(Any, values["candidate_inputs"])[0][0])
+    del selected  # The real M27D selector below derives the candidate from the fixture inputs.
+
+    state_path = cast(Path, values["state_path"])
+    before = inspect_first_canary_state(state_path=state_path, now=now)
+
+    selection = __import__(
+        "services.supervised_canary.m27d",
+        fromlist=["select_experimental_candidate"],
+    ).select_experimental_candidate(candidate_inputs, now=now)
+    candidate = cast(ExperimentalCandidate, selection.selected)
+    candidate_evidence = M27RCandidateEvidence(
+        m27f_bundle=cast(Any, values["m27f_bundle"]),
+        m27f_evidence_path=cast(Path, values["m27f_evidence_path"]),
+        m27h_evidence_path=cast(Path, values["m27h_evidence_path"]),
+        candidate_exposure=cast(Any, values["candidate_exposure"]),
+        state_path=state_path,
+        readiness=cast(Any, values["readiness"]),
+        order_group=cast(Any, values["order_group"]),
+        authorization_service_available=cast(bool, values["authorization_service_available"]),
+    )
+    public_provider = _PublicProvider(public_evidence)
+    candidate_provider = _FixtureCandidateProvider(candidate_evidence, candidate.candidate_id)
+
+    result = run_readonly_operator_preflight(
+        now=now,
+        public_provider=public_provider,
+        candidate_provider=candidate_provider,
+    )
+
+    assert public_provider.calls == 1
+    assert candidate_provider.calls == 1
+    assert result.state == "PREFLIGHT_READY"
+    assert result.candidate_id == candidate.candidate_id
+    assert result.authenticated_phase_performed is True
+    assert result.read_only is True
+    assert result.execution_authorized is False
+    assert result.preflight is not None
+    assert result.preflight.preflight.artifact.state == "PREFLIGHT_READY"
+    assert result.preflight.risk.decision.production_write_authorized is False
+
+    after = inspect_first_canary_state(state_path=state_path, now=now)
+    assert before.database_sha256 == after.database_sha256
+    assert after.real_submission_count == 0
+    assert after.real_fill_count == 0
+    assert after.risk_authorization_count == 0
+    assert after.risk_reservation_count == 0
+    assert after.approval_count == 0
+    assert after.session_count == 0
 
 
 def test_naive_operator_clock_is_rejected_before_any_provider_call() -> None:
