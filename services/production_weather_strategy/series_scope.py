@@ -5,9 +5,10 @@ accepts already-discovered public series metadata plus a read-only recent-settle
 returns only series whose current settlement evidence is both daily-temperature-like and
 covered by the reviewed Weather Company / physical-source authority.
 
-Unreviewed settlement locations are preserved as explicit exclusions rather than weakening
-the authoritative settlement parser. Any other malformed temperature evidence still fails
-closed.
+Legacy National Weather Service rows from the pre-August-2026 settlement regime are counted
+and excluded explicitly before current-regime parsing. Unreviewed current settlement locations
+remain explicit exclusions. Every other malformed current-regime temperature row still fails
+closed rather than weakening the authoritative settlement parser.
 """
 
 from __future__ import annotations
@@ -28,6 +29,7 @@ from services.production_weather_strategy.settlement_dataset import (
 _UNREVIEWED_LOCATION = "temperature market uses an unreviewed settlement location"
 _NO_SUPPORTED_MARKETS = "no supported finalized daily-temperature markets found"
 _WEATHER_CATEGORIES = frozenset({"Weather", "Climate and Weather"})
+_LEGACY_NWS_SOURCE = "according to the National Weather Service's Climatological Report (Daily)"
 
 
 class SeriesScopeError(ValueError):
@@ -44,6 +46,7 @@ class SeriesScopeRecord:
     decision: str
     reason: str
     raw_market_count: int
+    legacy_regime_market_count: int
     supported_event_count: int
     supported_contract_count: int
     station_ids: tuple[str, ...]
@@ -57,6 +60,7 @@ class SeriesScopeManifest:
     excluded_series: tuple[SeriesScopeRecord, ...]
     included_series: tuple[SeriesScopeRecord, ...]
     raw_market_count: int
+    legacy_regime_market_count: int
     supported_event_count: int
     supported_contract_count: int
     station_ids: tuple[str, ...]
@@ -119,11 +123,12 @@ def scope_recent_settled_markets(
     client: RecentSettledMarketClient,
     series_tickers: Sequence[str],
 ) -> tuple[list[dict[str, Any]], SeriesScopeManifest]:
-    """Acquire only candidate series and keep reviewed current-regime settlement rows.
+    """Acquire candidate series and keep only reviewed current-regime settlement rows.
 
-    An unreviewed location is an expected discovery exclusion. A series with no supported
-    current-regime rows is also excluded. Every other authoritative parser failure is allowed
-    to propagate so malformed reviewed evidence cannot be silently dropped.
+    The pre-transition NWS grammar is an explicit historical regime exclusion, not a parser
+    failure and not evidence for current Weather Company settlement semantics. Unreviewed
+    current locations are also explicit discovery exclusions. Every other current-regime
+    parser failure propagates.
     """
 
     normalized = tuple(sorted(series_tickers))
@@ -143,21 +148,46 @@ def scope_recent_settled_markets(
             excluded.append(_record(ticker, "EXCLUDED", "NO_RECENT_SETTLED_MARKETS", 0))
             continue
 
+        current_rows, legacy_count = _current_regime_rows(rows)
+        if not current_rows:
+            excluded.append(
+                _record(
+                    ticker,
+                    "EXCLUDED",
+                    "NO_SUPPORTED_CURRENT_REGIME_MARKETS",
+                    len(rows),
+                    legacy_regime_market_count=legacy_count,
+                )
+            )
+            continue
+
         try:
-            dataset = build_authoritative_weather_dataset(tuple(rows))
+            dataset = build_authoritative_weather_dataset(tuple(current_rows))
         except HistoricalWeatherDatasetError as exc:
             reason = str(exc)
             if reason == _UNREVIEWED_LOCATION:
                 excluded.append(
-                    _record(ticker, "EXCLUDED", "UNREVIEWED_SETTLEMENT_LOCATION", len(rows))
+                    _record(
+                        ticker,
+                        "EXCLUDED",
+                        "UNREVIEWED_SETTLEMENT_LOCATION",
+                        len(rows),
+                        legacy_regime_market_count=legacy_count,
+                    )
                 )
                 continue
             if reason == _NO_SUPPORTED_MARKETS:
                 excluded.append(
-                    _record(ticker, "EXCLUDED", "NO_SUPPORTED_CURRENT_REGIME_MARKETS", len(rows))
+                    _record(
+                        ticker,
+                        "EXCLUDED",
+                        "NO_SUPPORTED_CURRENT_REGIME_MARKETS",
+                        len(rows),
+                        legacy_regime_market_count=legacy_count,
+                    )
                 )
                 continue
-            failure = _first_row_parser_failure(rows)
+            failure = _first_row_parser_failure(current_rows)
             raise HistoricalWeatherDatasetError(
                 f"{ticker}: {reason}; first_row_parser_failure={failure!r}"
             ) from exc
@@ -183,12 +213,13 @@ def scope_recent_settled_markets(
             "INCLUDED",
             "REVIEWED_CURRENT_REGIME",
             len(rows),
+            legacy_regime_market_count=legacy_count,
             supported_event_count=dataset.event_count,
             supported_contract_count=dataset.contract_count,
             station_ids=station_ids,
         )
         included.append(record)
-        included_rows.extend(rows)
+        included_rows.extend(current_rows)
         all_station_ids.update(station_ids)
 
     if not included:
@@ -196,12 +227,14 @@ def scope_recent_settled_markets(
 
     included_rows.sort(key=_row_ticker)
     included_tickers = tuple(record.series_ticker for record in included)
+    legacy_total = sum(record.legacy_regime_market_count for record in (*included, *excluded))
     material = (
-        "m28c-reviewed-series-scope-v1",
+        "m28c-reviewed-series-scope-v2",
         normalized,
         tuple(record.content_hash for record in included),
         tuple(record.content_hash for record in excluded),
         tuple(_row_ticker(row) for row in included_rows),
+        legacy_total,
     )
     digest = stable_hash(material)
     manifest = SeriesScopeManifest(
@@ -210,12 +243,27 @@ def scope_recent_settled_markets(
         excluded_series=tuple(excluded),
         included_series=tuple(included),
         raw_market_count=len(included_rows),
+        legacy_regime_market_count=legacy_total,
         supported_event_count=sum(record.supported_event_count for record in included),
         supported_contract_count=sum(record.supported_contract_count for record in included),
         station_ids=tuple(sorted(all_station_ids)),
         content_hash=digest,
     )
     return included_rows, manifest
+
+
+def _current_regime_rows(
+    rows: Sequence[Mapping[str, Any]],
+) -> tuple[list[dict[str, Any]], int]:
+    current: list[dict[str, Any]] = []
+    legacy_count = 0
+    for row in rows:
+        rule = row.get("rules_primary")
+        if isinstance(rule, str) and _LEGACY_NWS_SOURCE in rule:
+            legacy_count += 1
+            continue
+        current.append(dict(row))
+    return current, legacy_count
 
 
 def _first_row_parser_failure(rows: Sequence[Mapping[str, Any]]) -> tuple[str, str, str] | None:
@@ -246,16 +294,18 @@ def _record(
     reason: str,
     raw_market_count: int,
     *,
+    legacy_regime_market_count: int = 0,
     supported_event_count: int = 0,
     supported_contract_count: int = 0,
     station_ids: tuple[str, ...] = (),
 ) -> SeriesScopeRecord:
     material = (
-        "m28c-series-scope-record-v1",
+        "m28c-series-scope-record-v2",
         ticker,
         decision,
         reason,
         raw_market_count,
+        legacy_regime_market_count,
         supported_event_count,
         supported_contract_count,
         station_ids,
@@ -266,6 +316,7 @@ def _record(
         decision=decision,
         reason=reason,
         raw_market_count=raw_market_count,
+        legacy_regime_market_count=legacy_regime_market_count,
         supported_event_count=supported_event_count,
         supported_contract_count=supported_contract_count,
         station_ids=station_ids,
