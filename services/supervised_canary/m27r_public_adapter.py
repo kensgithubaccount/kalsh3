@@ -14,6 +14,9 @@ It never imports ``scripts`` and owns no credential, signer, account, risk-autho
 burn, sender, or exchange-mutation capability. Current GRIB evidence is supplied by the operator
 layer because acquiring/locally replaying NOAA GRIB uses the already-reviewed scripts/subprocess
 boundary; keeping that boundary out of ``services`` is intentional.
+
+The adapter consumes a clock callable, not a frozen timestamp. Each reviewed acquisition helper
+therefore records its actual acquisition time in live use, while tests may inject a fixed clock.
 """
 
 from __future__ import annotations
@@ -75,9 +78,9 @@ from .m27n2_evidence_reconstruction import (
     reconstruct_event,
     reconstruct_market,
 )
-from .m27r_operator_runner import M27RMarketEvidence, M27RPublicEvidence
+from .m27r_operator_runner import Clock, M27RMarketEvidence, M27RPublicEvidence
 
-SOFTWARE_VERSION = "kalsh3.m27r.public-evidence-adapter/1"
+SOFTWARE_VERSION = "kalsh3.m27r.public-evidence-adapter/2"
 
 PublicAcceptanceAcquirer = Callable[..., dict[str, object]]
 MarketSnapshotAcquirer = Callable[..., AuthoritativeMarketSnapshot]
@@ -90,9 +93,11 @@ class M27RPublicAdapterError(RuntimeError):
     """Public evidence could not be assembled without weakening a reviewed gate."""
 
 
-def _require_aware(value: datetime, *, field: str) -> None:
+def _clock_now(clock: Clock, *, field: str) -> datetime:
+    value = clock()
     if value.tzinfo is None or value.utcoffset() is None:
         raise M27RPublicAdapterError(f"{field} must be timezone-aware")
+    return value
 
 
 def _persist(payload: Mapping[str, Any], path: Path) -> None:
@@ -151,13 +156,13 @@ class GetOnlyPublicEvidenceProvider:
     orderbook_snapshot_acquirer: OrderbookSnapshotAcquirer = acquire_orderbook_snapshot
     rules_acquirer: RulesAcquirer = m27j.acquire_current_market_rules
 
-    def collect_public_evidence(self, *, now: datetime) -> M27RPublicEvidence:
-        _require_aware(now, field="public evidence clock")
+    def collect_public_evidence(self, *, clock: Clock) -> M27RPublicEvidence:
+        _clock_now(clock, field="public evidence start clock")
         if self.requested_quantity != Decimal(1):
             raise M27RPublicAdapterError("M27R first canary requires exactly one contract")
         try:
             validate_raw_grib_max_t_evidence(self.raw_grib_evidence)
-            public = self.public_acceptance_acquirer(clock=lambda: now)
+            public = self.public_acceptance_acquirer(clock=clock)
             active = active_market_payloads(public)
         except (ForecastError, PublicReadFailure) as exc:
             raise M27RPublicAdapterError(f"public discovery failed: {exc}") from exc
@@ -174,7 +179,7 @@ class GetOnlyPublicEvidenceProvider:
                 raise M27RPublicAdapterError("active M27E market identity is malformed")
             try:
                 built = self._build_market_slice(
-                    now=now,
+                    clock=clock,
                     market_ticker=market_ticker,
                     event_ticker=event_ticker,
                     series_raw=series_raw,
@@ -201,21 +206,21 @@ class GetOnlyPublicEvidenceProvider:
     def _build_market_slice(
         self,
         *,
-        now: datetime,
+        clock: Clock,
         market_ticker: str,
         event_ticker: str,
         series_raw: Mapping[str, Any],
     ) -> M27RMarketEvidence | None:
-        # Expected-side economics authority. This exact market snapshot is acquired before the
-        # economics evaluation and retained inside the M27A binding.
+        # Expected-side economics authority. Each helper receives the live clock callable so its
+        # retained acquisition timestamp cannot be frozen at operator-run start.
         expected_market_snapshot = self.market_snapshot_acquirer(
             market_ticker,
-            clock=lambda: now,
+            clock=clock,
         )
-        event_snapshot = self.event_snapshot_acquirer(event_ticker, clock=lambda: now)
+        event_snapshot = self.event_snapshot_acquirer(event_ticker, clock=clock)
         orderbook_snapshot = self.orderbook_snapshot_acquirer(
             market_ticker,
-            clock=lambda: now,
+            clock=clock,
         )
         if not all(
             snapshot.succeeded
@@ -267,6 +272,7 @@ class GetOnlyPublicEvidenceProvider:
             return None
         typed_probability: PhysicalTemperatureProxyProbability = probability
 
+        economics_now = _clock_now(clock, field=f"economics clock for {market_ticker}")
         event_fee_payload = dict(event.raw)
         economics, binding = reconstruct_economics(
             market_snapshot_payload=expected_market_snapshot.to_json(),
@@ -280,17 +286,17 @@ class GetOnlyPublicEvidenceProvider:
             series_fee_payload=series_raw,
             event_fee_payload=event_fee_payload,
             requested_quantity=self.requested_quantity,
-            economics_observed_at=now,
-            now=now,
+            economics_observed_at=economics_now,
+            now=economics_now,
         )
 
-        series_fee = CurrentSeriesFeeObservation.parse(dict(series_raw), observed_at=now)
+        series_fee = CurrentSeriesFeeObservation.parse(dict(series_raw), observed_at=economics_now)
         event_fee = EventFeeOverride.parse(event_fee_payload)
 
         # Current-side rules authority is a deliberately separate exact-market acquisition after
         # economics construction. M27I compares this evidence against the independently validated
         # expected-side M27A binding; it is never a caller-supplied H == H shortcut.
-        current_rules = self.rules_acquirer(market_ticker, clock=lambda: now)
+        current_rules = self.rules_acquirer(market_ticker, clock=clock)
         if not current_rules.succeeded:
             return None
         if current_rules.body_sha256 is None:
@@ -309,5 +315,5 @@ class GetOnlyPublicEvidenceProvider:
             m27a_binding_evidence_path=binding_path,
             current_series_fee_observation=series_fee,
             current_event_fee_override=event_fee,
-            current_event_fee_observed_at=now,
+            current_event_fee_observed_at=economics_now,
         )
