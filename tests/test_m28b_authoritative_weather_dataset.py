@@ -129,7 +129,7 @@ def test_supported_predicates_are_rule_and_metadata_bound(
 def test_binary_result_and_settlement_value_must_agree() -> None:
     with pytest.raises(HistoricalWeatherDatasetError, match="settlement value conflicts"):
         parse_resolved_temperature_market(row(result="yes", settlement_value="0.0000"))
-    with pytest.raises(HistoricalWeatherDatasetError, match="not finally resolved"):
+    with pytest.raises(HistoricalWeatherDatasetError, match="result is missing"):
         parse_resolved_temperature_market(row(result=""))
 
 
