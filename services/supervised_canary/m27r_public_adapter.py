@@ -185,8 +185,10 @@ class GetOnlyPublicEvidenceProvider:
                 OpportunityError,
                 PublicReadFailure,
                 M27RPublicAdapterError,
-            ):
-                continue
+            ) as exc:
+                raise M27RPublicAdapterError(
+                    f"active market {market_ticker} could not be fully evaluated: {exc}"
+                ) from exc
             if built is not None:
                 markets.append(built)
 
