@@ -63,7 +63,7 @@ class SeriesScopeManifest:
 
 
 def candidate_temperature_series(series_payload: Mapping[str, Any]) -> tuple[str, ...]:
-    """Return current Weather Company temperature series from a Weather-category response."""
+    """Return current Weather Company temperature series from a series-list response."""
 
     raw_series = series_payload.get("series")
     if not isinstance(raw_series, list):
@@ -81,9 +81,12 @@ def candidate_temperature_series(series_payload: Mapping[str, Any]) -> tuple[str
     selected: list[str] = []
     seen: set[str] = set()
     for row in raw_series:
+        category = row.get("category")
+        if category != "Weather":
+            continue
+
         ticker = row.get("ticker")
         title = row.get("title")
-        sources = row.get("settlement_sources")
         if not isinstance(ticker, str) or not ticker.strip():
             raise SeriesScopeError("Weather series ticker is missing or malformed")
         if ticker in seen:
@@ -91,6 +94,10 @@ def candidate_temperature_series(series_payload: Mapping[str, Any]) -> tuple[str
         seen.add(ticker)
         if not isinstance(title, str) or not title.strip():
             raise SeriesScopeError("Weather series title is missing or malformed")
+        if "temperature" not in title.casefold():
+            continue
+
+        sources = row.get("settlement_sources")
         if not isinstance(sources, list) or any(not isinstance(source, dict) for source in sources):
             raise SeriesScopeError("Weather series settlement_sources is malformed")
         source_names: list[str] = []
@@ -100,8 +107,6 @@ def candidate_temperature_series(series_payload: Mapping[str, Any]) -> tuple[str
                 raise SeriesScopeError("Weather series settlement source name is malformed")
             source_names.append(name.strip())
 
-        if "temperature" not in title.casefold():
-            continue
         if SETTLEMENT_SOURCE not in source_names:
             continue
         selected.append(ticker)
