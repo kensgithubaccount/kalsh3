@@ -58,7 +58,11 @@ class HistoricalClient:
         page_number = 0
         seen_ids = set()
         while True:
-            target = path + ("&" if "?" in path else "?") + f"cursor={cursor}" if cursor else path
+            if cursor:
+                encoded_cursor = quote(cursor, safe="")
+                target = path + ("&" if "?" in path else "?") + f"cursor={encoded_cursor}"
+            else:
+                target = path
             headers = self._headers(target, authenticated)
             try:
                 status, payload = self.transport.get(target, headers, timeout_seconds=self.timeout)
@@ -157,7 +161,12 @@ class HistoricalClient:
         )
         status, payload = self.transport.get(path, {}, timeout_seconds=self.timeout)
         rows = payload.get("candlesticks")
-        if status != 200 or not isinstance(rows, list) or any(not isinstance(row, dict) for row in rows):
+        malformed = (
+            status != 200
+            or not isinstance(rows, list)
+            or any(not isinstance(row, dict) for row in rows)
+        )
+        if malformed:
             raise HistoricalError("historical candlestick response malformed")
         seen_periods: set[int] = set()
         for candle in rows:
