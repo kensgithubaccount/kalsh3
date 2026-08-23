@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -59,3 +60,25 @@ def test_active_market_evaluation_failure_aborts_entire_scan(
         match="active market KXHIGHCHI-TEST could not be fully evaluated",
     ):
         provider.collect_public_evidence(clock=lambda: NOW)
+
+
+def test_unsuccessful_exact_snapshot_is_incomplete_evidence(tmp_path: Path) -> None:
+    failed = SimpleNamespace(succeeded=False)
+    provider = _provider(
+        tmp_path,
+        market_snapshot_acquirer=lambda *_args, **_kwargs: failed,
+        event_snapshot_acquirer=lambda *_args, **_kwargs: failed,
+        orderbook_snapshot_acquirer=lambda *_args, **_kwargs: failed,
+    )
+
+    with pytest.raises(
+        M27RPublicAdapterError,
+        match="exact market/event/orderbook evidence did not complete successfully",
+    ):
+        provider._build_market_slice(
+            clock=lambda: NOW,
+            market_ticker="KXHIGHCHI-TEST",
+            event_ticker="KXHIGHCHI-EVENT",
+            series_raw={"ticker": "KXHIGHCHI"},
+            series_observed_at=NOW,
+        )
