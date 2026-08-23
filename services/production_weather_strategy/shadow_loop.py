@@ -42,7 +42,10 @@ class ShadowRankingPolicy:
         one_candidate_per_event: bool = True,
         family_limits: tuple[tuple[str, int], ...] = (),
     ) -> ShadowRankingPolicy:
-        if not minimum_after_cost_edge.is_finite() or not Decimal("0") <= minimum_after_cost_edge < Decimal("1"):
+        if (
+            not minimum_after_cost_edge.is_finite()
+            or not Decimal("0") <= minimum_after_cost_edge < Decimal("1")
+        ):
             raise ShadowLoopError("minimum edge must be finite and in [0,1)")
         if maximum_candidates < 1:
             raise ShadowLoopError("maximum candidate count must be positive")
@@ -197,7 +200,12 @@ def rank_shadow_opportunities(
         raise ShadowLoopError("duplicate shadow opportunity identity")
     ordered = sorted(
         opportunities,
-        key=lambda item: (-item.after_cost_edge, item.family, item.event_ticker, item.market_ticker),
+        key=lambda item: (
+            -item.after_cost_edge,
+            item.family,
+            item.event_ticker,
+            item.market_ticker,
+        ),
     )
     selected: list[ShadowOpportunity] = []
     rejected: list[tuple[str, str]] = []
