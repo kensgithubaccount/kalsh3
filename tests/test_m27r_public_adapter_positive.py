@@ -44,9 +44,7 @@ def _raw_market() -> dict[str, object]:
             "ticker": MARKET_TICKER,
             "event_ticker": EVENT_TICKER,
             "price_level_structure": "deci_cent",
-            "price_ranges": [
-                {"start": "0.0000", "end": "1.0000", "step": ".001"}
-            ],
+            "price_ranges": [{"start": "0.0000", "end": "1.0000", "step": ".001"}],
         }
     )
     return raw
