@@ -158,10 +158,14 @@ def _settled_markets(
     client: HistoricalClient,
     transport: PublicTransport,
 ) -> tuple[list[dict[str, Any]], SeriesScopeManifest]:
-    path = "/trade-api/v2/series?category=Weather"
+    # The live API returned {"series": null} for category=Weather even though the
+    # documented list endpoint supports an optional category filter. One unfiltered
+    # metadata GET is still bounded and dramatically cheaper than sweeping all settled
+    # markets; candidate selection then uses title + exact settlement-source metadata.
+    path = "/trade-api/v2/series?include_volume=false"
     status, payload = transport.get(path, {}, timeout_seconds=TIMEOUT_SECONDS)
     if status != 200:
-        raise RuntimeError(f"Kalshi Weather series discovery status {status}")
+        raise RuntimeError(f"Kalshi series discovery status {status}")
     candidate_series = candidate_temperature_series(payload)
     return scope_recent_settled_markets(client, candidate_series)
 
