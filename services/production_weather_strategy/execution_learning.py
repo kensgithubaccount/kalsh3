@@ -5,19 +5,20 @@ produced reconciliation facts into immutable labels for fill probability, price 
 fee error, and reconciliation latency. It never reads credentials, calls Kalshi, mutates
 production state, authorizes risk, approves execution, burns authority, or sends orders.
 
-Only unambiguous FILLED and NO_FILL reconciliations become supervised execution labels.
-UNKNOWN remains preserved as an unresolved observation and is never silently interpreted as
-an unfilled order.
+Only unambiguous FILLED, FILLED_POLICY_VIOLATION, and NO_FILL reconciliations become
+supervised execution labels. UNKNOWN remains preserved as an unresolved observation and is
+never silently interpreted as an unfilled order.
 """
 
 from __future__ import annotations
 
-from collections import defaultdict
+import hashlib
+import json
+from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import UTC, datetime
-from decimal import Decimal
+from decimal import Decimal, InvalidOperation
 from enum import StrEnum
-from typing import Mapping
 
 from services.historical_replay.archive import stable_hash
 from services.production_weather_strategy.historical_economics import TradeSide
@@ -29,6 +30,7 @@ class ExecutionLearningError(ValueError):
 
 class ExecutionLabelState(StrEnum):
     FILLED = "FILLED"
+    FILLED_POLICY_VIOLATION = "FILLED_POLICY_VIOLATION"
     NO_FILL = "NO_FILL"
     UNKNOWN = "UNKNOWN"
 
@@ -155,6 +157,7 @@ def build_execution_learning_observation(
 
     if reconciliation.get("schema") != "kalsh3.m27o.post-send-reconciliation.v1":
         raise ExecutionLearningError("unsupported reconciliation schema")
+    _verify_reconciliation_hash(reconciliation)
     execution_id = _text(reconciliation.get("execution_id"), "execution id")
     client_order_id = _text(reconciliation.get("client_order_id"), "client order id")
     content_hash = _text(reconciliation.get("content_hash"), "reconciliation content hash")
@@ -173,6 +176,15 @@ def build_execution_learning_observation(
     except ValueError as exc:
         raise ExecutionLearningError("unsupported reconciliation classification") from exc
 
+    reconciliation_required = reconciliation.get("reconciliation_required")
+    if not isinstance(reconciliation_required, bool):
+        raise ExecutionLearningError("reconciliation_required is malformed")
+    if state is ExecutionLabelState.UNKNOWN:
+        if not reconciliation_required:
+            raise ExecutionLearningError("UNKNOWN reconciliation must remain reconciliation-required")
+    elif reconciliation_required:
+        raise ExecutionLearningError("terminal reconciliation cannot remain reconciliation-required")
+
     filled_quantity = _optional_decimal(reconciliation.get("filled_quantity"), "filled quantity")
     fill_price = _optional_decimal(reconciliation.get("maximum_fill_price"), "maximum fill price")
     actual_fee = _optional_decimal(reconciliation.get("total_fee"), "total fee")
@@ -181,7 +193,11 @@ def build_execution_learning_observation(
     price_slippage: Decimal | None = None
     fee_error: Decimal | None = None
     actual_all_in: Decimal | None = None
-    if state is ExecutionLabelState.FILLED:
+    filled_state = state in {
+        ExecutionLabelState.FILLED,
+        ExecutionLabelState.FILLED_POLICY_VIOLATION,
+    }
+    if filled_state:
         fill_label = 1
         if filled_quantity != expectation.quantity:
             raise ExecutionLearningError("filled reconciliation quantity differs from expectation")
@@ -196,18 +212,26 @@ def build_execution_learning_observation(
         actual_all_in = fill_price * expectation.quantity + actual_fee
         if actual_all_in <= 0 or actual_all_in > expectation.quantity:
             raise ExecutionLearningError("actual all-in cost is outside payout bounds")
+        if state is ExecutionLabelState.FILLED and terminal_state != "CANARY_COMPLETE":
+            raise ExecutionLearningError("FILLED reconciliation has unexpected terminal state")
+        if (
+            state is ExecutionLabelState.FILLED_POLICY_VIOLATION
+            and terminal_state != "CANARY_FAILED"
+        ):
+            raise ExecutionLearningError("policy-violation fill has unexpected terminal state")
     elif state is ExecutionLabelState.NO_FILL:
         fill_label = 0
+        if terminal_state != "CANARY_COMPLETE":
+            raise ExecutionLearningError("NO_FILL reconciliation has unexpected terminal state")
         if filled_quantity not in {None, Decimal("0"), Decimal("0.00")}:
             raise ExecutionLearningError("NO_FILL reconciliation reports nonzero filled quantity")
         if fill_price is not None or (actual_fee is not None and actual_fee != 0):
             raise ExecutionLearningError("NO_FILL reconciliation reports execution economics")
     else:
         fill_label = None
+        if terminal_state != "SUBMITTED_OR_UNKNOWN":
+            raise ExecutionLearningError("UNKNOWN reconciliation has unexpected terminal state")
         # UNKNOWN evidence is deliberately preserved without learning a false no-fill label.
-        price_slippage = None
-        fee_error = None
-        actual_all_in = None
 
     material = (
         "m28f-execution-learning-observation-v1",
@@ -259,6 +283,7 @@ class ExecutionLearningSummary:
     supervised_observations: int
     unknown_observations: int
     filled_observations: int
+    policy_violation_fill_observations: int
     no_fill_observations: int
     unique_events: int
     fill_rate: Decimal | None
@@ -279,7 +304,17 @@ def summarize_execution_learning(
         raise ExecutionLearningError("duplicate execution learning observation")
     supervised = [row for row in observations if row.fill_label is not None]
     unknown = [row for row in observations if row.state is ExecutionLabelState.UNKNOWN]
-    filled = [row for row in observations if row.state is ExecutionLabelState.FILLED]
+    filled = [
+        row
+        for row in observations
+        if row.state
+        in {ExecutionLabelState.FILLED, ExecutionLabelState.FILLED_POLICY_VIOLATION}
+    ]
+    policy_violations = [
+        row
+        for row in observations
+        if row.state is ExecutionLabelState.FILLED_POLICY_VIOLATION
+    ]
     no_fill = [row for row in observations if row.state is ExecutionLabelState.NO_FILL]
     fill_rate = (
         None
@@ -299,6 +334,7 @@ def summarize_execution_learning(
         len(supervised),
         len(unknown),
         len(filled),
+        len(policy_violations),
         len(no_fill),
         event_count,
         None if fill_rate is None else str(fill_rate),
@@ -313,6 +349,7 @@ def summarize_execution_learning(
         supervised_observations=len(supervised),
         unknown_observations=len(unknown),
         filled_observations=len(filled),
+        policy_violation_fill_observations=len(policy_violations),
         no_fill_observations=len(no_fill),
         unique_events=event_count,
         fill_rate=fill_rate,
@@ -321,6 +358,43 @@ def summarize_execution_learning(
         mean_reconciliation_latency_seconds=mean_latency,
         content_hash=digest,
     )
+
+
+def _verify_reconciliation_hash(reconciliation: Mapping[str, object]) -> None:
+    fields = (
+        "schema",
+        "software_version",
+        "observed_at",
+        "completed_at",
+        "classification",
+        "reason",
+        "execution_id",
+        "session_id",
+        "client_order_id",
+        "order_id",
+        "order_status",
+        "filled_quantity",
+        "maximum_fill_price",
+        "total_fee",
+        "orders_sha256",
+        "fills_sha256",
+        "positions_sha256",
+        "terminal_state",
+        "reconciliation_required",
+    )
+    if any(field not in reconciliation for field in fields):
+        raise ExecutionLearningError("reconciliation hash material is incomplete")
+    material = {field: reconciliation[field] for field in fields}
+    encoded = json.dumps(
+        material,
+        sort_keys=True,
+        separators=(",", ":"),
+        default=str,
+    ).encode()
+    expected = hashlib.sha256(encoded).hexdigest()
+    actual = reconciliation.get("content_hash")
+    if not isinstance(actual, str) or actual != expected:
+        raise ExecutionLearningError("reconciliation content hash mismatch")
 
 
 def _mean_optional(values: list[Decimal | None]) -> Decimal | None:
@@ -343,7 +417,7 @@ def _optional_decimal(value: object, field: str) -> Decimal | None:
         raise ExecutionLearningError(f"{field} is malformed")
     try:
         parsed = Decimal(str(value))
-    except Exception as exc:
+    except (InvalidOperation, ValueError) as exc:
         raise ExecutionLearningError(f"{field} is malformed") from exc
     if not parsed.is_finite():
         raise ExecutionLearningError(f"{field} is malformed")
