@@ -188,9 +188,7 @@ def run_scan(
             f"{selection.classification} ({selection.reason})"
         )
     selected_weather = selection.selected
-    current = build_current_weather_forecast_evidence(
-        selected_weather.evidence, record_number=1
-    )
+    current = build_current_weather_forecast_evidence(selected_weather.evidence, record_number=1)
 
     public_markets = paged_markets()
     if (
@@ -331,9 +329,7 @@ def run_scan(
             "maximum_fee": str(candidate.maximum_fee),
             "maximum_commitment": str(candidate.maximum_commitment),
             "maximum_loss": str(candidate.maximum_loss),
-            "research_probability_discrepancy": str(
-                candidate.research_probability_discrepancy
-            ),
+            "research_probability_discrepancy": str(candidate.research_probability_discrepancy),
             "forecast_evidence_identity": candidate.eligibility.forecast_evidence_identity,
             "economics_evidence_identity": candidate.economics_evidence_identity,
         }
@@ -438,10 +434,7 @@ def main(argv: list[str] | None = None) -> int:
         print("SELECTED_MARKET=" + str(selected.get("market_ticker")))
         print("SELECTED_SIDE=" + str(selected.get("selected_side")))
         print("EXECUTABLE_PRICE=" + str(selected.get("executable_price")))
-        print(
-            "RESEARCH_DISCREPANCY="
-            + str(selected.get("research_probability_discrepancy"))
-        )
+        print("RESEARCH_DISCREPANCY=" + str(selected.get("research_probability_discrepancy")))
     print("NEXT_GATE=" + str(summary["next_gate"]))
     print("SUMMARY=" + str(Path(str(summary["run_dir"])) / "summary.json"))
     print("CREDENTIAL_ACCESS=NONE")
