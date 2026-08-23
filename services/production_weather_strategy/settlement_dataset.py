@@ -23,11 +23,13 @@ Key invariants:
 from __future__ import annotations
 
 import re
+from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, time
 from decimal import Decimal, InvalidOperation
 from enum import StrEnum
-from typing import Any, Mapping
+from itertools import pairwise
+from typing import Any
 from zoneinfo import ZoneInfo
 
 from services.forecasting.daily_temperature import SETTLEMENT_LOCATIONS, SETTLEMENT_SOURCE
@@ -47,7 +49,8 @@ _RULE = re.compile(
     r"(?P<between_high>[+-]?(?:\d+(?:\.\d+)?|\.\d+)))|"
     r"(?:greater than (?P<greater>[+-]?(?:\d+(?:\.\d+)?|\.\d+)))|"
     r"(?:less than (?P<less>[+-]?(?:\d+(?:\.\d+)?|\.\d+))))"
-    rf"° fahrenheit according to {re.escape(SETTLEMENT_SOURCE)}, then the market resolves to Yes\.\Z"
+    rf"° fahrenheit according to {re.escape(SETTLEMENT_SOURCE)}, then the market "
+    r"resolves to Yes\.\Z"
 )
 _NUMBER = re.compile(r"[+-]?(?:\d+(?:\.\d*)?|\.\d+)\Z")
 
@@ -167,9 +170,13 @@ def parse_resolved_temperature_market(
     identifier = match.group("identifier")
     reviewed = SETTLEMENT_LOCATIONS.get(identifier)
     if reviewed is None:
-        raise HistoricalWeatherDatasetError("temperature market uses an unreviewed settlement location")
+        raise HistoricalWeatherDatasetError(
+            "temperature market uses an unreviewed settlement location"
+        )
     if match.group("location").strip() != reviewed.location:
-        raise HistoricalWeatherDatasetError("temperature market location conflicts with reviewed authority")
+        raise HistoricalWeatherDatasetError(
+            "temperature market location conflicts with reviewed authority"
+        )
 
     try:
         local_date = datetime.strptime(match.group("date"), "%b %d, %Y").date()
@@ -206,7 +213,9 @@ def parse_resolved_temperature_market(
         lower = _decimal(row.get("floor_strike"), "floor_strike")
         upper = None
         if row.get("cap_strike") is not None:
-            raise HistoricalWeatherDatasetError("greater-than contract has an unexpected cap strike")
+            raise HistoricalWeatherDatasetError(
+                "greater-than contract has an unexpected cap strike"
+            )
     else:
         expected_strike = "less"
         comparator = "LT"
@@ -215,12 +224,18 @@ def parse_resolved_temperature_market(
         lower = _decimal(row.get("cap_strike"), "cap_strike")
         upper = None
         if row.get("floor_strike") is not None:
-            raise HistoricalWeatherDatasetError("less-than contract has an unexpected floor strike")
+            raise HistoricalWeatherDatasetError(
+                "less-than contract has an unexpected floor strike"
+            )
 
     if strike_type != expected_strike:
-        raise HistoricalWeatherDatasetError("strike metadata conflicts with the exact contract rule")
+        raise HistoricalWeatherDatasetError(
+            "strike metadata conflicts with the exact contract rule"
+        )
     if lower != rule_lower or upper != rule_upper:
-        raise HistoricalWeatherDatasetError("strike values conflict with the exact contract rule")
+        raise HistoricalWeatherDatasetError(
+            "strike values conflict with the exact contract rule"
+        )
 
     result = _text(row, "result").lower()
     if result not in {"yes", "no"}:
@@ -229,7 +244,9 @@ def parse_resolved_temperature_market(
     settlement_value = _decimal(row.get("settlement_value_dollars"), "settlement_value_dollars")
     expected_value = Decimal(realized_yes)
     if settlement_value != expected_value:
-        raise HistoricalWeatherDatasetError("settlement value conflicts with finalized binary result")
+        raise HistoricalWeatherDatasetError(
+            "settlement value conflicts with finalized binary result"
+        )
     settlement_at = _timestamp(row.get("settlement_ts"), "settlement_ts")
 
     measurement = "DAILY_MAX" if match.group("measurement") == "maximum" else "DAILY_MIN"
@@ -300,7 +317,9 @@ def build_authoritative_weather_dataset(
         contracts.append(parsed)
 
     if not contracts:
-        raise HistoricalWeatherDatasetError("no supported finalized daily-temperature markets found")
+        raise HistoricalWeatherDatasetError(
+            "no supported finalized daily-temperature markets found"
+        )
 
     grouped: dict[tuple[str, str, str, date], list[ResolvedTemperatureContract]] = {}
     for contract in contracts:
@@ -389,7 +408,9 @@ def _build_event(contracts: list[ResolvedTemperatureContract]) -> ResolvedWeathe
             contract.local_date,
         )
         if other != identity:
-            raise HistoricalWeatherDatasetError("sibling temperature contracts disagree on event semantics")
+            raise HistoricalWeatherDatasetError(
+                "sibling temperature contracts disagree on event semantics"
+            )
 
     witness = _feasible_witness(ordered)
     if witness is None:
@@ -437,12 +458,19 @@ def _feasible_witness(contracts: tuple[ResolvedTemperatureContract, ...]) -> Dec
     )
     if not boundaries:
         return None
-    candidates: set[Decimal] = {boundaries[0] - Decimal(1), boundaries[-1] + Decimal(1)}
+    candidates: set[Decimal] = {
+        boundaries[0] - Decimal(1),
+        boundaries[-1] + Decimal(1),
+    }
     candidates.update(boundaries)
-    for left, right in zip(boundaries, boundaries[1:], strict=False):
+    for left, right in pairwise(boundaries):
         candidates.add((left + right) / Decimal(2))
     for candidate in sorted(candidates):
-        if all(contract.predicate(candidate) == bool(contract.realized_yes) for contract in contracts):
+        consistent = all(
+            contract.predicate(candidate) == bool(contract.realized_yes)
+            for contract in contracts
+        )
+        if consistent:
             return candidate
     return None
 
@@ -492,7 +520,9 @@ def _timestamp(value: object, field: str) -> datetime:
     except ValueError as exc:
         raise HistoricalWeatherDatasetError(f"historical market {field} is malformed") from exc
     if parsed.tzinfo is None:
-        raise HistoricalWeatherDatasetError(f"historical market {field} must be timezone-aware")
+        raise HistoricalWeatherDatasetError(
+            f"historical market {field} must be timezone-aware"
+        )
     return parsed.astimezone(UTC)
 
 
