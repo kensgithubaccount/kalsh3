@@ -8,7 +8,11 @@ from typing import Any, cast
 
 import pytest
 
-from services.supervised_canary.m27d import CandidateState, ExperimentalCandidate
+from services.supervised_canary.m27d import (
+    CandidateState,
+    ExperimentalCandidate,
+    select_experimental_candidate,
+)
 from services.supervised_canary.m27q_state_inspection import inspect_first_canary_state
 from services.supervised_canary.m27r_operator_runner import (
     M27RCandidateEvidence,
@@ -138,20 +142,21 @@ def test_exact_one_fixture_reaches_real_m27q_preflight_without_state_mutation(
         public_evidence_path=cast(Path, values["public_evidence_path"]),
         m27j_evidence_path=cast(Path, values["m27j_evidence_path"]),
         m27a_binding_evidence_path=cast(Path, values["m27a_binding_evidence_path"]),
-        current_series_fee_observation=cast(Any, values["current_series_fee_observation"]),
+        current_series_fee_observation=cast(
+            Any,
+            values["current_series_fee_observation"],
+        ),
         current_event_fee_override=cast(Any, values["current_event_fee_override"]),
-        current_event_fee_observed_at=cast(datetime, values["current_event_fee_observed_at"]),
+        current_event_fee_observed_at=cast(
+            datetime,
+            values["current_event_fee_observed_at"],
+        ),
     )
-    selected = cast(ExperimentalCandidate, cast(Any, values["candidate_inputs"])[0][0])
-    del selected  # The real M27D selector below derives the candidate from the fixture inputs.
 
     state_path = cast(Path, values["state_path"])
     before = inspect_first_canary_state(state_path=state_path, now=now)
 
-    selection = __import__(
-        "services.supervised_canary.m27d",
-        fromlist=["select_experimental_candidate"],
-    ).select_experimental_candidate(candidate_inputs, now=now)
+    selection = select_experimental_candidate(candidate_inputs, now=now)
     candidate = cast(ExperimentalCandidate, selection.selected)
     candidate_evidence = M27RCandidateEvidence(
         m27f_bundle=cast(Any, values["m27f_bundle"]),
@@ -161,7 +166,10 @@ def test_exact_one_fixture_reaches_real_m27q_preflight_without_state_mutation(
         state_path=state_path,
         readiness=cast(Any, values["readiness"]),
         order_group=cast(Any, values["order_group"]),
-        authorization_service_available=cast(bool, values["authorization_service_available"]),
+        authorization_service_available=cast(
+            bool,
+            values["authorization_service_available"],
+        ),
     )
     public_provider = _PublicProvider(public_evidence)
     candidate_provider = _FixtureCandidateProvider(candidate_evidence, candidate.candidate_id)
