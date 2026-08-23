@@ -179,9 +179,7 @@ def test_bootstrap_module_has_no_network_or_live_execution_imports() -> None:
     )
 
     assert not any(
-        imported.startswith(prefix)
-        for imported in imports
-        for prefix in forbidden_prefixes
+        imported.startswith(prefix) for imported in imports for prefix in forbidden_prefixes
     )
 
 
@@ -194,10 +192,5 @@ def test_default_path_is_outside_repository(
 
     path = bootstrap.default_state_path()
 
-    assert path == (
-        state_home
-        / "kalsh3"
-        / "production-canary"
-        / "m27o-shared.sqlite3"
-    )
+    assert path == (state_home / "kalsh3" / "production-canary" / "m27o-shared.sqlite3")
     assert not os.path.lexists(path)

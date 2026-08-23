@@ -213,14 +213,10 @@ def _validate_bundle(
     }
     for name, expected in expected_counts.items():
         if reads[name].get("count") != expected:
-            raise M27QRiskError(
-                f"transient {name} count does not bind to the M27F artifact"
-            )
+            raise M27QRiskError(f"transient {name} count does not bind to the M27F artifact")
 
     if not facts.pristine_account_activity:
-        raise M27QRiskError(
-            "first canary requires zero positions, orders, fills, and settlements"
-        )
+        raise M27QRiskError("first canary requires zero positions, orders, fills, and settlements")
 
     return payload
 
@@ -250,9 +246,7 @@ def _validate_candidate_exposure(
 
 def _validate_first_canary_state(state: FirstCanaryDurableState) -> None:
     if not state.pristine:
-        raise M27QRiskError(
-            "durable first-canary state is not pristine and DISARMED"
-        )
+        raise M27QRiskError("durable first-canary state is not pristine and DISARMED")
 
 
 def _validate_empty_loss_state(

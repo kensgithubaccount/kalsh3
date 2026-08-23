@@ -40,12 +40,7 @@ from tests.test_m27i_live_weather_preflight import (
 
 
 def _all_ready() -> NewRiskReadiness:
-    return NewRiskReadiness(
-        **{
-            field.name: True
-            for field in fields(NewRiskReadiness)
-        }
-    )
+    return NewRiskReadiness(**{field.name: True for field in fields(NewRiskReadiness)})
 
 
 def _fixture(tmp_path: Path) -> dict[str, object]:
@@ -70,10 +65,7 @@ def _fixture(tmp_path: Path) -> dict[str, object]:
         candidate_inputs,
         now=now,
     )
-    assert (
-        selected.state
-        is m27d.CandidateState.QUALIFYING_EXPERIMENTAL_CANARY
-    )
+    assert selected.state is m27d.CandidateState.QUALIFYING_EXPERIMENTAL_CANARY
     assert selected.selected is not None
     candidate = selected.selected
 
@@ -137,11 +129,7 @@ def _fixture(tmp_path: Path) -> dict[str, object]:
         now,
     )
 
-    state_path = (
-        tmp_path
-        / "production-canary"
-        / "m27o-shared.sqlite3"
-    )
+    state_path = tmp_path / "production-canary" / "m27o-shared.sqlite3"
     bootstrap_state(
         state_path=state_path,
         actor="M27Q TEST",
@@ -219,9 +207,7 @@ def test_full_offline_m27q_to_m27i_path_reaches_preflight_ready(
     assert before.session_count == after.session_count == 0
 
     for suffix in ("-wal", "-shm", "-journal"):
-        assert not state_path.with_name(
-            state_path.name + suffix
-        ).exists()
+        assert not state_path.with_name(state_path.name + suffix).exists()
 
 
 def test_persisted_m27f_must_match_same_sweep_bundle(
@@ -246,10 +232,7 @@ def test_persisted_m27f_must_match_same_sweep_bundle(
 
 
 def test_orchestrator_has_no_network_credential_or_mutation_boundary() -> None:
-    path = Path(
-        "services/supervised_canary/"
-        "m27q_preflight_orchestrator.py"
-    )
+    path = Path("services/supervised_canary/m27q_preflight_orchestrator.py")
     source = path.read_text()
     tree = ast.parse(source)
 
@@ -258,10 +241,7 @@ def test_orchestrator_has_no_network_credential_or_mutation_boundary() -> None:
 
     for node in ast.walk(tree):
         if isinstance(node, ast.Import):
-            imported.update(
-                alias.name
-                for alias in node.names
-            )
+            imported.update(alias.name for alias in node.names)
         elif isinstance(node, ast.ImportFrom):
             imported.add(node.module or "")
         elif isinstance(node, ast.Call):
@@ -285,8 +265,7 @@ def test_orchestrator_has_no_network_credential_or_mutation_boundary() -> None:
     }
 
     assert not any(
-        module == forbidden
-        or module.startswith(forbidden + ".")
+        module == forbidden or module.startswith(forbidden + ".")
         for module in imported
         for forbidden in forbidden_imports
     )

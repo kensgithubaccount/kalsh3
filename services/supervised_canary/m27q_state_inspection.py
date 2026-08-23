@@ -150,10 +150,10 @@ class FirstCanaryStateInspection:
 
     @property
     def pristine_first_canary(self) -> bool:
-        kills_normal = (
-            {row.category for row in self.kill_states}
-            == EXPECTED_KILL_CATEGORIES
-            and all(row.level is KillLevel.NORMAL for row in self.kill_states)
+        kills_normal = {
+            row.category for row in self.kill_states
+        } == EXPECTED_KILL_CATEGORIES and all(
+            row.level is KillLevel.NORMAL for row in self.kill_states
         )
 
         return (
@@ -358,9 +358,7 @@ def inspect_first_canary_state(
 
             quick_check = db.execute("PRAGMA quick_check(1)").fetchone()
             if quick_check != ("ok",):
-                raise M27QStateInspectionError(
-                    "production canary state failed SQLite quick_check"
-                )
+                raise M27QStateInspectionError("production canary state failed SQLite quick_check")
 
             tables = {
                 str(row[0])
@@ -369,14 +367,11 @@ def inspect_first_canary_state(
                 ).fetchall()
             }
             if not REQUIRED_TABLES.issubset(tables):
-                raise M27QStateInspectionError(
-                    "shared M16/M13 production schema is incomplete"
-                )
+                raise M27QStateInspectionError("shared M16/M13 production schema is incomplete")
 
             runtime = _one_row(
                 db,
-                "SELECT production_state "
-                "FROM canary_runtime WHERE singleton=1",
+                "SELECT production_state FROM canary_runtime WHERE singleton=1",
                 field="canary runtime",
             )
             if len(runtime) != 1:
@@ -388,14 +383,12 @@ def inspect_first_canary_state(
 
             submission = _one_row(
                 db,
-                "SELECT real_submission_count "
-                "FROM production_submission_counter WHERE singleton=1",
+                "SELECT real_submission_count FROM production_submission_counter WHERE singleton=1",
                 field="submission counter",
             )
             fill = _one_row(
                 db,
-                "SELECT real_fill_count "
-                "FROM production_fill_counter WHERE singleton=1",
+                "SELECT real_fill_count FROM production_fill_counter WHERE singleton=1",
                 field="fill counter",
             )
             if len(submission) != 1 or len(fill) != 1:
@@ -426,12 +419,9 @@ def inspect_first_canary_state(
                 field="session_count",
             )
 
-            session_states = db.execute(
-                "SELECT state FROM canary_sessions"
-            ).fetchall()
+            session_states = db.execute("SELECT state FROM canary_sessions").fetchall()
             unresolved_canary_count = sum(
-                isinstance(row[0], str) and row[0] in UNRESOLVED_STATES
-                for row in session_states
+                isinstance(row[0], str) and row[0] in UNRESOLVED_STATES for row in session_states
             )
 
             risk_authorization_count = _count(
@@ -452,8 +442,7 @@ def inspect_first_canary_state(
 
             halt = _one_row(
                 db,
-                "SELECT active,reason "
-                "FROM global_halt_state WHERE singleton=1",
+                "SELECT active,reason FROM global_halt_state WHERE singleton=1",
                 field="global halt",
             )
             if len(halt) != 2:
@@ -469,8 +458,7 @@ def inspect_first_canary_state(
 
             compliance = _one_row(
                 db,
-                "SELECT state,reason,changed_at,actor "
-                "FROM compliance_state WHERE singleton=1",
+                "SELECT state,reason,changed_at,actor FROM compliance_state WHERE singleton=1",
                 field="compliance",
             )
             if len(compliance) != 4:
@@ -484,9 +472,7 @@ def inspect_first_canary_state(
                     )
                 )
             except ValueError as exc:
-                raise M27QStateInspectionError(
-                    "compliance state is unsupported"
-                ) from exc
+                raise M27QStateInspectionError("compliance state is unsupported") from exc
 
             compliance_reason = _optional_text(
                 compliance[1],
@@ -503,18 +489,13 @@ def inspect_first_canary_state(
 
             kill_rows: list[DurableKillRow] = []
             for row in db.execute(
-                "SELECT category,level,reason,changed_at "
-                "FROM durable_kill_states ORDER BY category"
+                "SELECT category,level,reason,changed_at FROM durable_kill_states ORDER BY category"
             ).fetchall():
                 if len(row) != 4:
                     raise M27QStateInspectionError("kill-state row is malformed")
                 try:
-                    category = KillCategory(
-                        _required_text(row[0], field="kill category")
-                    )
-                    level = KillLevel(
-                        _required_text(row[1], field="kill level")
-                    )
+                    category = KillCategory(_required_text(row[0], field="kill category"))
+                    level = KillLevel(_required_text(row[1], field="kill level"))
                 except ValueError as exc:
                     raise M27QStateInspectionError(
                         "kill-state category or level is unsupported"
@@ -538,12 +519,9 @@ def inspect_first_canary_state(
             kill_states = tuple(kill_rows)
             if (
                 len(kill_states) != len(EXPECTED_KILL_CATEGORIES)
-                or {row.category for row in kill_states}
-                != EXPECTED_KILL_CATEGORIES
+                or {row.category for row in kill_states} != EXPECTED_KILL_CATEGORIES
             ):
-                raise M27QStateInspectionError(
-                    "durable kill-state set is incomplete or duplicated"
-                )
+                raise M27QStateInspectionError("durable kill-state set is incomplete or duplicated")
 
             loss = _one_row(
                 db,
@@ -580,9 +558,7 @@ def inspect_first_canary_state(
             )
 
     except sqlite3.Error as exc:
-        raise M27QStateInspectionError(
-            "read-only SQLite inspection failed"
-        ) from exc
+        raise M27QStateInspectionError("read-only SQLite inspection failed") from exc
 
     _require_no_sidecars(state_path)
 
@@ -641,9 +617,7 @@ def build_safety_state(
     if now.tzinfo is None or now.utcoffset() is None:
         raise M27QStateInspectionError("safety evaluation time must be timezone-aware")
     if not isinstance(reconciliation_status, ReconciliationStatus):
-        raise M27QStateInspectionError(
-            "reconciliation_status must be a ReconciliationStatus"
-        )
+        raise M27QStateInspectionError("reconciliation_status must be a ReconciliationStatus")
 
     losses = evaluate_loss_windows(
         now=now,

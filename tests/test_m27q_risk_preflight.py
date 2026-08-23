@@ -313,11 +313,7 @@ def test_candidate_specific_position_blocks() -> None:
 
 def test_stale_candidate_exposure_blocks() -> None:
     with pytest.raises(M27QRiskError, match="stale or future-dated"):
-        build(
-            candidate_exposure=exposure(
-                completed_at=NOW - timedelta(seconds=31)
-            )
-        )
+        build(candidate_exposure=exposure(completed_at=NOW - timedelta(seconds=31)))
 
 
 def test_false_readiness_is_rejected_by_existing_m13_engine() -> None:
@@ -347,11 +343,7 @@ def test_cash_below_protected_reserve_is_rejected_without_portfolio_value_assump
         "updated_ts": 1_700_000_000,
         "balance_breakdown": [],
     }
-    account_bundle = bundle(
-        account_overrides={
-            "balance?": [HttpResponse(200, low_balance)]
-        }
-    )
+    account_bundle = bundle(account_overrides={"balance?": [HttpResponse(200, low_balance)]})
 
     result = build(m27f_bundle=account_bundle)
 
@@ -412,9 +404,7 @@ def test_module_has_no_authorization_or_mutation_capability() -> None:
     }
 
     assert not any(
-        fragment in module
-        for fragment in forbidden_import_fragments
-        for module in imported
+        fragment in module for fragment in forbidden_import_fragments for module in imported
     )
     assert "issue" not in calls
     assert "consume" not in calls
