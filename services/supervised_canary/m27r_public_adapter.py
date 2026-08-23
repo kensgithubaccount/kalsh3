@@ -219,7 +219,9 @@ class GetOnlyPublicEvidenceProvider:
             snapshot.succeeded
             for snapshot in (expected_market_snapshot, event_snapshot, orderbook_snapshot)
         ):
-            return None
+            raise M27RPublicAdapterError(
+                "exact market/event/orderbook evidence did not complete successfully"
+            )
         if (
             expected_market_snapshot.body_sha256 is None
             or event_snapshot.body_sha256 is None
@@ -241,7 +243,9 @@ class GetOnlyPublicEvidenceProvider:
             or event.series_ticker != "KXHIGHCHI"
             or series_raw.get("ticker") != event.series_ticker
         ):
-            return None
+            raise M27RPublicAdapterError(
+                "exact market/event evidence does not preserve the KXHIGHCHI series binding"
+            )
 
         record_number = _record_number_for_route(
             raw_grib=self.raw_grib_evidence,
@@ -305,7 +309,7 @@ class GetOnlyPublicEvidenceProvider:
 
         current_rules = self.rules_acquirer(market_ticker, clock=clock)
         if not current_rules.succeeded:
-            return None
+            raise M27RPublicAdapterError("current-rules evidence did not complete successfully")
         if current_rules.body_sha256 is None:
             raise M27RPublicAdapterError("successful current-rules snapshot is missing body hash")
 
