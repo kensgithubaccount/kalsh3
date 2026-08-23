@@ -17,7 +17,6 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any, Protocol
 
-from services.forecasting.daily_temperature import SETTLEMENT_SOURCE
 from services.forecasting.weather_source_authority import PHYSICAL_WEATHER_SOURCES
 from services.historical_replay.archive import stable_hash
 from services.production_weather_strategy.settlement_dataset import (
@@ -27,6 +26,7 @@ from services.production_weather_strategy.settlement_dataset import (
 
 _UNREVIEWED_LOCATION = "temperature market uses an unreviewed settlement location"
 _NO_SUPPORTED_MARKETS = "no supported finalized daily-temperature markets found"
+_WEATHER_CATEGORIES = frozenset({"Weather", "Climate and Weather"})
 
 
 class SeriesScopeError(ValueError):
@@ -63,7 +63,13 @@ class SeriesScopeManifest:
 
 
 def candidate_temperature_series(series_payload: Mapping[str, Any]) -> tuple[str, ...]:
-    """Return current Weather Company temperature series from a series-list response."""
+    """Return current daily-temperature series from reviewed weather categories.
+
+    Series-level settlement-source metadata is intentionally not authoritative here. The
+    daily-temperature series crossed settlement regimes in place, so current-regime Weather
+    Company authority is established later from the actual settled market rules by
+    ``build_authoritative_weather_dataset``.
+    """
 
     raw_series = series_payload.get("series")
     if not isinstance(raw_series, list):
@@ -82,11 +88,12 @@ def candidate_temperature_series(series_payload: Mapping[str, Any]) -> tuple[str
     seen: set[str] = set()
     for row in raw_series:
         category = row.get("category")
-        if category != "Weather":
+        if category not in _WEATHER_CATEGORIES:
             continue
 
         ticker = row.get("ticker")
         title = row.get("title")
+        frequency = row.get("frequency")
         if not isinstance(ticker, str) or not ticker.strip():
             raise SeriesScopeError("Weather series ticker is missing or malformed")
         if ticker in seen:
@@ -96,23 +103,14 @@ def candidate_temperature_series(series_payload: Mapping[str, Any]) -> tuple[str
             raise SeriesScopeError("Weather series title is missing or malformed")
         if "temperature" not in title.casefold():
             continue
-
-        sources = row.get("settlement_sources")
-        if not isinstance(sources, list) or any(not isinstance(source, dict) for source in sources):
-            raise SeriesScopeError("Weather series settlement_sources is malformed")
-        source_names: list[str] = []
-        for source in sources:
-            name = source.get("name")
-            if not isinstance(name, str) or not name.strip():
-                raise SeriesScopeError("Weather series settlement source name is malformed")
-            source_names.append(name.strip())
-
-        if SETTLEMENT_SOURCE not in source_names:
+        if not isinstance(frequency, str) or not frequency.strip():
+            raise SeriesScopeError("temperature series frequency is missing or malformed")
+        if frequency.casefold() != "daily":
             continue
         selected.append(ticker)
 
     if not selected:
-        raise SeriesScopeError("no current Weather Company temperature series were discovered")
+        raise SeriesScopeError("no current daily-temperature series were discovered")
     return tuple(sorted(selected))
 
 
