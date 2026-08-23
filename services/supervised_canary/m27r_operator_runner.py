@@ -7,20 +7,26 @@ mutation capability.
 Its sole job is to enforce the M27R ordering boundary around already-reviewed producers:
 
 1. collect public/current candidate evidence, retained in exact per-market slices;
-2. run the unchanged M27D selector across those candidate inputs;
+2. run the unchanged M27D selector across those candidate inputs at the then-current clock;
 3. bind the unique selected candidate back to exactly one matching public evidence slice;
 4. only then allow the caller-supplied candidate-specific read-only evidence producer to run;
-5. feed the exact selected slice plus account evidence into the unchanged M27Q orchestrator;
+5. obtain a fresh consumption timestamp and feed the exact selected slice plus account evidence
+   into the unchanged M27Q orchestrator;
 6. return read-only review evidence.
 
-Concrete live acquisition belongs in a separately capability-tested adapter. Keeping this
+Concrete live acquisition belongs in separately capability-tested adapters. Keeping this
 coordinator transport-free makes the critical candidate-before-authenticated-read ordering and
 candidate-to-public-evidence binding independently testable and prevents live I/O capability from
 leaking into M27Q itself.
+
+M27R accepts a clock callable rather than a single run timestamp. A live operator run therefore
+cannot freeze time across public network reads, authenticated reads, and final M27Q consumption.
+Tests remain deterministic by injecting a fixed or scripted clock.
 """
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
@@ -42,7 +48,8 @@ from .m27q_preflight_orchestrator import (
     build_first_canary_preflight,
 )
 
-SOFTWARE_VERSION = "kalsh3.m27r.readonly-operator-runner/2"
+SOFTWARE_VERSION = "kalsh3.m27r.readonly-operator-runner/3"
+Clock = Callable[[], datetime]
 
 
 class M27ROperatorError(RuntimeError):
@@ -102,14 +109,14 @@ class M27RCandidateEvidence:
 
 
 class PublicEvidenceProvider(Protocol):
-    def collect_public_evidence(self, *, now: datetime) -> M27RPublicEvidence: ...
+    def collect_public_evidence(self, *, clock: Clock) -> M27RPublicEvidence: ...
 
 
 class CandidateEvidenceProvider(Protocol):
     def collect_candidate_evidence(
         self,
         *,
-        now: datetime,
+        clock: Clock,
         candidate: ExperimentalCandidate,
     ) -> M27RCandidateEvidence: ...
 
@@ -156,6 +163,12 @@ def _require_aware(value: datetime, *, field: str) -> None:
         raise M27ROperatorError(f"{field} must be timezone-aware")
 
 
+def _clock_now(clock: Clock, *, field: str) -> datetime:
+    value = clock()
+    _require_aware(value, field=field)
+    return value
+
+
 def _selected_market_evidence(
     *,
     public: M27RPublicEvidence,
@@ -189,7 +202,7 @@ def _selected_market_evidence(
 
 def run_readonly_operator_preflight(
     *,
-    now: datetime,
+    clock: Clock,
     public_provider: PublicEvidenceProvider,
     candidate_provider: CandidateEvidenceProvider,
 ) -> M27ROperatorRun:
@@ -200,12 +213,18 @@ def run_readonly_operator_preflight(
     per-market public evidence slice. A successful M27Q/M27I ``PREFLIGHT_READY`` remains evidence
     only: this function has no authority object, approval, burn, or execution path and always
     returns ``execution_authorized=False``.
+
+    The clock is sampled at every decision boundary. Public/candidate providers receive the same
+    callable so their individual network acquisitions may record later real times. M27Q receives
+    a fresh post-authentication consumption time, preventing a long-running preflight from
+    appearing younger than it really is.
     """
 
-    _require_aware(now, field="operator clock")
-    public = public_provider.collect_public_evidence(now=now)
+    _clock_now(clock, field="operator start clock")
+    public = public_provider.collect_public_evidence(clock=clock)
 
-    selection = select_experimental_candidate(public.candidate_inputs, now=now)
+    selection_now = _clock_now(clock, field="candidate selection clock")
+    selection = select_experimental_candidate(public.candidate_inputs, now=selection_now)
     if (
         selection.state is not CandidateState.QUALIFYING_EXPERIMENTAL_CANARY
         or selection.selected is None
@@ -224,15 +243,20 @@ def run_readonly_operator_preflight(
         )
 
     candidate = selection.selected
-    market = _selected_market_evidence(public=public, candidate=candidate, now=now)
+    market = _selected_market_evidence(
+        public=public,
+        candidate=candidate,
+        now=selection_now,
+    )
 
     candidate_evidence = candidate_provider.collect_candidate_evidence(
-        now=now,
+        clock=clock,
         candidate=candidate,
     )
 
+    preflight_now = _clock_now(clock, field="M27Q consumption clock")
     orchestrated = build_first_canary_preflight(
-        now=now,
+        now=preflight_now,
         candidate_inputs=public.candidate_inputs,
         m27f_bundle=candidate_evidence.m27f_bundle,
         m27f_evidence_path=candidate_evidence.m27f_evidence_path,
