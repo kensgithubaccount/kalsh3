@@ -29,7 +29,17 @@ def test_public_markets_use_max_page_and_optional_series_filter() -> None:
     markets = HistoricalClient(transport).markets(series_ticker="KXHIGHCHI")
     assert markets == [{"ticker": "M1"}]
     assert transport.paths == [
-        "/trade-api/v2/historical/markets?limit=1000&mve_filter=exclude&series_ticker=KXHIGHCHI"
+        "/trade-api/v2/historical/markets?limit=1000&series_ticker=KXHIGHCHI"
+    ]
+    assert transport.headers == [{}]
+
+
+def test_unfiltered_public_markets_exclude_multivariate_markets() -> None:
+    transport = Pages([(200, {"markets": [{"ticker": "M1"}], "cursor": ""})])
+    markets = HistoricalClient(transport).markets()
+    assert markets == [{"ticker": "M1"}]
+    assert transport.paths == [
+        "/trade-api/v2/historical/markets?limit=1000&mve_filter=exclude"
     ]
     assert transport.headers == [{}]
 
