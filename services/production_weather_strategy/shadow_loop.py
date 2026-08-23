@@ -42,10 +42,9 @@ class ShadowRankingPolicy:
         one_candidate_per_event: bool = True,
         family_limits: tuple[tuple[str, int], ...] = (),
     ) -> ShadowRankingPolicy:
-        if (
-            not minimum_after_cost_edge.is_finite()
-            or not Decimal("0") <= minimum_after_cost_edge < Decimal("1")
-        ):
+        if not minimum_after_cost_edge.is_finite() or not Decimal(
+            "0"
+        ) <= minimum_after_cost_edge < Decimal("1"):
             raise ShadowLoopError("minimum edge must be finite and in [0,1)")
         if maximum_candidates < 1:
             raise ShadowLoopError("maximum candidate count must be positive")
@@ -281,16 +280,10 @@ class ShadowSettledOutcome:
             raise ShadowLoopError("shadow outcome settled before its decision cutoff")
         realized = Decimal(realized_yes)
         brier = (opportunity.model_yes_probability - realized) ** 2
-        won = (
-            opportunity.selected_side is TradeSide.YES and realized_yes == 1
-        ) or (
+        won = (opportunity.selected_side is TradeSide.YES and realized_yes == 1) or (
             opportunity.selected_side is TradeSide.NO and realized_yes == 0
         )
-        pnl = (
-            Decimal("1") - opportunity.all_in_cost
-            if won
-            else -opportunity.all_in_cost
-        )
+        pnl = Decimal("1") - opportunity.all_in_cost if won else -opportunity.all_in_cost
         material = (
             "m28e-shadow-settled-outcome-v1",
             opportunity.opportunity_id,
