@@ -154,9 +154,7 @@ def scope_recent_settled_markets(
                 "one temperature series must bind exactly one settlement station"
             )
         missing_physical = tuple(
-            station_id
-            for station_id in station_ids
-            if station_id not in PHYSICAL_WEATHER_SOURCES
+            station_id for station_id in station_ids if station_id not in PHYSICAL_WEATHER_SOURCES
         )
         if missing_physical:
             raise SeriesScopeError(
