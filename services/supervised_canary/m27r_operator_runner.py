@@ -6,16 +6,17 @@ mutation capability.
 
 Its sole job is to enforce the M27R ordering boundary around already-reviewed producers:
 
-1. collect public/current candidate evidence;
-2. run the unchanged M27D selector;
-3. only when there is exactly one qualifying candidate, allow the caller-supplied
-   candidate-specific read-only evidence producer to run;
-4. feed the resulting evidence into the unchanged M27Q orchestrator;
-5. return read-only review evidence.
+1. collect public/current candidate evidence, retained in exact per-market slices;
+2. run the unchanged M27D selector across those candidate inputs;
+3. bind the unique selected candidate back to exactly one matching public evidence slice;
+4. only then allow the caller-supplied candidate-specific read-only evidence producer to run;
+5. feed the exact selected slice plus account evidence into the unchanged M27Q orchestrator;
+6. return read-only review evidence.
 
 Concrete live acquisition belongs in a separately capability-tested adapter. Keeping this
-coordinator transport-free makes the critical candidate-before-authenticated-read ordering
-independently testable and prevents live I/O capability from leaking into M27Q itself.
+coordinator transport-free makes the critical candidate-before-authenticated-read ordering and
+candidate-to-public-evidence binding independently testable and prevents live I/O capability from
+leaking into M27Q itself.
 """
 
 from __future__ import annotations
@@ -41,7 +42,7 @@ from .m27q_preflight_orchestrator import (
     build_first_canary_preflight,
 )
 
-SOFTWARE_VERSION = "kalsh3.m27r.readonly-operator-runner/1"
+SOFTWARE_VERSION = "kalsh3.m27r.readonly-operator-runner/2"
 
 
 class M27ROperatorError(RuntimeError):
@@ -49,16 +50,41 @@ class M27ROperatorError(RuntimeError):
 
 
 @dataclass(frozen=True, slots=True)
-class M27RPublicEvidence:
-    """Evidence that may be collected before any candidate-specific authenticated sweep."""
+class M27RMarketEvidence:
+    """One candidate input and the public evidence that can authorize only that market's review."""
 
-    candidate_inputs: tuple[CandidateInput, ...]
-    public_evidence_path: Path
+    market_ticker: str
+    candidate_input: CandidateInput
     m27j_evidence_path: Path
     m27a_binding_evidence_path: Path
     current_series_fee_observation: CurrentSeriesFeeObservation
     current_event_fee_override: EventFeeOverride
     current_event_fee_observed_at: datetime
+
+    def __post_init__(self) -> None:
+        if not self.market_ticker:
+            raise ValueError("M27R market evidence requires a market ticker")
+        _require_aware(
+            self.current_event_fee_observed_at,
+            field=f"current event fee observation for {self.market_ticker}",
+        )
+
+
+@dataclass(frozen=True, slots=True)
+class M27RPublicEvidence:
+    """Evidence that may be collected before any candidate-specific authenticated sweep."""
+
+    public_evidence_path: Path
+    markets: tuple[M27RMarketEvidence, ...]
+
+    def __post_init__(self) -> None:
+        tickers = tuple(market.market_ticker for market in self.markets)
+        if len(tickers) != len(set(tickers)):
+            raise ValueError("M27R public evidence contains duplicate market tickers")
+
+    @property
+    def candidate_inputs(self) -> tuple[CandidateInput, ...]:
+        return tuple(market.candidate_input for market in self.markets)
 
 
 @dataclass(frozen=True, slots=True)
@@ -130,6 +156,37 @@ def _require_aware(value: datetime, *, field: str) -> None:
         raise M27ROperatorError(f"{field} must be timezone-aware")
 
 
+def _selected_market_evidence(
+    *,
+    public: M27RPublicEvidence,
+    candidate: ExperimentalCandidate,
+    now: datetime,
+) -> M27RMarketEvidence:
+    matches = tuple(
+        market for market in public.markets if market.market_ticker == candidate.market_ticker
+    )
+    if len(matches) != 1:
+        raise M27ROperatorError(
+            "selected candidate does not bind to exactly one public market evidence slice"
+        )
+    market = matches[0]
+
+    # Independently prove that this exact slice, by itself, reconstructs the exact same candidate
+    # M27D selected globally. A ticker match alone is not enough: a stale/different economics or
+    # weather input for the same ticker must never be substituted after selection.
+    slice_selection = select_experimental_candidate((market.candidate_input,), now=now)
+    if (
+        slice_selection.state is not CandidateState.QUALIFYING_EXPERIMENTAL_CANARY
+        or slice_selection.selected is None
+        or len(slice_selection.candidates) != 1
+        or slice_selection.selected.candidate_id != candidate.candidate_id
+    ):
+        raise M27ROperatorError(
+            "selected candidate identity does not match its public evidence slice"
+        )
+    return market
+
+
 def run_readonly_operator_preflight(
     *,
     now: datetime,
@@ -139,17 +196,14 @@ def run_readonly_operator_preflight(
     """Run the read-only M27R phases in their only permitted order.
 
     The candidate provider is not called unless the unchanged M27D selector proves exactly one
-    qualifying experimental candidate. A successful M27Q/M27I ``PREFLIGHT_READY`` remains
-    evidence only: this function has no authority object, approval, burn, or execution path and
-    always returns ``execution_authorized=False``.
+    qualifying experimental candidate and that exact candidate independently binds to one
+    per-market public evidence slice. A successful M27Q/M27I ``PREFLIGHT_READY`` remains evidence
+    only: this function has no authority object, approval, burn, or execution path and always
+    returns ``execution_authorized=False``.
     """
 
     _require_aware(now, field="operator clock")
     public = public_provider.collect_public_evidence(now=now)
-    _require_aware(
-        public.current_event_fee_observed_at,
-        field="current event fee observation",
-    )
 
     selection = select_experimental_candidate(public.candidate_inputs, now=now)
     if (
@@ -170,6 +224,8 @@ def run_readonly_operator_preflight(
         )
 
     candidate = selection.selected
+    market = _selected_market_evidence(public=public, candidate=candidate, now=now)
+
     candidate_evidence = candidate_provider.collect_candidate_evidence(
         now=now,
         candidate=candidate,
@@ -182,11 +238,11 @@ def run_readonly_operator_preflight(
         m27f_evidence_path=candidate_evidence.m27f_evidence_path,
         m27h_evidence_path=candidate_evidence.m27h_evidence_path,
         public_evidence_path=public.public_evidence_path,
-        m27j_evidence_path=public.m27j_evidence_path,
-        m27a_binding_evidence_path=public.m27a_binding_evidence_path,
-        current_series_fee_observation=public.current_series_fee_observation,
-        current_event_fee_override=public.current_event_fee_override,
-        current_event_fee_observed_at=public.current_event_fee_observed_at,
+        m27j_evidence_path=market.m27j_evidence_path,
+        m27a_binding_evidence_path=market.m27a_binding_evidence_path,
+        current_series_fee_observation=market.current_series_fee_observation,
+        current_event_fee_override=market.current_event_fee_override,
+        current_event_fee_observed_at=market.current_event_fee_observed_at,
         candidate_exposure=candidate_evidence.candidate_exposure,
         state_path=candidate_evidence.state_path,
         readiness=candidate_evidence.readiness,
