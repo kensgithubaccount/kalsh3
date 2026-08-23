@@ -22,6 +22,91 @@ jobs:
           KPV3_HOSTNAME: ci.invalid
         run: docker compose config --quiet
       - run: sh -n deploy/oracle/install.sh deploy/oracle/backup.sh deploy/oracle/restore-drill.sh deploy/ubuntu/prepare-host.sh deploy/runtime-smoke.sh
+  m28b-behavioral-verification:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+      - run: uv sync --locked --all-groups
+      - name: Install deterministic verification tools
+        run: uv pip install ruff==0.16.3 mypy pytest
+      - name: Lint all Python
+        run: uv run ruff check .
+      - name: Verify M28B formatter scope
+        run: >-
+          uv run ruff format --check
+          services/historical_replay/client.py
+          services/production_weather_strategy/settlement_dataset.py
+          scripts/run_m28b_public_historical_weather.py
+          tests/test_m28b_authoritative_weather_dataset.py
+          tests/test_m28b_historical_public_reads.py
+      - name: Strict M28B type verification
+        run: >-
+          uv run mypy
+          services/historical_replay/client.py
+          services/production_weather_strategy/contracts.py
+          services/production_weather_strategy/architecture.py
+          services/production_weather_strategy/settlement_dataset.py
+      - name: Focused M28B tests
+        run: >-
+          uv run pytest -q
+          tests/test_historical_client.py
+          tests/test_m28b_authoritative_weather_dataset.py
+          tests/test_m28b_historical_public_reads.py
+      - name: Full non-Postgres regression
+        run: uv run pytest -q -m "not postgres"
+  m28b-live-public-chicago-evidence:
+    if: github.event_name == 'pull_request' && github.head_ref == 'm28b-authoritative-weather-dataset'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+      - run: uv sync --locked --all-groups
+      - name: Acquire public historical Chicago settlement evidence
+        env:
+          PYTHONPATH: .
+        run: >-
+          python scripts/run_m28b_public_historical_weather.py
+          --series-ticker KXHIGHCHI
+          --output /tmp/m28b-chicago.json
+      - name: Verify evidence artifact is secret-free and create-only
+        run: |
+          test "$(stat -c '%a' /tmp/m28b-chicago.json)" = "600"
+          python - <<'PY'
+          import hashlib
+          import json
+          from pathlib import Path
+
+          path = Path('/tmp/m28b-chicago.json')
+          raw = path.read_bytes()
+          payload = json.loads(raw)
+          assert payload['classification'] == 'SUCCESS'
+          assert payload['request_type'] == 'PUBLIC_GET_ONLY'
+          assert payload['credential_access'] == 'NONE'
+          assert payload['account_gets'] == 'NONE'
+          assert payload['production_state_mutation'] == 'NONE'
+          assert payload['risk_authorization'] == 'NONE'
+          assert payload['approval'] == 'NONE'
+          assert payload['execution_authorization'] == 'NONE'
+          assert payload['burn'] == 'NONE'
+          assert payload['order_sent'] == 'NO'
+          assert payload['dataset']['event_count'] > 0
+          assert payload['dataset']['contract_count'] > 0
+          print('M28B_LIVE_EVIDENCE_VERIFY=PASS')
+          print(f"ARTIFACT_SHA256={hashlib.sha256(raw).hexdigest()}")
+          print(f"EVENTS={payload['dataset']['event_count']}")
+          print(f"CONTRACTS={payload['dataset']['contract_count']}")
+          print(f"RAW_MARKETS={payload['raw_market_count']}")
+          print(f"NETWORK_REQUESTS={payload['network_request_count']}")
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: m28b-chicago-public-evidence
+          path: /tmp/m28b-chicago.json
+          if-no-files-found: error
+          retention-days: 30
   hardened-runtime-smoke:
     runs-on: ubuntu-latest
     steps:
