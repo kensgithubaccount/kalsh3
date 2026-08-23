@@ -71,6 +71,28 @@ def _settled_row(
     }
 
 
+def _legacy_nws_row(*, series: str, location: str) -> dict[str, object]:
+    row = _settled_row(
+        series=series,
+        station_id="CLIATL",
+        location=location,
+        date_text="Aug 13, 2026",
+        floor=98,
+        cap=99,
+    )
+    event = f"{series}-26AUG13"
+    row["ticker"] = f"{event}-B98.5"
+    row["event_ticker"] = event
+    row["settlement_ts"] = "2026-08-14T12:00:00Z"
+    row["rules_primary"] = (
+        f"If the maximum temperature recorded at {location} for Aug 13, 2026, is between "
+        "98-99° fahrenheit according to the National Weather Service's Climatological "
+        "Report (Daily), then the market resolves to Yes."
+    )
+    row["rules_secondary"] = "Legacy National Weather Service settlement regime."
+    return row
+
+
 def test_candidate_series_uses_category_and_title_metadata_without_ticker_guessing() -> None:
     payload = {
         "series": [
@@ -170,11 +192,34 @@ def test_scoping_keeps_reviewed_series_and_records_unreviewed_location_exclusion
     assert manifest.included_series_tickers == ("KXHIGHCHI", "KXHIGHNY")
     assert manifest.station_ids == ("CLIMDW", "CLINYC")
     assert manifest.raw_market_count == 2
+    assert manifest.legacy_regime_market_count == 0
     assert manifest.supported_event_count == 2
     assert manifest.supported_contract_count == 2
     assert len(manifest.excluded_series) == 1
     assert manifest.excluded_series[0].series_ticker == "KXHIGHPDX"
     assert manifest.excluded_series[0].reason == "UNREVIEWED_SETTLEMENT_LOCATION"
+
+
+def test_scoping_excludes_legacy_nws_rows_without_relabeling_them_as_twc() -> None:
+    legacy = _legacy_nws_row(series="KXHIGHTATL", location="Atlanta")
+    current = _settled_row(series="KXHIGHTATL", station_id="CLIATL", location="Atlanta")
+    client = FakeRecentClient({"KXHIGHTATL": [legacy, current]})
+
+    rows, manifest = scope_recent_settled_markets(client, ("KXHIGHTATL",))
+
+    assert [row["ticker"] for row in rows] == [current["ticker"]]
+    assert manifest.included_series_tickers == ("KXHIGHTATL",)
+    assert manifest.legacy_regime_market_count == 1
+    assert manifest.included_series[0].raw_market_count == 2
+    assert manifest.included_series[0].legacy_regime_market_count == 1
+    assert manifest.included_series[0].supported_contract_count == 1
+
+
+def test_scoping_series_with_only_legacy_nws_rows_is_explicitly_excluded() -> None:
+    legacy = _legacy_nws_row(series="KXHIGHTATL", location="Atlanta")
+    client = FakeRecentClient({"KXHIGHTATL": [legacy]})
+    with pytest.raises(SeriesScopeError, match="no reviewed current-regime"):
+        scope_recent_settled_markets(client, ("KXHIGHTATL",))
 
 
 def test_scoping_does_not_turn_malformed_reviewed_evidence_into_an_exclusion() -> None:
