@@ -21,11 +21,11 @@ jobs:
       - run: uv sync --locked --all-groups
       - name: Install deterministic verification tools
         run: uv pip install ruff==0.16.3 mypy pytest
-      - name: Diagnose Ruff import normalization
-        run: |
-          uv run ruff check --fix services/production_weather_strategy/tournament_economics.py tests/test_m28d_tournament_economics.py
-          git diff -- services/production_weather_strategy/tournament_economics.py tests/test_m28d_tournament_economics.py
-          git diff --exit-code -- services/production_weather_strategy/tournament_economics.py tests/test_m28d_tournament_economics.py
+      - name: Lint fee-aware tournament integration
+        run: >-
+          uv run ruff check
+          services/production_weather_strategy/tournament_economics.py
+          tests/test_m28d_tournament_economics.py
       - name: Verify formatting
         run: >-
           uv run ruff format --check
