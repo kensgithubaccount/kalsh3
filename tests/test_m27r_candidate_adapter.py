@@ -12,7 +12,10 @@ from typing import Any, cast
 import pytest
 
 from services.kalshi_account_gateway.client import HttpResponse
-from services.kalshi_account_gateway.production_read_credentials import API_KEYS_PATH, PRODUCTION_ORIGIN
+from services.kalshi_account_gateway.production_read_credentials import (
+    API_KEYS_PATH,
+    PRODUCTION_ORIGIN,
+)
 from services.risk_engine.domain import RequiredOrderGroupPolicy
 from services.risk_engine.invariants import NewRiskReadiness
 from services.supervised_canary import authority_attestation as attestation_mod
