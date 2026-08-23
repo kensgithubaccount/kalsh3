@@ -26,7 +26,10 @@ from decimal import Decimal
 from pathlib import Path
 from typing import Any
 
-from services.forecasting.daily_temperature import DailyTemperatureRouteState, route_daily_temperature
+from services.forecasting.daily_temperature import (
+    DailyTemperatureRouteState,
+    route_daily_temperature,
+)
 from services.forecasting.domain import ForecastError
 from services.forecasting.weather_calibration_grib import (
     RawGribEvidence,
@@ -107,7 +110,8 @@ def _record_number_for_route(*, raw_grib: RawGribEvidence, local_date: date, tim
     )
     if len(matches) != 1:
         raise M27RPublicAdapterError(
-            f"contract target date {local_date.isoformat()} does not bind to exactly one GRIB record"
+            "contract target date "
+            f"{local_date.isoformat()} does not bind to exactly one GRIB record"
         )
     return matches[0]
 
