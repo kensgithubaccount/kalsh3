@@ -232,7 +232,7 @@ def evaluate_fee_aware_partition(
             key=lambda value: (-value[1].after_cost_edge, value[0].market_ticker),
         )
         trade_eligible = opportunity.after_cost_edge >= minimum_after_cost_edge
-        material = (
+        selection_material = (
             "m28d-fee-aware-event-selection-v1",
             tournament.tournament_id,
             dataset.dataset_id,
@@ -242,7 +242,7 @@ def evaluate_fee_aware_partition(
             str(minimum_after_cost_edge),
             trade_eligible,
         )
-        digest = stable_hash(material)
+        digest = stable_hash(selection_material)
         selections.append(
             FeeAwareEventSelection(
                 event_id=event_id,
@@ -268,7 +268,7 @@ def evaluate_fee_aware_partition(
     average_pnl = Decimal("0") if not eligible else total_pnl / Decimal(trade_count)
     wins = sum(1 for item in eligible if item.hypothetical_pnl > 0)
     losses = sum(1 for item in eligible if item.hypothetical_pnl < 0)
-    material = (
+    evaluation_material = (
         "m28d-fee-aware-tournament-evaluation-v1",
         dataset.dataset_id,
         tournament.tournament_id,
@@ -286,7 +286,7 @@ def evaluate_fee_aware_partition(
         False,
         "NONE",
     )
-    digest = stable_hash(material)
+    digest = stable_hash(evaluation_material)
     return FeeAwareTournamentEvaluation(
         evaluation_id=digest,
         feature_dataset_id=dataset.dataset_id,
