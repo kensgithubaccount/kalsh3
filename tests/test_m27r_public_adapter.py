@@ -113,15 +113,24 @@ def _empty_public(*, observed_at: datetime = NOW) -> dict[str, object]:
 
 def test_contract_date_binds_to_exact_grib_record() -> None:
     raw = _raw_grib()
-    assert _record_number_for_route(
-        raw_grib=raw, local_date=date(2026, 8, 20), timezone="America/Chicago"
-    ) == 1
-    assert _record_number_for_route(
-        raw_grib=raw, local_date=date(2026, 8, 21), timezone="America/Chicago"
-    ) == 2
-    assert _record_number_for_route(
-        raw_grib=raw, local_date=date(2026, 8, 22), timezone="America/Chicago"
-    ) == 3
+    assert (
+        _record_number_for_route(
+            raw_grib=raw, local_date=date(2026, 8, 20), timezone="America/Chicago"
+        )
+        == 1
+    )
+    assert (
+        _record_number_for_route(
+            raw_grib=raw, local_date=date(2026, 8, 21), timezone="America/Chicago"
+        )
+        == 2
+    )
+    assert (
+        _record_number_for_route(
+            raw_grib=raw, local_date=date(2026, 8, 22), timezone="America/Chicago"
+        )
+        == 3
+    )
 
 
 def test_contract_date_without_exact_grib_record_fails_closed() -> None:
