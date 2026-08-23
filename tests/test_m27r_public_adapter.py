@@ -55,7 +55,11 @@ def _provider(tmp_path: Path, **changes: Any) -> GetOnlyPublicEvidenceProvider:
     return GetOnlyPublicEvidenceProvider(**values)
 
 
-def _response(path: str, payload: dict[str, object], observed_at: datetime = NOW) -> dict[str, object]:
+def _response(
+    path: str,
+    payload: dict[str, object],
+    observed_at: datetime = NOW,
+) -> dict[str, object]:
     body = json.dumps(payload, sort_keys=True).encode()
     return {
         "path": path,
