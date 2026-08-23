@@ -112,6 +112,22 @@ def test_fee_aware_economics_matches_reviewed_formula() -> None:
     assert economics.exact_fill_truth is False
 
 
+def test_fee_reconstruction_rejects_pre_policy_checkpoint() -> None:
+    quote = HistoricalQuoteCheckpoint.build(
+        market_ticker="KXHIGHCHI-26JUL01-B76.5",
+        checkpoint_at=datetime(2026, 7, 1, 3, tzinfo=UTC),
+        yes_bid=Decimal("0.43"),
+        yes_ask=Decimal("0.44"),
+        quote_evidence_id="old-candle-hash",
+    )
+    with pytest.raises(HistoricalEconomicsError, match="does not apply"):
+        reconstruct_checkpoint_economics(
+            quote,
+            fee_type=FeeType.QUADRATIC,
+            fee_multiplier=Decimal("1"),
+        )
+
+
 def test_opportunity_separates_correct_prediction_from_profitable_trade() -> None:
     quote = HistoricalQuoteCheckpoint.build(
         market_ticker="KXHIGHCHI-26AUG23-B80.5",
