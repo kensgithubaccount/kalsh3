@@ -144,8 +144,27 @@ class M27ROperatorRun:
 
     def to_json(self) -> dict[str, object]:
         artifact: object | None = None
+        risk_identities: object | None = None
+        state_identity: object | None = None
         if self.preflight is not None:
             artifact = self.preflight.preflight.artifact.to_json()
+            risk = self.preflight.risk
+            inspection = self.preflight.state_inspection
+            risk_identities = {
+                "intent_content_hash": risk.intent.content_hash,
+                "snapshot_content_hash": risk.snapshot.content_hash,
+                "decision_content_hash": risk.decision.content_hash,
+                "decision_id": risk.decision.decision_id,
+                "production_write_authorized": risk.decision.production_write_authorized,
+            }
+            state_identity = {
+                "database_sha256": inspection.database_sha256,
+                "inspected_at": inspection.inspected_at.isoformat(),
+                "loss_state_version": inspection.loss_state_version,
+                "compliance_state_version": inspection.compliance_state_version,
+                "kill_state_version": inspection.kill_state_version,
+                "pristine_first_canary": inspection.pristine_first_canary,
+            }
         return {
             "software_version": self.software_version,
             "state": self.state,
@@ -154,6 +173,8 @@ class M27ROperatorRun:
             "authenticated_phase_performed": self.authenticated_phase_performed,
             "read_only": self.read_only,
             "execution_authorized": self.execution_authorized,
+            "risk_identities": risk_identities,
+            "state_inspection_identity": state_identity,
             "preflight": artifact,
         }
 
