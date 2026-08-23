@@ -105,7 +105,7 @@ def test_non_one_contract_request_rejected_before_public_read(tmp_path: Path) ->
     )
 
     with pytest.raises(M27RPublicAdapterError, match="exactly one contract"):
-        provider.collect_public_evidence(now=NOW)
+        provider.collect_public_evidence(clock=lambda: NOW)
 
     assert calls == 0
 
@@ -138,7 +138,7 @@ def test_empty_complete_scope_persists_m27e_and_returns_no_candidates(tmp_path: 
         tmp_path,
         public_acceptance_acquirer=lambda **_: public,
     )
-    evidence = provider.collect_public_evidence(now=NOW)
+    evidence = provider.collect_public_evidence(clock=lambda: NOW)
 
     assert evidence.markets == ()
     assert evidence.candidate_inputs == ()
@@ -159,7 +159,7 @@ def test_successful_snapshot_without_body_hash_is_rejected(tmp_path: Path) -> No
 
     with pytest.raises(M27RPublicAdapterError, match="missing retained body hash"):
         provider._build_market_slice(
-            now=NOW,
+            clock=lambda: NOW,
             market_ticker="KXHIGHCHI-TEST",
             event_ticker="KXHIGHCHI-EVENT",
             series_raw={},
@@ -177,7 +177,7 @@ def test_naive_clock_is_rejected_before_public_read(tmp_path: Path) -> None:
     provider = _provider(tmp_path, public_acceptance_acquirer=forbidden_public_read)
 
     with pytest.raises(M27RPublicAdapterError, match="timezone-aware"):
-        provider.collect_public_evidence(now=datetime(2026, 8, 20, 3, 10))
+        provider.collect_public_evidence(clock=lambda: datetime(2026, 8, 20, 3, 10))
 
     assert calls == 0
 
