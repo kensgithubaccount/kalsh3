@@ -5,6 +5,7 @@ from __future__ import annotations
 from collections.abc import Callable, Iterator, Mapping
 from dataclasses import dataclass
 from typing import Any, Protocol
+from urllib.parse import quote
 
 from services.kalshi_account_gateway.auth import RequestSigner
 
@@ -76,12 +77,14 @@ class HistoricalClient:
                     or row.get("fill_id")
                     or row.get("order_id")
                     or row.get("ticker")
+                    or row.get("end_period_ts")
                 )
-                if not isinstance(identity, str):
+                if not isinstance(identity, (str, int)):
                     raise HistoricalError("historical record identity missing")
-                if identity in seen_ids:
+                normalized_identity = str(identity)
+                if normalized_identity in seen_ids:
                     raise HistoricalError("duplicate historical record identity")
-                seen_ids.add(identity)
+                seen_ids.add(normalized_identity)
             next_cursor = payload.get("cursor")
             if next_cursor not in (None, "") and (
                 not isinstance(next_cursor, str) or next_cursor in seen
@@ -101,6 +104,16 @@ class HistoricalClient:
             output.extend(rows)
         return output
 
+    def _public_object(self, path: str, field: str) -> dict[str, Any]:
+        try:
+            status, payload = self.transport.get(path, {}, timeout_seconds=self.timeout)
+        except Exception as exc:
+            raise HistoricalError("historical object transport failure") from exc
+        value = payload.get(field)
+        if status != 200 or not isinstance(value, dict):
+            raise HistoricalError("historical object response malformed")
+        return value
+
     def cutoff(self) -> dict[str, Any]:
         path = "/trade-api/v2/historical/cutoff"
         status, payload = self.transport.get(path, {}, timeout_seconds=self.timeout)
@@ -109,19 +122,52 @@ class HistoricalClient:
             raise HistoricalError("historical cutoff malformed")
         return payload
 
-    def markets(self) -> list[dict[str, Any]]:
-        return self.collect("/trade-api/v2/historical/markets", "markets")
+    def markets(self, *, series_ticker: str | None = None) -> list[dict[str, Any]]:
+        path = "/trade-api/v2/historical/markets?limit=1000&mve_filter=exclude"
+        if series_ticker is not None:
+            if not series_ticker.strip():
+                raise HistoricalError("series ticker filter cannot be empty")
+            path += f"&series_ticker={quote(series_ticker, safe='')}"
+        return self.collect(path, "markets")
 
     def market(self, ticker: str) -> dict[str, Any]:
-        return self.collect(f"/trade-api/v2/historical/markets/{ticker}", "markets")[0]
+        if not ticker.strip():
+            raise HistoricalError("historical market ticker cannot be empty")
+        target = quote(ticker, safe="")
+        return self._public_object(f"/trade-api/v2/historical/markets/{target}", "market")
 
-    def candles(self, ticker: str, interval: int) -> list[dict[str, Any]]:
+    def candles(
+        self,
+        ticker: str,
+        interval: int,
+        *,
+        start_ts: int,
+        end_ts: int,
+    ) -> list[dict[str, Any]]:
         if interval not in {1, 60, 1440}:
             raise HistoricalError("unsupported candle interval")
-        return self.collect(
-            f"/trade-api/v2/historical/markets/{ticker}/candlesticks?period_interval={interval}",
-            "candlesticks",
+        if start_ts < 0 or end_ts < start_ts:
+            raise HistoricalError("historical candle time range is invalid")
+        if not ticker.strip():
+            raise HistoricalError("historical candle ticker cannot be empty")
+        target = quote(ticker, safe="")
+        path = (
+            f"/trade-api/v2/historical/markets/{target}/candlesticks"
+            f"?start_ts={start_ts}&end_ts={end_ts}&period_interval={interval}"
         )
+        status, payload = self.transport.get(path, {}, timeout_seconds=self.timeout)
+        rows = payload.get("candlesticks")
+        if status != 200 or not isinstance(rows, list) or any(not isinstance(row, dict) for row in rows):
+            raise HistoricalError("historical candlestick response malformed")
+        seen_periods: set[int] = set()
+        for candle in rows:
+            period = candle.get("end_period_ts")
+            if isinstance(period, bool) or not isinstance(period, int):
+                raise HistoricalError("historical candlestick period is malformed")
+            if period in seen_periods:
+                raise HistoricalError("duplicate historical candlestick period")
+            seen_periods.add(period)
+        return rows
 
     def trades(self) -> list[dict[str, Any]]:
         return self.collect("/trade-api/v2/historical/trades", "trades")
