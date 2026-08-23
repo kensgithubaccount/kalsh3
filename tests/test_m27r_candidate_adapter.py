@@ -12,7 +12,10 @@ from typing import Any, cast
 import pytest
 
 from services.kalshi_account_gateway.client import HttpResponse
-from services.kalshi_account_gateway.production_read_credentials import API_KEYS_PATH, PRODUCTION_ORIGIN
+from services.kalshi_account_gateway.production_read_credentials import (
+    API_KEYS_PATH,
+    PRODUCTION_ORIGIN,
+)
 from services.risk_engine.domain import RequiredOrderGroupPolicy
 from services.risk_engine.invariants import NewRiskReadiness
 from services.supervised_canary import authority_attestation as attestation_mod
@@ -140,7 +143,8 @@ def test_successful_candidate_adapter_persists_exact_m27f_and_checks_exposure(
 
     assert calls["credentials"] == 1
     assert result.m27f_bundle.evidence.reconciliation.succeeded is True
-    assert json.loads(result.m27f_evidence_path.read_text()) == result.m27f_bundle.evidence.to_json()
+    persisted = json.loads(result.m27f_evidence_path.read_text())
+    assert persisted == result.m27f_bundle.evidence.to_json()
     assert result.candidate_exposure.succeeded is True
     assert result.candidate_exposure.market_ticker == FakeCandidate.market_ticker
     assert len(transport.paths) == 7
