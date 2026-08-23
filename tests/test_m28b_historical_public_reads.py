@@ -64,8 +64,7 @@ def test_candles_bind_required_time_range_and_remain_public() -> None:
     candles = HistoricalClient(transport).candles("M1", 1, start_ts=100, end_ts=200)
     assert candles[0]["end_period_ts"] == 101
     assert transport.paths == [
-        "/trade-api/v2/historical/markets/M1/candlesticks"
-        "?start_ts=100&end_ts=200&period_interval=1"
+        "/trade-api/v2/historical/markets/M1/candlesticks?start_ts=100&end_ts=200&period_interval=1"
     ]
     assert transport.headers == [{}]
 
@@ -74,9 +73,7 @@ def test_candles_bind_required_time_range_and_remain_public() -> None:
     ("interval", "start", "end"),
     [(5, 100, 200), (1, -1, 200), (1, 200, 100)],
 )
-def test_invalid_candle_requests_fail_before_transport(
-    interval: int, start: int, end: int
-) -> None:
+def test_invalid_candle_requests_fail_before_transport(interval: int, start: int, end: int) -> None:
     with pytest.raises(HistoricalError):
         HistoricalClient(Pages([])).candles("M1", interval, start_ts=start, end_ts=end)
 
