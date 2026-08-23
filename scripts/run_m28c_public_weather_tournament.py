@@ -159,7 +159,9 @@ def _market_checkpoints(
 ) -> dict[str, MarketCheckpoint]:
     by_checkpoint: dict[datetime, list[Any]] = defaultdict(list)
     for contract in contracts:
-        checkpoint = datetime.combine(contract.local_date, time(PREDICTION_CUTOFF_HOUR_UTC), tzinfo=UTC)
+        checkpoint = datetime.combine(
+            contract.local_date, time(PREDICTION_CUTOFF_HOUR_UTC), tzinfo=UTC
+        )
         by_checkpoint[checkpoint].append(contract)
 
     output: dict[str, MarketCheckpoint] = {}
@@ -307,7 +309,9 @@ def _temporal_split_from_features(rows: Sequence[Any]) -> TemporalSplit:
     validation_dates = sorted(
         {row.local_date for row in rows if row.partition is TournamentPartition.VALIDATION}
     )
-    test_dates = sorted({row.local_date for row in rows if row.partition is TournamentPartition.TEST})
+    test_dates = sorted(
+        {row.local_date for row in rows if row.partition is TournamentPartition.TEST}
+    )
     if not train_dates or not validation_dates or not test_dates:
         raise RuntimeError("M28C feature temporal partitions are incomplete")
     train_start = datetime.combine(train_dates[0], time(0), tzinfo=UTC)
@@ -333,7 +337,9 @@ def _m28_contract_artifacts(
 ) -> tuple[SettlementLabelManifest, TrainingDatasetManifest, ModelArtifact]:
     used_tickers = tuple(sorted({row.market_ticker for row in features.rows}))
     used_event_ids = tuple(sorted({row.event_id for row in features.rows}))
-    contract_by_ticker = {contract.market_ticker: contract for contract in settlement_dataset.contracts}
+    contract_by_ticker = {
+        contract.market_ticker: contract for contract in settlement_dataset.contracts
+    }
     resolved_at = max(contract_by_ticker[ticker].settlement_at for ticker in used_tickers)
     settlement_mapping_id = stable_hash(
         (settlement_dataset.parser_version, settlement_dataset.label_authority)
