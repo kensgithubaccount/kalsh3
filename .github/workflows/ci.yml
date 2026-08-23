@@ -22,6 +22,36 @@ jobs:
           KPV3_HOSTNAME: ci.invalid
         run: docker compose config --quiet
       - run: sh -n deploy/oracle/install.sh deploy/oracle/backup.sh deploy/oracle/restore-drill.sh deploy/ubuntu/prepare-host.sh deploy/runtime-smoke.sh
+  m28b-behavioral-verification:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+      - run: uv sync --locked --all-groups
+      - name: Install deterministic verification tools
+        run: uv pip install ruff==0.16.3 mypy pytest
+      - name: Lint all Python
+        run: uv run ruff check .
+      - name: Verify M28B formatter scope
+        run: >-
+          uv run ruff format --check
+          services/historical_replay/client.py
+          services/production_weather_strategy/settlement_dataset.py
+          scripts/run_m28b_public_historical_weather.py
+          tests/test_m28b_authoritative_weather_dataset.py
+          tests/test_m28b_historical_public_reads.py
+      - name: Strict type verification
+        run: uv run mypy
+      - name: Focused M28B tests
+        run: >-
+          uv run pytest -q
+          tests/test_historical_client.py
+          tests/test_m28b_authoritative_weather_dataset.py
+          tests/test_m28b_historical_public_reads.py
+      - name: Full non-Postgres regression
+        run: uv run pytest -q -m "not postgres"
   hardened-runtime-smoke:
     runs-on: ubuntu-latest
     steps:
