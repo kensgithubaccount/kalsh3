@@ -26,3 +26,28 @@ provide a write key. This acceptance can run in parallel with later offline mile
 The authoritative prioritized list, readiness matrix, non-executing activation checklist, and residual risk
 register are in [`docs/reviews/M19_FINAL_AUDIT.md`](reviews/M19_FINAL_AUDIT.md). Every HIGH risk there blocks
 activation. M19 does not authorize credential enrollment, arming, autonomy, a canary, or a real-money order.
+
+## M27Q read-only first-canary operator checkpoint
+
+M27Q is implemented on `main` at `dad5aea9ff93c081e900685ad12dd7b926ad6551`. Its successful
+`PREFLIGHT_READY` result is review evidence only; it is not an authorization to trade.
+
+The next permissible live action is one fresh **read-only** M27Q first-canary preflight using current weather,
+market, fee/rules, candidate-exposure, shared-state, and same-sweep account evidence. Stop after producing and
+reviewing the preflight artifact.
+
+For this checkpoint:
+
+- public/current-source GETs are allowed only as needed to assemble current preflight evidence;
+- authenticated Kalshi GETs are allowed only as needed for the already-reviewed M27F/candidate-exposure
+  evidence paths;
+- local installed-credential/signer verification is allowed only as needed by the already-reviewed M27H
+  evidence path;
+- the run must not arm the system, enable autonomy, issue or consume an M13 production authorization, create
+  an M16 approval, create or consume an M27O execution authorization, burn a submission budget, or send any
+  order/cancel/amend/decrease request;
+- any `PREFLIGHT_READY` result expires with its underlying evidence and must not be reused as execution
+  permission.
+
+See [`docs/reviews/M27Q_READ_ONLY_FIRST_CANARY_PREFLIGHT.md`](reviews/M27Q_READ_ONLY_FIRST_CANARY_PREFLIGHT.md)
+for the milestone boundary and the separately reviewable follow-up runner requirement.
