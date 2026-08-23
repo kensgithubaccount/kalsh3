@@ -10,6 +10,7 @@ import pytest
 
 from services.supervised_canary.m27d import CandidateState
 from services.supervised_canary.m27r_operator_runner import (
+    M27ROperatorError,
     M27ROperatorRun,
     M27RPublicEvidence,
     run_readonly_operator_preflight,
@@ -74,7 +75,9 @@ def test_zero_candidate_abstains_before_authenticated_phase() -> None:
     assert result.preflight is None
 
 
-def test_multiple_candidates_abstain_before_authenticated_phase(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_multiple_candidates_abstain_before_authenticated_phase(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     now = datetime(2026, 8, 23, 17, tzinfo=UTC)
     public = _PublicProvider(_public_evidence())
     candidate_provider = _ForbiddenCandidateProvider()
@@ -106,7 +109,7 @@ def test_naive_operator_clock_is_rejected_before_any_provider_call() -> None:
     public = _PublicProvider(_public_evidence())
     candidate = _ForbiddenCandidateProvider()
 
-    with pytest.raises(Exception, match="operator clock must be timezone-aware"):
+    with pytest.raises(M27ROperatorError, match="operator clock must be timezone-aware"):
         run_readonly_operator_preflight(
             now=datetime(2026, 8, 23, 17),
             public_provider=public,
