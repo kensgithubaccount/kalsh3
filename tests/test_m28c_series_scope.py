@@ -29,12 +29,14 @@ def _series(
     title: str,
     *,
     source: str = "The Weather Company",
+    category: str = "Weather",
+    frequency: str = "daily",
 ) -> dict[str, object]:
     return {
         "ticker": ticker,
         "title": title,
-        "category": "Weather",
-        "frequency": "daily",
+        "category": category,
+        "frequency": frequency,
         "settlement_sources": [{"name": source, "url": "https://example.invalid"}],
     }
 
@@ -69,23 +71,47 @@ def _settled_row(
     }
 
 
-def test_candidate_series_uses_category_response_metadata_without_ticker_guessing() -> None:
+def test_candidate_series_uses_category_and_title_metadata_without_ticker_guessing() -> None:
     payload = {
         "series": [
             _series("KXHIGHCHI", "Highest temperature in Chicago today?"),
-            _series("KXLOWTNYC", "Lowest temperature in New York City today?"),
+            _series(
+                "KXLOWTNYC",
+                "Lowest temperature in New York City today?",
+                category="Climate and Weather",
+            ),
             _series("KXRAINSEA", "Rainfall in Seattle today?"),
             _series(
                 "KXHIGHOLD",
                 "Highest temperature in Legacy City today?",
                 source="National Weather Service",
             ),
+            _series(
+                "KXMONTHLYTEMP",
+                "Average temperature in Example City this month?",
+                frequency="monthly",
+            ),
         ]
     }
-    assert candidate_temperature_series(payload) == ("KXHIGHCHI", "KXLOWTNYC")
+    assert candidate_temperature_series(payload) == (
+        "KXHIGHCHI",
+        "KXHIGHOLD",
+        "KXLOWTNYC",
+    )
 
 
-def test_candidate_series_ignores_unrelated_malformed_series_before_source_validation() -> None:
+def test_candidate_series_does_not_treat_series_source_metadata_as_settlement_authority() -> None:
+    legacy_source_metadata = _series(
+        "KXHIGHNY",
+        "Highest temperature in New York City today?",
+        source="NWS Climatological Report",
+        category="Climate and Weather",
+    )
+    legacy_source_metadata["settlement_sources"] = [{"name": None}]
+    assert candidate_temperature_series({"series": [legacy_source_metadata]}) == ("KXHIGHNY",)
+
+
+def test_candidate_series_ignores_unrelated_malformed_series() -> None:
     unrelated = {
         "category": "Politics",
         "settlement_sources": [{"name": None}],
@@ -102,13 +128,13 @@ def test_candidate_series_ignores_unrelated_malformed_series_before_source_valid
     assert candidate_temperature_series(payload) == ("KXHIGHCHI",)
 
 
-def test_candidate_series_fails_closed_on_duplicate_or_malformed_metadata() -> None:
+def test_candidate_series_fails_closed_on_duplicate_or_malformed_candidate_metadata() -> None:
     duplicate = _series("KXHIGHCHI", "Highest temperature in Chicago today?")
     with pytest.raises(SeriesScopeError, match="duplicated"):
         candidate_temperature_series({"series": [duplicate, duplicate]})
     malformed = _series("KXHIGHCHI", "Highest temperature in Chicago today?")
-    malformed["settlement_sources"] = [{"url": "https://example.invalid"}]
-    with pytest.raises(SeriesScopeError, match="source name"):
+    malformed["frequency"] = None
+    with pytest.raises(SeriesScopeError, match="frequency"):
         candidate_temperature_series({"series": [malformed]})
 
 
