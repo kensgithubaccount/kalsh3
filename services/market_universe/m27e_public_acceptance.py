@@ -1,23 +1,23 @@
 """Reusable M27E bounded unauthenticated production-read acceptance producer.
 
-This is the service-layer owner of the exact evidence schema historically emitted by
-``scripts/m27e_public_read_acceptance.py``. The script remains a thin operator CLI; M27R may now
-reuse the same producer without violating the repository's ``services`` -> ``scripts`` dependency
-boundary.
-
-Only the shared :mod:`services.market_universe.public_read` GET transport is reachable: fixed
-production origin, no credentials, no Authorization header, bounded response, no redirects, and
-no mutation method.
+M27E uses only the shared fixed-origin GET transport. Every successful response retains its exact
+bounded raw body through :mod:`services.market_universe.public_read`; this module independently
+re-hashes and re-parses those bytes before any M27R/M27I consumer may treat the payload or its
+observation timestamp as evidence.
 """
 
 from __future__ import annotations
 
+import base64
+import binascii
+import hashlib
+import json
 from collections.abc import Callable
 from datetime import UTC, datetime
 from typing import Any
-from urllib.parse import urlencode
+from urllib.parse import parse_qs, urlencode, urlsplit
 
-from .public_read import BASE, HOST, PublicReadFailure, get
+from .public_read import BASE, HOST, MAX_RESPONSE_BYTES, PublicReadFailure, get
 
 SCHEMA = "kalsh3.m27e.public-read.v1"
 SERIES_TICKER = "KXHIGHCHI"
@@ -25,6 +25,73 @@ ACTIVE_MARKET_STATUS = "active"
 
 PublicGetter = Callable[[str], dict[str, object]]
 Clock = Callable[[], datetime]
+
+
+def _parse_time(value: object, *, field: str) -> datetime:
+    if not isinstance(value, str):
+        raise PublicReadFailure(f"{field} timestamp missing")
+    try:
+        parsed = datetime.fromisoformat(value)
+    except ValueError as exc:
+        raise PublicReadFailure(f"{field} timestamp malformed") from exc
+    if parsed.tzinfo is None or parsed.utcoffset() is None:
+        raise PublicReadFailure(f"{field} timestamp must be timezone-aware")
+    return parsed.astimezone(UTC)
+
+
+def validate_response_evidence(
+    response: object,
+    *,
+    expected_path: str | None = None,
+    market_page: bool = False,
+) -> tuple[dict[str, Any], datetime]:
+    """Re-hash and re-parse one exact retained public response envelope."""
+
+    if not isinstance(response, dict):
+        raise PublicReadFailure("public response evidence is not an object")
+    path = response.get("path")
+    if not isinstance(path, str):
+        raise PublicReadFailure("public response path missing")
+    if expected_path is not None and path != expected_path:
+        raise PublicReadFailure("public response path mismatch")
+    if market_page:
+        split = urlsplit(path)
+        if split.path != BASE + "/markets":
+            raise PublicReadFailure("M27E market page path mismatch")
+        query = parse_qs(split.query, keep_blank_values=True)
+        if query.get("series_ticker") != [SERIES_TICKER] or query.get("limit") != ["1000"]:
+            raise PublicReadFailure("M27E market page query scope mismatch")
+        if set(query) - {"series_ticker", "limit", "cursor"}:
+            raise PublicReadFailure("M27E market page query contains unexpected parameters")
+
+    if response.get("classification") != "SUCCESS" or response.get("status") != 200:
+        raise PublicReadFailure("public response did not succeed")
+    observed_at = _parse_time(response.get("observed_at"), field="public response")
+    body_hash = response.get("body_sha256")
+    raw_body_b64 = response.get("raw_body_b64")
+    byte_count = response.get("bytes")
+    if not isinstance(body_hash, str) or len(body_hash) != 64:
+        raise PublicReadFailure("public response body hash missing or malformed")
+    if not isinstance(raw_body_b64, str):
+        raise PublicReadFailure("public response retained raw body missing")
+    if isinstance(byte_count, bool) or not isinstance(byte_count, int) or byte_count < 0:
+        raise PublicReadFailure("public response byte count malformed")
+    try:
+        body = base64.b64decode(raw_body_b64, validate=True)
+    except (binascii.Error, ValueError) as exc:
+        raise PublicReadFailure("public response retained raw body is malformed") from exc
+    if len(body) != byte_count or len(body) > MAX_RESPONSE_BYTES:
+        raise PublicReadFailure("public response retained body length mismatch")
+    if hashlib.sha256(body).hexdigest() != body_hash:
+        raise PublicReadFailure("public response retained body hash mismatch")
+    try:
+        reparsed = json.loads(body)
+    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise PublicReadFailure("public response retained body is not valid JSON") from exc
+    payload = response.get("payload")
+    if not isinstance(reparsed, dict) or not isinstance(payload, dict) or reparsed != payload:
+        raise PublicReadFailure("public response payload does not match retained raw body")
+    return payload, observed_at
 
 
 def paged_markets(*, getter: PublicGetter = get) -> dict[str, object]:
@@ -97,19 +164,24 @@ def acquire_public_acceptance(
     }
 
 
-def active_market_payloads(evidence: object) -> tuple[dict[str, Any], ...]:
-    """Extract active market payloads only from a complete, exact M27E acquisition bundle.
-
-    This is a discovery helper, not a substitute for M27I's independent consumption-time gate.
-    M27I still receives the persisted bundle and independently validates exchange/trading/market
-    currentness. Here we merely refuse to build M27R candidates from a partial or malformed
-    discovery run.
-    """
+def validate_public_acceptance(evidence: object) -> dict[str, object]:
+    """Independently validate the complete persisted M27E acquisition bundle."""
 
     if not isinstance(evidence, dict):
         raise PublicReadFailure("M27E evidence is not an object")
     if evidence.get("schema") != SCHEMA or evidence.get("host") != "https://" + HOST:
         raise PublicReadFailure("M27E evidence schema or host mismatch")
+    _parse_time(evidence.get("started_at"), field="M27E acquisition")
+    validate_response_evidence(
+        evidence.get("exchange_status"), expected_path=BASE + "/exchange/status"
+    )
+    series_payload, _series_observed = validate_response_evidence(
+        evidence.get("series"), expected_path=BASE + "/series/" + SERIES_TICKER
+    )
+    series = series_payload.get("series")
+    if not isinstance(series, dict) or series.get("ticker") != SERIES_TICKER:
+        raise PublicReadFailure("M27E series identity mismatch")
+
     markets = evidence.get("markets")
     if (
         not isinstance(markets, dict)
@@ -118,15 +190,42 @@ def active_market_payloads(evidence: object) -> tuple[dict[str, Any], ...]:
         or not isinstance(markets.get("pages"), list)
     ):
         raise PublicReadFailure("M27E market discovery is incomplete")
+    pages = markets["pages"]
+    if not pages:
+        raise PublicReadFailure("M27E market discovery has no retained page")
+    for page in pages:
+        payload, _observed = validate_response_evidence(page, market_page=True)
+        if not isinstance(payload.get("markets"), list):
+            raise PublicReadFailure("M27E market page is malformed")
+    return evidence
+
+
+def series_payload_and_observed_at(evidence: object) -> tuple[dict[str, Any], datetime]:
+    validated = validate_public_acceptance(evidence)
+    series_response = validated["series"]
+    payload, observed_at = validate_response_evidence(
+        series_response, expected_path=BASE + "/series/" + SERIES_TICKER
+    )
+    raw = payload.get("series")
+    if not isinstance(raw, dict):
+        raise PublicReadFailure("M27E series payload is malformed")
+    return raw, observed_at
+
+
+def active_market_payloads(evidence: object) -> tuple[dict[str, Any], ...]:
+    """Extract active markets only from a complete independently validated M27E bundle."""
+
+    validated = validate_public_acceptance(evidence)
+    markets = validated["markets"]
+    assert isinstance(markets, dict)
+    pages = markets["pages"]
+    assert isinstance(pages, list)
 
     active: dict[str, dict[str, Any]] = {}
-    for page in markets["pages"]:
-        if not isinstance(page, dict) or page.get("classification") != "SUCCESS":
-            raise PublicReadFailure("M27E market page did not succeed")
-        payload = page.get("payload")
-        rows = payload.get("markets") if isinstance(payload, dict) else None
-        if not isinstance(rows, list):
-            raise PublicReadFailure("M27E market page is malformed")
+    for page in pages:
+        payload, _observed = validate_response_evidence(page, market_page=True)
+        rows = payload.get("markets")
+        assert isinstance(rows, list)
         for raw in rows:
             if not isinstance(raw, dict) or raw.get("status") != ACTIVE_MARKET_STATUS:
                 continue
