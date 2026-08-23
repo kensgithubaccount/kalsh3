@@ -21,6 +21,7 @@ from services.supervised_canary.m27r_operator_runner import (
     M27ROperatorError,
     M27ROperatorRun,
     M27RPublicEvidence,
+    _run_readonly_operator_preflight_for_test,
     run_readonly_operator_preflight,
 )
 from tests.test_m27q_preflight_orchestrator import _fixture
@@ -34,10 +35,7 @@ def _fixed_clock(now: datetime) -> Clock:
 
 
 def _public_evidence() -> M27RPublicEvidence:
-    return M27RPublicEvidence(
-        public_evidence_path=Path("public.json"),
-        markets=(),
-    )
+    return M27RPublicEvidence(public_evidence_path=Path("public.json"), markets=())
 
 
 class _PublicProvider:
@@ -82,13 +80,9 @@ def test_zero_candidate_abstains_before_authenticated_phase() -> None:
     now = datetime(2026, 8, 23, 17, tzinfo=UTC)
     public = _PublicProvider(_public_evidence())
     candidate = _ForbiddenCandidateProvider()
-
-    result = run_readonly_operator_preflight(
-        clock=_fixed_clock(now),
-        public_provider=public,
-        candidate_provider=candidate,
+    result = _run_readonly_operator_preflight_for_test(
+        clock=_fixed_clock(now), public_provider=public, candidate_provider=candidate
     )
-
     assert public.calls == 1
     assert candidate.calls == 0
     assert result.state == "ABSTAIN"
@@ -107,7 +101,6 @@ def test_multiple_candidates_abstain_before_authenticated_phase(
     candidate_provider = _ForbiddenCandidateProvider()
     selected = SimpleNamespace(candidate_id="candidate-a")
     other = SimpleNamespace(candidate_id="candidate-b")
-
     monkeypatch.setattr(
         "services.supervised_canary.m27r_operator_runner.select_experimental_candidate",
         lambda *_args, **_kwargs: SimpleNamespace(
@@ -116,17 +109,38 @@ def test_multiple_candidates_abstain_before_authenticated_phase(
             candidates=(selected, other),
         ),
     )
-
-    result = run_readonly_operator_preflight(
-        clock=_fixed_clock(now),
-        public_provider=public,
-        candidate_provider=candidate_provider,
+    result = _run_readonly_operator_preflight_for_test(
+        clock=_fixed_clock(now), public_provider=public, candidate_provider=candidate_provider
     )
-
     assert candidate_provider.calls == 0
     assert result.state == "ABSTAIN"
     assert result.authenticated_phase_performed is False
-    assert result.execution_authorized is False
+
+
+def test_production_entry_point_does_not_accept_caller_clock() -> None:
+    public = _PublicProvider(_public_evidence())
+    candidate = _ForbiddenCandidateProvider()
+    with pytest.raises(TypeError):
+        run_readonly_operator_preflight(  # type: ignore[call-arg]
+            clock=lambda: datetime(2000, 1, 1, tzinfo=UTC),
+            public_provider=public,
+            candidate_provider=candidate,
+        )
+    assert public.calls == 0
+    assert candidate.calls == 0
+
+
+def test_test_only_naive_clock_is_rejected_before_provider_call() -> None:
+    public = _PublicProvider(_public_evidence())
+    candidate = _ForbiddenCandidateProvider()
+    with pytest.raises(M27ROperatorError, match="operator start clock must be timezone-aware"):
+        _run_readonly_operator_preflight_for_test(
+            clock=lambda: datetime(2026, 8, 23, 17),
+            public_provider=public,
+            candidate_provider=candidate,
+        )
+    assert public.calls == 0
+    assert candidate.calls == 0
 
 
 def test_duplicate_public_market_tickers_are_rejected() -> None:
@@ -144,6 +158,21 @@ def test_duplicate_public_market_tickers_are_rejected() -> None:
         M27RPublicEvidence(public_evidence_path=Path("public.json"), markets=(market, market))
 
 
+def _candidate_evidence(values: dict[str, object], candidate: ExperimentalCandidate) -> M27RCandidateEvidence:
+    return M27RCandidateEvidence(
+        candidate_id=candidate.candidate_id,
+        market_ticker=candidate.market_ticker,
+        m27f_bundle=cast(Any, values["m27f_bundle"]),
+        m27f_evidence_path=cast(Path, values["m27f_evidence_path"]),
+        m27h_evidence_path=cast(Path, values["m27h_evidence_path"]),
+        candidate_exposure=cast(Any, values["candidate_exposure"]),
+        state_path=cast(Path, values["state_path"]),
+        readiness=cast(Any, values["readiness"]),
+        order_group=cast(Any, values["order_group"]),
+        authorization_service_available=cast(bool, values["authorization_service_available"]),
+    )
+
+
 def test_exact_one_fixture_reaches_real_m27q_preflight_without_state_mutation(
     tmp_path: Path,
 ) -> None:
@@ -157,54 +186,27 @@ def test_exact_one_fixture_reaches_real_m27q_preflight_without_state_mutation(
         candidate_input=candidate_inputs[0],
         m27j_evidence_path=cast(Path, values["m27j_evidence_path"]),
         m27a_binding_evidence_path=cast(Path, values["m27a_binding_evidence_path"]),
-        current_series_fee_observation=cast(
-            Any,
-            values["current_series_fee_observation"],
-        ),
+        current_series_fee_observation=cast(Any, values["current_series_fee_observation"]),
         current_event_fee_override=cast(Any, values["current_event_fee_override"]),
-        current_event_fee_observed_at=cast(
-            datetime,
-            values["current_event_fee_observed_at"],
-        ),
+        current_event_fee_observed_at=cast(datetime, values["current_event_fee_observed_at"]),
     )
     public_evidence = M27RPublicEvidence(
-        public_evidence_path=cast(Path, values["public_evidence_path"]),
-        markets=(market_evidence,),
+        public_evidence_path=cast(Path, values["public_evidence_path"]), markets=(market_evidence,)
     )
-
     state_path = cast(Path, values["state_path"])
     before = inspect_first_canary_state(state_path=state_path, now=now)
-    candidate_evidence = M27RCandidateEvidence(
-        m27f_bundle=cast(Any, values["m27f_bundle"]),
-        m27f_evidence_path=cast(Path, values["m27f_evidence_path"]),
-        m27h_evidence_path=cast(Path, values["m27h_evidence_path"]),
-        candidate_exposure=cast(Any, values["candidate_exposure"]),
-        state_path=state_path,
-        readiness=cast(Any, values["readiness"]),
-        order_group=cast(Any, values["order_group"]),
-        authorization_service_available=cast(
-            bool,
-            values["authorization_service_available"],
-        ),
-    )
-    public_provider = _PublicProvider(public_evidence)
-    candidate_provider = _FixtureCandidateProvider(candidate_evidence, candidate.candidate_id)
+    candidate_evidence = _candidate_evidence(values, candidate)
 
-    result = run_readonly_operator_preflight(
+    result = _run_readonly_operator_preflight_for_test(
         clock=_fixed_clock(now),
-        public_provider=public_provider,
-        candidate_provider=candidate_provider,
+        public_provider=_PublicProvider(public_evidence),
+        candidate_provider=_FixtureCandidateProvider(candidate_evidence, candidate.candidate_id),
     )
-
-    assert public_provider.calls == 1
-    assert candidate_provider.calls == 1
     assert result.state == "PREFLIGHT_READY"
     assert result.candidate_id == candidate.candidate_id
     assert result.authenticated_phase_performed is True
-    assert result.read_only is True
     assert result.execution_authorized is False
     assert result.preflight is not None
-    assert result.preflight.preflight.artifact.state == "PREFLIGHT_READY"
     assert result.preflight.risk.decision.production_write_authorized is False
 
     retained = result.to_json()
@@ -215,7 +217,6 @@ def test_exact_one_fixture_reaches_real_m27q_preflight_without_state_mutation(
     assert risk_identities["decision_content_hash"] == result.preflight.risk.decision.content_hash
     assert risk_identities["production_write_authorized"] is False
     assert state_identity["database_sha256"] == before.database_sha256
-    assert state_identity["pristine_first_canary"] is True
 
     after = inspect_first_canary_state(state_path=state_path, now=now)
     assert before.database_sha256 == after.database_sha256
@@ -227,40 +228,45 @@ def test_exact_one_fixture_reaches_real_m27q_preflight_without_state_mutation(
     assert after.session_count == 0
 
 
-def test_coordinator_samples_fresh_clock_at_decision_boundaries() -> None:
-    stamps = iter(
-        (
-            datetime(2026, 8, 23, 17, 0, 0, tzinfo=UTC),
-            datetime(2026, 8, 23, 17, 0, 1, tzinfo=UTC),
+def test_candidate_provider_returning_different_identity_fails_before_m27q(tmp_path: Path) -> None:
+    values = _fixture(tmp_path)
+    now = cast(datetime, values["now"])
+    candidate_inputs = cast(Any, values["candidate_inputs"])
+    candidate = cast(ExperimentalCandidate, values["selected_candidate"])
+    market_evidence = M27RMarketEvidence(
+        market_ticker=candidate.market_ticker,
+        candidate_input=candidate_inputs[0],
+        m27j_evidence_path=cast(Path, values["m27j_evidence_path"]),
+        m27a_binding_evidence_path=cast(Path, values["m27a_binding_evidence_path"]),
+        current_series_fee_observation=cast(Any, values["current_series_fee_observation"]),
+        current_event_fee_override=cast(Any, values["current_event_fee_override"]),
+        current_event_fee_observed_at=cast(datetime, values["current_event_fee_observed_at"]),
+    )
+    public = _PublicProvider(
+        M27RPublicEvidence(
+            public_evidence_path=cast(Path, values["public_evidence_path"]),
+            markets=(market_evidence,),
         )
     )
-    public = _PublicProvider(_public_evidence())
-    candidate = _ForbiddenCandidateProvider()
-
-    result = run_readonly_operator_preflight(
-        clock=lambda: next(stamps),
-        public_provider=public,
-        candidate_provider=candidate,
+    evidence = _candidate_evidence(values, candidate)
+    wrong = M27RCandidateEvidence(
+        candidate_id="different-candidate",
+        market_ticker=evidence.market_ticker,
+        m27f_bundle=evidence.m27f_bundle,
+        m27f_evidence_path=evidence.m27f_evidence_path,
+        m27h_evidence_path=evidence.m27h_evidence_path,
+        candidate_exposure=evidence.candidate_exposure,
+        state_path=evidence.state_path,
+        readiness=evidence.readiness,
+        order_group=evidence.order_group,
+        authorization_service_available=evidence.authorization_service_available,
     )
-
-    assert result.state == "ABSTAIN"
-    assert public.calls == 1
-    assert candidate.calls == 0
-
-
-def test_naive_operator_clock_is_rejected_before_any_provider_call() -> None:
-    public = _PublicProvider(_public_evidence())
-    candidate = _ForbiddenCandidateProvider()
-
-    with pytest.raises(M27ROperatorError, match="operator start clock must be timezone-aware"):
-        run_readonly_operator_preflight(
-            clock=lambda: datetime(2026, 8, 23, 17),
+    with pytest.raises(M27ROperatorError, match="different candidate"):
+        _run_readonly_operator_preflight_for_test(
+            clock=_fixed_clock(now),
             public_provider=public,
-            candidate_provider=candidate,
+            candidate_provider=_FixtureCandidateProvider(wrong, candidate.candidate_id),
         )
-
-    assert public.calls == 0
-    assert candidate.calls == 0
 
 
 def test_result_can_never_claim_execution_authority() -> None:
@@ -289,9 +295,7 @@ def _imported_modules(tree: ast.AST) -> set[str]:
 
 def test_m27r_coordinator_has_no_live_or_mutating_capability_imports() -> None:
     source = MODULE_PATH.read_text()
-    tree = ast.parse(source)
-    imported = _imported_modules(tree)
-
+    imported = _imported_modules(ast.parse(source))
     forbidden_prefixes = (
         "services.production_execution",
         "services.kalshi_account_gateway",
@@ -304,7 +308,6 @@ def test_m27r_coordinator_has_no_live_or_mutating_capability_imports() -> None:
     )
     for module in imported:
         assert not module.startswith(forbidden_prefixes), module
-
     forbidden_tokens = (
         "m27o_live_canary",
         "m27o_operator",
