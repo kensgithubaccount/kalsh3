@@ -90,6 +90,17 @@ M27R is not complete until tests prove all of the following:
 11. **Per-market binding test:** a selected candidate can consume only the M27A/M27J/fee evidence reconstructed for that exact retained candidate input.
 12. **Public positive fixture:** fake-transport-only KXHIGHCHI discovery reconstructs canonical rules, exact GRIB target-date evidence, frozen probability, authoritative economics, and separate current-rules evidence end to end.
 
+## First adversarial-review repairs
+
+The first independent Codex review identified four merge-blocking issues. The current implementation treats each as a fail-closed invariant:
+
+1. **Candidate continuity:** the exact candidate selected before authenticated reads is carried into M27Q and must remain the same stable opportunity/evidence identity through M27I. A later temporal re-evaluation may not substitute another candidate, including another identity for the same ticker.
+2. **Trusted time:** the production runner owns its UTC wall clock and protects elapsed time with a monotonic floor. Caller-injected clocks exist only in the private deterministic test seam.
+3. **Source-time fee freshness:** series and event fee observations preserve their actual acquisition timestamps. Later evaluation time cannot manufacture freshness for stale fee evidence.
+4. **M27E provenance:** exchange, series, and market-page evidence retain bounded raw response bytes plus path, status, observation time, byte count, and SHA-256. Consumers independently decode, hash, and reparse the retained bytes, and M27Q revalidates the persisted M27E bundle again at consumption.
+
+These repairs require targeted regressions for same-ticker candidate substitution, wrong-candidate authenticated evidence, frozen/backdated production-clock access, stale/future fee sources, and missing/forged public-response provenance before the second Codex review.
+
 ## Completion and independent review gate
 
 M27R may be called code-complete only after the runner and the above tests pass the repository test/lint/type suite. It is not merge-ready until the independent Codex implementation review has no unresolved blocker and a subsequent CI run is green.
