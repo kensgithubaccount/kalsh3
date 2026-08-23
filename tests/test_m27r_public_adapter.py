@@ -205,9 +205,7 @@ def test_public_adapter_has_no_account_credential_or_mutation_capability() -> No
         "ssl",
     )
     assert not any(
-        module.startswith(prefix)
-        for module in imported
-        for prefix in forbidden_prefixes
+        module.startswith(prefix) for module in imported for prefix in forbidden_prefixes
     )
 
     forbidden_tokens = (
