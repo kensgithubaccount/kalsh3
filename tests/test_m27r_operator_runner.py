@@ -207,6 +207,16 @@ def test_exact_one_fixture_reaches_real_m27q_preflight_without_state_mutation(
     assert result.preflight.preflight.artifact.state == "PREFLIGHT_READY"
     assert result.preflight.risk.decision.production_write_authorized is False
 
+    retained = result.to_json()
+    risk_identities = cast(dict[str, object], retained["risk_identities"])
+    state_identity = cast(dict[str, object], retained["state_inspection_identity"])
+    assert risk_identities["intent_content_hash"] == result.preflight.risk.intent.content_hash
+    assert risk_identities["snapshot_content_hash"] == result.preflight.risk.snapshot.content_hash
+    assert risk_identities["decision_content_hash"] == result.preflight.risk.decision.content_hash
+    assert risk_identities["production_write_authorized"] is False
+    assert state_identity["database_sha256"] == before.database_sha256
+    assert state_identity["pristine_first_canary"] is True
+
     after = inspect_first_canary_state(state_path=state_path, now=now)
     assert before.database_sha256 == after.database_sha256
     assert after.real_submission_count == 0
