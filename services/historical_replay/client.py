@@ -127,8 +127,10 @@ class HistoricalClient:
         return payload
 
     def markets(self, *, series_ticker: str | None = None) -> list[dict[str, Any]]:
-        path = "/trade-api/v2/historical/markets?limit=1000&mve_filter=exclude"
-        if series_ticker is not None:
+        path = "/trade-api/v2/historical/markets?limit=1000"
+        if series_ticker is None:
+            path += "&mve_filter=exclude"
+        else:
             if not series_ticker.strip():
                 raise HistoricalError("series ticker filter cannot be empty")
             path += f"&series_ticker={quote(series_ticker, safe='')}"
