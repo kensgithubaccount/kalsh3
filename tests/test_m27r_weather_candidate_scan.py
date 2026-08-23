@@ -80,9 +80,7 @@ def test_active_market_rows_rejects_active_market_outside_fixed_series() -> None
 
 
 def test_run_directory_and_json_are_private_and_create_only(tmp_path: Path) -> None:
-    run_dir = _create_run_dir(
-        tmp_path / "evidence", datetime(2026, 8, 23, 3, 5, 6, tzinfo=UTC)
-    )
+    run_dir = _create_run_dir(tmp_path / "evidence", datetime(2026, 8, 23, 3, 5, 6, tzinfo=UTC))
     assert stat.S_IMODE(run_dir.stat().st_mode) == 0o700
 
     artifact = run_dir / "summary.json"
@@ -111,14 +109,12 @@ def test_script_import_graph_has_no_credentials_risk_authorization_or_execution(
         "services.supervised_canary.live_read_acceptance",
     )
     assert not any(
-        module.startswith(prefix)
-        for module in imported
-        for prefix in forbidden_prefixes
+        module.startswith(prefix) for module in imported for prefix in forbidden_prefixes
     )
 
 
 def test_script_contains_no_mutating_exchange_method_literals() -> None:
     source = Path("scripts/run_m27r_weather_candidate_scan.py").read_text()
     for token in ("POST", "PUT", "PATCH", "DELETE"):
-        assert f'\"{token}\"' not in source
+        assert f'"{token}"' not in source
         assert f"'{token}'" not in source
