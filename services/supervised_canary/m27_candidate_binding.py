@@ -1,9 +1,8 @@
 """Exact binding of one already-selected M27D candidate across later read-only phases.
 
-M27D candidate IDs intentionally include the original selection timestamp. Re-running M27D a
-few seconds later therefore creates a different candidate ID even when every market, weather,
-side, price, and economics input is unchanged. Later phases must re-check current qualification
-without silently replacing the candidate whose authenticated reads were collected.
+M27D candidate IDs identify the stable opportunity/evidence bundle and deliberately exclude
+selection/expiry timestamps. Later phases still have to re-check freshness and current unique
+qualification without silently replacing the candidate whose authenticated reads were collected.
 
 This module performs that distinction explicitly: it proves the supplied candidate is exactly
 reconstructible from its original evidence at its original selection time, proves there is still
