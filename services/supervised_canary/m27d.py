@@ -1,6 +1,6 @@
 """M27D supervised, unvalidated-settlement-proxy canary selection.
 
-This module is deliberately a pure boundary.  It accepts already reviewed
+This module is deliberately a pure boundary. It accepts already reviewed
 M27C weather and M27A live-economics evidence and has no transport, signer, or
 order submission capability.
 """
@@ -151,6 +151,43 @@ def _validate_weather(
     return None
 
 
+def _candidate_identity_material(
+    eligibility: ExperimentalCanaryEligibility,
+    side: OutcomeSide,
+    price: Decimal,
+    discrepancy: Decimal,
+    economics_evidence_identity: str,
+) -> tuple[object, ...]:
+    """Immutable candidate identity, deliberately excluding selection/expiry timestamps.
+
+    ``created_at`` and ``expires_at`` are freshness properties of one observation of the
+    opportunity. Including them in ``candidate_id`` made the same unchanged evidence become a
+    different identity every time M27D was re-evaluated. Later safety phases need to re-check
+    freshness without replacing the candidate whose authenticated reads were collected.
+    """
+
+    return (
+        eligibility.status,
+        eligibility.weather_result_identity,
+        eligibility.model_identity,
+        eligibility.claim_type,
+        eligibility.settlement_mapping_status,
+        eligibility.source_family,
+        eligibility.forecast_evidence_identity,
+        eligibility.contract_identity,
+        eligibility.target_date.isoformat(),
+        eligibility.exact_midpoint_seconds,
+        eligibility.market_evidence_identity,
+        eligibility.selection_policy_identity,
+        eligibility.research_warning,
+        eligibility.human_approval_required,
+        side.value,
+        str(price),
+        str(discrepancy),
+        economics_evidence_identity,
+    )
+
+
 def _candidate(
     probability: PhysicalTemperatureProxyProbability,
     forecast: CurrentWeatherForecastEvidence,
@@ -186,9 +223,6 @@ def _candidate(
     for side, cost, research_probability in sides:
         if cost is None:
             continue
-        # M27A's deterministic taker book walk plus upward fee rounding is
-        # the conservative one-contract entry bound.  Unknown post-fill fees
-        # are not used to claim performance or settlement truth.
         fee = cost.centicent_rounded_fee
         break_even = cost.depth.total_cost + fee
         discrepancy = research_probability - break_even
@@ -231,7 +265,13 @@ def _candidate(
         min(forecast.interval_end, now + timedelta(minutes=2)),
         warning,
     )
-    material = (eligibility, side, str(price), str(discrepancy), economics.evidence_id)
+    material = _candidate_identity_material(
+        eligibility,
+        side,
+        price,
+        discrepancy,
+        economics.evidence_id,
+    )
     candidate_id = hashlib.sha256(repr(material).encode()).hexdigest()
     return ExperimentalCandidate(
         candidate_id,
@@ -244,6 +284,7 @@ def _candidate(
         price,
         cost.depth.filled,
         cost.centicent_rounded_fee,
+        break_even,
         break_even,
         break_even,
         break_even,
