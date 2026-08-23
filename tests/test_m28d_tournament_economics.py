@@ -23,7 +23,6 @@ from services.production_weather_strategy.tournament_economics import (
     tournament_row_predictions,
 )
 
-
 CHECKPOINT = datetime(2026, 8, 23, 3, tzinfo=UTC)
 
 
