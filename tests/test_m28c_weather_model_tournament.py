@@ -66,7 +66,9 @@ def _dataset() -> AuthoritativeWeatherDataset:
         local_date = start + timedelta(days=index)
         station = "CLIAAA" if index % 2 == 0 else "CLIBBB"
         realized_yes = 1 if index in {1, 2, 4, 5, 7, 8} else 0
-        contract = _contract(index, station=station, local_date=local_date, realized_yes=realized_yes)
+        contract = _contract(
+            index, station=station, local_date=local_date, realized_yes=realized_yes
+        )
         contracts.append(contract)
         event_id = f"event-{index}"
         events.append(

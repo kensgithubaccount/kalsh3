@@ -65,6 +65,29 @@ def row(
     }
 
 
+def current_twc_rule(
+    *,
+    location: str = "Austin",
+    date_text: str = "Aug 14, 2026",
+    measurement: str = "maximum",
+    strike_type: str = "less",
+    floor: object = None,
+    cap: object = 95,
+) -> str:
+    if strike_type == "between":
+        phrase = f"between {floor}-{cap}"
+    elif strike_type == "greater":
+        phrase = f"greater than {floor}"
+    elif strike_type == "less":
+        phrase = f"less than {cap}"
+    else:
+        phrase = f"equal to {floor}"
+    return (
+        f"Resolves Yes if the {measurement} temperature recorded at {location} for "
+        f"{date_text}, is {phrase}° fahrenheit according to The Weather Company."
+    )
+
+
 def split() -> TemporalSplit:
     return TemporalSplit(
         train_start=datetime(2024, 1, 1, tzinfo=UTC),
@@ -88,6 +111,90 @@ def test_finalized_kalshi_result_becomes_exact_binary_label() -> None:
     assert parsed.lower == Decimal("100")
     assert parsed.upper == Decimal("101")
     assert parsed.content_hash == parsed.contract_id
+
+
+@pytest.mark.parametrize(
+    ("strike_type", "floor", "cap", "comparator"),
+    [
+        ("between", 95, 96, "RANGE"),
+        ("greater", 103, None, "GT"),
+        ("less", None, 95, "LT"),
+    ],
+)
+def test_current_weather_company_rule_grammar_binds_exact_reviewed_location(
+    strike_type: str,
+    floor: object,
+    cap: object,
+    comparator: str,
+) -> None:
+    rule_text = current_twc_rule(strike_type=strike_type, floor=floor, cap=cap)
+    parsed = parse_resolved_temperature_market(
+        row(
+            event="KXHIGHAUS-26AUG14",
+            ticker="KXHIGHAUS-26AUG14-TEST",
+            date_text="Aug 14, 2026",
+            strike_type=strike_type,
+            floor=floor,
+            cap=cap,
+            settlement_ts="2026-08-15T12:00:00Z",
+            rule=rule_text,
+        )
+    )
+    assert parsed is not None
+    assert parsed.station_id == "CLIAUS"
+    assert parsed.location == "Austin"
+    assert parsed.comparator == comparator
+    assert parsed.rules_primary == rule_text
+
+
+def test_current_rule_location_name_is_exact_authority_not_fuzzy_inference() -> None:
+    with pytest.raises(HistoricalWeatherDatasetError, match="unreviewed settlement location"):
+        parse_resolved_temperature_market(
+            row(
+                event="KXHIGHAUS-26AUG14",
+                ticker="KXHIGHAUS-26AUG14-T95",
+                date_text="Aug 14, 2026",
+                strike_type="less",
+                floor=None,
+                cap=95,
+                settlement_ts="2026-08-15T12:00:00Z",
+                rule=current_twc_rule(location="Austin Bergstrom"),
+            )
+        )
+
+
+def test_legacy_and_current_rule_grammars_share_reviewed_semantics_but_not_raw_identity() -> None:
+    legacy = parse_resolved_temperature_market(
+        row(
+            event="KXHIGHAUS-26AUG14",
+            ticker="KXHIGHAUS-26AUG14-T95",
+            date_text="Aug 14, 2026",
+            strike_type="less",
+            floor=None,
+            cap=95,
+            settlement_ts="2026-08-15T12:00:00Z",
+        )
+    )
+    current = parse_resolved_temperature_market(
+        row(
+            event="KXHIGHAUS-26AUG14",
+            ticker="KXHIGHAUS-26AUG14-T95",
+            date_text="Aug 14, 2026",
+            strike_type="less",
+            floor=None,
+            cap=95,
+            settlement_ts="2026-08-15T12:00:00Z",
+            rule=current_twc_rule(),
+        )
+    )
+    assert legacy is not None and current is not None
+    assert legacy.station_id == current.station_id == "CLIAUS"
+    assert legacy.location == current.location == "Austin"
+    assert legacy.local_date == current.local_date
+    assert legacy.comparator == current.comparator == "LT"
+    assert legacy.lower == current.lower == Decimal("95")
+    assert legacy.rules_hash != current.rules_hash
+    assert legacy.content_hash != current.content_hash
 
 
 def test_non_temperature_market_is_skipped_but_temperature_lookalike_fails_closed() -> None:

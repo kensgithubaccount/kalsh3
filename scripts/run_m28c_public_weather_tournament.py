@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
 """Run the M28C multi-city public-data weather model tournament.
 
-PUBLIC READ ONLY. The runner reads recently settled public Kalshi markets, public Kalshi
-candlesticks at the fixed 03Z decision checkpoint, and official NOAA/NCEI GHCN-Daily files.
-It writes create-only evidence and stops at model evaluation. It never accesses credentials,
-account state, production-control state, risk authorization, approval, execution authority,
-burn state, or an order endpoint.
+PUBLIC READ ONLY. The runner discovers current Weather Company temperature series, scopes
+settled Kalshi reads to reviewed settlement locations, acquires public Kalshi candlesticks at
+the fixed 03Z decision checkpoint, and reads official NOAA/NCEI GHCN-Daily files. It writes
+create-only evidence and stops at model evaluation. It never accesses credentials, account
+state, production-control state, risk authorization, approval, execution authority, burn
+state, or an order endpoint.
 """
 
 from __future__ import annotations
@@ -47,6 +48,12 @@ from services.production_weather_strategy.model_tournament import (
     build_feature_dataset,
     run_model_tournament,
 )
+from services.production_weather_strategy.series_scope import (
+    SeriesScopeError,
+    SeriesScopeManifest,
+    candidate_temperature_series,
+    scope_recent_settled_markets,
+)
 from services.production_weather_strategy.settlement_dataset import (
     HistoricalWeatherDatasetError,
     build_authoritative_weather_dataset,
@@ -55,7 +62,7 @@ from services.production_weather_strategy.settlement_dataset import (
 KALSHI_ORIGIN = "https://external-api.kalshi.com"
 NCEI_ORIGIN = "https://www.ncei.noaa.gov"
 GHCND_ROOT = f"{NCEI_ORIGIN}/pub/data/ghcn/daily/all"
-SCHEMA = "kalsh3.m28c.public-weather-model-tournament.v1"
+SCHEMA = "kalsh3.m28c.public-weather-model-tournament.v2"
 MAX_RESPONSE_BYTES = 32 * 1024 * 1024
 TIMEOUT_SECONDS = 25
 MAX_BATCH_TICKERS = 100
@@ -77,6 +84,7 @@ class PublicTransport:
         if not (
             path.startswith("/trade-api/v2/markets?")
             or path.startswith("/trade-api/v2/markets/candlesticks?")
+            or path.startswith("/trade-api/v2/series?")
         ):
             raise RuntimeError("M28C public transport path is outside reviewed prefixes")
         status, body = _fixed_origin_get(KALSHI_ORIGIN, path, timeout_seconds=timeout_seconds)
@@ -146,11 +154,20 @@ def _ncei_get(station_id: str) -> tuple[bytes, dict[str, object]]:
     }
 
 
-def _settled_markets(client: HistoricalClient) -> list[dict[str, Any]]:
-    return client.collect(
-        "/trade-api/v2/markets?limit=1000&status=settled&mve_filter=exclude",
-        "markets",
-    )
+def _settled_markets(
+    client: HistoricalClient,
+    transport: PublicTransport,
+) -> tuple[list[dict[str, Any]], SeriesScopeManifest]:
+    # The live API returned {"series": null} for category=Weather even though the
+    # documented list endpoint supports an optional category filter. One unfiltered
+    # metadata GET is still bounded and dramatically cheaper than sweeping all settled
+    # markets; candidate selection then uses title + exact settlement-source metadata.
+    path = "/trade-api/v2/series?include_volume=false"
+    status, payload = transport.get(path, {}, timeout_seconds=TIMEOUT_SECONDS)
+    if status != 200:
+        raise RuntimeError(f"Kalshi series discovery status {status}")
+    candidate_series = candidate_temperature_series(payload)
+    return scope_recent_settled_markets(client, candidate_series)
 
 
 def _market_checkpoints(
@@ -159,7 +176,9 @@ def _market_checkpoints(
 ) -> dict[str, MarketCheckpoint]:
     by_checkpoint: dict[datetime, list[Any]] = defaultdict(list)
     for contract in contracts:
-        checkpoint = datetime.combine(contract.local_date, time(PREDICTION_CUTOFF_HOUR_UTC), tzinfo=UTC)
+        checkpoint = datetime.combine(
+            contract.local_date, time(PREDICTION_CUTOFF_HOUR_UTC), tzinfo=UTC
+        )
         by_checkpoint[checkpoint].append(contract)
 
     output: dict[str, MarketCheckpoint] = {}
@@ -307,7 +326,9 @@ def _temporal_split_from_features(rows: Sequence[Any]) -> TemporalSplit:
     validation_dates = sorted(
         {row.local_date for row in rows if row.partition is TournamentPartition.VALIDATION}
     )
-    test_dates = sorted({row.local_date for row in rows if row.partition is TournamentPartition.TEST})
+    test_dates = sorted(
+        {row.local_date for row in rows if row.partition is TournamentPartition.TEST}
+    )
     if not train_dates or not validation_dates or not test_dates:
         raise RuntimeError("M28C feature temporal partitions are incomplete")
     train_start = datetime.combine(train_dates[0], time(0), tzinfo=UTC)
@@ -333,7 +354,9 @@ def _m28_contract_artifacts(
 ) -> tuple[SettlementLabelManifest, TrainingDatasetManifest, ModelArtifact]:
     used_tickers = tuple(sorted({row.market_ticker for row in features.rows}))
     used_event_ids = tuple(sorted({row.event_id for row in features.rows}))
-    contract_by_ticker = {contract.market_ticker: contract for contract in settlement_dataset.contracts}
+    contract_by_ticker = {
+        contract.market_ticker: contract for contract in settlement_dataset.contracts
+    }
     resolved_at = max(contract_by_ticker[ticker].settlement_at for ticker in used_tickers)
     settlement_mapping_id = stable_hash(
         (settlement_dataset.parser_version, settlement_dataset.label_authority)
@@ -425,9 +448,10 @@ def main() -> int:
     acquired_at = datetime.now(UTC)
     transport = PublicTransport()
     ncei_requests: list[dict[str, object]] = []
+    series_scope: SeriesScopeManifest | None = None
     try:
         client = HistoricalClient(transport, signer=None, timeout=TIMEOUT_SECONDS)
-        settled_rows = _settled_markets(client)
+        settled_rows, series_scope = _settled_markets(client, transport)
         settlements = build_authoritative_weather_dataset(settled_rows)
         station_ids = sorted({event.station_id for event in settlements.events})
         if len(station_ids) < 2:
@@ -451,8 +475,13 @@ def main() -> int:
         HistoricalWeatherDatasetError,
         ModelTournamentError,
         RuntimeError,
+        SeriesScopeError,
     ) as exc:
         print(f"M28C_CLASSIFICATION=BLOCKED ({type(exc).__name__}: {exc})", file=sys.stderr)
+        if series_scope is not None:
+            print(f"CANDIDATE_SERIES={len(series_scope.candidate_series_tickers)}")
+            print(f"INCLUDED_REVIEWED_SERIES={len(series_scope.included_series_tickers)}")
+            print(f"EXCLUDED_SERIES={len(series_scope.excluded_series)}")
         print(f"KALSHI_NETWORK_REQUESTS={len(transport.requests)}")
         print(f"NCEI_NETWORK_REQUESTS={len(ncei_requests)}")
         print("REQUEST_TYPE=PUBLIC_GET_ONLY")
@@ -466,6 +495,8 @@ def main() -> int:
         print("ORDER_SENT=NO")
         return 21
 
+    if series_scope is None:
+        raise RuntimeError("M28C series scope was not produced on successful evaluation")
     test_selected = tournament.selected_test_scorecard
     test_market = tournament.test_market_scorecard
     payload: dict[str, object] = {
@@ -475,6 +506,7 @@ def main() -> int:
         "request_type": "PUBLIC_GET_ONLY",
         "kalshi_origin": KALSHI_ORIGIN,
         "ncei_origin": NCEI_ORIGIN,
+        "series_scope": asdict(series_scope),
         "settled_market_count": len(settled_rows),
         "authoritative_weather_event_count": settlements.event_count,
         "authoritative_weather_contract_count": settlements.contract_count,
@@ -513,6 +545,9 @@ def main() -> int:
     print("M28C_CLASSIFICATION=SUCCESS")
     print(f"OUTPUT={output}")
     print(f"OUTPUT_SHA256={output_hash}")
+    print(f"CANDIDATE_SERIES={len(series_scope.candidate_series_tickers)}")
+    print(f"INCLUDED_REVIEWED_SERIES={len(series_scope.included_series_tickers)}")
+    print(f"EXCLUDED_SERIES={len(series_scope.excluded_series)}")
     print(f"SETTLED_MARKETS={len(settled_rows)}")
     print(f"WEATHER_EVENTS={settlements.event_count}")
     print(f"WEATHER_CONTRACTS={settlements.contract_count}")
