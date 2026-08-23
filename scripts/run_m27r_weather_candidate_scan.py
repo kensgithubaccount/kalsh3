@@ -184,7 +184,8 @@ def run_scan(
     )
     if not selection.succeeded or selection.selected is None:
         raise M27RScanError(
-            f"current weather source selection failed: {selection.classification} ({selection.reason})"
+            "current weather source selection failed: "
+            f"{selection.classification} ({selection.reason})"
         )
     selected_weather = selection.selected
     current = build_current_weather_forecast_evidence(
