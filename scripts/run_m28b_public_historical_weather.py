@@ -13,10 +13,12 @@ import hashlib
 import json
 import os
 import sys
+from collections.abc import Mapping
+from contextlib import suppress
 from dataclasses import asdict
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, Mapping
+from typing import Any
 from urllib.error import HTTPError, URLError
 from urllib.parse import urljoin, urlparse
 from urllib.request import Request, urlopen
@@ -52,7 +54,11 @@ class PublicHistoricalTransport:
         expected = urlparse(ORIGIN)
         if (parsed.scheme, parsed.netloc) != (expected.scheme, expected.netloc):
             raise RuntimeError("M28B public historical transport escaped the fixed Kalshi origin")
-        request = Request(target, method="GET", headers={"Accept": "application/json"})
+        request = Request(  # noqa: S310
+            target,
+            method="GET",
+            headers={"Accept": "application/json"},
+        )
         try:
             with urlopen(request, timeout=timeout_seconds) as response:  # noqa: S310
                 final = urlparse(response.geturl())
@@ -168,10 +174,8 @@ def main() -> int:
             handle.flush()
             os.fsync(handle.fileno())
     except Exception:
-        try:
+        with suppress(OSError):
             output.unlink()
-        except OSError:
-            pass
         raise
 
     evidence_hash = hashlib.sha256(encoded + b"\n").hexdigest()
