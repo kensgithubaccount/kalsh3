@@ -110,7 +110,7 @@ class M27ROperatorRun:
             raise ValueError("M27Q preflight cannot exist before candidate-specific reads")
 
     def to_json(self) -> dict[str, object]:
-        artifact = None
+        artifact: object | None = None
         if self.preflight is not None:
             artifact = self.preflight.preflight.artifact.to_json()
         return {
