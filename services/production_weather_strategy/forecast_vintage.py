@@ -163,7 +163,9 @@ class ForecastRevisionFeatures:
             raise ForecastVintageError("prior forecast is not older than latest forecast")
         if prior.source_published_at > latest.source_published_at:
             raise ForecastVintageError("prior forecast publication is after latest publication")
-        delta = int((latest.forecast_reference_time - prior.forecast_reference_time).total_seconds())
+        delta = int(
+            (latest.forecast_reference_time - prior.forecast_reference_time).total_seconds()
+        )
         revision = latest.forecast_deg_f - prior.forecast_deg_f
         material = (
             "m28d-forecast-revision-v1",
@@ -213,7 +215,11 @@ def choose_latest_pre_cutoff_vintage(
         raise ForecastVintageError("no admissible pre-cutoff forecast vintage")
     return max(
         matches,
-        key=lambda point: (point.forecast_reference_time, point.source_published_at, point.evidence_id),
+        key=lambda point: (
+            point.forecast_reference_time,
+            point.source_published_at,
+            point.evidence_id,
+        ),
     )
 
 
