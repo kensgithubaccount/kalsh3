@@ -127,6 +127,7 @@ class HistoricalClient:
         return payload
 
     def markets(self, *, series_ticker: str | None = None) -> list[dict[str, Any]]:
+        """Archived settled markets older than Kalshi's historical cutoff."""
         path = "/trade-api/v2/historical/markets?limit=1000"
         if series_ticker is None:
             path += "&mve_filter=exclude"
@@ -134,6 +135,18 @@ class HistoricalClient:
             if not series_ticker.strip():
                 raise HistoricalError("series ticker filter cannot be empty")
             path += f"&series_ticker={quote(series_ticker, safe='')}"
+        return self.collect(path, "markets")
+
+    def recent_settled_markets(self, *, series_ticker: str) -> list[dict[str, Any]]:
+        """Recently settled markets still resident in the live market tier.
+
+        Kalshi partitions settlement history around ``historical/cutoff``. A complete settled
+        dataset therefore needs the historical tier plus recent ``status=settled`` markets.
+        """
+        if not series_ticker.strip():
+            raise HistoricalError("series ticker filter cannot be empty")
+        encoded = quote(series_ticker, safe="")
+        path = f"/trade-api/v2/markets?limit=1000&status=settled&series_ticker={encoded}"
         return self.collect(path, "markets")
 
     def market(self, ticker: str) -> dict[str, Any]:
