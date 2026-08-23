@@ -49,8 +49,9 @@ import time
 from collections.abc import Callable
 from dataclasses import asdict, dataclass
 from datetime import UTC, datetime, timedelta
+from decimal import Decimal
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 from services.kalshi_account_gateway.auth import RequestSigner
 from services.kalshi_account_gateway.client import (
@@ -233,6 +234,80 @@ class LiveReadAcceptanceEvidence:
         }
 
 
+@dataclass(frozen=True, slots=True)
+class TransientAccountFacts:
+    """Reduced in-memory facts from the exact M27F authenticated sweep.
+
+    This object is deliberately NOT part of the persisted M27F evidence schema.
+    It retains no raw account rows, no key material, and no unvalidated
+    ``portfolio_value`` interpretation. Its sole financial value is the
+    independently schema-validated available-cash balance converted from cents.
+
+    The four collection counts bind the producer to the exact same portfolio
+    sweep represented by ``LiveReadAcceptanceEvidence``. For the first canary,
+    downstream risk code may require all four counts to be zero rather than
+    attempting to infer liability from previously unseen account activity.
+    """
+
+    cash: Decimal
+    balance_payload_sha256: str
+    position_count: int
+    order_count: int
+    fill_count: int
+    settlement_count: int
+    completed_at: datetime
+
+    @property
+    def pristine_account_activity(self) -> bool:
+        return all(
+            count == 0
+            for count in (
+                self.position_count,
+                self.order_count,
+                self.fill_count,
+                self.settlement_count,
+            )
+        )
+
+
+@dataclass(frozen=True, slots=True)
+class LiveReadAcceptanceBundle:
+    """M27F evidence plus optional transient account facts from that same sweep."""
+
+    evidence: LiveReadAcceptanceEvidence
+    account_facts: TransientAccountFacts | None
+
+
+def _build_transient_account_facts(
+    *,
+    balance: object,
+    positions: object,
+    orders: object,
+    fills: object,
+    settlements: object,
+    completed_at: datetime,
+) -> TransientAccountFacts:
+    if not isinstance(balance, dict):
+        raise AccountGatewayError("validated balance payload disappeared")
+    collections = (positions, orders, fills, settlements)
+    if any(not isinstance(value, list) for value in collections):
+        raise AccountGatewayError("validated portfolio collection disappeared")
+
+    raw_cash = balance.get("balance")
+    if isinstance(raw_cash, bool) or not isinstance(raw_cash, int) or raw_cash < 0:
+        raise AccountGatewayError("balance cannot produce conservative cash facts")
+
+    return TransientAccountFacts(
+        cash=Decimal(raw_cash) / Decimal(100),
+        balance_payload_sha256=_hash_json(balance),
+        position_count=len(cast(list[object], positions)),
+        order_count=len(cast(list[object], orders)),
+        fill_count=len(cast(list[object], fills)),
+        settlement_count=len(cast(list[object], settlements)),
+        completed_at=completed_at,
+    )
+
+
 def _attempt_read(
     reads: list[EndpointReadResult],
     name: str,
@@ -340,7 +415,7 @@ def _reconcile(
     )
 
 
-def run_live_read_acceptance(
+def run_live_read_acceptance_bundle(
     *,
     key_id: str,
     private_key_pem: bytes,
@@ -349,24 +424,20 @@ def run_live_read_acceptance(
     clock: Callable[[], datetime] = lambda: datetime.now(UTC),
     clock_ms: Callable[[], int] = lambda: time.time_ns() // 1_000_000,
     signer_factory: Callable[[str, bytes], ReadSigner] = RequestSigner,
-) -> LiveReadAcceptanceEvidence:
-    """Validate a pre-generated candidate authority attestation, then perform bounded GET reads.
+) -> LiveReadAcceptanceBundle:
+    """Perform one M27F sweep and retain only reduced transient account facts.
 
-    ``authority_attestation`` is the parsed JSON of a
-    :class:`services.supervised_canary.authority_attestation.CandidateAuthorityAttestation`
-    produced by a separate, out-of-band operator run against a broader management credential.
-    This function never calls, and has no transport capable of calling, ``GET /api_keys`` --
-    the candidate is never asked to prove its own authority live. The attestation is
-    independently re-validated (schema, classification, key-ID-hash match, exact scopes,
-    exact subaccount, unique match count, source) before any account read is attempted; a
-    stale, forged, or mismatched attestation is never merely trusted.
-
-    Never installs a credential, never arms production, and never issues a mutating call.
-    A failed authenticated read is never reinterpreted as a successful empty account.
+    The persisted evidence shape is exactly ``LiveReadAcceptanceEvidence``.
+    ``TransientAccountFacts`` never becomes part of that JSON artifact and
+    carries no raw account rows. No extra network read is performed.
     """
     started_at = clock()
     key_id_hash = hashlib.sha256(key_id.encode()).hexdigest()
-    validation = validate_attestation_for_candidate(authority_attestation, candidate_key_id=key_id)
+    validation = validate_attestation_for_candidate(
+        authority_attestation,
+        candidate_key_id=key_id,
+    )
+
     if not validation.succeeded:
         completed_at = clock()
         authority = CandidateAuthorityResult(
@@ -378,7 +449,7 @@ def run_live_read_acceptance(
             completed_at,
             reason=validation.reason,
         )
-        return LiveReadAcceptanceEvidence(
+        evidence = LiveReadAcceptanceEvidence(
             SCHEMA,
             SOFTWARE_VERSION,
             "PRODUCTION",
@@ -400,6 +471,8 @@ def run_live_read_acceptance(
                 reason="candidate authority attestation did not pass",
             ),
         )
+        return LiveReadAcceptanceBundle(evidence, None)
+
     authority = CandidateAuthorityResult(
         "PASS",
         key_id_hash,
@@ -410,17 +483,55 @@ def run_live_read_acceptance(
     )
 
     signer = signer_factory(key_id, private_key_pem)
-    client = KalshiAccountClient(signer, account_transport, clock_ms=clock_ms, max_retries=0)
+    client = KalshiAccountClient(
+        signer,
+        account_transport,
+        clock_ms=clock_ms,
+        max_retries=0,
+    )
+
     reads: list[EndpointReadResult] = []
-    _attempt_read(reads, "balance", lambda: _validated_balance(client), clock)
-    _attempt_read(reads, "positions", lambda: client.get_collection("positions"), clock)
-    _attempt_read(reads, "orders", lambda: client.get_collection("orders"), clock)
-    _attempt_read(reads, "fills", lambda: client.get_collection("fills"), clock)
-    _attempt_read(reads, "settlements", lambda: client.get_collection("settlements"), clock)
+
+    balance = _attempt_read(
+        reads,
+        "balance",
+        lambda: _validated_balance(client),
+        clock,
+    )
+    positions = _attempt_read(
+        reads,
+        "positions",
+        lambda: client.get_collection("positions"),
+        clock,
+    )
+    orders = _attempt_read(
+        reads,
+        "orders",
+        lambda: client.get_collection("orders"),
+        clock,
+    )
+    fills = _attempt_read(
+        reads,
+        "fills",
+        lambda: client.get_collection("fills"),
+        clock,
+    )
+    settlements = _attempt_read(
+        reads,
+        "settlements",
+        lambda: client.get_collection("settlements"),
+        clock,
+    )
 
     completed_at = clock()
-    reconciliation = _reconcile(tuple(reads), authority, started_at, completed_at)
-    return LiveReadAcceptanceEvidence(
+    reconciliation = _reconcile(
+        tuple(reads),
+        authority,
+        started_at,
+        completed_at,
+    )
+
+    evidence = LiveReadAcceptanceEvidence(
         SCHEMA,
         SOFTWARE_VERSION,
         "PRODUCTION",
@@ -432,6 +543,51 @@ def run_live_read_acceptance(
         tuple(reads),
         reconciliation,
     )
+
+    facts: TransientAccountFacts | None = None
+    if reconciliation.succeeded:
+        facts = _build_transient_account_facts(
+            balance=balance,
+            positions=positions,
+            orders=orders,
+            fills=fills,
+            settlements=settlements,
+            completed_at=completed_at,
+        )
+
+        balance_read = _read_lookup(tuple(reads), "balance")
+        if (
+            balance_read is None
+            or balance_read.payload_sha256 is None
+            or facts.balance_payload_sha256 != balance_read.payload_sha256
+        ):
+            raise AccountGatewayError(
+                "transient account facts do not bind to M27F balance evidence"
+            )
+
+    return LiveReadAcceptanceBundle(evidence, facts)
+
+
+def run_live_read_acceptance(
+    *,
+    key_id: str,
+    private_key_pem: bytes,
+    authority_attestation: object,
+    account_transport: ReadTransport,
+    clock: Callable[[], datetime] = lambda: datetime.now(UTC),
+    clock_ms: Callable[[], int] = lambda: time.time_ns() // 1_000_000,
+    signer_factory: Callable[[str, bytes], ReadSigner] = RequestSigner,
+) -> LiveReadAcceptanceEvidence:
+    """Compatibility wrapper returning the unchanged secret-free M27F artifact."""
+    return run_live_read_acceptance_bundle(
+        key_id=key_id,
+        private_key_pem=private_key_pem,
+        authority_attestation=authority_attestation,
+        account_transport=account_transport,
+        clock=clock,
+        clock_ms=clock_ms,
+        signer_factory=signer_factory,
+    ).evidence
 
 
 def _parser() -> argparse.ArgumentParser:

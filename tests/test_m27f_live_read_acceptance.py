@@ -6,6 +6,7 @@ import json
 import os
 from collections.abc import Mapping
 from datetime import UTC, datetime, timedelta
+from decimal import Decimal
 from pathlib import Path
 from typing import Any
 
@@ -1034,3 +1035,88 @@ def test_cli_malformed_attestation_json_fails_closed(tmp_path: Path) -> None:
     assert exit_code == 2
     assert not output.exists()
     os.close(read_fd)
+
+
+
+# --------------------------------------------------------------------------------------
+# M27Q transient account facts -- exact same M27F sweep, never persisted in the
+# secret-free M27F artifact.
+# --------------------------------------------------------------------------------------
+
+
+def test_transient_account_facts_bind_to_exact_same_m27f_sweep() -> None:
+    transport = FakeAccountTransport()
+
+    bundle = m27f.run_live_read_acceptance_bundle(
+        key_id="candidate",
+        private_key_pem=b"synthetic-pem-not-real",
+        authority_attestation=build_attestation(),
+        account_transport=transport,
+        signer_factory=FakeSigner,
+        clock_ms=lambda: 123,
+    )
+
+    assert bundle.evidence.reconciliation.classification == "PASS"
+    facts = bundle.account_facts
+    assert facts is not None
+
+    assert facts.cash == Decimal("1000")
+    assert facts.position_count == 0
+    assert facts.order_count == 0
+    assert facts.fill_count == 0
+    assert facts.settlement_count == 0
+    assert facts.pristine_account_activity is True
+
+    balance_read = next(
+        item for item in bundle.evidence.reads if item.name == "balance"
+    )
+    assert facts.balance_payload_sha256 == balance_read.payload_sha256
+
+    # The bundle performs the same exact five authenticated GETs as ordinary M27F.
+    assert len(transport.paths) == 5
+    assert all("subaccount=0" in path for path in transport.paths)
+
+
+def test_transient_account_facts_are_never_serialized_into_m27f_artifact() -> None:
+    bundle = m27f.run_live_read_acceptance_bundle(
+        key_id="candidate",
+        private_key_pem=b"synthetic-pem-not-real",
+        authority_attestation=build_attestation(),
+        account_transport=FakeAccountTransport(),
+        signer_factory=FakeSigner,
+        clock_ms=lambda: 123,
+    )
+
+    facts = bundle.account_facts
+    assert facts is not None
+    assert not hasattr(facts, "to_json")
+    assert not hasattr(facts, "portfolio_value")
+
+    dumped = json.dumps(bundle.evidence.to_json(), sort_keys=True)
+    assert '"cash"' not in dumped
+    assert '"portfolio_value"' not in dumped
+    assert "100000" not in dumped
+    assert "100125" not in dumped
+
+
+def test_transient_account_facts_absent_when_m27f_reconciliation_blocks() -> None:
+    bundle = m27f.run_live_read_acceptance_bundle(
+        key_id="candidate",
+        private_key_pem=b"synthetic-pem-not-real",
+        authority_attestation=build_attestation(),
+        account_transport=FakeAccountTransport(
+            {"orders?": [HttpResponse(401, {})]}
+        ),
+        signer_factory=FakeSigner,
+        clock_ms=lambda: 123,
+    )
+
+    assert bundle.evidence.reconciliation.classification == "BLOCKED"
+    assert bundle.account_facts is None
+
+
+def test_existing_m27f_public_return_contract_is_unchanged() -> None:
+    evidence = run()
+    assert isinstance(evidence, m27f.LiveReadAcceptanceEvidence)
+    assert not isinstance(evidence, m27f.LiveReadAcceptanceBundle)
+    assert "cash" not in evidence.to_json()
