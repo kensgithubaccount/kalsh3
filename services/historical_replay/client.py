@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Callable, Iterator, Mapping
 from dataclasses import dataclass
-from typing import Any, Protocol
+from typing import Any, Protocol, cast
 from urllib.parse import quote
 
 from services.kalshi_account_gateway.auth import RequestSigner
@@ -160,14 +160,12 @@ class HistoricalClient:
             f"?start_ts={start_ts}&end_ts={end_ts}&period_interval={interval}"
         )
         status, payload = self.transport.get(path, {}, timeout_seconds=self.timeout)
-        rows = payload.get("candlesticks")
-        malformed = (
-            status != 200
-            or not isinstance(rows, list)
-            or any(not isinstance(row, dict) for row in rows)
-        )
-        if malformed:
+        raw_rows = payload.get("candlesticks")
+        if status != 200 or not isinstance(raw_rows, list):
             raise HistoricalError("historical candlestick response malformed")
+        if any(not isinstance(row, dict) for row in raw_rows):
+            raise HistoricalError("historical candlestick response malformed")
+        rows = cast(list[dict[str, Any]], raw_rows)
         seen_periods: set[int] = set()
         for candle in rows:
             period = candle.get("end_period_ts")
