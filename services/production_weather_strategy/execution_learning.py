@@ -311,13 +311,10 @@ def summarize_execution_learning(
     filled = [
         row
         for row in observations
-        if row.state
-        in {ExecutionLabelState.FILLED, ExecutionLabelState.FILLED_POLICY_VIOLATION}
+        if row.state in {ExecutionLabelState.FILLED, ExecutionLabelState.FILLED_POLICY_VIOLATION}
     ]
     policy_violations = [
-        row
-        for row in observations
-        if row.state is ExecutionLabelState.FILLED_POLICY_VIOLATION
+        row for row in observations if row.state is ExecutionLabelState.FILLED_POLICY_VIOLATION
     ]
     no_fill = [row for row in observations if row.state is ExecutionLabelState.NO_FILL]
     fill_rate = (
