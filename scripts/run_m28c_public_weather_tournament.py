@@ -49,6 +49,7 @@ from services.production_weather_strategy.model_tournament import (
     run_model_tournament,
 )
 from services.production_weather_strategy.series_scope import (
+    SeriesScopeError,
     SeriesScopeManifest,
     candidate_temperature_series,
     scope_recent_settled_markets,
@@ -470,7 +471,7 @@ def main() -> int:
         HistoricalWeatherDatasetError,
         ModelTournamentError,
         RuntimeError,
-        ValueError,
+        SeriesScopeError,
     ) as exc:
         print(f"M28C_CLASSIFICATION=BLOCKED ({type(exc).__name__}: {exc})", file=sys.stderr)
         if series_scope is not None:
@@ -490,7 +491,8 @@ def main() -> int:
         print("ORDER_SENT=NO")
         return 21
 
-    assert series_scope is not None
+    if series_scope is None:
+        raise RuntimeError("M28C series scope was not produced on successful evaluation")
     test_selected = tournament.selected_test_scorecard
     test_market = tournament.test_market_scorecard
     payload: dict[str, object] = {
