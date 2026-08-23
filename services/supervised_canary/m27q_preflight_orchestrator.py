@@ -78,7 +78,9 @@ def _load_json_artifact(path: Path, *, name: str) -> dict[str, object]:
     try:
         stored = json.loads(path.read_text())
     except (OSError, json.JSONDecodeError) as exc:
-        raise M27QOrchestrationError(f"persisted {name} evidence is unavailable or malformed") from exc
+        raise M27QOrchestrationError(
+            f"persisted {name} evidence is unavailable or malformed"
+        ) from exc
     if not isinstance(stored, dict):
         raise M27QOrchestrationError(f"persisted {name} evidence is not an object")
     return stored
