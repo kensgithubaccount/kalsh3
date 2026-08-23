@@ -1,18 +1,11 @@
 """Candidate-gated authenticated evidence adapter for M27R.
 
-This module is intentionally narrower than an operator CLI. It may be invoked only after
-:func:`m27r_operator_runner.run_readonly_operator_preflight` has already selected exactly one
-M27D experimental candidate from public evidence.
+This module may be invoked only after the M27R coordinator has selected exactly one M27D
+experimental candidate from independently validated public evidence. It reuses the reviewed M27F
+GET-only account sweep and candidate-exposure check; it owns no mutation or execution authority.
 
-It reuses the reviewed M27F authenticated GET sweep and M27I candidate-exposure check. The
-adapter has no mutation transport, no order sender, no M13/M16/M27O authority capability, and
-never reads the protected production write-credential store. M27H remains an independently
-produced, operator-only local evidence artifact; this adapter merely carries its path onward to
-M27Q/M27I, which independently validates freshness and structure.
-
-A live clock callable is passed through to the reviewed authenticated-read producers. Network
-reads therefore retain their actual acquisition times instead of inheriting one frozen run-start
-timestamp.
+The returned evidence explicitly carries the exact candidate ID and market ticker supplied to the
+adapter so the coordinator can reject a provider that returns evidence for another candidate.
 """
 
 from __future__ import annotations
@@ -34,7 +27,7 @@ from .live_read_acceptance import run_live_read_acceptance_bundle
 from .m27d import ExperimentalCandidate
 from .m27r_operator_runner import Clock, M27RCandidateEvidence
 
-SOFTWARE_VERSION = "kalsh3.m27r.candidate-evidence-adapter/2"
+SOFTWARE_VERSION = "kalsh3.m27r.candidate-evidence-adapter/3"
 
 CredentialLoader = Callable[[], tuple[str, bytes]]
 AuthorityAttestationLoader = Callable[[], object]
@@ -52,22 +45,12 @@ def _clock_now(clock: Clock, *, field: str) -> None:
 
 
 def _persist_m27f_evidence(*, payload: dict[str, object], path: Path) -> None:
-    """Persist exactly the secret-free M27F evidence that belongs to this sweep."""
-
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(payload, sort_keys=True, indent=2) + "\n")
 
 
 @dataclass(frozen=True, slots=True, repr=False)
 class GetOnlyCandidateEvidenceProvider:
-    """Concrete M27R candidate provider with deferred credential access.
-
-    ``credential_loader`` is deliberately called inside ``collect_candidate_evidence`` rather
-    than at construction time. The M27R coordinator therefore cannot touch authenticated
-    credentials unless the unchanged M27D selector has first produced exactly one qualifying
-    candidate.
-    """
-
     credential_loader: CredentialLoader
     authority_attestation_loader: AuthorityAttestationLoader
     account_transport_factory: ReadTransportFactory
@@ -88,11 +71,9 @@ class GetOnlyCandidateEvidenceProvider:
     ) -> M27RCandidateEvidence:
         _clock_now(clock, field="candidate evidence start clock")
 
-        # M27H is operator-only evidence. Never invoke its protected-store verifier here.
         if not self.m27h_evidence_path.is_file():
             raise M27RCandidateAdapterError("fresh M27H evidence path is unavailable")
 
-        # Deferred until after the exact-one public candidate gate.
         key_id, private_key_pem = self.credential_loader()
         if not key_id or not isinstance(private_key_pem, bytes) or not private_key_pem:
             raise M27RCandidateAdapterError(
@@ -118,9 +99,6 @@ class GetOnlyCandidateEvidenceProvider:
         if not bundle.evidence.reconciliation.succeeded or bundle.account_facts is None:
             raise M27RCandidateAdapterError("M27F authenticated GET sweep did not reconcile")
 
-        # Candidate exposure is intentionally a second fresh GET-only read of orders/positions.
-        # It answers a different question than M27F's account-wide hashes/counts: whether this
-        # exact selected market has an open order or non-zero position right now.
         signer = self.signer_factory(key_id, private_key_pem)
         client = KalshiAccountClient(
             signer,
@@ -137,8 +115,14 @@ class GetOnlyCandidateEvidenceProvider:
             raise M27RCandidateAdapterError(
                 "candidate-specific authenticated exposure check did not pass"
             )
+        if exposure.market_ticker != candidate.market_ticker:
+            raise M27RCandidateAdapterError(
+                "candidate-specific exposure check returned a different market"
+            )
 
         return M27RCandidateEvidence(
+            candidate_id=candidate.candidate_id,
+            market_ticker=candidate.market_ticker,
             m27f_bundle=bundle,
             m27f_evidence_path=self.m27f_evidence_path,
             m27h_evidence_path=self.m27h_evidence_path,
