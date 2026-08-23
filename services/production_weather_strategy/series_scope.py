@@ -68,8 +68,7 @@ def candidate_temperature_series(series_payload: Mapping[str, Any]) -> tuple[str
     raw_series = series_payload.get("series")
     if not isinstance(raw_series, list):
         raise SeriesScopeError(
-            "Kalshi Weather series response is malformed "
-            f"(series_type={type(raw_series).__name__})"
+            f"Kalshi Weather series response is malformed (series_type={type(raw_series).__name__})"
         )
     bad_types = Counter(type(row).__name__ for row in raw_series if not isinstance(row, dict))
     if bad_types:
