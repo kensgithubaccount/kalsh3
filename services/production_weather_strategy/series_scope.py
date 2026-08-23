@@ -12,6 +12,7 @@ closed.
 
 from __future__ import annotations
 
+from collections import Counter
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any, Protocol
@@ -65,8 +66,18 @@ def candidate_temperature_series(series_payload: Mapping[str, Any]) -> tuple[str
     """Return current Weather Company temperature series from a Weather-category response."""
 
     raw_series = series_payload.get("series")
-    if not isinstance(raw_series, list) or any(not isinstance(row, dict) for row in raw_series):
-        raise SeriesScopeError("Kalshi Weather series response is malformed")
+    if not isinstance(raw_series, list):
+        raise SeriesScopeError(
+            "Kalshi Weather series response is malformed "
+            f"(series_type={type(raw_series).__name__})"
+        )
+    bad_types = Counter(type(row).__name__ for row in raw_series if not isinstance(row, dict))
+    if bad_types:
+        shape = ",".join(f"{name}:{count}" for name, count in sorted(bad_types.items()))
+        raise SeriesScopeError(
+            "Kalshi Weather series response is malformed "
+            f"(series_count={len(raw_series)}, non_object_types={shape})"
+        )
 
     selected: list[str] = []
     seen: set[str] = set()
