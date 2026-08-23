@@ -132,6 +132,13 @@ def _scalar(db: sqlite3.Connection, query: str) -> object:
     return row[0]
 
 
+def _integer_scalar(db: sqlite3.Connection, query: str, *, field: str) -> int:
+    value = _scalar(db, query)
+    if isinstance(value, bool) or not isinstance(value, int):
+        raise StateBootstrapError(f"{field} is not an integer")
+    return value
+
+
 def _count(db: sqlite3.Connection, table: str) -> int:
     queries = {
         "canary_previews": "SELECT COUNT(*) FROM canary_previews",
@@ -143,7 +150,7 @@ def _count(db: sqlite3.Connection, table: str) -> int:
     query = queries.get(table)
     if query is None:
         raise StateBootstrapError("unsupported bootstrap count")
-    return int(_scalar(db, query))
+    return _integer_scalar(db, query, field=f"{table} count")
 
 
 def _verify_state(path: Path) -> StateBootstrapReceipt:
@@ -166,26 +173,24 @@ def _verify_state(path: Path) -> StateBootstrapReceipt:
                 "SELECT production_state FROM canary_runtime WHERE singleton=1",
             )
         )
-        real_submission_count = int(
-            _scalar(
-                db,
-                "SELECT real_submission_count FROM production_submission_counter WHERE singleton=1",
-            )
+        real_submission_count = _integer_scalar(
+            db,
+            "SELECT real_submission_count FROM production_submission_counter WHERE singleton=1",
+            field="real submission count",
         )
-        real_fill_count = int(
-            _scalar(
-                db,
-                "SELECT real_fill_count FROM production_fill_counter WHERE singleton=1",
-            )
+        real_fill_count = _integer_scalar(
+            db,
+            "SELECT real_fill_count FROM production_fill_counter WHERE singleton=1",
+            field="real fill count",
         )
-        global_halt_active = bool(
-            int(
-                _scalar(
-                    db,
-                    "SELECT active FROM global_halt_state WHERE singleton=1",
-                )
-            )
+        global_halt_value = _integer_scalar(
+            db,
+            "SELECT active FROM global_halt_state WHERE singleton=1",
+            field="global halt active flag",
         )
+        if global_halt_value not in (0, 1):
+            raise StateBootstrapError("global halt active flag is outside the boolean domain")
+        global_halt_active = bool(global_halt_value)
         compliance_state = str(
             _scalar(
                 db,
