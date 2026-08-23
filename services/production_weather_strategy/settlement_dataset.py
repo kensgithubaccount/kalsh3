@@ -12,9 +12,9 @@ Key invariants:
 * Kalshi's finalized binary result is the production training label.
 * The exact contract rule must independently bind the label to The Weather Company and a
   reviewed settlement location.
-* Both reviewed Weather Company rule grammars are exact: the original CLI-identifier form
-  and the August 2026 location-name form. The latter is accepted only when its location name
-  maps one-to-one to the frozen reviewed settlement-location authority.
+* Reviewed Weather Company rule grammars are exact: the original CLI-identifier form and
+  the August 2026 location-name forms. Location-only forms are accepted only when the exact
+  location name maps one-to-one to the frozen reviewed settlement-location authority.
 * Sibling contracts are grouped into one event/day unit before temporal splitting so one
   day's outcome cannot leak across train/validation/test windows.
 * A group is rejected if its binary labels cannot all be true for at least one possible
@@ -61,7 +61,15 @@ _RULE_WITH_IDENTIFIER = re.compile(
     + rf"° fahrenheit according to {re.escape(SETTLEMENT_SOURCE)}, then the market "
     r"resolves to Yes\.\Z"
 )
-_RULE_LOCATION_ONLY = re.compile(
+_RULE_LOCATION_ONLY_IF = re.compile(
+    r"\AIf the (?P<measurement>maximum|minimum) temperature recorded at "
+    r"(?P<location>[^()]+?) for "
+    r"(?P<date>[A-Z][a-z]{2} \d{1,2}, \d{4}), is "
+    + _PREDICATE
+    + rf"° fahrenheit according to {re.escape(SETTLEMENT_SOURCE)}, then the market "
+    r"resolves to Yes\.\Z"
+)
+_RULE_LOCATION_ONLY_RESOLVES = re.compile(
     r"\AResolves Yes if the (?P<measurement>maximum|minimum) temperature recorded at "
     r"(?P<location>[^()]+?) for "
     r"(?P<date>[A-Z][a-z]{2} \d{1,2}, \d{4}), is "
@@ -196,7 +204,9 @@ def parse_resolved_temperature_market(
                 "temperature market location conflicts with reviewed authority"
             )
     else:
-        match = _RULE_LOCATION_ONLY.fullmatch(rule)
+        match = _RULE_LOCATION_ONLY_IF.fullmatch(rule)
+        if match is None:
+            match = _RULE_LOCATION_ONLY_RESOLVES.fullmatch(rule)
         if match is None:
             raise HistoricalWeatherDatasetError(
                 "temperature-like market has unsupported exact rule"
