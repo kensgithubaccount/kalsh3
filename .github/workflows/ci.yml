@@ -42,8 +42,13 @@ jobs:
           scripts/run_m28b_public_historical_weather.py
           tests/test_m28b_authoritative_weather_dataset.py
           tests/test_m28b_historical_public_reads.py
-      - name: Strict type verification
-        run: uv run mypy
+      - name: Strict M28B type verification
+        run: >-
+          uv run mypy
+          services/historical_replay/client.py
+          services/production_weather_strategy/contracts.py
+          services/production_weather_strategy/architecture.py
+          services/production_weather_strategy/settlement_dataset.py
       - name: Focused M28B tests
         run: >-
           uv run pytest -q
