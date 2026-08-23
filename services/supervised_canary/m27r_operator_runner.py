@@ -1,34 +1,20 @@
 """M27R read-only operator phase coordinator for the first weather canary.
 
-This module deliberately owns no network transport, signer, credential reader, mutable
-store, approval path, authorization issuer, submission-budget burn, sender, or exchange
-mutation capability.
+The public production entry point owns its runtime clock. Callers cannot supply or freeze live
+time. A monotonic elapsed-time floor is combined with UTC wall time so a backward wall-clock jump
+cannot make already-acquired evidence appear younger. Deterministic clocks remain available only
+through the explicitly test-only private seam.
 
-Its sole job is to enforce the M27R ordering boundary around already-reviewed producers:
-
-1. collect public/current candidate evidence, retained in exact per-market slices;
-2. run the unchanged M27D selector across those candidate inputs at the then-current clock;
-3. bind the unique selected candidate back to exactly one matching public evidence slice;
-4. only then allow the caller-supplied candidate-specific read-only evidence producer to run;
-5. obtain a fresh consumption timestamp and feed the exact selected slice plus account evidence
-   into the unchanged M27Q orchestrator;
-6. return read-only review evidence.
-
-Concrete live acquisition belongs in separately capability-tested adapters. Keeping this
-coordinator transport-free makes the critical candidate-before-authenticated-read ordering and
-candidate-to-public-evidence binding independently testable and prevents live I/O capability from
-leaking into M27Q itself.
-
-M27R accepts a clock callable rather than a single run timestamp. A live operator run therefore
-cannot freeze time across public network reads, authenticated reads, and final M27Q consumption.
-Tests remain deterministic by injecting a fixed or scripted clock.
+The coordinator owns no network transport, signer, credential reader, mutable store, approval,
+authorization issuer, burn, sender, or exchange mutation capability.
 """
 
 from __future__ import annotations
 
+import time
 from collections.abc import Callable
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Protocol
 
@@ -48,7 +34,7 @@ from .m27q_preflight_orchestrator import (
     build_first_canary_preflight,
 )
 
-SOFTWARE_VERSION = "kalsh3.m27r.readonly-operator-runner/3"
+SOFTWARE_VERSION = "kalsh3.m27r.readonly-operator-runner/4"
 Clock = Callable[[], datetime]
 
 
@@ -56,10 +42,29 @@ class M27ROperatorError(RuntimeError):
     """The read-only operator phase coordinator received invalid evidence."""
 
 
+class _TrustedRuntimeClock:
+    """Production UTC clock protected by a monotonic elapsed-time floor."""
+
+    def __init__(self) -> None:
+        self._wall_start = datetime.now(UTC)
+        self._mono_start = time.monotonic()
+        self._last = self._wall_start
+
+    def now(self) -> datetime:
+        wall = datetime.now(UTC)
+        elapsed = time.monotonic() - self._mono_start
+        if elapsed < 0:
+            raise M27ROperatorError("monotonic production clock moved backward")
+        monotonic_floor = self._wall_start + timedelta(seconds=elapsed)
+        value = max(wall, monotonic_floor)
+        if value <= self._last:
+            value = self._last + timedelta(microseconds=1)
+        self._last = value
+        return value
+
+
 @dataclass(frozen=True, slots=True)
 class M27RMarketEvidence:
-    """One candidate input and the public evidence that can authorize only that market's review."""
-
     market_ticker: str
     candidate_input: CandidateInput
     m27j_evidence_path: Path
@@ -79,8 +84,6 @@ class M27RMarketEvidence:
 
 @dataclass(frozen=True, slots=True)
 class M27RPublicEvidence:
-    """Evidence that may be collected before any candidate-specific authenticated sweep."""
-
     public_evidence_path: Path
     markets: tuple[M27RMarketEvidence, ...]
 
@@ -96,8 +99,8 @@ class M27RPublicEvidence:
 
 @dataclass(frozen=True, slots=True)
 class M27RCandidateEvidence:
-    """Candidate-specific evidence collected only after exact-one M27D selection."""
-
+    candidate_id: str
+    market_ticker: str
     m27f_bundle: LiveReadAcceptanceBundle
     m27f_evidence_path: Path
     m27h_evidence_path: Path
@@ -106,6 +109,12 @@ class M27RCandidateEvidence:
     readiness: NewRiskReadiness
     order_group: RequiredOrderGroupPolicy
     authorization_service_available: bool
+
+    def __post_init__(self) -> None:
+        if not self.candidate_id or not self.market_ticker:
+            raise ValueError("candidate-specific evidence identity is missing")
+        if self.candidate_exposure.market_ticker != self.market_ticker:
+            raise ValueError("candidate exposure is bound to a different market")
 
 
 class PublicEvidenceProvider(Protocol):
@@ -204,10 +213,6 @@ def _selected_market_evidence(
             "selected candidate does not bind to exactly one public market evidence slice"
         )
     market = matches[0]
-
-    # Independently prove that this exact slice, by itself, reconstructs the exact same candidate
-    # M27D selected globally. A ticker match alone is not enough: a stale/different economics or
-    # weather input for the same ticker must never be substituted after selection.
     slice_selection = select_experimental_candidate((market.candidate_input,), now=now)
     if (
         slice_selection.state is not CandidateState.QUALIFYING_EXPERIMENTAL_CANARY
@@ -221,25 +226,13 @@ def _selected_market_evidence(
     return market
 
 
-def run_readonly_operator_preflight(
+def _run_readonly_operator_preflight_for_test(
     *,
     clock: Clock,
     public_provider: PublicEvidenceProvider,
     candidate_provider: CandidateEvidenceProvider,
 ) -> M27ROperatorRun:
-    """Run the read-only M27R phases in their only permitted order.
-
-    The candidate provider is not called unless the unchanged M27D selector proves exactly one
-    qualifying experimental candidate and that exact candidate independently binds to one
-    per-market public evidence slice. A successful M27Q/M27I ``PREFLIGHT_READY`` remains evidence
-    only: this function has no authority object, approval, burn, or execution path and always
-    returns ``execution_authorized=False``.
-
-    The clock is sampled at every decision boundary. Public/candidate providers receive the same
-    callable so their individual network acquisitions may record later real times. M27Q receives
-    a fresh post-authentication consumption time, preventing a long-running preflight from
-    appearing younger than it really is.
-    """
+    """Explicit test-only deterministic seam. Production callers must use the public wrapper."""
 
     _clock_now(clock, field="operator start clock")
     public = public_provider.collect_public_evidence(clock=clock)
@@ -264,20 +257,24 @@ def run_readonly_operator_preflight(
         )
 
     candidate = selection.selected
-    market = _selected_market_evidence(
-        public=public,
-        candidate=candidate,
-        now=selection_now,
-    )
+    market = _selected_market_evidence(public=public, candidate=candidate, now=selection_now)
 
     candidate_evidence = candidate_provider.collect_candidate_evidence(
         clock=clock,
         candidate=candidate,
     )
+    if (
+        candidate_evidence.candidate_id != candidate.candidate_id
+        or candidate_evidence.market_ticker != candidate.market_ticker
+    ):
+        raise M27ROperatorError(
+            "candidate-specific authenticated evidence is bound to a different candidate"
+        )
 
     preflight_now = _clock_now(clock, field="M27Q consumption clock")
     orchestrated = build_first_canary_preflight(
         now=preflight_now,
+        selected_candidate=candidate,
         candidate_inputs=public.candidate_inputs,
         m27f_bundle=candidate_evidence.m27f_bundle,
         m27f_evidence_path=candidate_evidence.m27f_evidence_path,
@@ -296,6 +293,8 @@ def run_readonly_operator_preflight(
     )
 
     artifact = orchestrated.preflight.artifact
+    if artifact.candidate_id != candidate.candidate_id:
+        raise M27ROperatorError("final preflight candidate identity changed after authentication")
     return M27ROperatorRun(
         software_version=SOFTWARE_VERSION,
         state=artifact.state,
@@ -305,4 +304,19 @@ def run_readonly_operator_preflight(
         read_only=True,
         execution_authorized=False,
         preflight=orchestrated,
+    )
+
+
+def run_readonly_operator_preflight(
+    *,
+    public_provider: PublicEvidenceProvider,
+    candidate_provider: CandidateEvidenceProvider,
+) -> M27ROperatorRun:
+    """Production M27R entry point with internally owned trusted wall+monotonic time."""
+
+    runtime_clock = _TrustedRuntimeClock()
+    return _run_readonly_operator_preflight_for_test(
+        clock=runtime_clock.now,
+        public_provider=public_provider,
+        candidate_provider=candidate_provider,
     )
