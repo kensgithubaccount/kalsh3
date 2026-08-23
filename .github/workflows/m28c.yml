@@ -1,0 +1,95 @@
+name: m28c
+
+on:
+  pull_request:
+    paths:
+      - services/production_weather_strategy/model_tournament.py
+      - scripts/run_m28c_public_weather_tournament.py
+      - tests/test_m28c_weather_model_tournament.py
+      - .github/workflows/m28c.yml
+
+permissions:
+  contents: read
+
+jobs:
+  behavioral-verification:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+      - run: uv sync --locked --all-groups
+      - name: Install deterministic verification tools
+        run: uv pip install ruff==0.16.3 mypy pytest
+      - name: Lint M28C scope
+        run: >-
+          uv run ruff check
+          services/production_weather_strategy/model_tournament.py
+          scripts/run_m28c_public_weather_tournament.py
+          tests/test_m28c_weather_model_tournament.py
+      - name: Verify M28C formatting
+        run: >-
+          uv run ruff format --check
+          services/production_weather_strategy/model_tournament.py
+          scripts/run_m28c_public_weather_tournament.py
+          tests/test_m28c_weather_model_tournament.py
+      - name: Strict M28C type verification
+        run: uv run mypy services/production_weather_strategy/model_tournament.py
+      - name: Focused M28C tests
+        run: uv run pytest -q tests/test_m28c_weather_model_tournament.py
+
+  live-public-tournament:
+    needs: behavioral-verification
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+      - run: uv sync --locked --all-groups
+      - name: Run multi-city public weather tournament
+        env:
+          PYTHONPATH: .
+        run: >-
+          python scripts/run_m28c_public_weather_tournament.py
+          --output /tmp/m28c-weather-tournament.json
+      - name: Verify evidence artifact and safety boundary
+        run: |
+          test "$(stat -c '%a' /tmp/m28c-weather-tournament.json)" = "600"
+          python - <<'PY'
+          import hashlib
+          import json
+          from pathlib import Path
+
+          path = Path('/tmp/m28c-weather-tournament.json')
+          raw = path.read_bytes()
+          payload = json.loads(raw)
+          assert payload['classification'] == 'SUCCESS'
+          assert payload['request_type'] == 'PUBLIC_GET_ONLY'
+          assert payload['represented_station_count'] >= 2
+          assert payload['feature_dataset']['rows']
+          assert payload['feature_dataset']['train_event_ids']
+          assert payload['feature_dataset']['validation_event_ids']
+          assert payload['feature_dataset']['test_event_ids']
+          assert payload['tournament']['promotion_authority'] == 'NONE'
+          assert payload['credential_access'] == 'NONE'
+          assert payload['account_gets'] == 'NONE'
+          assert payload['production_state_mutation'] == 'NONE'
+          assert payload['risk_authorization'] == 'NONE'
+          assert payload['approval'] == 'NONE'
+          assert payload['execution_authorization'] == 'NONE'
+          assert payload['burn'] == 'NONE'
+          assert payload['order_sent'] == 'NO'
+          print('M28C_LIVE_PUBLIC_EVIDENCE_VERIFY=PASS')
+          print(f"ARTIFACT_SHA256={hashlib.sha256(raw).hexdigest()}")
+          print(f"STATIONS={payload['represented_station_count']}")
+          print(f"WEATHER_EVENTS={payload['authoritative_weather_event_count']}")
+          print(f"FEATURE_ROWS={len(payload['feature_dataset']['rows'])}")
+          print(f"TEST_EDGE={payload['test_summary']['edge_classification']}")
+          print(f"TEST_SKILL={payload['test_summary']['market_relative_skill']}")
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: m28c-weather-model-tournament-evidence
+          path: /tmp/m28c-weather-tournament.json
+          if-no-files-found: error
+          retention-days: 30
