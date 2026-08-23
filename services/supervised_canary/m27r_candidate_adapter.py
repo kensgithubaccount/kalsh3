@@ -93,7 +93,9 @@ class GetOnlyCandidateEvidenceProvider:
         # Deferred until after the exact-one public candidate gate.
         key_id, private_key_pem = self.credential_loader()
         if not key_id or not isinstance(private_key_pem, bytes) or not private_key_pem:
-            raise M27RCandidateAdapterError("candidate read credential loader returned invalid data")
+            raise M27RCandidateAdapterError(
+                "candidate read credential loader returned invalid data"
+            )
 
         authority_attestation = self.authority_attestation_loader()
         transport = self.account_transport_factory()
