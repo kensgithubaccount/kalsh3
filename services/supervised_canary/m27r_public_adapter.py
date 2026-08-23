@@ -1,22 +1,12 @@
 """Public/current evidence adapter for the M27R first-canary runner.
 
 The adapter scans the exact M27E KXHIGHCHI public-read scope, then reconstructs one independently
-bound evidence slice per supported active market using existing reviewed components only:
+bound evidence slice per supported active market using existing reviewed components only. It owns
+no credential, signer, account, risk-authorization, approval, burn, sender, or mutation capability.
 
-* M27E fixed-origin unauthenticated GET discovery;
-* exact Event/Market/Orderbook snapshot acquisition;
-* canonical Event/Market reconstruction and daily-temperature routing;
-* frozen current 03Z GRIB probability construction;
-* authoritative M27A economics + binding;
-* a separate, later M27J exact-market GET for current rules identity.
-
-It never imports ``scripts`` and owns no credential, signer, account, risk-authorization, approval,
-burn, sender, or exchange-mutation capability. Current GRIB evidence is supplied by the operator
-layer because acquiring/locally replaying NOAA GRIB uses the already-reviewed scripts/subprocess
-boundary; keeping that boundary out of ``services`` is intentional.
-
-The adapter consumes a clock callable, not a frozen timestamp. Each reviewed acquisition helper
-therefore records its actual acquisition time in live use, while tests may inject a fixed clock.
+M27E source envelopes are independently raw-body validated before use. Fee observations preserve
+the actual M27E series and exact-event acquisition timestamps; a later economics evaluation time
+can never manufacture freshness for older fee metadata.
 """
 
 from __future__ import annotations
@@ -24,7 +14,7 @@ from __future__ import annotations
 import json
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from decimal import Decimal
 from pathlib import Path
 from typing import Any
@@ -54,6 +44,7 @@ from services.market_universe.event_snapshot import (
 from services.market_universe.m27e_public_acceptance import (
     acquire_public_acceptance,
     active_market_payloads,
+    series_payload_and_observed_at,
 )
 from services.market_universe.market_snapshot import (
     AuthoritativeMarketSnapshot,
@@ -80,7 +71,8 @@ from .m27n2_evidence_reconstruction import (
 )
 from .m27r_operator_runner import Clock, M27RMarketEvidence, M27RPublicEvidence
 
-SOFTWARE_VERSION = "kalsh3.m27r.public-evidence-adapter/2"
+SOFTWARE_VERSION = "kalsh3.m27r.public-evidence-adapter/3"
+FEE_SOURCE_FRESHNESS = timedelta(seconds=30)
 
 PublicAcceptanceAcquirer = Callable[..., dict[str, object]]
 MarketSnapshotAcquirer = Callable[..., AuthoritativeMarketSnapshot]
@@ -103,17 +95,6 @@ def _clock_now(clock: Clock, *, field: str) -> datetime:
 def _persist(payload: Mapping[str, Any], path: Path) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(dict(payload), sort_keys=True, indent=2) + "\n")
-
-
-def _series_payload(public: Mapping[str, object]) -> dict[str, Any]:
-    series = public.get("series")
-    if not isinstance(series, dict) or series.get("classification") != "SUCCESS":
-        raise M27RPublicAdapterError("M27E series fee evidence is unavailable")
-    payload = series.get("payload")
-    raw = payload.get("series") if isinstance(payload, dict) else None
-    if not isinstance(raw, dict):
-        raise M27RPublicAdapterError("M27E series payload is malformed")
-    return raw
 
 
 def _record_number_for_route(*, raw_grib: RawGribEvidence, local_date: date, timezone: str) -> int:
@@ -140,6 +121,19 @@ def _price_ladder(raw_market: Mapping[str, Any]) -> PriceLadder:
         raise M27RPublicAdapterError(f"market price ladder is unsupported: {exc}") from exc
 
 
+def _require_source_fresh_at_economics(
+    *,
+    observed_at: datetime,
+    economics_now: datetime,
+    source: str,
+) -> None:
+    age = economics_now - observed_at
+    if age < timedelta(0):
+        raise M27RPublicAdapterError(f"{source} was observed after economics evaluation time")
+    if age > FEE_SOURCE_FRESHNESS:
+        raise M27RPublicAdapterError(f"{source} is stale before economics construction")
+
+
 @dataclass(frozen=True, slots=True)
 class GetOnlyPublicEvidenceProvider:
     """Concrete M27R public provider for the current Chicago MaxT first-canary lane."""
@@ -164,12 +158,12 @@ class GetOnlyPublicEvidenceProvider:
             validate_raw_grib_max_t_evidence(self.raw_grib_evidence)
             public = self.public_acceptance_acquirer(clock=clock)
             active = active_market_payloads(public)
+            series_raw, series_observed_at = series_payload_and_observed_at(public)
         except (ForecastError, PublicReadFailure) as exc:
             raise M27RPublicAdapterError(f"public discovery failed: {exc}") from exc
 
         public_path = self.output_dir / "m27e-public-read.json"
         _persist(public, public_path)
-        series_raw = _series_payload(public)
 
         markets: list[M27RMarketEvidence] = []
         for discovery_market in active:
@@ -183,6 +177,7 @@ class GetOnlyPublicEvidenceProvider:
                     market_ticker=market_ticker,
                     event_ticker=event_ticker,
                     series_raw=series_raw,
+                    series_observed_at=series_observed_at,
                 )
             except (
                 EvidenceReconstructionError,
@@ -191,9 +186,6 @@ class GetOnlyPublicEvidenceProvider:
                 PublicReadFailure,
                 M27RPublicAdapterError,
             ):
-                # Unsupported/insufficient individual markets are simply not candidates. The
-                # complete M27E artifact remains available to M27I, so this does not fabricate a
-                # successful current-market claim for a market whose exact evidence failed.
                 continue
             if built is not None:
                 markets.append(built)
@@ -210,9 +202,8 @@ class GetOnlyPublicEvidenceProvider:
         market_ticker: str,
         event_ticker: str,
         series_raw: Mapping[str, Any],
+        series_observed_at: datetime,
     ) -> M27RMarketEvidence | None:
-        # Expected-side economics authority. Each helper receives the live clock callable so its
-        # retained acquisition timestamp cannot be frozen at operator-run start.
         expected_market_snapshot = self.market_snapshot_acquirer(
             market_ticker,
             clock=clock,
@@ -243,7 +234,11 @@ class GetOnlyPublicEvidenceProvider:
         route = route_daily_temperature(market, event)
         if route.state is not DailyTemperatureRouteState.SUPPORTED or route.contract is None:
             return None
-        if route.series_ticker != "KXHIGHCHI" or event.series_ticker != "KXHIGHCHI":
+        if (
+            route.series_ticker != "KXHIGHCHI"
+            or event.series_ticker != "KXHIGHCHI"
+            or series_raw.get("ticker") != event.series_ticker
+        ):
             return None
 
         record_number = _record_number_for_route(
@@ -273,6 +268,17 @@ class GetOnlyPublicEvidenceProvider:
         typed_probability: PhysicalTemperatureProxyProbability = probability
 
         economics_now = _clock_now(clock, field=f"economics clock for {market_ticker}")
+        _require_source_fresh_at_economics(
+            observed_at=series_observed_at,
+            economics_now=economics_now,
+            source="M27E series fee evidence",
+        )
+        _require_source_fresh_at_economics(
+            observed_at=event_snapshot.observed_at,
+            economics_now=economics_now,
+            source="event fee evidence",
+        )
+
         event_fee_payload = dict(event.raw)
         economics, binding = reconstruct_economics(
             market_snapshot_payload=expected_market_snapshot.to_json(),
@@ -290,12 +296,11 @@ class GetOnlyPublicEvidenceProvider:
             now=economics_now,
         )
 
-        series_fee = CurrentSeriesFeeObservation.parse(dict(series_raw), observed_at=economics_now)
+        series_fee = CurrentSeriesFeeObservation.parse(
+            dict(series_raw), observed_at=series_observed_at
+        )
         event_fee = EventFeeOverride.parse(event_fee_payload)
 
-        # Current-side rules authority is a deliberately separate exact-market acquisition after
-        # economics construction. M27I compares this evidence against the independently validated
-        # expected-side M27A binding; it is never a caller-supplied H == H shortcut.
         current_rules = self.rules_acquirer(market_ticker, clock=clock)
         if not current_rules.succeeded:
             return None
@@ -315,5 +320,5 @@ class GetOnlyPublicEvidenceProvider:
             m27a_binding_evidence_path=binding_path,
             current_series_fee_observation=series_fee,
             current_event_fee_override=event_fee,
-            current_event_fee_observed_at=economics_now,
+            current_event_fee_observed_at=event_snapshot.observed_at,
         )
