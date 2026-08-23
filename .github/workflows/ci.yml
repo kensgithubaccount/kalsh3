@@ -15,12 +15,7 @@ jobs:
           enable-cache: true
       - run: uv sync --locked --all-groups
       - name: Install CI verification tools
-        # Ruff 0.16.3 is the last formatter version independently observed
-        # passing this repository's full CI before 0.16.4 changed formatting
-        # output for already-frozen M27O/M27Q files. Keep formatter authority
-        # deterministic rather than allowing an unreviewed latest release to
-        # rewrite safety-reviewed source bytes.
-        run: uv pip install ruff==0.16.3 mypy pytest
+        run: uv pip install ruff mypy pytest
       - run: make verify
       - name: Validate effective deployment configuration
         env:
