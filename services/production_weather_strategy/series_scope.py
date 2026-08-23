@@ -130,7 +130,7 @@ def scope_recent_settled_markets(
             continue
 
         try:
-            dataset = build_authoritative_weather_dataset(rows)
+            dataset = build_authoritative_weather_dataset(tuple(rows))
         except HistoricalWeatherDatasetError as exc:
             reason = str(exc)
             if reason == _UNREVIEWED_LOCATION:
