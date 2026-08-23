@@ -156,7 +156,10 @@ def scope_recent_settled_markets(
                     _record(ticker, "EXCLUDED", "NO_SUPPORTED_CURRENT_REGIME_MARKETS", len(rows))
                 )
                 continue
-            raise HistoricalWeatherDatasetError(f"{ticker}: {reason}") from exc
+            samples = _twc_rule_samples(rows)
+            raise HistoricalWeatherDatasetError(
+                f"{ticker}: {reason}; twc_rule_samples={samples!r}"
+            ) from exc
 
         parsed_series = {contract.series_ticker for contract in dataset.contracts}
         if parsed_series != {ticker}:
@@ -212,6 +215,21 @@ def scope_recent_settled_markets(
         content_hash=digest,
     )
     return included_rows, manifest
+
+
+def _twc_rule_samples(rows: Sequence[Mapping[str, Any]]) -> tuple[str, ...]:
+    samples: list[str] = []
+    for row in rows:
+        rule = row.get("rules_primary")
+        if (
+            isinstance(rule, str)
+            and "temperature" in rule.casefold()
+            and "The Weather Company" in rule
+        ):
+            samples.append(rule[:600])
+            if len(samples) == 3:
+                break
+    return tuple(samples)
 
 
 def _row_ticker(row: Mapping[str, Any]) -> str:
