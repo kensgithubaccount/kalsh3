@@ -12,10 +12,7 @@ from typing import Any, cast
 import pytest
 
 from services.kalshi_account_gateway.client import HttpResponse
-from services.kalshi_account_gateway.production_read_credentials import (
-    API_KEYS_PATH,
-    PRODUCTION_ORIGIN,
-)
+from services.kalshi_account_gateway.production_read_credentials import API_KEYS_PATH, PRODUCTION_ORIGIN
 from services.risk_engine.domain import RequiredOrderGroupPolicy
 from services.risk_engine.invariants import NewRiskReadiness
 from services.supervised_canary import authority_attestation as attestation_mod
@@ -85,6 +82,7 @@ def _attestation(*, scopes: list[str] | None = None) -> dict[str, Any]:
 
 
 class FakeCandidate:
+    candidate_id = "candidate-test-id"
     market_ticker = "KXHIGHCHI-26AUG23-T90"
 
 
@@ -152,6 +150,8 @@ def test_successful_candidate_adapter_persists_exact_m27f_and_checks_exposure(
     )
 
     assert calls["credentials"] == 1
+    assert result.candidate_id == FakeCandidate.candidate_id
+    assert result.market_ticker == FakeCandidate.market_ticker
     assert result.m27f_bundle.evidence.reconciliation.succeeded is True
     persisted = json.loads(result.m27f_evidence_path.read_text())
     assert persisted == result.m27f_bundle.evidence.to_json()
@@ -171,15 +171,11 @@ def test_failed_m27f_stops_before_candidate_exposure_reads(tmp_path: Path) -> No
         credential_loader=lambda: ("candidate", b"synthetic-pem-not-real"),
         attestation_loader=lambda: _attestation(scopes=["read"]),
     )
-
     with pytest.raises(M27RCandidateAdapterError, match="M27F authenticated GET sweep"):
         provider.collect_candidate_evidence(
             candidate=cast(ExperimentalCandidate, FakeCandidate()),
             clock=lambda: NOW,
         )
-
-    # Authority failure occurs before M27F may make any authenticated portfolio request,
-    # therefore the later candidate-specific orders/positions reads are impossible too.
     assert transport.paths == []
     assert provider.m27f_evidence_path.is_file()
 
@@ -199,13 +195,11 @@ def test_missing_m27h_fails_before_credential_access(tmp_path: Path) -> None:
         attestation_loader=_attestation,
     )
     provider.m27h_evidence_path.unlink()
-
     with pytest.raises(M27RCandidateAdapterError, match="M27H evidence path"):
         provider.collect_candidate_evidence(
             candidate=cast(ExperimentalCandidate, FakeCandidate()),
             clock=lambda: NOW,
         )
-
     assert calls["credentials"] == 0
     assert transport.paths == []
 
@@ -224,13 +218,11 @@ def test_naive_time_fails_before_credential_access(tmp_path: Path) -> None:
         credential_loader=credentials,
         attestation_loader=_attestation,
     )
-
     with pytest.raises(M27RCandidateAdapterError, match="must be timezone-aware"):
         provider.collect_candidate_evidence(
             candidate=cast(ExperimentalCandidate, FakeCandidate()),
             clock=lambda: datetime(2026, 8, 23, 17, 30),
         )
-
     assert calls["credentials"] == 0
     assert transport.paths == []
 
@@ -261,7 +253,6 @@ def test_candidate_adapter_has_no_mutation_or_protected_write_store_capability()
     )
     for module in imported:
         assert not module.startswith(forbidden_import_prefixes), module
-
     forbidden_tokens = (
         "ProtectedWriteCredentialStore",
         "SignAndSendBoundary",
