@@ -127,9 +127,7 @@ class ShadowOpportunity:
             (yes_all_in_cost, "YES all-in cost"),
             (no_all_in_cost, "NO all-in cost"),
         ):
-            if not numeric_value.is_finite() or not Decimal(
-                "0"
-            ) <= numeric_value <= Decimal("1"):
+            if not numeric_value.is_finite() or not Decimal("0") <= numeric_value <= Decimal("1"):
                 raise ShadowLoopError(f"{numeric_name} is outside [0,1]")
         model_no_probability = Decimal("1") - model_yes_probability
         yes_edge = model_yes_probability - yes_all_in_cost
