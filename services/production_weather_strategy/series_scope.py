@@ -150,12 +150,18 @@ def scope_recent_settled_markets(
             raise SeriesScopeError("scoped settlement rows crossed their series identity")
         station_ids = tuple(sorted({event.station_id for event in dataset.events}))
         if len(station_ids) != 1:
-            raise SeriesScopeError("one temperature series must bind exactly one settlement station")
+            raise SeriesScopeError(
+                "one temperature series must bind exactly one settlement station"
+            )
         missing_physical = tuple(
-            station_id for station_id in station_ids if station_id not in PHYSICAL_WEATHER_SOURCES
+            station_id
+            for station_id in station_ids
+            if station_id not in PHYSICAL_WEATHER_SOURCES
         )
         if missing_physical:
-            raise SeriesScopeError("reviewed settlement series lacks reviewed physical-source evidence")
+            raise SeriesScopeError(
+                "reviewed settlement series lacks reviewed physical-source evidence"
+            )
 
         record = _record(
             ticker,
