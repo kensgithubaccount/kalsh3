@@ -24,7 +24,7 @@ from services.supervised_canary.m27r_candidate_adapter import (
     GetOnlyCandidateEvidenceProvider,
     M27RCandidateAdapterError,
 )
-from services.supervised_canary.m27r_operator_runner import M27RPublicEvidence
+from services.supervised_canary.m27r_operator_runner import CandidateEvidenceProvider
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 MODULE_PATH = REPO_ROOT / "services" / "supervised_canary" / "m27r_candidate_adapter.py"
@@ -119,6 +119,17 @@ def _provider(
     )
 
 
+def test_provider_structurally_satisfies_candidate_protocol(tmp_path: Path) -> None:
+    transport = FakeGetOnlyTransport()
+    provider: CandidateEvidenceProvider = _provider(
+        tmp_path=tmp_path,
+        transport=transport,
+        credential_loader=lambda: ("candidate", b"synthetic-pem-not-real"),
+        attestation_loader=_attestation,
+    )
+    assert callable(provider.collect_candidate_evidence)
+
+
 def test_successful_candidate_adapter_persists_exact_m27f_and_checks_exposure(
     tmp_path: Path,
 ) -> None:
@@ -137,7 +148,6 @@ def test_successful_candidate_adapter_persists_exact_m27f_and_checks_exposure(
     )
     result = provider.collect_candidate_evidence(
         candidate=cast(ExperimentalCandidate, FakeCandidate()),
-        public=cast(M27RPublicEvidence, object()),
         now=NOW,
     )
 
@@ -165,7 +175,6 @@ def test_failed_m27f_stops_before_candidate_exposure_reads(tmp_path: Path) -> No
     with pytest.raises(M27RCandidateAdapterError, match="M27F authenticated GET sweep"):
         provider.collect_candidate_evidence(
             candidate=cast(ExperimentalCandidate, FakeCandidate()),
-            public=cast(M27RPublicEvidence, object()),
             now=NOW,
         )
 
@@ -194,7 +203,6 @@ def test_missing_m27h_fails_before_credential_access(tmp_path: Path) -> None:
     with pytest.raises(M27RCandidateAdapterError, match="M27H evidence path"):
         provider.collect_candidate_evidence(
             candidate=cast(ExperimentalCandidate, FakeCandidate()),
-            public=cast(M27RPublicEvidence, object()),
             now=NOW,
         )
 
@@ -220,7 +228,6 @@ def test_naive_time_fails_before_credential_access(tmp_path: Path) -> None:
     with pytest.raises(M27RCandidateAdapterError, match="must be timezone-aware"):
         provider.collect_candidate_evidence(
             candidate=cast(ExperimentalCandidate, FakeCandidate()),
-            public=cast(M27RPublicEvidence, object()),
             now=datetime(2026, 8, 23, 17, 30),
         )
 
