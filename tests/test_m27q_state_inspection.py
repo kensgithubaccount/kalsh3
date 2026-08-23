@@ -203,8 +203,7 @@ def test_spent_submission_budget_is_observed_but_not_accepted_as_pristine(
 
     with sqlite3.connect(path) as db:
         db.execute(
-            "UPDATE production_submission_counter "
-            "SET real_submission_count=1 WHERE singleton=1"
+            "UPDATE production_submission_counter SET real_submission_count=1 WHERE singleton=1"
         )
     _checkpoint_and_remove_sidecars(path)
 
@@ -229,11 +228,7 @@ def test_compliance_hold_is_preserved_in_safety_state(
     path = _bootstrap(tmp_path)
 
     with sqlite3.connect(path) as db:
-        db.execute(
-            "UPDATE compliance_state "
-            "SET state='HOLD',reason='test hold' "
-            "WHERE singleton=1"
-        )
+        db.execute("UPDATE compliance_state SET state='HOLD',reason='test hold' WHERE singleton=1")
     _checkpoint_and_remove_sidecars(path)
 
     inspection = inspect_first_canary_state(
@@ -268,9 +263,7 @@ def test_state_versions_are_deterministic(tmp_path: Path) -> None:
 
 
 def test_source_is_structurally_read_only() -> None:
-    path = Path(
-        "services/supervised_canary/m27q_state_inspection.py"
-    )
+    path = Path("services/supervised_canary/m27q_state_inspection.py")
     source = path.read_text()
     tree = ast.parse(source)
 
@@ -314,7 +307,6 @@ def test_no_real_default_state_path_is_referenced_by_tests() -> None:
     forbidden_user = "/Users/" + "ksyme"
     assert forbidden_default not in source
     assert forbidden_user not in source
-
 
 
 def test_immutable_state_view_matches_m27i_read_contract(

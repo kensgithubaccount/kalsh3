@@ -28,9 +28,7 @@ from services.supervised_canary.store import CanaryStore
 SCHEMA = "kalsh3.m27o.production-state-bootstrap.v1"
 SOFTWARE_VERSION = "kalsh3.m27o.production-state-bootstrap/1"
 
-EXACT_CONFIRMATION = (
-    "INITIALIZE DISARMED ONE-CONTRACT CANARY STATE WITH COMPLIANCE CLEAR"
-)
+EXACT_CONFIRMATION = "INITIALIZE DISARMED ONE-CONTRACT CANARY STATE WITH COMPLIANCE CLEAR"
 
 REQUIRED_TABLES = frozenset(
     {
@@ -134,6 +132,13 @@ def _scalar(db: sqlite3.Connection, query: str) -> object:
     return row[0]
 
 
+def _integer_scalar(db: sqlite3.Connection, query: str, *, field: str) -> int:
+    value = _scalar(db, query)
+    if isinstance(value, bool) or not isinstance(value, int):
+        raise StateBootstrapError(f"{field} is not an integer")
+    return value
+
+
 def _count(db: sqlite3.Connection, table: str) -> int:
     queries = {
         "canary_previews": "SELECT COUNT(*) FROM canary_previews",
@@ -145,7 +150,7 @@ def _count(db: sqlite3.Connection, table: str) -> int:
     query = queries.get(table)
     if query is None:
         raise StateBootstrapError("unsupported bootstrap count")
-    return int(_scalar(db, query))
+    return _integer_scalar(db, query, field=f"{table} count")
 
 
 def _verify_state(path: Path) -> StateBootstrapReceipt:
@@ -156,9 +161,7 @@ def _verify_state(path: Path) -> StateBootstrapReceipt:
 
         tables = {
             str(row[0])
-            for row in db.execute(
-                "SELECT name FROM sqlite_master WHERE type='table'"
-            ).fetchall()
+            for row in db.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()
         }
 
         if not REQUIRED_TABLES.issubset(tables):
@@ -167,32 +170,27 @@ def _verify_state(path: Path) -> StateBootstrapReceipt:
         production_state = str(
             _scalar(
                 db,
-                "SELECT production_state "
-                "FROM canary_runtime WHERE singleton=1",
+                "SELECT production_state FROM canary_runtime WHERE singleton=1",
             )
         )
-        real_submission_count = int(
-            _scalar(
-                db,
-                "SELECT real_submission_count "
-                "FROM production_submission_counter WHERE singleton=1",
-            )
+        real_submission_count = _integer_scalar(
+            db,
+            "SELECT real_submission_count FROM production_submission_counter WHERE singleton=1",
+            field="real submission count",
         )
-        real_fill_count = int(
-            _scalar(
-                db,
-                "SELECT real_fill_count "
-                "FROM production_fill_counter WHERE singleton=1",
-            )
+        real_fill_count = _integer_scalar(
+            db,
+            "SELECT real_fill_count FROM production_fill_counter WHERE singleton=1",
+            field="real fill count",
         )
-        global_halt_active = bool(
-            int(
-                _scalar(
-                    db,
-                    "SELECT active FROM global_halt_state WHERE singleton=1",
-                )
-            )
+        global_halt_value = _integer_scalar(
+            db,
+            "SELECT active FROM global_halt_state WHERE singleton=1",
+            field="global halt active flag",
         )
+        if global_halt_value not in (0, 1):
+            raise StateBootstrapError("global halt active flag is outside the boolean domain")
+        global_halt_active = bool(global_halt_value)
         compliance_state = str(
             _scalar(
                 db,
@@ -203,8 +201,7 @@ def _verify_state(path: Path) -> StateBootstrapReceipt:
         kill_states = tuple(
             (str(row[0]), str(row[1]))
             for row in db.execute(
-                "SELECT category,level "
-                "FROM durable_kill_states ORDER BY category"
+                "SELECT category,level FROM durable_kill_states ORDER BY category"
             ).fetchall()
         )
 
@@ -277,15 +274,11 @@ def _remove_safe_sidecars(path: Path) -> None:
     wal, shm, journal = _sidecars(path)
 
     if os.path.lexists(journal):
-        raise StateBootstrapError(
-            "unexpected SQLite rollback journal remained"
-        )
+        raise StateBootstrapError("unexpected SQLite rollback journal remained")
 
     if os.path.lexists(wal):
         if wal.stat().st_size != 0:
-            raise StateBootstrapError(
-                "SQLite WAL still contains uncheckpointed data"
-            )
+            raise StateBootstrapError("SQLite WAL still contains uncheckpointed data")
         wal.unlink()
 
     if os.path.lexists(shm):
@@ -301,20 +294,14 @@ def _checkpoint_for_publication(path: Path) -> None:
 
     try:
         db.execute("PRAGMA busy_timeout=10000")
-        checkpoint = db.execute(
-            "PRAGMA wal_checkpoint(TRUNCATE)"
-        ).fetchone()
+        checkpoint = db.execute("PRAGMA wal_checkpoint(TRUNCATE)").fetchone()
     except sqlite3.Error as exc:
-        raise StateBootstrapError(
-            "SQLite WAL checkpoint failed"
-        ) from exc
+        raise StateBootstrapError("SQLite WAL checkpoint failed") from exc
     finally:
         db.close()
 
     if checkpoint is None or int(checkpoint[0]) != 0:
-        raise StateBootstrapError(
-            "SQLite WAL checkpoint did not complete"
-        )
+        raise StateBootstrapError("SQLite WAL checkpoint did not complete")
 
     _remove_safe_sidecars(path)
 
@@ -338,13 +325,9 @@ def bootstrap_state(
 
     protected_paths = (state_path, *_sidecars(state_path))
     if any(os.path.lexists(item) for item in protected_paths):
-        raise StateBootstrapError(
-            "production canary state or SQLite companion already exists"
-        )
+        raise StateBootstrapError("production canary state or SQLite companion already exists")
 
-    temporary = state_path.parent / (
-        f".{state_path.name}.bootstrap-{uuid4().hex}.tmp"
-    )
+    temporary = state_path.parent / (f".{state_path.name}.bootstrap-{uuid4().hex}.tmp")
 
     fd = os.open(
         temporary,
@@ -373,16 +356,12 @@ def bootstrap_state(
         _remove_safe_sidecars(temporary)
 
         if any(os.path.lexists(item) for item in protected_paths):
-            raise StateBootstrapError(
-                "production canary state appeared during bootstrap"
-            )
+            raise StateBootstrapError("production canary state appeared during bootstrap")
 
         try:
             os.link(temporary, state_path)
         except FileExistsError as exc:
-            raise StateBootstrapError(
-                "production canary state already exists"
-            ) from exc
+            raise StateBootstrapError("production canary state already exists") from exc
 
         installed = True
         state_path.chmod(0o600)
@@ -437,8 +416,7 @@ def main(argv: list[str] | None = None) -> int:
         )
     except Exception as exc:
         print(
-            "BLOCKER: M27O production-state bootstrap failed "
-            f"({type(exc).__name__})",
+            f"BLOCKER: M27O production-state bootstrap failed ({type(exc).__name__})",
             file=sys.stderr,
         )
         return 2
