@@ -38,8 +38,16 @@ def test_unfiltered_public_markets_exclude_multivariate_markets() -> None:
     transport = Pages([(200, {"markets": [{"ticker": "M1"}], "cursor": ""})])
     markets = HistoricalClient(transport).markets()
     assert markets == [{"ticker": "M1"}]
+    assert transport.paths == ["/trade-api/v2/historical/markets?limit=1000&mve_filter=exclude"]
+    assert transport.headers == [{}]
+
+
+def test_recent_settled_markets_complete_the_post_cutoff_history() -> None:
+    transport = Pages([(200, {"markets": [{"ticker": "M1"}], "cursor": ""})])
+    markets = HistoricalClient(transport).recent_settled_markets(series_ticker="KXHIGHCHI")
+    assert markets == [{"ticker": "M1"}]
     assert transport.paths == [
-        "/trade-api/v2/historical/markets?limit=1000&mve_filter=exclude"
+        "/trade-api/v2/markets?limit=1000&status=settled&series_ticker=KXHIGHCHI"
     ]
     assert transport.headers == [{}]
 
