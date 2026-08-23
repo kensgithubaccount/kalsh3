@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
-from typing import Any
+from typing import Any, ClassVar
 from urllib.request import Request
 
 import pytest
@@ -21,7 +21,7 @@ class _PublicResponse:
 
 
 class _PublicConnection:
-    calls: list[tuple[str, str, Mapping[str, str]]] = []
+    calls: ClassVar[list[tuple[str, str, Mapping[str, str]]]] = []
 
     def __init__(self, *_args: object, **_kwargs: object) -> None:
         pass
