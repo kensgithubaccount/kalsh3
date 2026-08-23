@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import base64
 import hashlib
 import json
 from datetime import UTC, date, datetime, timedelta
@@ -73,24 +74,41 @@ def _series_fee_payload() -> dict[str, object]:
     }
 
 
+def _public_response(path: str, payload: dict[str, object]) -> dict[str, object]:
+    body = json.dumps(payload, sort_keys=True).encode()
+    return {
+        "path": path,
+        "observed_at": NOW.isoformat(),
+        "status": 200,
+        "body_sha256": hashlib.sha256(body).hexdigest(),
+        "raw_body_b64": base64.b64encode(body).decode("ascii"),
+        "bytes": len(body),
+        "classification": "SUCCESS",
+        "payload": payload,
+    }
+
+
 def _m27e_public() -> dict[str, object]:
     market = _raw_market()
     return {
         "schema": "kalsh3.m27e.public-read.v1",
         "host": "https://" + HOST,
         "started_at": NOW.isoformat(),
-        "exchange_status": {"classification": "SUCCESS", "payload": {}},
-        "series": {
-            "classification": "SUCCESS",
-            "payload": {"series": _series_fee_payload()},
-        },
+        "exchange_status": _public_response(
+            BASE + "/exchange/status",
+            {"exchange_active": True, "trading_active": True},
+        ),
+        "series": _public_response(
+            BASE + "/series/KXHIGHCHI",
+            {"series": _series_fee_payload()},
+        ),
         "markets": {
             "classification": "SUCCESS",
             "pages": [
-                {
-                    "classification": "SUCCESS",
-                    "payload": {"markets": [market], "cursor": ""},
-                }
+                _public_response(
+                    BASE + "/markets?series_ticker=KXHIGHCHI&limit=1000",
+                    {"markets": [market], "cursor": ""},
+                )
             ],
             "pagination_complete": True,
             "market_count": 1,
@@ -105,6 +123,7 @@ def _evidence(body: bytes, *, path: str, observed_at: datetime) -> dict[str, obj
         "observed_at": observed_at.isoformat(),
         "status": 200,
         "body_sha256": hashlib.sha256(body).hexdigest(),
+        "raw_body_b64": base64.b64encode(body).decode("ascii"),
         "bytes": len(body),
         "classification": "SUCCESS",
         "payload": json.loads(body),
@@ -213,6 +232,8 @@ def test_full_public_scope_reconstructs_one_exact_market_slice(tmp_path: Path) -
     assert economics.event_ticker == EVENT_TICKER
     assert economics.series_ticker == SERIES_TICKER
     assert market.current_series_fee_observation.series_ticker == SERIES_TICKER
+    assert market.current_series_fee_observation.observed_at == NOW
+    assert market.current_event_fee_observed_at == NOW
     assert market.m27a_binding_evidence_path.exists()
     assert market.m27j_evidence_path.exists()
 
