@@ -1,0 +1,37 @@
+name: m28e
+
+on:
+  pull_request:
+    paths:
+      - services/production_weather_strategy/shadow_loop.py
+      - tests/test_m28e_shadow_loop.py
+      - .github/workflows/m28e.yml
+
+permissions:
+  contents: read
+
+jobs:
+  behavioral-verification:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+      - run: uv sync --locked --all-groups
+      - name: Install deterministic verification tools
+        run: uv pip install ruff==0.16.3 mypy pytest
+      - name: Lint M28E scope
+        run: >-
+          uv run ruff check
+          services/production_weather_strategy/shadow_loop.py
+          tests/test_m28e_shadow_loop.py
+      - name: Verify M28E formatting
+        run: >-
+          uv run ruff format --check
+          services/production_weather_strategy/shadow_loop.py
+          tests/test_m28e_shadow_loop.py
+      - name: Strict M28E type verification
+        run: uv run mypy services/production_weather_strategy/shadow_loop.py
+      - name: Focused M28E tests
+        run: uv run pytest -q tests/test_m28e_shadow_loop.py
