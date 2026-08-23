@@ -108,27 +108,29 @@ class ShadowOpportunity:
         observed_at: datetime,
         decision_cutoff: datetime,
     ) -> ShadowOpportunity:
-        for value, name in (
+        for text_value, text_name in (
             (family, "family"),
             (event_ticker, "event ticker"),
             (market_ticker, "market ticker"),
             (model_id, "model id"),
         ):
-            if not value.strip():
-                raise ShadowLoopError(f"{name} is required")
+            if not text_value.strip():
+                raise ShadowLoopError(f"{text_name} is required")
         if not evidence_ids or len(evidence_ids) != len(set(evidence_ids)):
             raise ShadowLoopError("shadow evidence ids must be nonempty and unique")
         observed = _utc(observed_at, "observed_at")
         cutoff = _utc(decision_cutoff, "decision_cutoff")
         if observed > cutoff:
             raise ShadowLoopError("shadow opportunity was observed after decision cutoff")
-        for value, name in (
+        for numeric_value, numeric_name in (
             (model_yes_probability, "model probability"),
             (yes_all_in_cost, "YES all-in cost"),
             (no_all_in_cost, "NO all-in cost"),
         ):
-            if not value.is_finite() or not Decimal("0") <= value <= Decimal("1"):
-                raise ShadowLoopError(f"{name} is outside [0,1]")
+            if not numeric_value.is_finite() or not Decimal(
+                "0"
+            ) <= numeric_value <= Decimal("1"):
+                raise ShadowLoopError(f"{numeric_name} is outside [0,1]")
         model_no_probability = Decimal("1") - model_yes_probability
         yes_edge = model_yes_probability - yes_all_in_cost
         no_edge = model_no_probability - no_all_in_cost
