@@ -1,0 +1,50 @@
+name: temporary-ruff-baseline
+
+on:
+  push:
+    branches:
+      - ruff-format-baseline-0163
+
+permissions:
+  contents: write
+
+jobs:
+  format-baseline:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ruff-format-baseline-0163
+      - uses: astral-sh/setup-uv@v6
+      - name: Format reviewed baseline with pinned Ruff
+        run: |
+          uvx ruff==0.16.3 format \
+            services/supervised_canary/m27o_state_bootstrap.py \
+            services/supervised_canary/m27q_preflight_orchestrator.py \
+            services/supervised_canary/m27q_risk_preflight.py \
+            services/supervised_canary/m27q_state_inspection.py \
+            tests/test_m27f_live_read_acceptance.py \
+            tests/test_m27o_state_bootstrap.py \
+            tests/test_m27q_preflight_orchestrator.py \
+            tests/test_m27q_risk_preflight.py \
+            tests/test_m27q_state_inspection.py
+      - name: Commit formatter-only changes
+        run: |
+          if git diff --quiet; then
+            echo "No formatting changes required"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add \
+            services/supervised_canary/m27o_state_bootstrap.py \
+            services/supervised_canary/m27q_preflight_orchestrator.py \
+            services/supervised_canary/m27q_risk_preflight.py \
+            services/supervised_canary/m27q_state_inspection.py \
+            tests/test_m27f_live_read_acceptance.py \
+            tests/test_m27o_state_bootstrap.py \
+            tests/test_m27q_preflight_orchestrator.py \
+            tests/test_m27q_risk_preflight.py \
+            tests/test_m27q_state_inspection.py
+          git commit -m "Normalize Ruff 0.16.3 formatting baseline"
+          git push origin HEAD:ruff-format-baseline-0163
