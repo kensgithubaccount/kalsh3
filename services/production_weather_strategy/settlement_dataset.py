@@ -224,18 +224,14 @@ def parse_resolved_temperature_market(
         lower = _decimal(row.get("cap_strike"), "cap_strike")
         upper = None
         if row.get("floor_strike") is not None:
-            raise HistoricalWeatherDatasetError(
-                "less-than contract has an unexpected floor strike"
-            )
+            raise HistoricalWeatherDatasetError("less-than contract has an unexpected floor strike")
 
     if strike_type != expected_strike:
         raise HistoricalWeatherDatasetError(
             "strike metadata conflicts with the exact contract rule"
         )
     if lower != rule_lower or upper != rule_upper:
-        raise HistoricalWeatherDatasetError(
-            "strike values conflict with the exact contract rule"
-        )
+        raise HistoricalWeatherDatasetError("strike values conflict with the exact contract rule")
 
     result = _text(row, "result").lower()
     if result not in {"yes", "no"}:
@@ -332,8 +328,7 @@ def build_authoritative_weather_dataset(
         grouped.setdefault(key, []).append(contract)
 
     events = tuple(
-        _build_event(group)
-        for _, group in sorted(grouped.items(), key=lambda item: item[0])
+        _build_event(group) for _, group in sorted(grouped.items(), key=lambda item: item[0])
     )
     ordered_contracts = tuple(sorted(contracts, key=lambda item: item.market_ticker))
 
@@ -467,8 +462,7 @@ def _feasible_witness(contracts: tuple[ResolvedTemperatureContract, ...]) -> Dec
         candidates.add((left + right) / Decimal(2))
     for candidate in sorted(candidates):
         consistent = all(
-            contract.predicate(candidate) == bool(contract.realized_yes)
-            for contract in contracts
+            contract.predicate(candidate) == bool(contract.realized_yes) for contract in contracts
         )
         if consistent:
             return candidate
@@ -520,9 +514,7 @@ def _timestamp(value: object, field: str) -> datetime:
     except ValueError as exc:
         raise HistoricalWeatherDatasetError(f"historical market {field} is malformed") from exc
     if parsed.tzinfo is None:
-        raise HistoricalWeatherDatasetError(
-            f"historical market {field} must be timezone-aware"
-        )
+        raise HistoricalWeatherDatasetError(f"historical market {field} must be timezone-aware")
     return parsed.astimezone(UTC)
 
 
