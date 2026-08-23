@@ -1,17 +1,9 @@
 """M27Q offline-capable first-canary M13 -> M27I preflight orchestration.
 
-This module adds no market, forecasting, risk, settlement, or execution policy.
-
-It composes already-reviewed components:
-
-1. exact binding of the already-selected M27D candidate at later consumption time;
-2. exact persisted-M27F <-> same-sweep transient bundle binding;
-3. immutable M27P shared-state inspection;
-4. pure M13 first-canary risk production;
-5. existing M27I final read-only preflight consumption of that same candidate.
-
-It has no network transport, signer, credential reader, mutable store, approval,
-authorization issuance, burn, execution authorization, or order capability.
+This module adds no market, forecasting, risk, settlement, or execution policy. It preserves the
+exact candidate selected before authenticated reads, independently revalidates persisted M27E and
+M27F evidence at consumption, inspects immutable first-canary state, builds the pure M13 risk
+triple, and calls the existing M27I read-only preflight.
 """
 
 from __future__ import annotations
@@ -27,6 +19,8 @@ from services.forecasting.weather_probability import (
     CurrentWeatherForecastEvidence,
     PhysicalTemperatureProxyProbability,
 )
+from services.market_universe.m27e_public_acceptance import validate_public_acceptance
+from services.market_universe.public_read import PublicReadFailure
 from services.opportunity_engine.live_economics import MarketEconomicsEvidence
 from services.opportunity_engine.live_fees import (
     CurrentSeriesFeeObservation,
@@ -77,29 +71,36 @@ class M27QOrchestratedPreflight:
 
 
 def _canonical_json(value: object) -> str:
-    return json.dumps(
-        value,
-        sort_keys=True,
-        separators=(",", ":"),
-    )
+    return json.dumps(value, sort_keys=True, separators=(",", ":"))
 
 
-def _require_exact_m27f_artifact(
-    bundle: LiveReadAcceptanceBundle,
-    path: Path,
-) -> None:
+def _load_json_artifact(path: Path, *, name: str) -> dict[str, object]:
     try:
         stored = json.loads(path.read_text())
     except (OSError, json.JSONDecodeError) as exc:
-        raise M27QOrchestrationError(
-            "persisted M27F evidence is unavailable or malformed"
-        ) from exc
+        raise M27QOrchestrationError(f"persisted {name} evidence is unavailable or malformed") from exc
+    if not isinstance(stored, dict):
+        raise M27QOrchestrationError(f"persisted {name} evidence is not an object")
+    return stored
 
+
+def _require_exact_m27f_artifact(bundle: LiveReadAcceptanceBundle, path: Path) -> None:
+    stored = _load_json_artifact(path, name="M27F")
     expected = bundle.evidence.to_json()
     if _canonical_json(stored) != _canonical_json(expected):
         raise M27QOrchestrationError(
             "persisted M27F evidence does not match the exact same-sweep bundle"
         )
+
+
+def _require_valid_m27e_artifact(path: Path) -> None:
+    stored = _load_json_artifact(path, name="M27E")
+    try:
+        validate_public_acceptance(stored)
+    except PublicReadFailure as exc:
+        raise M27QOrchestrationError(
+            f"persisted M27E evidence failed independent raw-body validation: {exc}"
+        ) from exc
 
 
 def build_first_canary_preflight(
@@ -122,21 +123,18 @@ def build_first_canary_preflight(
     order_group: RequiredOrderGroupPolicy,
     authorization_service_available: bool,
 ) -> M27QOrchestratedPreflight:
-    """Build an M13 pass for the exact candidate authenticated by M27R and consume it in M27I.
+    """Build and consume M13 for the exact candidate authenticated by M27R.
 
-    M27Q never replaces ``selected_candidate`` with a later time-derived M27D candidate ID.
-    It independently proves that the original candidate is exactly reconstructible from its
-    evidence, has not expired, and remains the unique economically/evidentially equivalent
-    current candidate. A returned ``PREFLIGHT_READY`` artifact remains read-only evidence only.
+    Later M27D evaluation may refresh temporal eligibility fields, but it may not replace the
+    immutable opportunity identity. The original candidate must still be unexpired, exactly
+    reconstructible from its original evidence, and stably equivalent to the unique current
+    candidate. ``PREFLIGHT_READY`` remains read-only evidence only.
     """
 
     if now.tzinfo is None or now.utcoffset() is None:
         raise M27QOrchestrationError("orchestration clock must be timezone-aware")
-
     if not isinstance(authorization_service_available, bool):
-        raise M27QOrchestrationError(
-            "authorization_service_available must be bool"
-        )
+        raise M27QOrchestrationError("authorization_service_available must be bool")
 
     try:
         binding = validate_selected_candidate_binding(
@@ -150,31 +148,20 @@ def build_first_canary_preflight(
     candidate = binding.candidate
     economics = binding.candidate_input[2]
 
-    _require_exact_m27f_artifact(
-        m27f_bundle,
-        m27f_evidence_path,
-    )
+    _require_valid_m27e_artifact(public_evidence_path)
+    _require_exact_m27f_artifact(m27f_bundle, m27f_evidence_path)
 
     if not m27f_bundle.evidence.reconciliation.succeeded:
-        raise M27QOrchestrationError(
-            "same-sweep M27F reconciliation did not pass"
-        )
-
+        raise M27QOrchestrationError("same-sweep M27F reconciliation did not pass")
     if not candidate_exposure.succeeded:
-        raise M27QOrchestrationError(
-            "candidate-specific exposure evidence did not pass"
-        )
+        raise M27QOrchestrationError("candidate-specific exposure evidence did not pass")
     if candidate_exposure.market_ticker != candidate.market_ticker:
         raise M27QOrchestrationError(
             "candidate-specific exposure evidence is bound to a different market"
         )
 
-    inspection = inspect_first_canary_state(
-        state_path=state_path,
-        now=now,
-    )
+    inspection = inspect_first_canary_state(state_path=state_path, now=now)
     durable_state = inspection.first_canary_durable_state()
-
     safety = build_safety_state(
         inspection,
         now=now,
@@ -211,7 +198,6 @@ def build_first_canary_preflight(
 
     preflight = build_preflight(
         now=now,
-        selected_candidate=candidate,
         candidate_inputs=candidate_inputs,
         m27f_evidence_path=m27f_evidence_path,
         m27h_evidence_path=m27h_evidence_path,
@@ -231,7 +217,7 @@ def build_first_canary_preflight(
 
     if preflight.artifact.candidate_id != candidate.candidate_id:
         raise M27QOrchestrationError(
-            "M27I did not retain the exact candidate authenticated by M27R"
+            "M27I did not retain the exact candidate identity authenticated by M27R"
         )
 
     return M27QOrchestratedPreflight(
