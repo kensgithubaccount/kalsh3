@@ -68,23 +68,23 @@ class ExecutionExpectation:
         economics_evidence_id: str,
         observed_at: datetime,
     ) -> ExecutionExpectation:
-        for value, name in (
+        for text_value, text_name in (
             (family, "family"),
             (event_ticker, "event ticker"),
             (market_ticker, "market ticker"),
             (book_evidence_id, "book evidence id"),
             (economics_evidence_id, "economics evidence id"),
         ):
-            if not value.strip():
-                raise ExecutionLearningError(f"{name} is required")
+            if not text_value.strip():
+                raise ExecutionLearningError(f"{text_name} is required")
         if quantity <= 0 or not quantity.is_finite():
             raise ExecutionLearningError("execution quantity must be positive and finite")
-        for value, name in (
+        for numeric_value, numeric_name in (
             (expected_taker_price, "expected taker price"),
             (expected_fee, "expected fee"),
         ):
-            if value < 0 or not value.is_finite():
-                raise ExecutionLearningError(f"{name} is invalid")
+            if numeric_value < 0 or not numeric_value.is_finite():
+                raise ExecutionLearningError(f"{numeric_name} is invalid")
         if not Decimal("0") < expected_taker_price < Decimal("1"):
             raise ExecutionLearningError("expected taker price must be inside (0,1)")
         expected_all_in = expected_taker_price * quantity + expected_fee
