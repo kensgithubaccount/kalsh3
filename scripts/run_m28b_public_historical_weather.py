@@ -1,9 +1,13 @@
 #!/usr/bin/env python3
-"""Acquire public Kalshi historical markets and build M28B settlement evidence.
+"""Acquire public Kalshi settled markets and build M28B settlement evidence.
 
-PUBLIC READ ONLY. This operator script sends unauthenticated GET requests only to the fixed
-Kalshi public API origin. It never loads credentials, reads account state, mutates production
-state, creates risk authority, approves execution, or sends an order.
+PUBLIC READ ONLY. Kalshi partitions settled markets between the historical archive and the
+recent live market tier. This runner reads both partitions when a series is supplied, then
+builds one settlement-authoritative dataset from the union.
+
+It sends unauthenticated GET requests only to the fixed Kalshi public API origin. It never
+loads credentials, reads account state, mutates production state, creates risk authority,
+approves execution, or sends an order.
 """
 
 from __future__ import annotations
@@ -31,9 +35,12 @@ from services.production_weather_strategy.settlement_dataset import (
 )
 
 ORIGIN = "https://external-api.kalshi.com"
-ALLOWED_PREFIX = "/trade-api/v2/historical/"
+ALLOWED_PREFIXES = (
+    "/trade-api/v2/historical/",
+    "/trade-api/v2/markets?",
+)
 MAX_RESPONSE_BYTES = 32 * 1024 * 1024
-SCHEMA = "kalsh3.m28b.public-historical-weather-evidence.v1"
+SCHEMA = "kalsh3.m28b.public-settled-weather-evidence.v2"
 
 
 class PublicHistoricalTransport:
@@ -46,14 +53,14 @@ class PublicHistoricalTransport:
         self, path: str, headers: Mapping[str, str], *, timeout_seconds: float
     ) -> tuple[int, dict[str, Any]]:
         if headers:
-            raise RuntimeError("M28B public historical transport forbids authorization headers")
-        if not path.startswith(ALLOWED_PREFIX):
-            raise RuntimeError("M28B public historical transport path is outside reviewed prefix")
+            raise RuntimeError("M28B public transport forbids authorization headers")
+        if not any(path.startswith(prefix) for prefix in ALLOWED_PREFIXES):
+            raise RuntimeError("M28B public transport path is outside reviewed prefixes")
         target = urljoin(ORIGIN, path)
         parsed = urlparse(target)
         expected = urlparse(ORIGIN)
         if (parsed.scheme, parsed.netloc) != (expected.scheme, expected.netloc):
-            raise RuntimeError("M28B public historical transport escaped the fixed Kalshi origin")
+            raise RuntimeError("M28B public transport escaped the fixed Kalshi origin")
         request = Request(  # noqa: S310
             target,
             method="GET",
@@ -63,16 +70,16 @@ class PublicHistoricalTransport:
             with urlopen(request, timeout=timeout_seconds) as response:  # noqa: S310
                 final = urlparse(response.geturl())
                 if (final.scheme, final.netloc) != (expected.scheme, expected.netloc):
-                    raise RuntimeError("M28B public historical redirect escaped fixed origin")
+                    raise RuntimeError("M28B public redirect escaped fixed origin")
                 status = int(response.status)
                 body = response.read(MAX_RESPONSE_BYTES + 1)
         except HTTPError as exc:
             status = int(exc.code)
             body = exc.read(MAX_RESPONSE_BYTES + 1)
         except URLError as exc:
-            raise RuntimeError("M28B public historical GET failed") from exc
+            raise RuntimeError("M28B public GET failed") from exc
         if len(body) > MAX_RESPONSE_BYTES:
-            raise RuntimeError("M28B public historical response exceeded size bound")
+            raise RuntimeError("M28B public response exceeded size bound")
         self.requests.append(
             {
                 "path": path,
@@ -84,9 +91,9 @@ class PublicHistoricalTransport:
         try:
             payload = json.loads(body)
         except json.JSONDecodeError as exc:
-            raise RuntimeError("M28B public historical response was not JSON") from exc
+            raise RuntimeError("M28B public response was not JSON") from exc
         if not isinstance(payload, dict):
-            raise RuntimeError("M28B public historical response root was not an object")
+            raise RuntimeError("M28B public response root was not an object")
         return status, payload
 
 
@@ -133,11 +140,19 @@ def main() -> int:
     transport = PublicHistoricalTransport()
     client = HistoricalClient(transport, signer=None, timeout=20)
     acquired_at = datetime.now(UTC)
+    archive_rows: list[dict[str, Any]] = []
+    recent_rows: list[dict[str, Any]] = []
     try:
-        rows = client.markets(series_ticker=args.series_ticker)
+        archive_rows = client.markets(series_ticker=args.series_ticker)
+        if args.series_ticker is not None:
+            recent_rows = client.recent_settled_markets(series_ticker=args.series_ticker)
+        rows = archive_rows + recent_rows
         dataset = build_authoritative_weather_dataset(rows)
     except (HistoricalError, HistoricalWeatherDatasetError, RuntimeError) as exc:
         print(f"M28B_CLASSIFICATION=BLOCKED ({type(exc).__name__}: {exc})", file=sys.stderr)
+        print(f"ARCHIVED_MARKETS={len(archive_rows)}")
+        print(f"RECENT_SETTLED_MARKETS={len(recent_rows)}")
+        print(f"NETWORK_REQUESTS={len(transport.requests)}")
         print("CREDENTIAL_ACCESS=NONE")
         print("ACCOUNT_GETS=NONE")
         print("MUTATION=NONE")
@@ -151,6 +166,8 @@ def main() -> int:
         "api_origin": ORIGIN,
         "request_type": "PUBLIC_GET_ONLY",
         "series_filter": args.series_ticker,
+        "archived_market_count": len(archive_rows),
+        "recent_settled_market_count": len(recent_rows),
         "raw_market_count": len(rows),
         "network_request_count": len(transport.requests),
         "network_requests": transport.requests,
@@ -182,6 +199,8 @@ def main() -> int:
     print("M28B_CLASSIFICATION=SUCCESS")
     print(f"OUTPUT={output}")
     print(f"OUTPUT_SHA256={evidence_hash}")
+    print(f"ARCHIVED_MARKETS={len(archive_rows)}")
+    print(f"RECENT_SETTLED_MARKETS={len(recent_rows)}")
     print(f"RAW_MARKETS={len(rows)}")
     print(f"SUPPORTED_WEATHER_EVENTS={dataset.event_count}")
     print(f"SUPPORTED_WEATHER_CONTRACTS={dataset.contract_count}")
