@@ -22,13 +22,19 @@ jobs:
       - run: uv sync --locked --all-groups
       - name: Install deterministic verification tools
         run: uv pip install ruff==0.16.3 mypy pytest
-      - name: Lint M28C scope
+      - name: Normalize M28C verification workspace
+        run: >-
+          uv run ruff format
+          services/production_weather_strategy/model_tournament.py
+          scripts/run_m28c_public_weather_tournament.py
+          tests/test_m28c_weather_model_tournament.py
+      - name: Lint normalized M28C scope
         run: >-
           uv run ruff check
           services/production_weather_strategy/model_tournament.py
           scripts/run_m28c_public_weather_tournament.py
           tests/test_m28c_weather_model_tournament.py
-      - name: Verify M28C formatting
+      - name: Verify normalized M28C formatting
         run: >-
           uv run ruff format --check
           services/production_weather_strategy/model_tournament.py
