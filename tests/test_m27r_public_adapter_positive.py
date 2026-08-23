@@ -198,7 +198,7 @@ def test_full_public_scope_reconstructs_one_exact_market_slice(tmp_path: Path) -
         rules_acquirer=_rules_acquirer,
     )
 
-    result = provider.collect_public_evidence(now=NOW)
+    result = provider.collect_public_evidence(clock=lambda: NOW)
 
     assert len(result.markets) == 1
     market = result.markets[0]
