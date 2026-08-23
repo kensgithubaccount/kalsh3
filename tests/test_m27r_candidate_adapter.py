@@ -148,7 +148,7 @@ def test_successful_candidate_adapter_persists_exact_m27f_and_checks_exposure(
     )
     result = provider.collect_candidate_evidence(
         candidate=cast(ExperimentalCandidate, FakeCandidate()),
-        now=NOW,
+        clock=lambda: NOW,
     )
 
     assert calls["credentials"] == 1
@@ -175,7 +175,7 @@ def test_failed_m27f_stops_before_candidate_exposure_reads(tmp_path: Path) -> No
     with pytest.raises(M27RCandidateAdapterError, match="M27F authenticated GET sweep"):
         provider.collect_candidate_evidence(
             candidate=cast(ExperimentalCandidate, FakeCandidate()),
-            now=NOW,
+            clock=lambda: NOW,
         )
 
     # Authority failure occurs before M27F may make any authenticated portfolio request,
@@ -203,7 +203,7 @@ def test_missing_m27h_fails_before_credential_access(tmp_path: Path) -> None:
     with pytest.raises(M27RCandidateAdapterError, match="M27H evidence path"):
         provider.collect_candidate_evidence(
             candidate=cast(ExperimentalCandidate, FakeCandidate()),
-            now=NOW,
+            clock=lambda: NOW,
         )
 
     assert calls["credentials"] == 0
@@ -228,7 +228,7 @@ def test_naive_time_fails_before_credential_access(tmp_path: Path) -> None:
     with pytest.raises(M27RCandidateAdapterError, match="must be timezone-aware"):
         provider.collect_candidate_evidence(
             candidate=cast(ExperimentalCandidate, FakeCandidate()),
-            now=datetime(2026, 8, 23, 17, 30),
+            clock=lambda: datetime(2026, 8, 23, 17, 30),
         )
 
     assert calls["credentials"] == 0
