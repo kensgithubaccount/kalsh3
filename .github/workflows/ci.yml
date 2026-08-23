@@ -16,7 +16,8 @@ jobs:
       - run: uv sync --locked --all-groups
       - name: Install CI verification tools
         # Keep formatter behavior deterministic across reviewed safety-sensitive diffs.
-        run: uv pip install ruff==0.16.3 mypy pytest
+        # Ruff 0.16 introduced breaking formatter/tooling behavior; migrate separately.
+        run: uv pip install ruff==0.15.22 mypy pytest
       - run: make verify
       - name: Validate effective deployment configuration
         env:
