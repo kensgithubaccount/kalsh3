@@ -156,7 +156,7 @@ def scope_recent_settled_markets(
                     _record(ticker, "EXCLUDED", "NO_SUPPORTED_CURRENT_REGIME_MARKETS", len(rows))
                 )
                 continue
-            raise
+            raise HistoricalWeatherDatasetError(f"{ticker}: {reason}") from exc
 
         parsed_series = {contract.series_ticker for contract in dataset.contracts}
         if parsed_series != {ticker}:
