@@ -7,7 +7,9 @@ from pathlib import Path
 import pytest
 
 from services.opportunity_engine.fees import FeeType
-from services.production_weather_strategy.historical_economics import HistoricalQuoteCheckpoint
+from services.production_weather_strategy.historical_economics import (
+    HistoricalQuoteCheckpoint,
+)
 from services.production_weather_strategy.model_tournament import (
     ModelScorecard,
     ModelTournamentResult,
