@@ -22,6 +22,7 @@ from services.historical_replay.archive import stable_hash
 from services.production_weather_strategy.settlement_dataset import (
     HistoricalWeatherDatasetError,
     build_authoritative_weather_dataset,
+    parse_resolved_temperature_market,
 )
 
 _UNREVIEWED_LOCATION = "temperature market uses an unreviewed settlement location"
@@ -156,9 +157,9 @@ def scope_recent_settled_markets(
                     _record(ticker, "EXCLUDED", "NO_SUPPORTED_CURRENT_REGIME_MARKETS", len(rows))
                 )
                 continue
-            samples = _twc_rule_samples(rows)
+            failure = _first_row_parser_failure(rows)
             raise HistoricalWeatherDatasetError(
-                f"{ticker}: {reason}; twc_rule_samples={samples!r}"
+                f"{ticker}: {reason}; first_row_parser_failure={failure!r}"
             ) from exc
 
         parsed_series = {contract.series_ticker for contract in dataset.contracts}
@@ -217,19 +218,19 @@ def scope_recent_settled_markets(
     return included_rows, manifest
 
 
-def _twc_rule_samples(rows: Sequence[Mapping[str, Any]]) -> tuple[str, ...]:
-    samples: list[str] = []
+def _first_row_parser_failure(rows: Sequence[Mapping[str, Any]]) -> tuple[str, str, str] | None:
     for row in rows:
-        rule = row.get("rules_primary")
-        if (
-            isinstance(rule, str)
-            and "temperature" in rule.casefold()
-            and "The Weather Company" in rule
-        ):
-            samples.append(rule[:600])
-            if len(samples) == 3:
-                break
-    return tuple(samples)
+        try:
+            parse_resolved_temperature_market(row)
+        except HistoricalWeatherDatasetError as exc:
+            ticker = row.get("ticker")
+            rule = row.get("rules_primary")
+            return (
+                ticker if isinstance(ticker, str) else type(ticker).__name__,
+                str(exc),
+                rule[:1000] if isinstance(rule, str) else type(rule).__name__,
+            )
+    return None
 
 
 def _row_ticker(row: Mapping[str, Any]) -> str:
