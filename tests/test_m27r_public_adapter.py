@@ -21,6 +21,7 @@ from services.supervised_canary.m27r_public_adapter import (
     GetOnlyPublicEvidenceProvider,
     M27RPublicAdapterError,
     _record_number_for_route,
+    _require_source_fresh_at_economics,
 )
 from tests.test_m27n2_candidate_packet import _extraction_2026
 
@@ -198,16 +199,23 @@ def test_successful_snapshot_without_body_hash_is_rejected(tmp_path: Path) -> No
         )
 
 
-def test_stale_series_fee_source_blocks_before_economics_construction(tmp_path: Path) -> None:
+def test_stale_series_fee_source_blocks_without_network() -> None:
     stale = NOW - timedelta(seconds=31)
-    provider = _provider(tmp_path)
     with pytest.raises(M27RPublicAdapterError, match="series fee evidence is stale"):
-        provider._build_market_slice(
-            clock=lambda: NOW,
-            market_ticker="KXHIGHCHI-TEST",
-            event_ticker="KXHIGHCHI-EVENT",
-            series_raw={"ticker": "KXHIGHCHI"},
-            series_observed_at=stale,
+        _require_source_fresh_at_economics(
+            observed_at=stale,
+            economics_now=NOW,
+            source="M27E series fee evidence",
+        )
+
+
+def test_future_fee_source_blocks_without_network() -> None:
+    future = NOW + timedelta(seconds=1)
+    with pytest.raises(M27RPublicAdapterError, match="observed after economics evaluation"):
+        _require_source_fresh_at_economics(
+            observed_at=future,
+            economics_now=NOW,
+            source="event fee evidence",
         )
 
 
