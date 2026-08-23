@@ -1,0 +1,43 @@
+name: m28d
+
+on:
+  pull_request:
+    paths:
+      - services/production_weather_strategy/forecast_vintage.py
+      - services/production_weather_strategy/historical_economics.py
+      - tests/test_m28d_forecast_vintage_economics.py
+      - .github/workflows/m28d.yml
+
+permissions:
+  contents: read
+
+jobs:
+  behavioral-verification:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+      - run: uv sync --locked --all-groups
+      - name: Install deterministic verification tools
+        run: uv pip install ruff==0.16.3 mypy pytest
+      - name: Lint M28D scope
+        run: >-
+          uv run ruff check
+          services/production_weather_strategy/forecast_vintage.py
+          services/production_weather_strategy/historical_economics.py
+          tests/test_m28d_forecast_vintage_economics.py
+      - name: Verify M28D formatting
+        run: >-
+          uv run ruff format --check
+          services/production_weather_strategy/forecast_vintage.py
+          services/production_weather_strategy/historical_economics.py
+          tests/test_m28d_forecast_vintage_economics.py
+      - name: Strict M28D type verification
+        run: >-
+          uv run mypy
+          services/production_weather_strategy/forecast_vintage.py
+          services/production_weather_strategy/historical_economics.py
+      - name: Focused M28D tests
+        run: uv run pytest -q tests/test_m28d_forecast_vintage_economics.py
