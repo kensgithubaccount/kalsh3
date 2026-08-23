@@ -5,7 +5,9 @@ on:
     paths:
       - services/production_weather_strategy/model_tournament.py
       - services/production_weather_strategy/series_scope.py
+      - services/production_weather_strategy/settlement_dataset.py
       - scripts/run_m28c_public_weather_tournament.py
+      - tests/test_m28b_authoritative_weather_dataset.py
       - tests/test_m28c_weather_model_tournament.py
       - tests/test_m28c_series_scope.py
       - .github/workflows/m28c.yml
@@ -29,7 +31,9 @@ jobs:
           uv run ruff check
           services/production_weather_strategy/model_tournament.py
           services/production_weather_strategy/series_scope.py
+          services/production_weather_strategy/settlement_dataset.py
           scripts/run_m28c_public_weather_tournament.py
+          tests/test_m28b_authoritative_weather_dataset.py
           tests/test_m28c_weather_model_tournament.py
           tests/test_m28c_series_scope.py
       - name: Verify M28C formatting
@@ -37,7 +41,9 @@ jobs:
           uv run ruff format --check
           services/production_weather_strategy/model_tournament.py
           services/production_weather_strategy/series_scope.py
+          services/production_weather_strategy/settlement_dataset.py
           scripts/run_m28c_public_weather_tournament.py
+          tests/test_m28b_authoritative_weather_dataset.py
           tests/test_m28c_weather_model_tournament.py
           tests/test_m28c_series_scope.py
       - name: Strict M28C type verification
@@ -45,9 +51,11 @@ jobs:
           uv run mypy
           services/production_weather_strategy/model_tournament.py
           services/production_weather_strategy/series_scope.py
+          services/production_weather_strategy/settlement_dataset.py
       - name: Focused M28C tests
         run: >-
           uv run pytest -q
+          tests/test_m28b_authoritative_weather_dataset.py
           tests/test_m28c_weather_model_tournament.py
           tests/test_m28c_series_scope.py
 
