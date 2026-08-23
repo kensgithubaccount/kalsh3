@@ -307,14 +307,12 @@ def build_feature_dataset(
         sorted({row.event_id for row in ordered if row.partition is TournamentPartition.TRAIN})
     )
     validation_ids = tuple(
-        sorted(
-            {row.event_id for row in ordered if row.partition is TournamentPartition.VALIDATION}
-        )
+        sorted({row.event_id for row in ordered if row.partition is TournamentPartition.VALIDATION})
     )
     test_ids = tuple(
         sorted({row.event_id for row in ordered if row.partition is TournamentPartition.TEST})
     )
-    material = (
+    dataset_material = (
         FEATURE_SCHEMA_VERSION,
         settlement_dataset.dataset_id,
         feature_schema_hash,
@@ -325,7 +323,7 @@ def build_feature_dataset(
         missing_market,
         missing_climate,
     )
-    digest = stable_hash(material)
+    digest = stable_hash(dataset_material)
     return TournamentFeatureDataset(
         dataset_id=digest,
         settlement_dataset_id=settlement_dataset.dataset_id,
@@ -440,7 +438,11 @@ def run_model_tournament(dataset: TournamentFeatureDataset) -> ModelTournamentRe
         for score in ordered_scores
         if score.partition is TournamentPartition.TEST and score.model is TournamentModel.MARKET
     )
-    edge = "BEATS_MARKET_ON_UNTOUCHED_TEST" if selected_test.market_relative_skill > 0 else "NO_TEST_EDGE"
+    edge = (
+        "BEATS_MARKET_ON_UNTOUCHED_TEST"
+        if selected_test.market_relative_skill > 0
+        else "NO_TEST_EDGE"
+    )
     material = (
         TOURNAMENT_VERSION,
         dataset.dataset_id,
@@ -519,7 +521,10 @@ def _climate_probability(
             continue
         if not start_year <= observation.local_date.year < contract.local_date.year:
             continue
-        if _seasonal_distance(observation.local_date, contract.local_date) > CLIMATE_SEASONAL_WINDOW_DAYS:
+        if (
+            _seasonal_distance(observation.local_date, contract.local_date)
+            > CLIMATE_SEASONAL_WINDOW_DAYS
+        ):
             continue
         values.append(observation)
     if len(values) < MIN_CLIMATE_SAMPLES:
@@ -608,11 +613,7 @@ def _fit_calibration(
             predictions = {
                 row.row_id: _clip(
                     Decimal("0.5")
-                    + slope
-                    * (
-                        _city_prediction(row, alpha, bias, city_map)
-                        - Decimal("0.5")
-                    )
+                    + slope * (_city_prediction(row, alpha, bias, city_map) - Decimal("0.5"))
                     + offset
                 )
                 for row in rows
@@ -706,9 +707,7 @@ def _pooled_prediction(
     bias: Decimal,
 ) -> Decimal:
     return _clip(
-        row.market_probability
-        + alpha * (row.climate_probability - row.market_probability)
-        + bias
+        row.market_probability + alpha * (row.climate_probability - row.market_probability) + bias
     )
 
 
@@ -718,7 +717,9 @@ def _city_prediction(
     bias: Decimal,
     city_biases: Mapping[str, Decimal],
 ) -> Decimal:
-    return _clip(_pooled_prediction(row, alpha, bias) + city_biases.get(row.station_id, Decimal("0")))
+    return _clip(
+        _pooled_prediction(row, alpha, bias) + city_biases.get(row.station_id, Decimal("0"))
+    )
 
 
 def _calibrated_city_prediction(
