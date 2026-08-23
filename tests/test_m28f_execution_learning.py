@@ -74,7 +74,9 @@ def _reconciliation(
         "order_status": (
             "executed"
             if classification in {"FILLED", "FILLED_POLICY_VIOLATION"}
-            else "canceled" if classification == "NO_FILL" else None
+            else "canceled"
+            if classification == "NO_FILL"
+            else None
         ),
         "filled_quantity": fill_quantity,
         "maximum_fill_price": fill_price,
