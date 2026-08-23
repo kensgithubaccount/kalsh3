@@ -15,6 +15,7 @@ from services.supervised_canary.m27d import (
 )
 from services.supervised_canary.m27q_state_inspection import inspect_first_canary_state
 from services.supervised_canary.m27r_operator_runner import (
+    Clock,
     M27RCandidateEvidence,
     M27RMarketEvidence,
     M27ROperatorError,
@@ -26,6 +27,10 @@ from tests.test_m27q_preflight_orchestrator import _fixture
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 MODULE_PATH = REPO_ROOT / "services" / "supervised_canary" / "m27r_operator_runner.py"
+
+
+def _fixed_clock(now: datetime) -> Clock:
+    return lambda: now
 
 
 def _public_evidence() -> M27RPublicEvidence:
@@ -40,7 +45,8 @@ class _PublicProvider:
         self.evidence = evidence
         self.calls = 0
 
-    def collect_public_evidence(self, *, now: datetime) -> M27RPublicEvidence:
+    def collect_public_evidence(self, *, clock: Clock) -> M27RPublicEvidence:
+        del clock
         self.calls += 1
         return self.evidence
 
@@ -64,9 +70,9 @@ class _FixtureCandidateProvider:
         self,
         *,
         candidate: ExperimentalCandidate,
-        now: datetime,
+        clock: Clock,
     ) -> M27RCandidateEvidence:
-        del now
+        del clock
         self.calls += 1
         assert candidate.candidate_id == self.candidate_id
         return self.evidence
@@ -78,7 +84,7 @@ def test_zero_candidate_abstains_before_authenticated_phase() -> None:
     candidate = _ForbiddenCandidateProvider()
 
     result = run_readonly_operator_preflight(
-        now=now,
+        clock=_fixed_clock(now),
         public_provider=public,
         candidate_provider=candidate,
     )
@@ -112,7 +118,7 @@ def test_multiple_candidates_abstain_before_authenticated_phase(
     )
 
     result = run_readonly_operator_preflight(
-        now=now,
+        clock=_fixed_clock(now),
         public_provider=public,
         candidate_provider=candidate_provider,
     )
@@ -185,7 +191,7 @@ def test_exact_one_fixture_reaches_real_m27q_preflight_without_state_mutation(
     candidate_provider = _FixtureCandidateProvider(candidate_evidence, candidate.candidate_id)
 
     result = run_readonly_operator_preflight(
-        now=now,
+        clock=_fixed_clock(now),
         public_provider=public_provider,
         candidate_provider=candidate_provider,
     )
@@ -211,13 +217,34 @@ def test_exact_one_fixture_reaches_real_m27q_preflight_without_state_mutation(
     assert after.session_count == 0
 
 
+def test_coordinator_samples_fresh_clock_at_decision_boundaries() -> None:
+    stamps = iter(
+        (
+            datetime(2026, 8, 23, 17, 0, 0, tzinfo=UTC),
+            datetime(2026, 8, 23, 17, 0, 1, tzinfo=UTC),
+        )
+    )
+    public = _PublicProvider(_public_evidence())
+    candidate = _ForbiddenCandidateProvider()
+
+    result = run_readonly_operator_preflight(
+        clock=lambda: next(stamps),
+        public_provider=public,
+        candidate_provider=candidate,
+    )
+
+    assert result.state == "ABSTAIN"
+    assert public.calls == 1
+    assert candidate.calls == 0
+
+
 def test_naive_operator_clock_is_rejected_before_any_provider_call() -> None:
     public = _PublicProvider(_public_evidence())
     candidate = _ForbiddenCandidateProvider()
 
-    with pytest.raises(M27ROperatorError, match="operator clock must be timezone-aware"):
+    with pytest.raises(M27ROperatorError, match="operator start clock must be timezone-aware"):
         run_readonly_operator_preflight(
-            now=datetime(2026, 8, 23, 17),
+            clock=lambda: datetime(2026, 8, 23, 17),
             public_provider=public,
             candidate_provider=candidate,
         )
