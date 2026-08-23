@@ -71,10 +71,9 @@ class _FixtureCandidateProvider:
         self,
         *,
         candidate: ExperimentalCandidate,
-        public: M27RPublicEvidence,
         now: datetime,
     ) -> M27RCandidateEvidence:
-        del public, now
+        del now
         self.calls += 1
         assert candidate.candidate_id == self.candidate_id
         return self.evidence
