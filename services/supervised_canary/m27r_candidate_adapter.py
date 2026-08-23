@@ -9,6 +9,10 @@ adapter has no mutation transport, no order sender, no M13/M16/M27O authority ca
 never reads the protected production write-credential store. M27H remains an independently
 produced, operator-only local evidence artifact; this adapter merely carries its path onward to
 M27Q/M27I, which independently validates freshness and structure.
+
+A live clock callable is passed through to the reviewed authenticated-read producers. Network
+reads therefore retain their actual acquisition times instead of inheriting one frozen run-start
+timestamp.
 """
 
 from __future__ import annotations
@@ -17,7 +21,6 @@ import json
 import time
 from collections.abc import Callable
 from dataclasses import dataclass
-from datetime import UTC, datetime
 from pathlib import Path
 
 from services.kalshi_account_gateway.auth import RequestSigner
@@ -29,9 +32,9 @@ from services.risk_engine.invariants import NewRiskReadiness
 from .candidate_exposure_check import check_candidate_market_exposure
 from .live_read_acceptance import run_live_read_acceptance_bundle
 from .m27d import ExperimentalCandidate
-from .m27r_operator_runner import M27RCandidateEvidence
+from .m27r_operator_runner import Clock, M27RCandidateEvidence
 
-SOFTWARE_VERSION = "kalsh3.m27r.candidate-evidence-adapter/1"
+SOFTWARE_VERSION = "kalsh3.m27r.candidate-evidence-adapter/2"
 
 CredentialLoader = Callable[[], tuple[str, bytes]]
 AuthorityAttestationLoader = Callable[[], object]
@@ -42,7 +45,8 @@ class M27RCandidateAdapterError(RuntimeError):
     """Candidate-specific evidence could not be assembled without weakening a gate."""
 
 
-def _require_aware(value: datetime, *, field: str) -> None:
+def _clock_now(clock: Clock, *, field: str) -> None:
+    value = clock()
     if value.tzinfo is None or value.utcoffset() is None:
         raise M27RCandidateAdapterError(f"{field} must be timezone-aware")
 
@@ -80,9 +84,9 @@ class GetOnlyCandidateEvidenceProvider:
         self,
         *,
         candidate: ExperimentalCandidate,
-        now: datetime,
+        clock: Clock,
     ) -> M27RCandidateEvidence:
-        _require_aware(now, field="candidate evidence clock")
+        _clock_now(clock, field="candidate evidence start clock")
 
         # M27H is operator-only evidence. Never invoke its protected-store verifier here.
         if not self.m27h_evidence_path.is_file():
@@ -102,7 +106,7 @@ class GetOnlyCandidateEvidenceProvider:
             private_key_pem=private_key_pem,
             authority_attestation=authority_attestation,
             account_transport=transport,
-            clock=lambda: now.astimezone(UTC),
+            clock=clock,
             clock_ms=self.clock_ms,
             signer_factory=self.signer_factory,
         )
@@ -127,7 +131,7 @@ class GetOnlyCandidateEvidenceProvider:
         exposure = check_candidate_market_exposure(
             client=client,
             market_ticker=candidate.market_ticker,
-            clock=lambda: now.astimezone(UTC),
+            clock=clock,
         )
         if not exposure.succeeded:
             raise M27RCandidateAdapterError(
