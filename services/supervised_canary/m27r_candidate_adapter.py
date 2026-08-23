@@ -29,7 +29,7 @@ from services.risk_engine.invariants import NewRiskReadiness
 from .candidate_exposure_check import check_candidate_market_exposure
 from .live_read_acceptance import run_live_read_acceptance_bundle
 from .m27d import ExperimentalCandidate
-from .m27r_operator_runner import M27RCandidateEvidence, M27RPublicEvidence
+from .m27r_operator_runner import M27RCandidateEvidence
 
 SOFTWARE_VERSION = "kalsh3.m27r.candidate-evidence-adapter/1"
 
@@ -80,10 +80,8 @@ class GetOnlyCandidateEvidenceProvider:
         self,
         *,
         candidate: ExperimentalCandidate,
-        public: M27RPublicEvidence,
         now: datetime,
     ) -> M27RCandidateEvidence:
-        del public  # Candidate identity is already bound by the coordinator/M27Q.
         _require_aware(now, field="candidate evidence clock")
 
         # M27H is operator-only evidence. Never invoke its protected-store verifier here.
