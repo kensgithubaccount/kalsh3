@@ -181,9 +181,13 @@ def build_execution_learning_observation(
         raise ExecutionLearningError("reconciliation_required is malformed")
     if state is ExecutionLabelState.UNKNOWN:
         if not reconciliation_required:
-            raise ExecutionLearningError("UNKNOWN reconciliation must remain reconciliation-required")
+            raise ExecutionLearningError(
+                "UNKNOWN reconciliation must remain reconciliation-required"
+            )
     elif reconciliation_required:
-        raise ExecutionLearningError("terminal reconciliation cannot remain reconciliation-required")
+        raise ExecutionLearningError(
+            "terminal reconciliation cannot remain reconciliation-required"
+        )
 
     filled_quantity = _optional_decimal(reconciliation.get("filled_quantity"), "filled quantity")
     fill_price = _optional_decimal(reconciliation.get("maximum_fill_price"), "maximum fill price")
