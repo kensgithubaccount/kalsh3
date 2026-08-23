@@ -287,7 +287,6 @@ def _candidate(
         break_even,
         break_even,
         break_even,
-        break_even,
         discrepancy,
         (discrepancy, probability.exact_midpoint_seconds, economics.market_ticker),
         economics.evidence_id,
