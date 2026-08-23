@@ -16,6 +16,7 @@ from services.supervised_canary.m27d import (
 from services.supervised_canary.m27q_state_inspection import inspect_first_canary_state
 from services.supervised_canary.m27r_operator_runner import (
     M27RCandidateEvidence,
+    M27RMarketEvidence,
     M27ROperatorError,
     M27ROperatorRun,
     M27RPublicEvidence,
@@ -27,18 +28,10 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 MODULE_PATH = REPO_ROOT / "services" / "supervised_canary" / "m27r_operator_runner.py"
 
 
-def _public_evidence(*, candidate_inputs: tuple[Any, ...] = ()) -> M27RPublicEvidence:
-    now = datetime(2026, 8, 23, 17, tzinfo=UTC)
-    # These fields are deliberately not consumed before the exact-one candidate gate in the
-    # abstention tests below. Runtime type checking is not used by this immutable carrier.
+def _public_evidence() -> M27RPublicEvidence:
     return M27RPublicEvidence(
-        candidate_inputs=cast(Any, candidate_inputs),
         public_evidence_path=Path("public.json"),
-        m27j_evidence_path=Path("m27j.json"),
-        m27a_binding_evidence_path=Path("m27a.json"),
-        current_series_fee_observation=cast(Any, None),
-        current_event_fee_override=cast(Any, None),
-        current_event_fee_observed_at=now,
+        markets=(),
     )
 
 
@@ -130,15 +123,32 @@ def test_multiple_candidates_abstain_before_authenticated_phase(
     assert result.execution_authorized is False
 
 
+def test_duplicate_public_market_tickers_are_rejected() -> None:
+    now = datetime(2026, 8, 23, 17, tzinfo=UTC)
+    market = M27RMarketEvidence(
+        market_ticker="KXHIGHCHI-TEST",
+        candidate_input=cast(Any, (None, None, None)),
+        m27j_evidence_path=Path("m27j.json"),
+        m27a_binding_evidence_path=Path("m27a.json"),
+        current_series_fee_observation=cast(Any, None),
+        current_event_fee_override=cast(Any, None),
+        current_event_fee_observed_at=now,
+    )
+    with pytest.raises(ValueError, match="duplicate market tickers"):
+        M27RPublicEvidence(public_evidence_path=Path("public.json"), markets=(market, market))
+
+
 def test_exact_one_fixture_reaches_real_m27q_preflight_without_state_mutation(
     tmp_path: Path,
 ) -> None:
     values = _fixture(tmp_path)
     now = cast(datetime, values["now"])
     candidate_inputs = cast(Any, values["candidate_inputs"])
-    public_evidence = M27RPublicEvidence(
-        candidate_inputs=candidate_inputs,
-        public_evidence_path=cast(Path, values["public_evidence_path"]),
+    selection = select_experimental_candidate(candidate_inputs, now=now)
+    candidate = cast(ExperimentalCandidate, selection.selected)
+    market_evidence = M27RMarketEvidence(
+        market_ticker=candidate.market_ticker,
+        candidate_input=candidate_inputs[0],
         m27j_evidence_path=cast(Path, values["m27j_evidence_path"]),
         m27a_binding_evidence_path=cast(Path, values["m27a_binding_evidence_path"]),
         current_series_fee_observation=cast(
@@ -151,12 +161,13 @@ def test_exact_one_fixture_reaches_real_m27q_preflight_without_state_mutation(
             values["current_event_fee_observed_at"],
         ),
     )
+    public_evidence = M27RPublicEvidence(
+        public_evidence_path=cast(Path, values["public_evidence_path"]),
+        markets=(market_evidence,),
+    )
 
     state_path = cast(Path, values["state_path"])
     before = inspect_first_canary_state(state_path=state_path, now=now)
-
-    selection = select_experimental_candidate(candidate_inputs, now=now)
-    candidate = cast(ExperimentalCandidate, selection.selected)
     candidate_evidence = M27RCandidateEvidence(
         m27f_bundle=cast(Any, values["m27f_bundle"]),
         m27f_evidence_path=cast(Path, values["m27f_evidence_path"]),
