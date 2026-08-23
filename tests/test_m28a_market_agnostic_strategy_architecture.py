@@ -64,7 +64,12 @@ def chicago() -> MarketFamilySpec:
         selector="KXHIGHCHI",
         settlement_mapping_id="kalshi-weather-company-chicago-v1",
         source_ids=("noaa-ndfd", "kalshi-public"),
-        feature_groups=("forecast-level", "forecast-revisions", "market-economics"),
+        feature_groups=(
+            "forecast-level",
+            "forecast-revisions",
+            "market-economics",
+            "seasonality",
+        ),
         model_recipe_ids=("weather-calibrated-ensemble-v1",),
     )
 
@@ -76,7 +81,12 @@ def nyc() -> MarketFamilySpec:
         selector="KXHIGHNY",
         settlement_mapping_id="kalshi-weather-company-new-york-v1",
         source_ids=("noaa-ndfd", "kalshi-public"),
-        feature_groups=("forecast-level", "forecast-revisions", "market-economics"),
+        feature_groups=(
+            "forecast-level",
+            "forecast-revisions",
+            "market-economics",
+            "seasonality",
+        ),
         model_recipe_ids=("weather-calibrated-ensemble-v1",),
     )
 
@@ -166,6 +176,55 @@ def test_family_cannot_reference_unknown_source_or_model() -> None:
             sources=(market_source(),),
             model_recipes=(weather_recipe(),),
             market_families=(chicago(),),
+        )
+
+
+def test_family_cannot_reference_source_from_wrong_domain() -> None:
+    economics_only = SourceCapability.build(
+        source_id="economics-only",
+        roles=(SourceRole.STRUCTURED_DATA,),
+        domains=("economics",),
+        authority="official source",
+        maximum_age_seconds=60,
+        production_allowed=False,
+    )
+    family = MarketFamilySpec.build(
+        family_id="weather.invalid-source",
+        domain="weather",
+        selector="INVALID",
+        settlement_mapping_id="mapping",
+        source_ids=("economics-only",),
+        feature_groups=(
+            "forecast-level",
+            "forecast-revisions",
+            "market-economics",
+            "seasonality",
+        ),
+        model_recipe_ids=("weather-calibrated-ensemble-v1",),
+    )
+    with pytest.raises(ProductionStrategyError, match="source does not support"):
+        StrategyRegistry.build(
+            sources=(economics_only,),
+            model_recipes=(weather_recipe(),),
+            market_families=(family,),
+        )
+
+
+def test_family_must_satisfy_model_recipe_features() -> None:
+    incomplete = MarketFamilySpec.build(
+        family_id="weather.incomplete-features",
+        domain="weather",
+        selector="INCOMPLETE",
+        settlement_mapping_id="mapping",
+        source_ids=("noaa-ndfd", "kalshi-public"),
+        feature_groups=("forecast-level", "market-economics"),
+        model_recipe_ids=("weather-calibrated-ensemble-v1",),
+    )
+    with pytest.raises(ProductionStrategyError, match="feature requirements"):
+        StrategyRegistry.build(
+            sources=(weather_source(), market_source()),
+            model_recipes=(weather_recipe(),),
+            market_families=(incomplete,),
         )
 
 
