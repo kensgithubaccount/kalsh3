@@ -85,6 +85,23 @@ def test_candidate_series_uses_category_response_metadata_without_ticker_guessin
     assert candidate_temperature_series(payload) == ("KXHIGHCHI", "KXLOWTNYC")
 
 
+def test_candidate_series_ignores_unrelated_malformed_series_before_source_validation() -> None:
+    unrelated = {
+        "category": "Politics",
+        "settlement_sources": [{"name": None}],
+    }
+    weather_non_temperature = _series("KXRAINSEA", "Rainfall in Seattle today?")
+    weather_non_temperature["settlement_sources"] = [{"name": None}]
+    payload = {
+        "series": [
+            unrelated,
+            weather_non_temperature,
+            _series("KXHIGHCHI", "Highest temperature in Chicago today?"),
+        ]
+    }
+    assert candidate_temperature_series(payload) == ("KXHIGHCHI",)
+
+
 def test_candidate_series_fails_closed_on_duplicate_or_malformed_metadata() -> None:
     duplicate = _series("KXHIGHCHI", "Highest temperature in Chicago today?")
     with pytest.raises(SeriesScopeError, match="duplicated"):
