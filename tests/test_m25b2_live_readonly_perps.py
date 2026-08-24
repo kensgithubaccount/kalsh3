@@ -418,8 +418,7 @@ class BoundedFakeWebSocket(FakeWebSocket):
         try:
             return next(self.frames)
         except StopIteration:
-            await asyncio.sleep(3600)
-            raise AssertionError("unreachable") from None
+            raise TimeoutError("scripted fake session exhausted") from None
 
 
 @pytest.mark.parametrize(
