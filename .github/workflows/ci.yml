@@ -15,7 +15,9 @@ jobs:
           enable-cache: true
       - run: uv sync --locked --all-groups
       - name: Install CI verification tools
-        run: uv pip install ruff mypy pytest
+        # Ruff 0.16.3 is the historically observed green verifier for this repository.
+        # Keep it explicit so future releases cannot silently change reviewed formatting.
+        run: uv pip install ruff==0.16.3 mypy pytest
       - run: make verify
       - name: Validate effective deployment configuration
         env:
