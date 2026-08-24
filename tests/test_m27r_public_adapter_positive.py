@@ -108,7 +108,7 @@ def _public_response(path: str, payload: dict[str, object]) -> dict[str, object]
     }
 
 
-def _m27e_public(markets: list[dict[str, object]] | None = None) -> dict[str, object]:
+def _m27e_public(markets: list[object] | None = None) -> dict[str, object]:
     discovered = [_raw_market()] if markets is None else markets
     return {
         "schema": "kalsh3.m27e.public-read.v1",
@@ -483,3 +483,28 @@ def test_full_public_scope_reconstructs_and_binds_two_markets(
     assert unsupported_selection.state is CandidateState.QUALIFYING_EXPERIMENTAL_CANARY
     assert unsupported_selection.selected is not None
     assert unsupported_selection.selected.market_ticker == MARKET_TICKER
+
+    # A malformed second discovery row must fail before the successful A prefix can reach
+    # selection or candidate-specific authentication.
+    malformed_provider = replace(
+        provider,
+        public_acceptance_acquirer=lambda **_: _m27e_public(
+            [raw_markets[MARKET_TICKER], {"ticker": OTHER_MARKET_TICKER}]
+        ),
+    )
+
+    class ForbiddenMalformedCandidateProvider:
+        calls = 0
+
+        def collect_candidate_evidence(self, **_: object):
+            self.calls += 1
+            raise AssertionError("authenticated phase must not run for malformed public scope")
+
+    malformed_candidate_provider = ForbiddenMalformedCandidateProvider()
+    with pytest.raises(M27RPublicAdapterError, match="valid status"):
+        _run_readonly_operator_preflight_for_test(
+            clock=lambda: NOW,
+            public_provider=malformed_provider,
+            candidate_provider=malformed_candidate_provider,
+        )
+    assert malformed_candidate_provider.calls == 0

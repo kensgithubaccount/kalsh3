@@ -12,16 +12,19 @@ import base64
 import binascii
 import hashlib
 import json
+import re
 from collections.abc import Callable
 from datetime import UTC, datetime
 from typing import Any
 from urllib.parse import parse_qs, urlencode, urlsplit
 
+from .domain import MarketStatus, UniverseValidationError, normalize_status
 from .public_read import BASE, HOST, MAX_RESPONSE_BYTES, PublicReadFailure, get
 
 SCHEMA = "kalsh3.m27e.public-read.v1"
 SERIES_TICKER = "KXHIGHCHI"
 ACTIVE_MARKET_STATUS = "active"
+_TICKER_RE = re.compile(r"^[A-Z0-9][A-Z0-9_.-]{0,127}$")
 
 PublicGetter = Callable[[str], dict[str, object]]
 Clock = Callable[[], datetime]
@@ -193,11 +196,36 @@ def validate_public_acceptance(evidence: object) -> dict[str, object]:
     pages = markets["pages"]
     if not pages:
         raise PublicReadFailure("M27E market discovery has no retained page")
-    for page in pages:
+    for page_index, page in enumerate(pages):
         payload, _observed = validate_response_evidence(page, market_page=True)
-        if not isinstance(payload.get("markets"), list):
+        rows = payload.get("markets")
+        if not isinstance(rows, list):
             raise PublicReadFailure("M27E market page is malformed")
+        for row_index, row in enumerate(rows):
+            _validate_market_row(row, page_index=page_index, row_index=row_index)
     return evidence
+
+
+def _validate_market_row(row: object, *, page_index: int, row_index: int) -> dict[str, Any]:
+    if not isinstance(row, dict):
+        raise PublicReadFailure(f"M27E market row {page_index}:{row_index} is not an object")
+    status = row.get("status")
+    if not isinstance(status, str) or not status:
+        raise PublicReadFailure(f"M27E market row {page_index}:{row_index} has no valid status")
+    try:
+        canonical_status = normalize_status(status)
+    except UniverseValidationError as exc:
+        raise PublicReadFailure(
+            f"M27E market row {page_index}:{row_index} has unknown status"
+        ) from exc
+    if canonical_status is MarketStatus.ACTIVE:
+        for field in ("ticker", "event_ticker"):
+            value = row.get(field)
+            if not isinstance(value, str) or not _TICKER_RE.fullmatch(value):
+                raise PublicReadFailure(
+                    f"active M27E market row {page_index}:{row_index} has malformed {field}"
+                )
+    return row
 
 
 def series_payload_and_observed_at(evidence: object) -> tuple[dict[str, Any], datetime]:
@@ -224,18 +252,21 @@ def active_market_payloads(evidence: object) -> tuple[dict[str, Any], ...]:
         raise PublicReadFailure("M27E market pages are malformed")
 
     active: dict[str, dict[str, Any]] = {}
-    for page in pages:
+    for page_index, page in enumerate(pages):
         payload, _observed = validate_response_evidence(page, market_page=True)
         rows = payload.get("markets")
         if not isinstance(rows, list):
             raise PublicReadFailure("M27E market page is malformed")
-        for raw in rows:
-            if not isinstance(raw, dict) or raw.get("status") != ACTIVE_MARKET_STATUS:
+        for row_index, raw in enumerate(rows):
+            validated_row = _validate_market_row(
+                raw,
+                page_index=page_index,
+                row_index=row_index,
+            )
+            if normalize_status(validated_row["status"]) is not MarketStatus.ACTIVE:
                 continue
-            ticker = raw.get("ticker")
-            if not isinstance(ticker, str) or not ticker:
-                raise PublicReadFailure("active M27E market is missing ticker")
+            ticker = validated_row["ticker"]
             if ticker in active:
                 raise PublicReadFailure("active M27E market ticker appeared more than once")
-            active[ticker] = raw
+            active[ticker] = validated_row
     return tuple(active[ticker] for ticker in sorted(active))
