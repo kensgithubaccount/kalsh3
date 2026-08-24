@@ -139,6 +139,28 @@ def test_settlement_label_rejects_incomplete_or_naive_records() -> None:
             resolved_at=NOW,
             settlement_evidence_id="settlement-a",
         )
+
+
+def test_settlement_label_direct_constructor_derives_identity() -> None:
+    first = SettlementLabel("event-a", "market-a", True, NOW, "settlement-a")
+    second = SettlementLabel("event-a", "market-a", True, NOW, "settlement-a")
+    assert first.content_hash == second.content_hash
+    with pytest.raises(TypeError, match="unexpected keyword argument"):
+        SettlementLabel(  # type: ignore[call-arg]
+            "event-a", "market-a", True, NOW, "settlement-a", content_hash="forged"
+        )
+
+
+def test_settlement_label_identity_changes_for_each_semantic_field() -> None:
+    baseline = SettlementLabel("event-a", "market-a", True, NOW, "settlement-a")
+    variants = (
+        SettlementLabel("event-a", "market-a", False, NOW, "settlement-a"),
+        SettlementLabel("event-a", "market-a", True, NOW + timedelta(seconds=1), "settlement-a"),
+        SettlementLabel("event-a", "market-a", True, NOW, "settlement-b"),
+        SettlementLabel("event-b", "market-a", True, NOW, "settlement-a"),
+        SettlementLabel("event-a", "market-b", True, NOW, "settlement-a"),
+    )
+    assert all(label.content_hash != baseline.content_hash for label in variants)
     with pytest.raises(ProductionStrategyError, match="timezone-aware"):
         SettlementLabel.build(
             event_id="event-a",
@@ -162,6 +184,30 @@ def test_settlement_manifest_rejects_duplicate_market_labels() -> None:
             settlement_mapping_id="mapping-v1",
             authority="source",
             labels=(label, label),
+        )
+
+
+def test_settlement_manifest_direct_constructor_derives_identity() -> None:
+    label = SettlementLabel(
+        event_id="event-a",
+        market_ticker="market-a",
+        resolved_outcome=True,
+        resolved_at=NOW,
+        settlement_evidence_id="settlement-a",
+    )
+    manifest = SettlementLabelManifest(
+        settlement_mapping_id="mapping-v1",
+        authority="source",
+        labels=(label,),
+    )
+    assert manifest.manifest_id == manifest.content_hash
+    with pytest.raises(TypeError, match="unexpected keyword argument"):
+        SettlementLabelManifest(  # type: ignore[call-arg]
+            settlement_mapping_id="mapping-v1",
+            authority="source",
+            labels=(label,),
+            manifest_id="forged",
+            content_hash="forged",
         )
 
 
@@ -332,6 +378,47 @@ def test_settlement_manifest_and_dataset_bind_exact_outcomes_and_pairing() -> No
         ).manifest_id
         != dataset().manifest_id
     )
+
+
+def test_settlement_evidence_and_resolution_time_change_downstream_identity() -> None:
+    baseline = labels()
+    baseline_dataset = dataset()
+    changed_evidence = SettlementLabel.build(
+        event_id="event-a",
+        market_ticker="market-a",
+        resolved_outcome=True,
+        resolved_at=NOW - timedelta(days=1),
+        settlement_evidence_id="settlement-other",
+    )
+    changed_time = SettlementLabel.build(
+        event_id="event-a",
+        market_ticker="market-a",
+        resolved_outcome=True,
+        resolved_at=NOW - timedelta(days=1, seconds=1),
+        settlement_evidence_id="settlement-a",
+    )
+
+    def manifest_for(label: SettlementLabel) -> SettlementLabelManifest:
+        other = next(item for item in baseline.labels if item.market_ticker == "market-b")
+        return SettlementLabelManifest.build(
+            settlement_mapping_id=baseline.settlement_mapping_id,
+            authority=baseline.authority,
+            labels=(label, other),
+        )
+
+    for changed in (changed_evidence, changed_time):
+        changed_manifest = manifest_for(changed)
+        changed_dataset = TrainingDatasetManifest.build(
+            family="KXHIGHCHI",
+            feature_schema_hash="feature-schema-v1",
+            feature_artifact_ids=("features-a", "features-b"),
+            settlement_labels=changed_manifest,
+            temporal_split=split(),
+            prediction_cutoff_rule="only evidence published before decision timestamp",
+            created_at=NOW,
+        )
+        assert changed_manifest.manifest_id != baseline.manifest_id
+        assert changed_dataset.manifest_id != baseline_dataset.manifest_id
 
 
 def test_prediction_is_prospective_content_addressed_and_model_bound() -> None:

@@ -21,7 +21,7 @@ or promote a model by themselves. They make the production-learning boundary exp
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from decimal import Decimal
 from enum import StrEnum
@@ -104,7 +104,32 @@ class SettlementLabel:
     resolved_outcome: bool
     resolved_at: datetime
     settlement_evidence_id: str
-    content_hash: str
+    content_hash: str = field(init=False)
+
+    def __post_init__(self) -> None:
+        if not self.event_id.strip() or not self.market_ticker.strip():
+            raise ProductionStrategyError("settlement label identity is required")
+        if not isinstance(self.resolved_outcome, bool):
+            raise ProductionStrategyError("settlement outcome must be boolean")
+        if self.resolved_at.tzinfo is None:
+            raise ProductionStrategyError("settlement label timestamp must be timezone-aware")
+        if not self.settlement_evidence_id.strip():
+            raise ProductionStrategyError("settlement evidence identity is required")
+        normalized_resolved_at = self.resolved_at.astimezone(UTC)
+        object.__setattr__(self, "resolved_at", normalized_resolved_at)
+        object.__setattr__(
+            self,
+            "content_hash",
+            stable_hash(
+                (
+                    self.event_id,
+                    self.market_ticker,
+                    self.resolved_outcome,
+                    normalized_resolved_at.isoformat(),
+                    self.settlement_evidence_id,
+                )
+            ),
+        )
 
     @classmethod
     def build(
@@ -116,29 +141,12 @@ class SettlementLabel:
         resolved_at: datetime,
         settlement_evidence_id: str,
     ) -> SettlementLabel:
-        if not event_id.strip() or not market_ticker.strip():
-            raise ProductionStrategyError("settlement label identity is required")
-        if not isinstance(resolved_outcome, bool):
-            raise ProductionStrategyError("settlement outcome must be boolean")
-        if resolved_at.tzinfo is None:
-            raise ProductionStrategyError("settlement label timestamp must be timezone-aware")
-        if not settlement_evidence_id.strip():
-            raise ProductionStrategyError("settlement evidence identity is required")
-        values = (
-            event_id,
-            market_ticker,
-            resolved_outcome,
-            resolved_at.astimezone(UTC).isoformat(),
-            settlement_evidence_id,
-        )
-        digest = stable_hash(values)
         return cls(
             event_id=event_id,
             market_ticker=market_ticker,
             resolved_outcome=resolved_outcome,
-            resolved_at=resolved_at.astimezone(UTC),
+            resolved_at=resolved_at,
             settlement_evidence_id=settlement_evidence_id,
-            content_hash=digest,
         )
 
 
@@ -146,11 +154,34 @@ class SettlementLabel:
 class SettlementLabelManifest:
     """Authoritative exact contract-level labels used for production training/evaluation."""
 
-    manifest_id: str
     settlement_mapping_id: str
     authority: str
     labels: tuple[SettlementLabel, ...]
-    content_hash: str
+    manifest_id: str = field(init=False)
+    content_hash: str = field(init=False)
+
+    def __post_init__(self) -> None:
+        if not self.settlement_mapping_id.strip():
+            raise ProductionStrategyError("authoritative settlement mapping is required")
+        if not self.authority.strip():
+            raise ProductionStrategyError("settlement authority is required")
+        if not self.labels:
+            raise ProductionStrategyError("settlement label manifest cannot be empty")
+        if not all(isinstance(label, SettlementLabel) for label in self.labels):
+            raise ProductionStrategyError("settlement manifest labels are invalid")
+        if len({label.market_ticker for label in self.labels}) != len(self.labels):
+            raise ProductionStrategyError("settlement market labels must be unique")
+        canonical_labels = tuple(sorted(self.labels, key=lambda label: label.content_hash))
+        object.__setattr__(self, "labels", canonical_labels)
+        digest = stable_hash(
+            (
+                self.settlement_mapping_id,
+                self.authority,
+                tuple(label.content_hash for label in canonical_labels),
+            )
+        )
+        object.__setattr__(self, "manifest_id", digest)
+        object.__setattr__(self, "content_hash", digest)
 
     @classmethod
     def build(
@@ -160,27 +191,10 @@ class SettlementLabelManifest:
         authority: str,
         labels: tuple[SettlementLabel, ...],
     ) -> SettlementLabelManifest:
-        if not settlement_mapping_id.strip():
-            raise ProductionStrategyError("authoritative settlement mapping is required")
-        if not authority.strip():
-            raise ProductionStrategyError("settlement authority is required")
-        if not labels:
-            raise ProductionStrategyError("settlement label manifest cannot be empty")
-        if len({label.market_ticker for label in labels}) != len(labels):
-            raise ProductionStrategyError("settlement market labels must be unique")
-        canonical_labels = tuple(sorted(labels, key=lambda label: label.content_hash))
-        values = (
-            settlement_mapping_id,
-            authority,
-            tuple(label.content_hash for label in canonical_labels),
-        )
-        digest = stable_hash(values)
         return cls(
-            manifest_id=digest,
             settlement_mapping_id=settlement_mapping_id,
             authority=authority,
-            labels=canonical_labels,
-            content_hash=digest,
+            labels=labels,
         )
 
 
