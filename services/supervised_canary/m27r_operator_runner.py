@@ -11,6 +11,7 @@ authorization issuer, burn, sender, or exchange mutation capability.
 
 from __future__ import annotations
 
+import json
 import time
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -18,6 +19,8 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Protocol
 
+from services.market_universe.m27e_public_acceptance import validate_public_acceptance
+from services.market_universe.public_read import PublicReadFailure
 from services.opportunity_engine.live_fees import (
     CurrentSeriesFeeObservation,
     EventFeeOverride,
@@ -226,6 +229,89 @@ def _selected_market_evidence(
     return market
 
 
+def _parse_public_timestamp(value: object, *, field: str) -> datetime:
+    if not isinstance(value, str):
+        raise M27ROperatorError(f"{field} timestamp is missing")
+    try:
+        parsed = datetime.fromisoformat(value)
+    except ValueError as exc:
+        raise M27ROperatorError(f"{field} timestamp is malformed") from exc
+    _require_aware(parsed, field=field)
+    return parsed
+
+
+def _public_acceptance_observation_times(path: Path) -> tuple[tuple[str, datetime], ...]:
+    try:
+        raw = json.loads(path.read_text())
+        validated = validate_public_acceptance(raw)
+    except (OSError, json.JSONDecodeError, PublicReadFailure) as exc:
+        raise M27ROperatorError(
+            "persisted M27E public evidence is unavailable or invalid before authentication"
+        ) from exc
+
+    times: list[tuple[str, datetime]] = [
+        (
+            "M27E acquisition started_at",
+            _parse_public_timestamp(validated.get("started_at"), field="M27E acquisition"),
+        )
+    ]
+    for name in ("exchange_status", "series"):
+        response = validated.get(name)
+        if not isinstance(response, dict):  # pragma: no cover - validator guarantees this
+            raise M27ROperatorError(f"M27E {name} response is malformed")
+        times.append(
+            (
+                f"M27E {name} observed_at",
+                _parse_public_timestamp(response.get("observed_at"), field=f"M27E {name}"),
+            )
+        )
+    markets = validated.get("markets")
+    if not isinstance(markets, dict):  # pragma: no cover - validator guarantees this
+        raise M27ROperatorError("M27E market discovery is malformed")
+    pages = markets.get("pages")
+    if not isinstance(pages, list):  # pragma: no cover - validator guarantees this
+        raise M27ROperatorError("M27E market pages are malformed")
+    for index, page in enumerate(pages):
+        if not isinstance(page, dict):  # pragma: no cover - validator guarantees this
+            raise M27ROperatorError("M27E market page is malformed")
+        times.append(
+            (
+                f"M27E market page {index} observed_at",
+                _parse_public_timestamp(page.get("observed_at"), field=f"M27E market page {index}"),
+            )
+        )
+    return tuple(times)
+
+
+def _validate_selected_public_evidence_time(
+    *, public: M27RPublicEvidence, market: M27RMarketEvidence, now: datetime
+) -> str | None:
+    """Reject source evidence that claims to have been observed after selection.
+
+    This is deliberately an M27R boundary check. It prevents impossible public evidence from
+    crossing into the authenticated phase without changing shared M27D selection policy.
+    Forecast valid intervals and contract target dates are intentionally not checked here.
+    """
+
+    _, forecast, economics = market.candidate_input
+    observations = (
+        ("forecast reference", forecast.forecast_reference_time),
+        ("market observation", economics.market_observed_at),
+        ("orderbook observation", economics.orderbook_observed_at),
+        ("economics observation", economics.economics_observed_at),
+        ("series fee observation", market.current_series_fee_observation.observed_at),
+        ("event fee observation", market.current_event_fee_observed_at),
+    )
+    for name, observed_at in observations:
+        _require_aware(observed_at, field=f"{name} timestamp")
+        if observed_at > now:
+            return f"FUTURE_DATED_PUBLIC_EVIDENCE: {name} is after candidate selection time"
+    for name, observed_at in _public_acceptance_observation_times(public.public_evidence_path):
+        if observed_at > now:
+            return f"FUTURE_DATED_PUBLIC_EVIDENCE: {name} is after candidate selection time"
+    return None
+
+
 def _run_readonly_operator_preflight_for_test(
     *,
     clock: Clock,
@@ -258,6 +344,23 @@ def _run_readonly_operator_preflight_for_test(
 
     candidate = selection.selected
     market = _selected_market_evidence(public=public, candidate=candidate, now=selection_now)
+
+    temporal_reason = _validate_selected_public_evidence_time(
+        public=public,
+        market=market,
+        now=selection_now,
+    )
+    if temporal_reason is not None:
+        return M27ROperatorRun(
+            software_version=SOFTWARE_VERSION,
+            state="ABSTAIN",
+            reason=temporal_reason,
+            candidate_id=candidate.candidate_id,
+            authenticated_phase_performed=False,
+            read_only=True,
+            execution_authorized=False,
+            preflight=None,
+        )
 
     candidate_evidence = candidate_provider.collect_candidate_evidence(
         clock=clock,

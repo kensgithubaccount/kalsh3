@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import ast
-from datetime import UTC, datetime
+import json
+from dataclasses import replace
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any, cast
@@ -56,6 +58,15 @@ class _ForbiddenCandidateProvider:
     def collect_candidate_evidence(self, **_: object) -> Any:
         self.calls += 1
         raise AssertionError("authenticated candidate phase must not run")
+
+
+class _ReachedCandidateProvider:
+    def __init__(self) -> None:
+        self.calls = 0
+
+    def collect_candidate_evidence(self, **_: object) -> Any:
+        self.calls += 1
+        raise AssertionError("authenticated candidate phase was reached")
 
 
 class _FixtureCandidateProvider:
@@ -173,6 +184,178 @@ def _candidate_evidence(
         order_group=cast(Any, values["order_group"]),
         authorization_service_available=cast(bool, values["authorization_service_available"]),
     )
+
+
+def _public_market_evidence(values: dict[str, object], candidate_inputs: Any) -> M27RPublicEvidence:
+    candidate = cast(ExperimentalCandidate, values["selected_candidate"])
+    return M27RPublicEvidence(
+        public_evidence_path=cast(Path, values["public_evidence_path"]),
+        markets=(
+            M27RMarketEvidence(
+                market_ticker=candidate.market_ticker,
+                candidate_input=candidate_inputs[0],
+                m27j_evidence_path=cast(Path, values["m27j_evidence_path"]),
+                m27a_binding_evidence_path=cast(Path, values["m27a_binding_evidence_path"]),
+                current_series_fee_observation=cast(Any, values["current_series_fee_observation"]),
+                current_event_fee_override=cast(Any, values["current_event_fee_override"]),
+                current_event_fee_observed_at=cast(
+                    datetime, values["current_event_fee_observed_at"]
+                ),
+            ),
+        ),
+    )
+
+
+@pytest.mark.parametrize(
+    ("field", "label"),
+    (
+        ("forecast_reference_time", "forecast reference"),
+        ("market_observed_at", "market observation"),
+        ("orderbook_observed_at", "orderbook observation"),
+        ("economics_observed_at", "economics observation"),
+    ),
+)
+def test_future_selected_public_evidence_abstains_before_authentication(
+    tmp_path: Path, field: str, label: str
+) -> None:
+    values = _fixture(tmp_path)
+    now = cast(datetime, values["now"])
+    probability, forecast, economics = cast(Any, values["candidate_inputs"])[0]
+    future = now + timedelta(seconds=1)
+    if field == "forecast_reference_time":
+        forecast = replace(forecast, forecast_reference_time=future)
+    else:
+        economics = replace(economics, **{field: future})
+    candidate_inputs = ((probability, forecast, economics),)
+    candidate_provider = _ForbiddenCandidateProvider()
+
+    result = _run_readonly_operator_preflight_for_test(
+        clock=_fixed_clock(now),
+        public_provider=_PublicProvider(_public_market_evidence(values, candidate_inputs)),
+        candidate_provider=candidate_provider,
+    )
+
+    assert candidate_provider.calls == 0, label
+    assert result.state == "ABSTAIN"
+    assert result.reason == (
+        f"FUTURE_DATED_PUBLIC_EVIDENCE: {label} is after candidate selection time"
+    )
+    assert result.authenticated_phase_performed is False
+    assert result.execution_authorized is False
+    assert result.preflight is None
+
+
+@pytest.mark.parametrize(
+    ("field", "label"),
+    (
+        ("current_series_fee_observation", "series fee observation"),
+        ("current_event_fee_observed_at", "event fee observation"),
+    ),
+)
+def test_future_fee_evidence_abstains_before_authentication(
+    tmp_path: Path, field: str, label: str
+) -> None:
+    values = _fixture(tmp_path)
+    now = cast(datetime, values["now"])
+    future = now + timedelta(seconds=1)
+    candidate_inputs = cast(Any, values["candidate_inputs"])
+    market = _public_market_evidence(values, candidate_inputs).markets[0]
+    if field == "current_series_fee_observation":
+        fee = replace(market.current_series_fee_observation, observed_at=future)
+        market = replace(market, current_series_fee_observation=fee)
+    else:
+        market = replace(market, current_event_fee_observed_at=future)
+    public = M27RPublicEvidence(
+        public_evidence_path=cast(Path, values["public_evidence_path"]), markets=(market,)
+    )
+    candidate_provider = _ForbiddenCandidateProvider()
+
+    result = _run_readonly_operator_preflight_for_test(
+        clock=_fixed_clock(now),
+        public_provider=_PublicProvider(public),
+        candidate_provider=candidate_provider,
+    )
+
+    assert candidate_provider.calls == 0
+    assert result.state == "ABSTAIN"
+    assert result.reason == (
+        f"FUTURE_DATED_PUBLIC_EVIDENCE: {label} is after candidate selection time"
+    )
+    assert result.authenticated_phase_performed is False
+    assert result.execution_authorized is False
+    assert result.preflight is None
+
+
+def test_equal_selected_public_evidence_time_is_allowed(tmp_path: Path) -> None:
+    values = _fixture(tmp_path)
+    now = cast(datetime, values["now"])
+    probability, forecast, economics = cast(Any, values["candidate_inputs"])[0]
+    candidate_inputs = (
+        (
+            probability,
+            replace(forecast, forecast_reference_time=now),
+            replace(
+                economics,
+                market_observed_at=now,
+                orderbook_observed_at=now,
+                economics_observed_at=now,
+            ),
+        ),
+    )
+    market = _public_market_evidence(values, candidate_inputs).markets[0]
+    market = replace(
+        market,
+        current_series_fee_observation=replace(
+            market.current_series_fee_observation, observed_at=now
+        ),
+        current_event_fee_observed_at=now,
+    )
+    candidate_provider = _ReachedCandidateProvider()
+    with pytest.raises(AssertionError, match="authenticated candidate phase was reached"):
+        _run_readonly_operator_preflight_for_test(
+            clock=_fixed_clock(now),
+            public_provider=_PublicProvider(
+                M27RPublicEvidence(
+                    public_evidence_path=cast(Path, values["public_evidence_path"]),
+                    markets=(market,),
+                )
+            ),
+            candidate_provider=candidate_provider,
+        )
+
+    assert candidate_provider.calls == 1
+
+
+def test_future_m27e_response_time_abstains_before_authentication(tmp_path: Path) -> None:
+    values = _fixture(tmp_path)
+    now = cast(datetime, values["now"])
+    public_path = cast(Path, values["public_evidence_path"])
+    public = json.loads(public_path.read_text())
+    public["exchange_status"]["observed_at"] = (now + timedelta(seconds=1)).isoformat()
+    public_path.write_text(json.dumps(public, sort_keys=True))
+    candidate_inputs = cast(Any, values["candidate_inputs"])
+    candidate_provider = _ForbiddenCandidateProvider()
+
+    result = _run_readonly_operator_preflight_for_test(
+        clock=_fixed_clock(now),
+        public_provider=_PublicProvider(
+            M27RPublicEvidence(
+                public_evidence_path=public_path,
+                markets=_public_market_evidence(values, candidate_inputs).markets,
+            )
+        ),
+        candidate_provider=candidate_provider,
+    )
+
+    assert candidate_provider.calls == 0
+    assert result.state == "ABSTAIN"
+    assert result.reason == (
+        "FUTURE_DATED_PUBLIC_EVIDENCE: M27E exchange_status observed_at is after "
+        "candidate selection time"
+    )
+    assert result.authenticated_phase_performed is False
+    assert result.execution_authorized is False
+    assert result.preflight is None
 
 
 def test_exact_one_fixture_reaches_real_m27q_preflight_without_state_mutation(
