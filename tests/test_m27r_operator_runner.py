@@ -158,7 +158,9 @@ def test_duplicate_public_market_tickers_are_rejected() -> None:
         M27RPublicEvidence(public_evidence_path=Path("public.json"), markets=(market, market))
 
 
-def _candidate_evidence(values: dict[str, object], candidate: ExperimentalCandidate) -> M27RCandidateEvidence:
+def _candidate_evidence(
+    values: dict[str, object], candidate: ExperimentalCandidate
+) -> M27RCandidateEvidence:
     return M27RCandidateEvidence(
         candidate_id=candidate.candidate_id,
         market_ticker=candidate.market_ticker,

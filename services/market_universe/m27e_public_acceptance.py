@@ -217,15 +217,18 @@ def active_market_payloads(evidence: object) -> tuple[dict[str, Any], ...]:
 
     validated = validate_public_acceptance(evidence)
     markets = validated["markets"]
-    assert isinstance(markets, dict)
+    if not isinstance(markets, dict):
+        raise PublicReadFailure("M27E market discovery is malformed")
     pages = markets["pages"]
-    assert isinstance(pages, list)
+    if not isinstance(pages, list):
+        raise PublicReadFailure("M27E market pages are malformed")
 
     active: dict[str, dict[str, Any]] = {}
     for page in pages:
         payload, _observed = validate_response_evidence(page, market_page=True)
         rows = payload.get("markets")
-        assert isinstance(rows, list)
+        if not isinstance(rows, list):
+            raise PublicReadFailure("M27E market page is malformed")
         for raw in rows:
             if not isinstance(raw, dict) or raw.get("status") != ACTIVE_MARKET_STATUS:
                 continue

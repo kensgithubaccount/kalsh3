@@ -151,9 +151,7 @@ def _fixture(tmp_path: Path) -> dict[str, object]:
         "candidate_exposure": exposure,
         "state_path": state_path,
         "readiness": _all_ready(),
-        "order_group": RequiredOrderGroupPolicy(
-            "m27q-none", False, 0, Decimal("1.00"), True, True
-        ),
+        "order_group": RequiredOrderGroupPolicy("m27q-none", False, 0, Decimal("1.00"), True, True),
         "authorization_service_available": True,
     }
 
@@ -190,7 +188,8 @@ def test_later_reselection_keeps_exact_authenticated_candidate_identity(tmp_path
     assert isinstance(original, m27d.ExperimentalCandidate)
     later = values["now"] + timedelta(seconds=1)  # type: ignore[operator]
     later_selection = m27d.select_experimental_candidate(
-        values["candidate_inputs"], now=later  # type: ignore[arg-type]
+        values["candidate_inputs"],
+        now=later,  # type: ignore[arg-type]
     )
     assert later_selection.selected is not None
     assert later_selection.selected.candidate_id == original.candidate_id
