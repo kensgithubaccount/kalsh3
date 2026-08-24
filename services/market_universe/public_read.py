@@ -1,28 +1,17 @@
 """Shared bounded, unauthenticated, fixed-origin public GET transport for the Kalshi exchange.
 
 This is the SINGLE reviewed transport implementation for every public (no credential) read this
-repository performs against the exchange -- the M27E exchange-status/series/markets acceptance
-script, M27J's authoritative market-snapshot acquisition, the orderbook snapshot layer
-(:mod:`services.market_universe.orderbook_snapshot`), and the event snapshot layer
-(:mod:`services.market_universe.event_snapshot`) all depend on this module, never on each other or
-on a second transport configuration.
+repository performs against the exchange. PUBLIC GET only: no credentials, no Authorization
+header, fixed production host, TLS, no redirects, bounded timeout, bounded response size.
 
-Dependency direction: ``scripts/`` may import this ``services`` module; this module (and no other
-``services`` module) must never import anything from ``scripts/``.
-
-PUBLIC GET only: no credentials, no Authorization header, fixed production host, TLS, no
-redirects (``http.client`` never follows them on its own -- a 3xx response simply surfaces as its
-own HTTP status), bounded timeout, bounded response size. ``get``/``get_market``/
-``get_market_with_body``/``get_event_with_body`` are one path segment for a market or event
-ticker only (no query strings, no path traversal). ``get_orderbook_with_body`` is the one
-deliberate exception: it issues exactly one fixed query parameter (``tickers=<exact ticker>``)
-against the batch orderbook endpoint for exactly one ticker -- never a caller-supplied or
-multi-ticker query, never a second HTTP implementation, and every other guarantee (fixed host,
-GET-only, no redirects, bounded size) still applies identically.
+Every response evidence envelope now also retains the exact bounded raw body as base64. This lets
+later consumers independently recompute ``body_sha256`` and re-parse the exact bytes instead of
+trusting a stamped hash or caller-reconstructed JSON object.
 """
 
 from __future__ import annotations
 
+import base64
 import hashlib
 import http.client
 import json
@@ -35,8 +24,6 @@ HOST = "external-api.kalshi.com"
 BASE = "/trade-api/v2"
 MAX_RESPONSE_BYTES = 8_000_000
 
-# Exact-market tickers only: no path traversal, no query string, no slashes, no control
-# characters (the character class below admits none).
 _TICKER_RE = re.compile(r"^[A-Z0-9][A-Z0-9_.-]{0,127}$")
 
 
@@ -45,12 +32,7 @@ class PublicReadFailure(RuntimeError):
 
 
 def _get_raw(path: str) -> tuple[bytes, int, datetime]:
-    """Bounded, GET-only, TLS, no-redirect fetch of ``path`` on the fixed production host.
-
-    The sole transport primitive: every public GET in this repository -- M27E's exchange
-    status/series/markets pagination and M27J's exact-market snapshot acquisition -- goes
-    through this one function.
-    """
+    """Bounded, GET-only, TLS, no-redirect fetch of ``path`` on the fixed production host."""
     if not path.startswith(BASE + "/") or ".." in path.split("/") or "//" in path:
         raise PublicReadFailure("path is outside fixed public read authority")
     if "\r" in path or "\n" in path:
@@ -78,6 +60,7 @@ def _evidence_from_body(
         "observed_at": observed_at.isoformat(),
         "status": status,
         "body_sha256": hashlib.sha256(body).hexdigest(),
+        "raw_body_b64": base64.b64encode(body).decode("ascii"),
         "bytes": len(body),
     }
     if status != 200:
@@ -101,13 +84,7 @@ def get(path: str) -> dict[str, object]:
 
 
 def get_market_with_body(ticker: str) -> tuple[dict[str, object], bytes]:
-    """Bounded GET of the exact single-market endpoint; returns evidence and the exact raw bytes.
-
-    Exact-market read, GET-only, reusing :func:`_get_raw` -- never a second transport
-    configuration. The raw bytes are returned (in addition to the same evidence shape ``get()``
-    produces) only so a caller can cryptographically bind its own downstream parsing to the exact
-    bytes received; this function itself never parses market rules.
-    """
+    """Bounded GET of the exact single-market endpoint; returns evidence and exact raw bytes."""
     if not _TICKER_RE.fullmatch(ticker):
         raise PublicReadFailure("ticker is not a well-formed exact market ticker")
     path = f"{BASE}/markets/{ticker}"
@@ -121,14 +98,7 @@ def get_market(ticker: str) -> dict[str, object]:
 
 
 def get_event_with_body(event_ticker: str) -> tuple[dict[str, object], bytes]:
-    """Bounded GET of the exact single-event endpoint; returns evidence and the exact raw bytes.
-
-    Exact-event read, GET-only, reusing :func:`_get_raw` -- never a second transport
-    configuration. Mirrors :func:`get_market_with_body` exactly, for the analogous single-event
-    endpoint (``/events/<ticker>``). The raw bytes are returned (in addition to the same evidence
-    shape ``get()`` produces) only so a caller can cryptographically bind its own downstream
-    parsing to the exact bytes received; this function itself never parses event metadata.
-    """
+    """Bounded GET of the exact single-event endpoint; returns evidence and exact raw bytes."""
     if not _TICKER_RE.fullmatch(event_ticker):
         raise PublicReadFailure("ticker is not a well-formed exact event ticker")
     path = f"{BASE}/events/{event_ticker}"
@@ -137,15 +107,7 @@ def get_event_with_body(event_ticker: str) -> tuple[dict[str, object], bytes]:
 
 
 def get_orderbook_with_body(ticker: str) -> tuple[dict[str, object], bytes]:
-    """Bounded GET of the batch orderbook endpoint for exactly one ticker; returns evidence and
-    the exact raw bytes, mirroring :func:`get_market_with_body`'s exact pattern.
-
-    The wire endpoint (``/markets/orderbooks``) is batch-shaped, but this function only ever
-    requests exactly one ticker via one fixed query parameter it constructs itself -- no
-    caller-supplied query, no alternate host, no second HTTP implementation. Reuses
-    ``_TICKER_RE``/``_get_raw``/``_evidence_from_body`` verbatim, exactly like
-    :func:`get_market_with_body` does; this function itself never parses orderbook levels.
-    """
+    """Bounded GET of the orderbook endpoint for exactly one ticker."""
     if not _TICKER_RE.fullmatch(ticker):
         raise PublicReadFailure("ticker is not a well-formed exact market ticker")
     path = f"{BASE}/markets/orderbooks?" + urlencode({"tickers": ticker})

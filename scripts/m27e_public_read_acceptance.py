@@ -1,14 +1,11 @@
 """Bounded unauthenticated Kalshi production read acceptance for M27E.
 
-Thin CLI/operator wrapper only: the reusable bounded public GET transport itself lives in
-:mod:`services.market_universe.public_read` (fixed origin, bounded size, no redirects, GET-only)
-and is shared with M27J's authoritative market-snapshot acquisition -- this script owns only the
-M27E-specific business logic (exchange status / series / paginated open-markets acceptance) and
-the CLI entrypoint that writes the evidence file. Dependency direction is ``scripts -> services``
-only; no ``services`` module ever imports from ``scripts``.
+Thin CLI/operator wrapper only. The reusable M27E business logic now lives beside the shared
+GET-only transport in :mod:`services.market_universe.m27e_public_acceptance`, so M27R can compose
+the exact same reviewed evidence producer without a forbidden ``services -> scripts`` import.
 
-Only fixed public GET paths are reachable.  The output is an immutable, secret-free
-JSON evidence bundle suitable for the M27D shadow input review.
+Only fixed public GET paths are reachable. The output schema remains
+``kalsh3.m27e.public-read.v1`` and is unchanged for M27I consumers.
 """
 
 from __future__ import annotations
@@ -17,10 +14,14 @@ import argparse
 import hashlib
 import json
 import sys
-from datetime import UTC, datetime
 from pathlib import Path
-from urllib.parse import urlencode
 
+from services.market_universe.m27e_public_acceptance import (
+    ACTIVE_MARKET_STATUS,
+    SERIES_TICKER,
+    acquire_public_acceptance,
+)
+from services.market_universe.m27e_public_acceptance import paged_markets as _paged_markets
 from services.market_universe.public_read import (
     BASE,
     HOST,
@@ -45,64 +46,10 @@ __all__ = [
     "paged_markets",
 ]
 
-# Current live Chicago daily-high-temperature weather series (proven live 2026-08-19; see
-# /Users/ksyme/.kalsh3/evidence/m27k/recent-kxhighchi-contract-20260819T154532Z.json). CLIMDW is
-# stale and no longer the live series -- this is the only series ticker this module queries.
-SERIES_TICKER = "KXHIGHCHI"
-
-# Canonical currently-tradable/discoverable raw market status, as live-observed on this series.
-# A ``status=`` API query filter has NOT been live-validated for this series and must never be
-# assumed -- discovery always fetches the complete unfiltered page set and filters client-side on
-# this exact raw status string.
-ACTIVE_MARKET_STATUS = "active"
-
 
 def paged_markets() -> dict[str, object]:
-    pages: list[dict[str, object]] = []
-    cursor = ""
-    seen: set[str] = set()
-    while True:
-        query = {"series_ticker": SERIES_TICKER, "limit": "1000"}
-        if cursor:
-            query["cursor"] = cursor
-        page = get(BASE + "/markets?" + urlencode(query))
-        pages.append(page)
-        if page.get("classification") != "SUCCESS":
-            return {
-                "classification": page.get("classification"),
-                "pages": pages,
-                "pagination_complete": False,
-            }
-        payload = page.get("payload")
-        if not isinstance(payload, dict) or not isinstance(payload.get("markets"), list):
-            raise PublicReadFailure("schema failure: markets array missing")
-        next_cursor = payload.get("cursor")
-        if next_cursor in (None, ""):
-            market_count = 0
-            total_returned = 0
-            for page_item in pages:
-                page_payload = page_item.get("payload")
-                page_markets = (
-                    page_payload.get("markets") if isinstance(page_payload, dict) else None
-                )
-                if isinstance(page_markets, list):
-                    total_returned += len(page_markets)
-                    market_count += sum(
-                        1
-                        for market in page_markets
-                        if isinstance(market, dict) and market.get("status") == ACTIVE_MARKET_STATUS
-                    )
-            return {
-                "classification": "SUCCESS",
-                "pages": pages,
-                "pagination_complete": True,
-                "market_count": market_count,
-                "total_returned": total_returned,
-            }
-        if not isinstance(next_cursor, str) or next_cursor in seen:
-            raise PublicReadFailure("pagination incomplete: missing or repeated cursor")
-        seen.add(next_cursor)
-        cursor = next_cursor
+    """Preserve the script-level GET seam while delegating to the shared producer."""
+    return _paged_markets(getter=get)
 
 
 def main() -> None:
@@ -110,14 +57,7 @@ def main() -> None:
     parser.add_argument("--output", type=Path, required=True)
     args = parser.parse_args()
     try:
-        evidence = {
-            "schema": "kalsh3.m27e.public-read.v1",
-            "host": "https://" + HOST,
-            "started_at": datetime.now(UTC).isoformat(),
-            "exchange_status": get(BASE + "/exchange/status"),
-            "series": get(BASE + "/series/" + SERIES_TICKER),
-            "markets": paged_markets(),
-        }
+        evidence = acquire_public_acceptance()
     except PublicReadFailure as exc:
         print(f"PUBLIC_READ_FAILED: {exc}", file=sys.stderr)
         raise SystemExit(2) from exc

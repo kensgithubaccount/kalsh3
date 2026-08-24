@@ -1,14 +1,61 @@
 from __future__ import annotations
 
+import base64
+import hashlib
+import json
+from datetime import UTC, datetime
 from urllib.parse import parse_qs, urlparse
 
 import pytest
 
 from scripts import m27e_public_read_acceptance as public_reads
+from services.market_universe import m27e_public_acceptance as acceptance
+from services.market_universe.public_read import BASE, HOST
 
 
 def _query(path: str) -> dict[str, list[str]]:
     return parse_qs(urlparse(path).query)
+
+
+def _response(path: str, payload: dict[str, object]) -> dict[str, object]:
+    body = json.dumps(payload, sort_keys=True).encode()
+    return {
+        "path": path,
+        "observed_at": datetime(2026, 8, 20, 3, 0, tzinfo=UTC).isoformat(),
+        "status": 200,
+        "body_sha256": hashlib.sha256(body).hexdigest(),
+        "raw_body_b64": base64.b64encode(body).decode("ascii"),
+        "bytes": len(body),
+        "classification": "SUCCESS",
+        "payload": payload,
+    }
+
+
+def _acceptance_with_rows(rows: list[object]) -> dict[str, object]:
+    page_path = BASE + "/markets?series_ticker=KXHIGHCHI&limit=1000"
+    observed_at = datetime(2026, 8, 20, 3, 0, tzinfo=UTC).isoformat()
+    return {
+        "schema": acceptance.SCHEMA,
+        "host": "https://" + HOST,
+        "started_at": observed_at,
+        "exchange_status": _response(BASE + "/exchange/status", {"active": True}),
+        "series": _response(BASE + "/series/KXHIGHCHI", {"series": {"ticker": "KXHIGHCHI"}}),
+        "markets": {
+            "classification": "SUCCESS",
+            "pagination_complete": True,
+            "pages": [_response(page_path, {"markets": rows, "cursor": ""})],
+        },
+    }
+
+
+def _active_row(**overrides: object) -> dict[str, object]:
+    row: dict[str, object] = {
+        "ticker": "KXHIGHCHI-26AUG20-T84",
+        "event_ticker": "KXHIGHCHI-26AUG20",
+        "status": "active",
+    }
+    row.update(overrides)
+    return row
 
 
 def test_http_failure_is_not_empty_success(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -213,6 +260,49 @@ def test_page_raw_payload_is_preserved_unchanged(monkeypatch: pytest.MonkeyPatch
     assert stored_markets == raw_markets
     assert stored_markets[0]["status"] == "active"
     assert stored_markets[1]["status"] == "finalized"
+
+
+@pytest.mark.parametrize(
+    "bad_row",
+    [
+        "garbage",
+        {"ticker": "KXHIGHCHI-26AUG20-T82", "event_ticker": "KXHIGHCHI-26AUG20"},
+        _active_row(status=123),
+        _active_row(status=""),
+    ],
+    ids=["non-dict", "missing-status", "non-string-status", "empty-status"],
+)
+def test_unclassifiable_market_row_fails_closed(bad_row: object) -> None:
+    with pytest.raises(public_reads.PublicReadFailure):
+        acceptance.active_market_payloads(_acceptance_with_rows([_active_row(), bad_row]))
+
+
+@pytest.mark.parametrize(
+    "bad_row",
+    [
+        _active_row(ticker=None),
+        _active_row(ticker="bad/ticker"),
+        _active_row(event_ticker=None),
+        _active_row(event_ticker="bad/event"),
+    ],
+    ids=["missing-ticker", "malformed-ticker", "missing-event", "malformed-event"],
+)
+def test_active_market_identity_must_be_reconstructible(bad_row: object) -> None:
+    with pytest.raises(public_reads.PublicReadFailure):
+        acceptance.active_market_payloads(_acceptance_with_rows([bad_row]))
+
+
+def test_duplicate_active_market_ticker_fails_closed() -> None:
+    with pytest.raises(public_reads.PublicReadFailure, match="appeared more than once"):
+        acceptance.active_market_payloads(_acceptance_with_rows([_active_row(), _active_row()]))
+
+
+def test_well_formed_inactive_market_is_filterable() -> None:
+    evidence = _acceptance_with_rows(
+        [_active_row(), {"ticker": "KXHIGHCHI-26AUG20-T82", "status": "finalized"}]
+    )
+    active = acceptance.active_market_payloads(evidence)
+    assert [row["ticker"] for row in active] == ["KXHIGHCHI-26AUG20-T84"]
 
 
 def test_incomplete_pagination_never_becomes_empty_market_success(
