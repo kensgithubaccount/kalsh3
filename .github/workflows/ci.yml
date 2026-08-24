@@ -60,10 +60,10 @@ jobs:
       - run: uv sync --locked --all-groups
       - name: Bandit full report
         continue-on-error: true
-        run: uvx bandit -c pyproject.toml -r services
+        run: uv run bandit -c pyproject.toml -r services
       - name: Bandit high-severity gate
-        run: uvx bandit -c pyproject.toml -r services --severity-level=high
-      - run: uvx detect-secrets scan --all-files
+        run: uv run bandit -c pyproject.toml -r services --severity-level=high
+      - run: uv run detect-secrets scan --all-files
       - run: uvx pip-audit
       - uses: anchore/sbom-action@v0
         with:

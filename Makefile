@@ -18,7 +18,8 @@ test:
 	uv run pytest
 
 security:
-	@if command -v bandit >/dev/null; then bandit -c pyproject.toml -r services; else echo "bandit unavailable"; fi
-	@if command -v detect-secrets >/dev/null; then detect-secrets scan --all-files; else echo "detect-secrets unavailable"; fi
+	@uv run bandit -c pyproject.toml -r services || { rc=$$?; if [ $$rc -ne 1 ]; then exit $$rc; fi; echo "Bandit findings above are informational; the high-severity gate follows."; }
+	uv run bandit -c pyproject.toml -r services --severity-level=high
+	uv run detect-secrets scan --all-files
 
 verify: lint type test security
