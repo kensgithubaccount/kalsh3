@@ -77,10 +77,38 @@ class _SecretBearingRun:
         }
 
 
+class _SecretValueRun:
+    read_only = True
+    execution_authorized = False
+
+    def __init__(self, value: str) -> None:
+        self.value = value
+
+    def to_json(self) -> dict[str, object]:
+        return {"state": "ABSTAIN", "payload": self.value}
+
+
 def test_secret_bearing_payload_fails_closed() -> None:
     with pytest.raises(M27RArtifactError, match="forbidden secret-bearing field"):
         build_review_artifact(
             run=_SecretBearingRun(),  # type: ignore[arg-type]
+            created_at=datetime(2026, 8, 23, 17, 30, tzinfo=UTC),
+        )
+
+
+@pytest.mark.parametrize(
+    "marker",
+    (
+        "-----BEGIN PRIVATE KEY-----",
+        "-----BEGIN RSA PRIVATE KEY-----",
+        "-----BEGIN EC PRIVATE KEY-----",
+        "Bearer token-value",
+    ),
+)
+def test_secret_like_values_fail_closed(marker: str) -> None:
+    with pytest.raises(M27RArtifactError, match="forbidden secret-like value"):
+        build_review_artifact(
+            run=_SecretValueRun(marker),
             created_at=datetime(2026, 8, 23, 17, 30, tzinfo=UTC),
         )
 

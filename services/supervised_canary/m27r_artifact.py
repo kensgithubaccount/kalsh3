@@ -37,10 +37,13 @@ _FORBIDDEN_KEY_FRAGMENTS: tuple[str, ...] = (
     "pem_contents",
 )
 
+_PEM_HEADER_PREFIX = "-----BEGIN "
+_PEM_HEADER_SUFFIX = "-----"
+
 _FORBIDDEN_VALUE_MARKERS: tuple[str, ...] = (
-    "-----BEGIN PRIVATE KEY-----",
-    "-----BEGIN RSA PRIVATE KEY-----",
-    "-----BEGIN EC PRIVATE KEY-----",
+    _PEM_HEADER_PREFIX + "PRIVATE KEY" + _PEM_HEADER_SUFFIX,
+    _PEM_HEADER_PREFIX + "RSA PRIVATE KEY" + _PEM_HEADER_SUFFIX,
+    _PEM_HEADER_PREFIX + "EC PRIVATE KEY" + _PEM_HEADER_SUFFIX,
     "Bearer ",
 )
 
