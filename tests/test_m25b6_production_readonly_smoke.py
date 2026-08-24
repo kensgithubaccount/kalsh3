@@ -29,6 +29,8 @@ from services.perps_shadow_research.domain import ShadowResearchError
 from services.perps_shadow_research.live_boundary import ENVIRONMENTS, HttpReply
 from services.perps_shadow_research.live_smoke import LiveSmokeConfig, SmokeOutcome, SmokeSummary
 
+SCRIPTED_SMOKE_WINDOW_SECONDS = 1.0
+
 NOW = datetime(2026, 8, 14, 12, tzinfo=UTC)
 TICKER = "BTC-PERP"
 
@@ -128,7 +130,7 @@ def production_config(tmp_path: Path, **changes: Any) -> LiveSmokeConfig:
         "evidence_db": tmp_path / "evidence.sqlite3",
         "live_readonly": True,
         "confirm_production_readonly": True,
-        "window_seconds": 0.05,
+        "window_seconds": SCRIPTED_SMOKE_WINDOW_SECONDS,
         "max_reconnects": 1,
     }
     values.update(changes)
@@ -383,8 +385,7 @@ class FakeWebSocket:
         try:
             return next(self.frames)
         except StopIteration:
-            await asyncio.sleep(3600)
-            raise AssertionError("unreachable") from None
+            raise TimeoutError("scripted fake session exhausted") from None
 
     async def send(self, message: str) -> None:
         self.sent.append(json.loads(message))
