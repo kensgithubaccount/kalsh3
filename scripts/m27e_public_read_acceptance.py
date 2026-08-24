@@ -20,8 +20,8 @@ from services.market_universe.m27e_public_acceptance import (
     ACTIVE_MARKET_STATUS,
     SERIES_TICKER,
     acquire_public_acceptance,
-    paged_markets,
 )
+from services.market_universe.m27e_public_acceptance import paged_markets as _paged_markets
 from services.market_universe.public_read import (
     BASE,
     HOST,
@@ -45,6 +45,11 @@ __all__ = [
     "main",
     "paged_markets",
 ]
+
+
+def paged_markets() -> dict[str, object]:
+    """Preserve the script-level GET seam while delegating to the shared producer."""
+    return _paged_markets(getter=get)
 
 
 def main() -> None:
