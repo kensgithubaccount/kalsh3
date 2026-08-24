@@ -46,6 +46,8 @@ from services.perps_shadow_research.perps_runtime import (
 )
 from services.perps_shadow_research.perps_store import PerpsEvidenceStore
 
+SCRIPTED_SMOKE_WINDOW_SECONDS = 1.0
+
 NOW = datetime(2026, 8, 13, 12, tzinfo=UTC)
 
 
@@ -418,8 +420,7 @@ class BoundedFakeWebSocket(FakeWebSocket):
         try:
             return next(self.frames)
         except StopIteration:
-            await asyncio.sleep(3600)
-            raise AssertionError("unreachable") from None
+            raise TimeoutError("scripted fake session exhausted") from None
 
 
 @pytest.mark.parametrize(
@@ -477,7 +478,7 @@ def test_reconnect_requires_session_local_snapshot(
             "BTC-PERP",
             tmp_path / "evidence.sqlite3",
             live_readonly=True,
-            window_seconds=0.02,
+            window_seconds=SCRIPTED_SMOKE_WINDOW_SECONDS,
         )
         epochs, snapshots, deltas, tickers = await collect_live_evidence(
             config,
@@ -533,7 +534,7 @@ def test_fresh_reconnect_snapshot_is_counted_for_success(
             "BTC-PERP",
             tmp_path / "evidence.sqlite3",
             live_readonly=True,
-            window_seconds=0.02,
+            window_seconds=SCRIPTED_SMOKE_WINDOW_SECONDS,
         )
         _, snapshots, deltas, tickers = await collect_live_evidence(
             config,
@@ -654,7 +655,7 @@ async def _direct_smoke(
             "BTC-PERP",
             db,
             live_readonly=True,
-            window_seconds=0.02,
+            window_seconds=SCRIPTED_SMOKE_WINDOW_SECONDS,
         ),
         FakeProvider(),
         http_transport=FakeHttp(
