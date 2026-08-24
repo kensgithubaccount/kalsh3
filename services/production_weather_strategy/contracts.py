@@ -72,7 +72,8 @@ class TemporalSplit:
         if any(point.tzinfo is None for point in points):
             raise ProductionStrategyError("temporal split timestamps must be timezone-aware")
         if not (
-            self.train_start < self.train_end
+            self.train_start
+            < self.train_end
             <= self.validation_start
             < self.validation_end
             <= self.test_start
