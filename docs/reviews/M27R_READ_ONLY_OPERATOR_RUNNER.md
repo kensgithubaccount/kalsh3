@@ -72,6 +72,10 @@ The artifact must never contain:
 - If the candidate changes after authenticated reads, the run fails closed and must start a new sweep rather than rebinding old account evidence.
 - A public snapshot that claims success but lacks its retained body hash cannot influence candidate economics.
 - A contract target date must bind to exactly one validated GRIB record; zero or multiple matches abstain.
+- An active market may be omitted only after authoritative Market/Event reconstruction and an
+  explicit canonical route ``ABSTAIN`` result proves that its contract is outside this lane.
+- Any failed or incomplete reconstruction of an active market makes the public candidate scope
+  incomplete and blocks the run; a successful prefix must never be treated as a complete scope.
 
 ## Test requirements
 

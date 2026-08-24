@@ -14,9 +14,12 @@ from typing import Any, cast
 
 import pytest
 
+from services.forecasting.domain import ForecastError
 from services.forecasting.weather_calibration_grib import parse_wgrib2_max_t_evidence
 from services.market_universe.m27e_public_acceptance import SCHEMA as M27E_SCHEMA
-from services.market_universe.public_read import BASE, HOST
+from services.market_universe.public_read import BASE, HOST, PublicReadFailure
+from services.opportunity_engine.domain import OpportunityError
+from services.supervised_canary.m27n2_evidence_reconstruction import EvidenceReconstructionError
 from services.supervised_canary.m27r_public_adapter import (
     GetOnlyPublicEvidenceProvider,
     M27RPublicAdapterError,
@@ -169,6 +172,45 @@ def test_empty_complete_scope_persists_m27e_and_returns_no_candidates(tmp_path: 
     assert persisted["schema"] == M27E_SCHEMA
 
 
+@pytest.mark.parametrize(
+    "failure",
+    (
+        EvidenceReconstructionError("market reconstruction failed"),
+        ForecastError("forecast failed"),
+        OpportunityError("economics failed"),
+        PublicReadFailure("public read failed"),
+        M27RPublicAdapterError("adapter failed"),
+    ),
+)
+def test_active_scope_failures_are_not_silently_filtered(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    failure: Exception,
+) -> None:
+    public = _empty_public()
+    page_path = BASE + "/markets?series_ticker=KXHIGHCHI&limit=1000"
+    page_payload = {
+        "markets": [
+            {
+                "ticker": "KXHIGHCHI-TEST",
+                "event_ticker": "KXHIGHCHI-EVENT",
+                "status": "active",
+            }
+        ],
+        "cursor": "",
+    }
+    cast(dict[str, Any], public["markets"])["pages"] = [_response(page_path, page_payload)]
+
+    def fail_active_market(self: GetOnlyPublicEvidenceProvider, **_: object) -> None:
+        del self
+        raise failure
+
+    monkeypatch.setattr(GetOnlyPublicEvidenceProvider, "_build_market_slice", fail_active_market)
+    provider = _provider(tmp_path, public_acceptance_acquirer=lambda **_: public)
+    with pytest.raises(type(failure)):
+        provider.collect_public_evidence(clock=lambda: NOW)
+
+
 def test_forged_m27e_payload_without_matching_raw_body_is_rejected(tmp_path: Path) -> None:
     public = _empty_public()
     exchange = cast(dict[str, Any], public["exchange_status"])
@@ -201,6 +243,42 @@ def test_successful_snapshot_without_body_hash_is_rejected(tmp_path: Path) -> No
         orderbook_snapshot_acquirer=cast(Any, lambda *_args, **_kwargs: success_with_hash),
     )
     with pytest.raises(M27RPublicAdapterError, match="missing retained body hash"):
+        provider._build_market_slice(
+            clock=lambda: NOW,
+            market_ticker="KXHIGHCHI-TEST",
+            event_ticker="KXHIGHCHI-EVENT",
+            series_raw={"ticker": "KXHIGHCHI"},
+            series_observed_at=NOW,
+        )
+
+
+@pytest.mark.parametrize("failed_snapshot", ("market", "event", "orderbook"))
+def test_failed_active_market_snapshot_blocks_scope(tmp_path: Path, failed_snapshot: str) -> None:
+    failed = SimpleNamespace(
+        succeeded=False,
+        classification="HTTP_OR_NETWORK_FAILURE",
+        body_sha256=None,
+    )
+    succeeded = SimpleNamespace(
+        succeeded=True,
+        classification="SUCCESS",
+        body_sha256="retained",
+        observed_at=NOW,
+    )
+    acquirers = {
+        "market": lambda *_args, **_kwargs: succeeded,
+        "event": lambda *_args, **_kwargs: succeeded,
+        "orderbook": lambda *_args, **_kwargs: succeeded,
+    }
+    acquirers[failed_snapshot] = lambda *_args, **_kwargs: failed
+    provider = _provider(
+        tmp_path,
+        market_snapshot_acquirer=cast(Any, acquirers["market"]),
+        event_snapshot_acquirer=cast(Any, acquirers["event"]),
+        orderbook_snapshot_acquirer=cast(Any, acquirers["orderbook"]),
+    )
+
+    with pytest.raises(M27RPublicAdapterError, match="incomplete active market scope"):
         provider._build_market_slice(
             clock=lambda: NOW,
             market_ticker="KXHIGHCHI-TEST",

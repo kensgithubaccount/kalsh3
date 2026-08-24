@@ -5,10 +5,14 @@ from __future__ import annotations
 import base64
 import hashlib
 import json
+from dataclasses import replace
 from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 from pathlib import Path
+from types import SimpleNamespace
 from urllib.parse import urlencode
+
+import pytest
 
 from services.forecasting.weather_calibration_grib import parse_wgrib2_max_t_evidence
 from services.market_universe.event_snapshot import acquire_event_snapshot
@@ -17,8 +21,14 @@ from services.market_universe.orderbook_snapshot import acquire_orderbook_snapsh
 from services.market_universe.public_read import BASE, HOST
 from services.supervised_canary import m27d, m27j
 from services.supervised_canary.m27d import CandidateState, select_experimental_candidate
-from services.supervised_canary.m27r_operator_runner import _selected_market_evidence
-from services.supervised_canary.m27r_public_adapter import GetOnlyPublicEvidenceProvider
+from services.supervised_canary.m27r_operator_runner import (
+    _run_readonly_operator_preflight_for_test,
+    _selected_market_evidence,
+)
+from services.supervised_canary.m27r_public_adapter import (
+    GetOnlyPublicEvidenceProvider,
+    M27RPublicAdapterError,
+)
 from tests.test_m27c_daily_temperature_contract_authority import event as build_event
 from tests.test_m27c_daily_temperature_contract_authority import market as build_market
 from tests.test_m27c_weather_probability import artifact as population_artifact
@@ -428,3 +438,48 @@ def test_full_public_scope_reconstructs_and_binds_two_markets(
     # Event-level fee metadata is legitimately shared because both contracts are under the same
     # event.  The per-market economics, market body, orderbook, and rules evidence are not shared.
     assert selected_economics.event_fee_hash == other_economics.event_fee_hash
+
+    # A fully supported second market whose required public read fails makes the discovered
+    # candidate scope incomplete. It must not be silently reduced to the successful prefix.
+    def failing_orderbook_acquirer(ticker: str, *, clock):
+        if ticker == OTHER_MARKET_TICKER:
+            return SimpleNamespace(
+                succeeded=False,
+                classification="HTTP_OR_NETWORK_FAILURE",
+                body_sha256=None,
+            )
+        return orderbook_acquirer(ticker, clock=clock)
+
+    incomplete_provider = replace(
+        provider,
+        orderbook_snapshot_acquirer=failing_orderbook_acquirer,
+    )
+
+    class ForbiddenCandidateProvider:
+        calls = 0
+
+        def collect_candidate_evidence(self, **_: object):
+            self.calls += 1
+            raise AssertionError("authenticated phase must not run for incomplete public scope")
+
+    candidate_provider = ForbiddenCandidateProvider()
+    with pytest.raises(M27RPublicAdapterError, match="incomplete active market scope"):
+        _run_readonly_operator_preflight_for_test(
+            clock=lambda: NOW,
+            public_provider=incomplete_provider,
+            candidate_provider=candidate_provider,
+        )
+    assert candidate_provider.calls == 0
+
+    # By contrast, an authoritative route abstention is a complete determination that the
+    # discovered contract is outside this lane and may be filtered safely.
+    raw_markets[OTHER_MARKET_TICKER]["rules_primary"] = "unsupported contract semantics"
+    unsupported_result = provider.collect_public_evidence(clock=lambda: NOW)
+    assert tuple(item.market_ticker for item in unsupported_result.markets) == (MARKET_TICKER,)
+    unsupported_selection = select_experimental_candidate(
+        unsupported_result.candidate_inputs,
+        now=NOW,
+    )
+    assert unsupported_selection.state is CandidateState.QUALIFYING_EXPERIMENTAL_CANARY
+    assert unsupported_selection.selected is not None
+    assert unsupported_selection.selected.market_ticker == MARKET_TICKER

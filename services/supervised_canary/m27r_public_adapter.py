@@ -56,7 +56,6 @@ from services.market_universe.orderbook_snapshot import (
 )
 from services.market_universe.pricing import PriceLadder
 from services.market_universe.public_read import PublicReadFailure
-from services.opportunity_engine.domain import OpportunityError
 from services.opportunity_engine.live_fees import (
     CurrentSeriesFeeObservation,
     EventFeeOverride,
@@ -64,11 +63,7 @@ from services.opportunity_engine.live_fees import (
 
 from . import m27j
 from .m27n2_candidate_packet import reconstruct_economics
-from .m27n2_evidence_reconstruction import (
-    EvidenceReconstructionError,
-    reconstruct_event,
-    reconstruct_market,
-)
+from .m27n2_evidence_reconstruction import reconstruct_event, reconstruct_market
 from .m27r_operator_runner import Clock, M27RMarketEvidence, M27RPublicEvidence
 
 SOFTWARE_VERSION = "kalsh3.m27r.public-evidence-adapter/3"
@@ -171,22 +166,13 @@ class GetOnlyPublicEvidenceProvider:
             event_ticker = discovery_market.get("event_ticker")
             if not isinstance(market_ticker, str) or not isinstance(event_ticker, str):
                 raise M27RPublicAdapterError("active M27E market identity is malformed")
-            try:
-                built = self._build_market_slice(
-                    clock=clock,
-                    market_ticker=market_ticker,
-                    event_ticker=event_ticker,
-                    series_raw=series_raw,
-                    series_observed_at=series_observed_at,
-                )
-            except (
-                EvidenceReconstructionError,
-                ForecastError,
-                OpportunityError,
-                PublicReadFailure,
-                M27RPublicAdapterError,
-            ):
-                continue
+            built = self._build_market_slice(
+                clock=clock,
+                market_ticker=market_ticker,
+                event_ticker=event_ticker,
+                series_raw=series_raw,
+                series_observed_at=series_observed_at,
+            )
             if built is not None:
                 markets.append(built)
 
@@ -217,7 +203,17 @@ class GetOnlyPublicEvidenceProvider:
             snapshot.succeeded
             for snapshot in (expected_market_snapshot, event_snapshot, orderbook_snapshot)
         ):
-            return None
+            classifications = ", ".join(
+                f"{name}={snapshot.classification}"
+                for name, snapshot in (
+                    ("market", expected_market_snapshot),
+                    ("event", event_snapshot),
+                    ("orderbook", orderbook_snapshot),
+                )
+            )
+            raise M27RPublicAdapterError(
+                f"incomplete active market scope for {market_ticker}: {classifications}"
+            )
         if (
             expected_market_snapshot.body_sha256 is None
             or event_snapshot.body_sha256 is None
@@ -231,15 +227,21 @@ class GetOnlyPublicEvidenceProvider:
             expected_event_ticker=event_ticker,
         )
         event = reconstruct_event(event_snapshot.to_json(), expected_ticker=event_ticker)
+        if event.series_ticker != "KXHIGHCHI" or series_raw.get("ticker") != event.series_ticker:
+            raise M27RPublicAdapterError(
+                f"active market {market_ticker} has inconsistent KXHIGHCHI series identity"
+            )
         route = route_daily_temperature(market, event)
+        if route.state is DailyTemperatureRouteState.ABSTAIN:
+            return None
         if route.state is not DailyTemperatureRouteState.SUPPORTED or route.contract is None:
-            return None
-        if (
-            route.series_ticker != "KXHIGHCHI"
-            or event.series_ticker != "KXHIGHCHI"
-            or series_raw.get("ticker") != event.series_ticker
-        ):
-            return None
+            raise M27RPublicAdapterError(
+                f"active market {market_ticker} did not produce a supported route"
+            )
+        if route.series_ticker != "KXHIGHCHI":
+            raise M27RPublicAdapterError(
+                f"active market {market_ticker} has inconsistent KXHIGHCHI route identity"
+            )
 
         record_number = _record_number_for_route(
             raw_grib=self.raw_grib_evidence,
@@ -257,14 +259,20 @@ class GetOnlyPublicEvidenceProvider:
             training_end=self.population_training_end,
         )
         if isinstance(population, WeatherProbabilityAbstention):
-            return None
+            raise M27RPublicAdapterError(
+                f"active market {market_ticker} weather population unavailable: "
+                f"{population.reason}: {population.detail}"
+            )
         probability = physical_temperature_proxy_probability(
             route=route,
             population=population,
             current=current,
         )
         if isinstance(probability, WeatherProbabilityAbstention):
-            return None
+            raise M27RPublicAdapterError(
+                f"active market {market_ticker} weather probability unavailable: "
+                f"{probability.reason}: {probability.detail}"
+            )
         typed_probability: PhysicalTemperatureProxyProbability = probability
 
         economics_now = _clock_now(clock, field=f"economics clock for {market_ticker}")
@@ -303,7 +311,10 @@ class GetOnlyPublicEvidenceProvider:
 
         current_rules = self.rules_acquirer(market_ticker, clock=clock)
         if not current_rules.succeeded:
-            return None
+            raise M27RPublicAdapterError(
+                f"incomplete active market scope for {market_ticker}: "
+                f"current rules={current_rules.classification}"
+            )
         if current_rules.body_sha256 is None:
             raise M27RPublicAdapterError("successful current-rules snapshot is missing body hash")
 
