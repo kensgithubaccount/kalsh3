@@ -96,15 +96,60 @@ class TemporalSplit:
 
 
 @dataclass(frozen=True, slots=True)
+class SettlementLabel:
+    """One exact, authoritative contract-level settlement outcome."""
+
+    event_id: str
+    market_ticker: str
+    resolved_outcome: bool
+    resolved_at: datetime
+    settlement_evidence_id: str
+    content_hash: str
+
+    @classmethod
+    def build(
+        cls,
+        *,
+        event_id: str,
+        market_ticker: str,
+        resolved_outcome: bool,
+        resolved_at: datetime,
+        settlement_evidence_id: str,
+    ) -> SettlementLabel:
+        if not event_id.strip() or not market_ticker.strip():
+            raise ProductionStrategyError("settlement label identity is required")
+        if not isinstance(resolved_outcome, bool):
+            raise ProductionStrategyError("settlement outcome must be boolean")
+        if resolved_at.tzinfo is None:
+            raise ProductionStrategyError("settlement label timestamp must be timezone-aware")
+        if not settlement_evidence_id.strip():
+            raise ProductionStrategyError("settlement evidence identity is required")
+        values = (
+            event_id,
+            market_ticker,
+            resolved_outcome,
+            resolved_at.astimezone(UTC).isoformat(),
+            settlement_evidence_id,
+        )
+        digest = stable_hash(values)
+        return cls(
+            event_id=event_id,
+            market_ticker=market_ticker,
+            resolved_outcome=resolved_outcome,
+            resolved_at=resolved_at.astimezone(UTC),
+            settlement_evidence_id=settlement_evidence_id,
+            content_hash=digest,
+        )
+
+
+@dataclass(frozen=True, slots=True)
 class SettlementLabelManifest:
-    """Authoritative resolved-outcome labels used for production training/evaluation."""
+    """Authoritative exact contract-level labels used for production training/evaluation."""
 
     manifest_id: str
     settlement_mapping_id: str
     authority: str
-    event_ids: tuple[str, ...]
-    market_tickers: tuple[str, ...]
-    resolved_at: datetime
+    labels: tuple[SettlementLabel, ...]
     content_hash: str
 
     @classmethod
@@ -113,37 +158,28 @@ class SettlementLabelManifest:
         *,
         settlement_mapping_id: str,
         authority: str,
-        event_ids: tuple[str, ...],
-        market_tickers: tuple[str, ...],
-        resolved_at: datetime,
+        labels: tuple[SettlementLabel, ...],
     ) -> SettlementLabelManifest:
         if not settlement_mapping_id.strip():
             raise ProductionStrategyError("authoritative settlement mapping is required")
         if not authority.strip():
             raise ProductionStrategyError("settlement authority is required")
-        if resolved_at.tzinfo is None:
-            raise ProductionStrategyError("resolved_at must be timezone-aware")
-        if not event_ids or not market_tickers:
+        if not labels:
             raise ProductionStrategyError("settlement label manifest cannot be empty")
-        if len(set(event_ids)) != len(event_ids):
-            raise ProductionStrategyError("settlement event ids must be unique")
-        if len(set(market_tickers)) != len(market_tickers):
-            raise ProductionStrategyError("settlement market tickers must be unique")
+        if len({label.market_ticker for label in labels}) != len(labels):
+            raise ProductionStrategyError("settlement market labels must be unique")
+        canonical_labels = tuple(sorted(labels, key=lambda label: label.content_hash))
         values = (
             settlement_mapping_id,
             authority,
-            tuple(sorted(event_ids)),
-            tuple(sorted(market_tickers)),
-            resolved_at.astimezone(UTC).isoformat(),
+            tuple(label.content_hash for label in canonical_labels),
         )
         digest = stable_hash(values)
         return cls(
             manifest_id=digest,
             settlement_mapping_id=settlement_mapping_id,
             authority=authority,
-            event_ids=tuple(sorted(event_ids)),
-            market_tickers=tuple(sorted(market_tickers)),
-            resolved_at=resolved_at.astimezone(UTC),
+            labels=canonical_labels,
             content_hash=digest,
         )
 
@@ -184,7 +220,9 @@ class TrainingDatasetManifest:
             raise ProductionStrategyError("prediction cutoff rule is required")
         if created_at.tzinfo is None:
             raise ProductionStrategyError("created_at must be timezone-aware")
-        if settlement_labels.resolved_at > created_at.astimezone(UTC):
+        if any(
+            label.resolved_at > created_at.astimezone(UTC) for label in settlement_labels.labels
+        ):
             raise ProductionStrategyError("training dataset cannot use unresolved future labels")
         values = (
             family,
@@ -366,10 +404,11 @@ class ProductionLearningPolicy:
 
 @dataclass(frozen=True, slots=True)
 class ProductionPromotion:
-    """Separate immutable authority to move a model toward production influence."""
+    """Immutable model-governance record for deployment eligibility, not execution authority."""
 
     promotion_id: str
     model_id: str
+    model_state: ModelState
     previous_model_id: str | None
     policy_id: str
     deployment_tier: DeploymentTier
@@ -398,6 +437,8 @@ class ProductionPromotion:
     ) -> ProductionPromotion:
         if model.family != policy.family:
             raise ProductionStrategyError("model and promotion policy families differ")
+        if model.state in {ModelState.QUARANTINED, ModelState.RETIRED}:
+            raise ProductionStrategyError("quarantined or retired models cannot be promoted")
         if not evaluation_manifest_id.strip() or not authorized_by.strip():
             raise ProductionStrategyError("promotion evidence and authority are required")
         if authorized_at.tzinfo is None:
@@ -415,6 +456,7 @@ class ProductionPromotion:
             raise ProductionStrategyError("bounded autonomous promotion is not enabled")
         values = (
             model.model_id,
+            model.state.value,
             previous_model_id,
             policy.policy_id,
             deployment_tier.value,
@@ -429,6 +471,7 @@ class ProductionPromotion:
         return cls(
             promotion_id=digest,
             model_id=model.model_id,
+            model_state=model.state,
             previous_model_id=previous_model_id,
             policy_id=policy.policy_id,
             deployment_tier=deployment_tier,

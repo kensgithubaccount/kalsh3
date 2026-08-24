@@ -16,6 +16,7 @@ from services.production_weather_strategy.contracts import (
     ProductionLearningPolicy,
     ProductionPromotion,
     ProductionStrategyError,
+    SettlementLabel,
     SettlementLabelManifest,
     TemporalSplit,
     TrainingDatasetManifest,
@@ -39,9 +40,22 @@ def labels() -> SettlementLabelManifest:
     return SettlementLabelManifest.build(
         settlement_mapping_id="weather-company-kxhighchi-v1",
         authority="Kalshi settlement record + contract settlement source",
-        event_ids=("event-a", "event-b"),
-        market_tickers=("market-a", "market-b"),
-        resolved_at=NOW - timedelta(days=1),
+        labels=(
+            SettlementLabel.build(
+                event_id="event-a",
+                market_ticker="market-a",
+                resolved_outcome=True,
+                resolved_at=NOW - timedelta(days=1),
+                settlement_evidence_id="settlement-a",
+            ),
+            SettlementLabel.build(
+                event_id="event-b",
+                market_ticker="market-b",
+                resolved_outcome=False,
+                resolved_at=NOW - timedelta(days=1),
+                settlement_evidence_id="settlement-b",
+            ),
+        ),
     )
 
 
@@ -104,9 +118,50 @@ def test_training_dataset_requires_authoritative_settlement_mapping() -> None:
         SettlementLabelManifest.build(
             settlement_mapping_id="",
             authority="source",
-            event_ids=("event-a",),
-            market_tickers=("market-a",),
+            labels=(
+                SettlementLabel.build(
+                    event_id="event-a",
+                    market_ticker="market-a",
+                    resolved_outcome=True,
+                    resolved_at=NOW,
+                    settlement_evidence_id="settlement-a",
+                ),
+            ),
+        )
+
+
+def test_settlement_label_rejects_incomplete_or_naive_records() -> None:
+    with pytest.raises(ProductionStrategyError, match="identity"):
+        SettlementLabel.build(
+            event_id="",
+            market_ticker="market-a",
+            resolved_outcome=True,
             resolved_at=NOW,
+            settlement_evidence_id="settlement-a",
+        )
+    with pytest.raises(ProductionStrategyError, match="timezone-aware"):
+        SettlementLabel.build(
+            event_id="event-a",
+            market_ticker="market-a",
+            resolved_outcome=True,
+            resolved_at=datetime(2026, 8, 22),
+            settlement_evidence_id="settlement-a",
+        )
+
+
+def test_settlement_manifest_rejects_duplicate_market_labels() -> None:
+    label = SettlementLabel.build(
+        event_id="event-a",
+        market_ticker="market-a",
+        resolved_outcome=True,
+        resolved_at=NOW,
+        settlement_evidence_id="settlement-a",
+    )
+    with pytest.raises(ProductionStrategyError, match="market labels must be unique"):
+        SettlementLabelManifest.build(
+            settlement_mapping_id="mapping-v1",
+            authority="source",
+            labels=(label, label),
         )
 
 
@@ -114,9 +169,15 @@ def test_training_dataset_rejects_future_labels() -> None:
     future = SettlementLabelManifest.build(
         settlement_mapping_id="mapping-v1",
         authority="source",
-        event_ids=("event-a",),
-        market_tickers=("market-a",),
-        resolved_at=NOW + timedelta(hours=1),
+        labels=(
+            SettlementLabel.build(
+                event_id="event-a",
+                market_ticker="market-a",
+                resolved_outcome=True,
+                resolved_at=NOW + timedelta(hours=1),
+                settlement_evidence_id="settlement-a",
+            ),
+        ),
     )
     with pytest.raises(ProductionStrategyError, match="future labels"):
         TrainingDatasetManifest.build(
@@ -184,6 +245,93 @@ def test_predeclared_bounded_policy_can_authorize_future_autonomous_promotion() 
         authorized_by="bounded-policy:m28-test",
     )
     assert promotion.deployment_tier is DeploymentTier.BOUNDED_PRODUCTION
+    assert promotion.model_state is ModelState.CHALLENGER
+
+
+@pytest.mark.parametrize("state", [ModelState.QUARANTINED, ModelState.RETIRED])
+@pytest.mark.parametrize(
+    "tier",
+    [DeploymentTier.SHADOW, DeploymentTier.ONE_CONTRACT_CANARY, DeploymentTier.BOUNDED_PRODUCTION],
+)
+def test_quarantined_or_retired_models_cannot_be_promoted(
+    state: ModelState, tier: DeploymentTier
+) -> None:
+    with pytest.raises(ProductionStrategyError, match="cannot be promoted"):
+        ProductionPromotion.build(
+            model=ModelArtifact.build(
+                family="KXHIGHCHI",
+                algorithm="ensemble",
+                hyperparameters=(),
+                feature_schema_hash="feature-schema-v1",
+                training_manifest=dataset(),
+                calibration_method="isotonic",
+                parent_model_id=None,
+                trained_at=NOW + timedelta(minutes=1),
+                state=state,
+            ),
+            previous_model_id=None,
+            policy=policy(bounded=True),
+            deployment_tier=tier,
+            unique_settled_events=10,
+            calibration_score=Decimal("0.80"),
+            market_relative_skill=Decimal("0.05"),
+            evaluation_manifest_id="evaluation-v1",
+            authorized_at=NOW + timedelta(minutes=2),
+            authorized_by="bounded-policy:m28-test",
+        )
+
+
+def test_settlement_manifest_and_dataset_bind_exact_outcomes_and_pairing() -> None:
+    first = labels()
+    market_b = next(label for label in first.labels if label.market_ticker == "market-b")
+    changed_outcome = SettlementLabelManifest.build(
+        settlement_mapping_id=first.settlement_mapping_id,
+        authority=first.authority,
+        labels=(
+            SettlementLabel.build(
+                event_id="event-a",
+                market_ticker="market-a",
+                resolved_outcome=False,
+                resolved_at=NOW - timedelta(days=1),
+                settlement_evidence_id="settlement-a",
+            ),
+            market_b,
+        ),
+    )
+    changed_pairing = SettlementLabelManifest.build(
+        settlement_mapping_id=first.settlement_mapping_id,
+        authority=first.authority,
+        labels=(
+            SettlementLabel.build(
+                event_id="event-b",
+                market_ticker="market-a",
+                resolved_outcome=True,
+                resolved_at=NOW - timedelta(days=1),
+                settlement_evidence_id="settlement-a",
+            ),
+            SettlementLabel.build(
+                event_id="event-a",
+                market_ticker="market-b",
+                resolved_outcome=False,
+                resolved_at=NOW - timedelta(days=1),
+                settlement_evidence_id="settlement-b",
+            ),
+        ),
+    )
+    assert changed_outcome.manifest_id != first.manifest_id
+    assert changed_pairing.manifest_id != first.manifest_id
+    assert (
+        TrainingDatasetManifest.build(
+            family="KXHIGHCHI",
+            feature_schema_hash="feature-schema-v1",
+            feature_artifact_ids=("features-a", "features-b"),
+            settlement_labels=changed_outcome,
+            temporal_split=split(),
+            prediction_cutoff_rule="only evidence published before decision timestamp",
+            created_at=NOW,
+        ).manifest_id
+        != dataset().manifest_id
+    )
 
 
 def test_prediction_is_prospective_content_addressed_and_model_bound() -> None:

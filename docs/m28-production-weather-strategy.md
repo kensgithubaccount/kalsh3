@@ -40,6 +40,10 @@ A source is separately registered with its allowed roles (forecast, primary obse
 settlement, market data, cross-venue, news, social, or structured data), supported domains,
 authority, freshness bound, and production eligibility.
 
+An enabled family may consume only sources explicitly marked production-eligible, and its
+settlement mapping must have at least one referenced settlement-capable source. Disabled families
+may still reference research-only sources for configuration and evaluation.
+
 A model recipe is separately registered with its supported domains, required feature groups,
 calibration method, retraining capability, and ensemble capability.
 
@@ -107,6 +111,12 @@ Every production model must bind to:
 8. a separate evaluation manifest;
 9. a separate production promotion record.
 
+Settlement training data is represented by exact immutable contract-level labels: each label binds
+an event, market ticker, boolean resolved outcome, resolution timestamp, and settlement evidence
+identity. The label manifest is content-addressed over those records plus its settlement mapping
+and authority, so changing a pairing, outcome, timestamp, or evidence identity changes the
+manifest identity.
+
 No resolved outcome, post-cutoff observation, post-cutoff market move, or later forecast may enter
 a feature set for an earlier prediction.
 
@@ -123,7 +133,8 @@ opportunity layer.
 6. Poorly calibrated, unstable, concentrated, or drifting challengers are rejected or
    quarantined.
 7. Better challengers may move to one-contract canary, then bounded production, only through a
-   promotion record and the existing execution/risk gates.
+   model-governance/deployment-eligibility record and the existing execution/risk gates. A
+   quarantined or retired model is ineligible for any promotion record.
 8. Separately, currently promoted family models can be ranked across the entire supported Kalshi
    universe by expected value after fees, uncertainty, liquidity, freshness, concentration, and
    portfolio risk. The best opportunity wins capital; a family does not receive capital merely

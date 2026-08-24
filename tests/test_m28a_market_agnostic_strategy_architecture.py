@@ -179,6 +179,95 @@ def test_family_cannot_reference_unknown_source_or_model() -> None:
         )
 
 
+def test_enabled_family_rejects_production_ineligible_source() -> None:
+    research_source = SourceCapability.build(
+        source_id="research-only",
+        roles=(SourceRole.SETTLEMENT,),
+        domains=("weather",),
+        authority="research source",
+        maximum_age_seconds=60,
+        production_allowed=False,
+    )
+    family = MarketFamilySpec.build(
+        family_id="weather.research-only",
+        domain="weather",
+        selector="RESEARCH",
+        settlement_mapping_id="mapping",
+        source_ids=("research-only",),
+        feature_groups=("forecast-level",),
+        model_recipe_ids=("weather-calibrated-ensemble-v1",),
+    )
+    with pytest.raises(ProductionStrategyError, match="production-ineligible"):
+        StrategyRegistry.build(
+            sources=(research_source,),
+            model_recipes=(weather_recipe(),),
+            market_families=(family,),
+        )
+
+
+def test_disabled_family_may_reference_production_ineligible_source() -> None:
+    research_source = SourceCapability.build(
+        source_id="research-only",
+        roles=(SourceRole.STRUCTURED_DATA,),
+        domains=("economics",),
+        authority="research source",
+        maximum_age_seconds=60,
+        production_allowed=False,
+    )
+    family = MarketFamilySpec.build(
+        family_id="economics.research-only",
+        domain="economics",
+        selector="RESEARCH",
+        settlement_mapping_id="mapping",
+        source_ids=("research-only",),
+        feature_groups=("official-releases",),
+        model_recipe_ids=("economics-ensemble-v1",),
+        enabled=False,
+    )
+    registry = StrategyRegistry.build(
+        sources=(research_source,),
+        model_recipes=(
+            ModelRecipe.build(
+                recipe_id="economics-ensemble-v1",
+                algorithm="ensemble",
+                supported_domains=("economics",),
+                required_feature_groups=("official-releases",),
+                calibration_method="walk-forward",
+                supports_retraining=True,
+                supports_ensemble_weighting=True,
+            ),
+        ),
+        market_families=(family,),
+    )
+    assert registry.enabled_family_ids == ()
+
+
+def test_enabled_family_requires_settlement_capable_source() -> None:
+    source = SourceCapability.build(
+        source_id="forecast-only",
+        roles=(SourceRole.FORECAST,),
+        domains=("weather",),
+        authority="forecast source",
+        maximum_age_seconds=60,
+        production_allowed=True,
+    )
+    family = MarketFamilySpec.build(
+        family_id="weather.no-settlement-source",
+        domain="weather",
+        selector="NO_SETTLEMENT",
+        settlement_mapping_id="mapping",
+        source_ids=("forecast-only",),
+        feature_groups=("forecast-level",),
+        model_recipe_ids=("weather-calibrated-ensemble-v1",),
+    )
+    with pytest.raises(ProductionStrategyError, match="settlement-capable"):
+        StrategyRegistry.build(
+            sources=(source,),
+            model_recipes=(weather_recipe(),),
+            market_families=(family,),
+        )
+
+
 def test_family_cannot_reference_source_from_wrong_domain() -> None:
     economics_only = SourceCapability.build(
         source_id="economics-only",

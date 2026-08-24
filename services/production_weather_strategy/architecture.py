@@ -296,8 +296,20 @@ class StrategyRegistry:
             if missing_recipes:
                 raise ProductionStrategyError("market family references unknown model recipe")
             for source_id in family.source_ids:
-                if family.domain not in source_map[source_id].domains:
+                source = source_map[source_id]
+                if family.domain not in source.domains:
                     raise ProductionStrategyError("source does not support market domain")
+                if family.enabled and not source.production_allowed:
+                    raise ProductionStrategyError(
+                        "enabled market family references production-ineligible source"
+                    )
+            if family.enabled and not any(
+                SourceRole.SETTLEMENT in source_map[source_id].roles
+                for source_id in family.source_ids
+            ):
+                raise ProductionStrategyError(
+                    "enabled market family requires a settlement-capable source"
+                )
             for recipe_id in family.model_recipe_ids:
                 recipe = recipe_map[recipe_id]
                 if family.domain not in recipe.supported_domains:
