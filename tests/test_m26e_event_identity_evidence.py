@@ -113,8 +113,12 @@ def test_no_caller_supplied_trust_parameter_or_enum_can_escalate() -> None:
         not in inspect.signature(UniverseEventObservation.from_entities).parameters
     )
     assert "authority_state" not in inspect.signature(UniverseEventObservation).parameters
+    authority_field = next(
+        field for field in fields(UniverseEventObservation) if field.name == "authority_state"
+    )
+    assert authority_field.init is False
     row = observation("M", "E")
-    with pytest.raises(ValueError, match="init=False"):
+    with pytest.raises((TypeError, ValueError), match="init=False"):
         replace(row, authority_state=ObservationAuthorityState.ARCHIVE_VERIFIED)
 
 
