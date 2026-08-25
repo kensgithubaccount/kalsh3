@@ -28,6 +28,7 @@ from .domain import Event, Market, Series, UniverseValidationError, exact, stabl
 from .lifecycle import (
     _LIFECYCLE_ISSUANCE_CAPABILITY,
     ZERO_INFLUENCE,
+    LifecycleError,
     LifecycleState,
     MarketLifecycleRecord,
     ProductType,
@@ -646,6 +647,12 @@ def _with_supersession(
 ) -> MarketLifecycleRecord:
     if previous is None:
         return current
+    if not isinstance(previous, MarketLifecycleRecord):
+        raise UniverseCensusError("previous lifecycle record must be a MarketLifecycleRecord")
+    try:
+        MarketLifecycleRecord._validate_canonical_identity(previous)
+    except LifecycleError as exc:
+        raise UniverseCensusError("previous lifecycle record canonical identity is invalid") from exc
     if previous.market_ticker != current.market_ticker:
         raise UniverseCensusError("previous lifecycle record market identity mismatch")
     if previous.semantic_material_hash == current.semantic_material_hash:
