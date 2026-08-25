@@ -19,6 +19,7 @@ LIFECYCLE_SCHEMA_VERSION = "ku-a1-market-lifecycle-v1"
 CAPTURE_SCHEMA_VERSION = "ku-a1-universe-capture-v1"
 ZERO_INFLUENCE = Decimal("0")
 _SHA256 = re.compile(r"[0-9a-f]{64}\Z")
+_LIFECYCLE_ISSUANCE_CAPABILITY = object()
 
 
 class LifecycleError(ValueError):
@@ -40,7 +41,11 @@ class ProductType(StrEnum):
 
 @dataclass(frozen=True, slots=True)
 class UniverseCaptureEvidence:
-    """Immutable identity of one caller-supplied captured public-universe response."""
+    """Caller-supplied identity for one offline captured public-universe response.
+
+    ``response_sha256`` is descriptive captured-input provenance for KU-A1. It is not
+    independently authenticated Kalshi acquisition or transport authority.
+    """
 
     source_authority: str
     request_locator: str
@@ -81,9 +86,9 @@ class UniverseCaptureEvidence:
         object.__setattr__(self, "content_hash", digest)
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True, slots=True, init=False)
 class MarketLifecycleRecord:
-    """Content-addressed KU-A1 state for one canonical market observation.
+    """Content-addressed KU-A1 state issued only by the canonical router.
 
     ``semantic_material_hash`` deliberately excludes market prices.  It is used by the
     router only to decide whether a prior semantic proof was materially superseded; the
@@ -114,14 +119,114 @@ class MarketLifecycleRecord:
     semantic_blockers: tuple[str, ...]
     unsupported_reasons: tuple[str, ...]
     semantic_material_hash: str
-    supersedes_record_id: str | None = None
-    schema_version: str = field(init=False, default=LIFECYCLE_SCHEMA_VERSION)
-    lifecycle_record_id: str = field(init=False)
-    content_hash: str = field(init=False)
-    research_only: bool = field(init=False, default=True)
-    production_influence: Decimal = field(init=False, default=ZERO_INFLUENCE)
+    supersedes_record_id: str | None
+    schema_version: str
+    lifecycle_record_id: str
+    content_hash: str
+    research_only: bool
+    production_influence: Decimal
 
-    def __post_init__(self) -> None:
+    def __init__(self, *_args: object, **_kwargs: object) -> None:
+        raise TypeError("MarketLifecycleRecord is canonical-router-issued only")
+
+    @classmethod
+    def _issue(
+        cls,
+        *,
+        capability: object,
+        capture_id: str,
+        market_input_hash: str,
+        market_id: str | None,
+        market_ticker: str,
+        event_id: str | None,
+        event_ticker: str,
+        series_id: str | None,
+        series_ticker: str | None,
+        product_type: ProductType,
+        payout_model: str,
+        state: LifecycleState,
+        rules_hash: str,
+        metadata_hash: str,
+        parent_evidence_hash: str | None,
+        settlement_source_identity: str | None,
+        specialist_route_id: str | None,
+        specialist_route_state: str | None,
+        specialist_route_reasons: tuple[str, ...],
+        advisory_family: str,
+        semantic_status: str | None,
+        semantic_proof_ids: tuple[str, ...],
+        semantic_blockers: tuple[str, ...],
+        unsupported_reasons: tuple[str, ...],
+        semantic_material_hash: str,
+        supersedes_record_id: str | None = None,
+    ) -> MarketLifecycleRecord:
+        if capability is not _LIFECYCLE_ISSUANCE_CAPABILITY:
+            raise LifecycleError("lifecycle issuance capability is invalid")
+        self = object.__new__(cls)
+        for name, value in (
+            ("capture_id", capture_id),
+            ("market_input_hash", market_input_hash),
+            ("market_id", market_id),
+            ("market_ticker", market_ticker),
+            ("event_id", event_id),
+            ("event_ticker", event_ticker),
+            ("series_id", series_id),
+            ("series_ticker", series_ticker),
+            ("product_type", product_type),
+            ("payout_model", payout_model),
+            ("state", state),
+            ("rules_hash", rules_hash),
+            ("metadata_hash", metadata_hash),
+            ("parent_evidence_hash", parent_evidence_hash),
+            ("settlement_source_identity", settlement_source_identity),
+            ("specialist_route_id", specialist_route_id),
+            ("specialist_route_state", specialist_route_state),
+            ("specialist_route_reasons", specialist_route_reasons),
+            ("advisory_family", advisory_family),
+            ("semantic_status", semantic_status),
+            ("semantic_proof_ids", semantic_proof_ids),
+            ("semantic_blockers", semantic_blockers),
+            ("unsupported_reasons", unsupported_reasons),
+            ("semantic_material_hash", semantic_material_hash),
+            ("supersedes_record_id", supersedes_record_id),
+        ):
+            object.__setattr__(self, name, value)
+        self._finalize()
+        return self
+
+    def _reissue_with_supersession(
+        self, *, capability: object, supersedes_record_id: str
+    ) -> MarketLifecycleRecord:
+        return type(self)._issue(
+            capability=capability,
+            capture_id=self.capture_id,
+            market_input_hash=self.market_input_hash,
+            market_id=self.market_id,
+            market_ticker=self.market_ticker,
+            event_id=self.event_id,
+            event_ticker=self.event_ticker,
+            series_id=self.series_id,
+            series_ticker=self.series_ticker,
+            product_type=self.product_type,
+            payout_model=self.payout_model,
+            state=self.state,
+            rules_hash=self.rules_hash,
+            metadata_hash=self.metadata_hash,
+            parent_evidence_hash=self.parent_evidence_hash,
+            settlement_source_identity=self.settlement_source_identity,
+            specialist_route_id=self.specialist_route_id,
+            specialist_route_state=self.specialist_route_state,
+            specialist_route_reasons=self.specialist_route_reasons,
+            advisory_family=self.advisory_family,
+            semantic_status=self.semantic_status,
+            semantic_proof_ids=self.semantic_proof_ids,
+            semantic_blockers=self.semantic_blockers,
+            unsupported_reasons=self.unsupported_reasons,
+            semantic_material_hash=self.semantic_material_hash,
+            supersedes_record_id=supersedes_record_id,
+        )
+
+    def _validate_lifecycle_invariants(self) -> None:
         required = (
             self.capture_id,
             self.market_input_hash,
@@ -135,6 +240,12 @@ class MarketLifecycleRecord:
         )
         if any(not isinstance(value, str) or not value.strip() for value in required):
             raise LifecycleError("lifecycle record identity/evidence is incomplete")
+        if not isinstance(self.product_type, ProductType) or not isinstance(
+            self.state, LifecycleState
+        ):
+            raise LifecycleError("lifecycle record state/product identity is invalid")
+        if self.semantic_status is not None and not isinstance(self.semantic_status, str):
+            raise LifecycleError("lifecycle semantic status is invalid")
         if self.state is LifecycleState.SEMANTICALLY_UNDERSTOOD:
             if self.product_type is not ProductType.BINARY_EVENT:
                 raise LifecycleError(
@@ -150,11 +261,16 @@ class MarketLifecycleRecord:
             raise LifecycleError(
                 "discovered record requires an explicit blocker or unsupported reason"
             )
-        route_reasons = tuple(sorted(set(self.specialist_route_reasons)))
-        semantic_proofs = tuple(sorted(set(self.semantic_proof_ids)))
-        blockers = tuple(sorted(set(self.semantic_blockers)))
-        unsupported = tuple(sorted(set(self.unsupported_reasons)))
-        material = (
+
+    def _identity_material(
+        self,
+        *,
+        specialist_route_reasons: tuple[str, ...],
+        semantic_proof_ids: tuple[str, ...],
+        semantic_blockers: tuple[str, ...],
+        unsupported_reasons: tuple[str, ...],
+    ) -> tuple[object, ...]:
+        return (
             LIFECYCLE_SCHEMA_VERSION,
             self.capture_id,
             self.market_input_hash,
@@ -173,21 +289,81 @@ class MarketLifecycleRecord:
             self.settlement_source_identity,
             self.specialist_route_id,
             self.specialist_route_state,
-            route_reasons,
+            specialist_route_reasons,
             self.advisory_family,
             self.semantic_status,
-            semantic_proofs,
-            blockers,
-            unsupported,
+            semantic_proof_ids,
+            semantic_blockers,
+            unsupported_reasons,
             self.semantic_material_hash,
             self.supersedes_record_id,
             "RESEARCH_ONLY",
             "0",
         )
-        digest = stable_hash(material)
+
+    def _canonical_sequences(
+        self,
+    ) -> tuple[tuple[str, ...], tuple[str, ...], tuple[str, ...], tuple[str, ...]]:
+        values = (
+            self.specialist_route_reasons,
+            self.semantic_proof_ids,
+            self.semantic_blockers,
+            self.unsupported_reasons,
+        )
+        if any(
+            not isinstance(items, tuple) or any(not isinstance(item, str) for item in items)
+            for items in values
+        ):
+            raise LifecycleError("lifecycle record reason/proof collections are invalid")
+        return tuple(tuple(sorted(set(items))) for items in values)  # type: ignore[return-value]
+
+    def _validate_canonical_identity(self) -> None:
+        if type(self) is not MarketLifecycleRecord:
+            raise LifecycleError("lifecycle record concrete type is not canonical")
+        if self.schema_version != LIFECYCLE_SCHEMA_VERSION:
+            raise LifecycleError("lifecycle record schema identity is invalid")
+        if self.research_only is not True or self.production_influence != ZERO_INFLUENCE:
+            raise LifecycleError("lifecycle record authority boundary is invalid")
+        self._validate_lifecycle_invariants()
+        route_reasons, semantic_proofs, blockers, unsupported = self._canonical_sequences()
+        if (
+            self.specialist_route_reasons != route_reasons
+            or self.semantic_proof_ids != semantic_proofs
+            or self.semantic_blockers != blockers
+            or self.unsupported_reasons != unsupported
+        ):
+            raise LifecycleError("lifecycle record reason/proof collections are not canonical")
+        try:
+            expected_digest = stable_hash(
+                self._identity_material(
+                    specialist_route_reasons=route_reasons,
+                    semantic_proof_ids=semantic_proofs,
+                    semantic_blockers=blockers,
+                    unsupported_reasons=unsupported,
+                )
+            )
+        except (TypeError, ValueError) as exc:
+            raise LifecycleError("lifecycle record identity material is invalid") from exc
+        if self.lifecycle_record_id != expected_digest or self.content_hash != expected_digest:
+            raise LifecycleError("lifecycle record content-addressed identity mismatch")
+
+    def _finalize(self) -> None:
+        self._validate_lifecycle_invariants()
+        route_reasons, semantic_proofs, blockers, unsupported = self._canonical_sequences()
+        digest = stable_hash(
+            self._identity_material(
+                specialist_route_reasons=route_reasons,
+                semantic_proof_ids=semantic_proofs,
+                semantic_blockers=blockers,
+                unsupported_reasons=unsupported,
+            )
+        )
         object.__setattr__(self, "specialist_route_reasons", route_reasons)
         object.__setattr__(self, "semantic_proof_ids", semantic_proofs)
         object.__setattr__(self, "semantic_blockers", blockers)
         object.__setattr__(self, "unsupported_reasons", unsupported)
+        object.__setattr__(self, "schema_version", LIFECYCLE_SCHEMA_VERSION)
         object.__setattr__(self, "lifecycle_record_id", digest)
         object.__setattr__(self, "content_hash", digest)
+        object.__setattr__(self, "research_only", True)
+        object.__setattr__(self, "production_influence", ZERO_INFLUENCE)
