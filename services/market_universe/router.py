@@ -435,14 +435,10 @@ class MarketUniverseRouter:
         event = event_map.get(market.event_ticker)
         if event is None:
             blockers.append(
-                "INVALID_EVENT_PARENT"
-                if market.event_ticker in invalid_events
-                else "MISSING_EVENT"
+                "INVALID_EVENT_PARENT" if market.event_ticker in invalid_events else "MISSING_EVENT"
             )
         series_ticker = (
-            event.series_ticker
-            if event is not None
-            else _text(market.raw.get("series_ticker"))
+            event.series_ticker if event is not None else _text(market.raw.get("series_ticker"))
         )
         series = series_map.get(series_ticker) if series_ticker is not None else None
         if series_ticker is None:
@@ -667,7 +663,9 @@ def _advisory_family(market: Market, event: Event | None, series: Series | None)
     category = (
         event.category
         if event is not None and event.category
-        else series.category if series is not None else ""
+        else series.category
+        if series is not None
+        else ""
     )
     title = " ".join(
         text
@@ -731,9 +729,7 @@ def _discovery_quote(raw: dict[str, Any]) -> tuple[DiscoveryQuotes | None, str |
         return None, "INVALID_DISCOVERY_QUOTE_INPUT"
 
 
-def _optional_exact(
-    raw: Mapping[str, Any], field_name: str
-) -> tuple[Decimal | None, str | None]:
+def _optional_exact(raw: Mapping[str, Any], field_name: str) -> tuple[Decimal | None, str | None]:
     if field_name not in raw or raw[field_name] is None:
         return None, None
     try:
