@@ -933,6 +933,40 @@ def test_development_model_artifact_rejects_wrong_training_manifest_lineage() ->
             trained_at=trained_at,
         )
 
+    pre_resolution_created = min(
+        label.resolved_at for label in features.settlement_labels.labels
+    ) - timedelta(microseconds=1)
+    pre_resolution_digest = stable_hash(
+        (
+            training.family,
+            training.feature_schema_hash,
+            tuple(sorted(training.feature_artifact_ids)),
+            training.settlement_labels_id,
+            training.temporal_split_hash,
+            training.prediction_cutoff_rule,
+            pre_resolution_created.astimezone(UTC).isoformat(),
+        )
+    )
+    pre_resolution_training = replace(
+        training,
+        manifest_id=pre_resolution_digest,
+        created_at=pre_resolution_created,
+        content_hash=pre_resolution_digest,
+    )
+    assert pre_resolution_training.manifest_id == pre_resolution_digest
+    assert pre_resolution_training.content_hash == pre_resolution_digest
+    assert any(
+        label.resolved_at > pre_resolution_training.created_at.astimezone(UTC)
+        for label in features.settlement_labels.labels
+    )
+    with pytest.raises(ModelTournamentError, match="unresolved future settlement labels"):
+        build_development_model_artifact(
+            features,
+            tournament,
+            pre_resolution_training,
+            trained_at=trained_at,
+        )
+
     changed_row = replace(
         features.rows[0],
         content_hash=stable_hash(("different-feature-row", features.rows[0].content_hash)),

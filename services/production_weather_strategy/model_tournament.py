@@ -692,6 +692,14 @@ def build_development_model_artifact(
         or training_manifest.created_at.utcoffset() is None
     ):
         raise ModelTournamentError("training manifest created_at must be timezone-aware")
+    created_at_utc = training_manifest.created_at.astimezone(UTC)
+    if any(
+        label.resolved_at > created_at_utc
+        for label in dataset.settlement_labels.labels
+    ):
+        raise ModelTournamentError(
+            "training manifest cannot use unresolved future settlement labels"
+        )
     expected_manifest_digest = stable_hash(
         (
             training_manifest.family,
