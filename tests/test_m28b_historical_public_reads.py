@@ -116,13 +116,13 @@ def test_private_history_stays_signer_gated_and_no_mutation_api() -> None:
 
 def test_runner_is_dormant_fixed_origin_no_auth_get_only_and_series_required() -> None:
     source = Path("scripts/run_m28b_public_historical_weather.py").read_text()
-    assert 'ORIGIN = PUBLIC_KALSHI_ORIGIN' in source
+    assert "ORIGIN = PUBLIC_KALSHI_ORIGIN" in source
     assert 'method="GET"' in source
     assert "forbids authorization headers" in source
     assert 'parser.add_argument("--series-ticker", required=True)' in source
     assert "recent_settled_markets" in source and "client.markets" in source
     assert "O_EXCL" in source and "0o600" in source and "os.fsync" in source
-    assert "if __name__ == \"__main__\"" in source
+    assert 'if __name__ == "__main__"' in source
     assert "requests.post" not in source and "submit_order" not in source
 
 

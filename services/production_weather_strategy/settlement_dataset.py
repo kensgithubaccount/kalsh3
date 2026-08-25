@@ -192,13 +192,9 @@ class PublicPageEvidence:
             )
         query = parse_qs(urlsplit(request_path).query, keep_blank_values=True)
         if query.get("series_ticker") != [scope]:
-            raise HistoricalWeatherDatasetError(
-                "page evidence series scope does not match request"
-            )
+            raise HistoricalWeatherDatasetError("page evidence series scope does not match request")
         if partition == "RECENT_SETTLED" and query.get("status") != ["settled"]:
-            raise HistoricalWeatherDatasetError(
-                "recent page evidence is not settlement-scoped"
-            )
+            raise HistoricalWeatherDatasetError("recent page evidence is not settlement-scoped")
         normalized_hashes = tuple(sorted(market_row_hashes))
         if len(set(normalized_hashes)) != len(normalized_hashes):
             raise HistoricalWeatherDatasetError("page evidence contains duplicate market rows")
@@ -234,9 +230,7 @@ class PublicPageEvidence:
         try:
             payload = json.loads(response_bytes)
         except json.JSONDecodeError as exc:
-            raise HistoricalWeatherDatasetError(
-                "page evidence response is not JSON"
-            ) from exc
+            raise HistoricalWeatherDatasetError("page evidence response is not JSON") from exc
         if not isinstance(payload, dict) or not isinstance(payload.get("markets"), list):
             raise HistoricalWeatherDatasetError(
                 "page evidence response does not contain a market page"
@@ -795,8 +789,7 @@ def _feasible_witness(contracts: tuple[ResolvedTemperatureContract, ...]) -> Dec
         candidates.add((left + right) / Decimal(2))
     for candidate in sorted(candidates):
         if all(
-            contract.predicate(candidate) == bool(contract.realized_yes)
-            for contract in contracts
+            contract.predicate(candidate) == bool(contract.realized_yes) for contract in contracts
         ):
             return candidate
     return None

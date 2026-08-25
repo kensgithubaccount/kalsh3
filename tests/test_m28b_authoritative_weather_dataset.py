@@ -299,8 +299,7 @@ def test_changed_outcome_changes_label_and_manifest_but_not_event_identity() -> 
     assert yes.events[0].event_id == no.events[0].event_id
     assert yes.settlement_labels is not None and no.settlement_labels is not None
     assert (
-        yes.settlement_labels.labels[0].content_hash
-        != no.settlement_labels.labels[0].content_hash
+        yes.settlement_labels.labels[0].content_hash != no.settlement_labels.labels[0].content_hash
     )
     assert yes.settlement_labels.manifest_id != no.settlement_labels.manifest_id
 
@@ -361,8 +360,7 @@ def test_provenance_retains_replay_material() -> None:
     assert record.parser_version
     assert record.settlement_mapping_id == SETTLEMENT_MAPPING_ID
     assert (
-        record.label_id
-        == dataset.settlement_labels.labels[0].content_hash  # type: ignore[union-attr]
+        record.label_id == dataset.settlement_labels.labels[0].content_hash  # type: ignore[union-attr]
     )
 
 
