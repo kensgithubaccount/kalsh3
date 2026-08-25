@@ -166,7 +166,7 @@ def test_quote_from_another_ticker_fails() -> None:
     response, checkpoint = _checkpoint((candle,))
     corrupted = copy(checkpoint)
     object.__setattr__(corrupted, "market_ticker", "OTHER")
-    with pytest.raises(HistoricalEconomicsEvidenceError, match="checkpoint identity|ticker"):
+    with pytest.raises(HistoricalEconomicsEvidenceError, match=r"checkpoint identity|ticker"):
         build_executable_quote_evidence(
             response_evidence=response,
             checkpoint=corrupted,
