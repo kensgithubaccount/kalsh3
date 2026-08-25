@@ -85,9 +85,7 @@ class ClimateSourceArtifact:
     parser_version: str
     source_vintage_at: datetime | None = None
     source_vintage_evidence_id: str | None = None
-    source_schema_version: str = field(
-        init=False, default=CLIMATE_SOURCE_ARTIFACT_SCHEMA_VERSION
-    )
+    source_schema_version: str = field(init=False, default=CLIMATE_SOURCE_ARTIFACT_SCHEMA_VERSION)
     raw_artifact_sha256: str = field(init=False)
     vintage_status: ClimateSourceVintageStatus = field(init=False)
     provenance_id: str = field(init=False)
