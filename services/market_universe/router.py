@@ -17,8 +17,8 @@ from services.contract_intelligence.specification import (
     Comparator,
     ContractSpecification,
     ContractSpecificationParser,
-    SemanticStatus,
     SemanticsInputBundle,
+    SemanticStatus,
     parse_comparison,
 )
 from services.opportunity_engine.live_economics import DiscoveryQuotes
@@ -26,11 +26,11 @@ from services.opportunity_engine.structural import StructuralRoute, scan_structu
 
 from .domain import Event, Market, Series, UniverseValidationError, exact, stable_hash
 from .lifecycle import (
+    ZERO_INFLUENCE,
     LifecycleState,
     MarketLifecycleRecord,
     ProductType,
     UniverseCaptureEvidence,
-    ZERO_INFLUENCE,
 )
 from .quality import Family, classify
 
