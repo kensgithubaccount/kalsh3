@@ -318,3 +318,152 @@ def test_derived_family_classifier_cannot_promote_unsupported_market(monkeypatch
     result = census([market(rules_primary="The official source decides the outcome.")])
     assert result.records[0].advisory_family == "macro"
     assert result.records[0].state is LifecycleState.DISCOVERED
+
+
+def test_closed_market_is_accounted_and_m27b_status_is_only_specialist_evidence() -> None:
+    result = census([market(status="closed")])
+    assert result.manifest.accounted_market_count == 1
+    assert result.records[0].state is LifecycleState.SEMANTICALLY_UNDERSTOOD
+    assert result.records[0].specialist_route_state == "ROUTE_ONLY"
+    assert "NON_ACTIVE_MARKET" in result.records[0].specialist_route_reasons
+
+
+def test_understood_and_unsupported_siblings_both_remain_visible() -> None:
+    result = census([market("KXEVENT-10"), market("KXEVENT-MVE", mve_collection_ticker="MVE")])
+    assert result.manifest.accounted_market_count == 2
+    assert {record.state for record in result.records} == {
+        LifecycleState.DISCOVERED,
+        LifecycleState.SEMANTICALLY_UNDERSTOOD,
+    }
+
+
+def test_malformed_parent_is_explicit_market_blocker_not_a_silent_drop() -> None:
+    bad_event = event()
+    bad_event.pop("title")
+    result = census([market()], event_rows=[bad_event])
+    assert result.manifest.accounted_market_count == 1
+    assert result.records[0].state is LifecycleState.DISCOVERED
+    assert "INVALID_EVENT_PARENT" in result.records[0].semantic_blockers
+
+
+def test_duplicate_parent_identity_fails_closed() -> None:
+    with pytest.raises(UniverseCensusError, match="duplicate parent identity"):
+        census([market()], event_rows=[event(), event()])
+
+
+def test_all_ku_a1_outputs_are_research_only_with_zero_influence() -> None:
+    malformed = market("KXEVENT-BAD")
+    malformed.pop("rules_primary")
+    result = census([market(**quote_fields()), malformed])
+    outputs = (
+        result.capture,
+        result.manifest,
+        result.coverage_manifest,
+        *result.records,
+        *result.quarantines,
+        *result.coverage_descriptors,
+    )
+    assert outputs
+    assert all(item.research_only is True for item in outputs)
+    assert all(item.production_influence == Decimal("0") for item in outputs)
+
+
+def test_new_package_cannot_name_later_lifecycle_authority_or_network_clients() -> None:
+    from pathlib import Path
+
+    root = Path(__file__).resolve().parents[1]
+    source = "\n".join(
+        (root / relative).read_text()
+        for relative in (
+            "services/market_universe/lifecycle.py",
+            "services/market_universe/router.py",
+        )
+    )
+    forbidden_states = (
+        "RESEARCHABLE",
+        "MODELABLE",
+        "ECONOMICALLY_EVALUABLE",
+        "SHADOW_ELIGIBLE",
+        "TRADE_CANDIDATE",
+    )
+    forbidden_network = ("requests", "httpx", "websocket", "websockets", "urllib.request")
+    assert all(token not in source for token in forbidden_states)
+    assert all(token not in source for token in forbidden_network)
+
+
+def test_router_dependency_graph_cannot_reach_authority_or_execution_packages() -> None:
+    import ast
+    from pathlib import Path
+
+    root = Path(__file__).resolve().parents[1]
+    service_root = root / "services"
+    forbidden_prefixes = (
+        "services.agent_control_center",
+        "services.bounded_autonomy",
+        "services.demo_execution",
+        "services.execution_simulation",
+        "services.kalshi_account_gateway",
+        "services.production_execution",
+        "services.production_weather_strategy",
+        "services.risk_engine",
+        "services.supervised_canary",
+    )
+
+    def module_path(module: str) -> Path | None:
+        candidate = root / (module.replace(".", "/") + ".py")
+        if candidate.is_file():
+            return candidate
+        package = root / module.replace(".", "/") / "__init__.py"
+        return package if package.is_file() else None
+
+    def absolute_module(current: str, node: ast.ImportFrom) -> str | None:
+        if node.level == 0:
+            return node.module
+        package = current.split(".")[:-1]
+        keep = len(package) - (node.level - 1)
+        if keep < 1:
+            return None
+        prefix = package[:keep]
+        if node.module:
+            prefix.extend(node.module.split("."))
+        return ".".join(prefix)
+
+    pending = ["services.market_universe.lifecycle", "services.market_universe.router"]
+    visited: set[str] = set()
+    while pending:
+        module = pending.pop()
+        if module in visited:
+            continue
+        visited.add(module)
+        assert not module.startswith(forbidden_prefixes), module
+        forbidden_fragments = (".credential", ".portfolio", ".signer", ".order_submission")
+        assert not any(fragment in module for fragment in forbidden_fragments), module
+        path = module_path(module)
+        if path is None or service_root not in path.parents:
+            continue
+        tree = ast.parse(path.read_text())
+        imports: set[str] = set()
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Import):
+                imports.update(
+                    alias.name for alias in node.names if alias.name.startswith("services.")
+                )
+            elif isinstance(node, ast.ImportFrom):
+                imported = absolute_module(module, node)
+                if imported and imported.startswith("services."):
+                    imports.add(imported)
+                    for alias in node.names:
+                        candidate = f"{imported}.{alias.name}"
+                        if module_path(candidate) is not None:
+                            imports.add(candidate)
+        pending.extend(sorted(imports - visited))
+
+
+def test_coverage_manifest_replays_deterministically_under_input_permutation() -> None:
+    markets = [market("KXEVENT-10", **quote_fields()), market("KXEVENT-11")]
+    left = census(markets)
+    right = census(list(reversed(markets)))
+    assert left.coverage_manifest.manifest_id == right.coverage_manifest.manifest_id
+    assert [item.descriptor_id for item in left.coverage_descriptors] == [
+        item.descriptor_id for item in right.coverage_descriptors
+    ]

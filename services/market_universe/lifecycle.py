@@ -137,7 +137,9 @@ class MarketLifecycleRecord:
             raise LifecycleError("lifecycle record identity/evidence is incomplete")
         if self.state is LifecycleState.SEMANTICALLY_UNDERSTOOD:
             if self.product_type is not ProductType.BINARY_EVENT:
-                raise LifecycleError("non-binary product cannot be semantically understood in KU-A1")
+                raise LifecycleError(
+                    "non-binary product cannot be semantically understood in KU-A1"
+                )
             if self.semantic_status != "VALID" or not self.semantic_proof_ids:
                 raise LifecycleError("semantic state requires deterministic VALID proof")
             if self.semantic_blockers or self.unsupported_reasons:
@@ -145,7 +147,9 @@ class MarketLifecycleRecord:
         if self.state is LifecycleState.DISCOVERED and not (
             self.semantic_blockers or self.unsupported_reasons
         ):
-            raise LifecycleError("discovered record requires an explicit blocker or unsupported reason")
+            raise LifecycleError(
+                "discovered record requires an explicit blocker or unsupported reason"
+            )
         route_reasons = tuple(sorted(set(self.specialist_route_reasons)))
         semantic_proofs = tuple(sorted(set(self.semantic_proof_ids)))
         blockers = tuple(sorted(set(self.semantic_blockers)))

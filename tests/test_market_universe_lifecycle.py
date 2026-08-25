@@ -96,18 +96,13 @@ def test_caller_cannot_supply_content_or_authority_fields() -> None:
     base = record()
     with pytest.raises(TypeError):
         MarketLifecycleRecord(  # type: ignore[call-arg]
-            **{
-                name: getattr(base, name)
-                for name in base.__dataclass_fields__
-                if name
-                not in {
-                    "schema_version",
-                    "lifecycle_record_id",
-                    "content_hash",
-                    "research_only",
-                    "production_influence",
-                }
-            },
+            **{name: getattr(base, name) for name in base.__dataclass_fields__ if name not in {
+                "schema_version",
+                "lifecycle_record_id",
+                "content_hash",
+                "research_only",
+                "production_influence",
+            }},
             lifecycle_record_id="caller-controlled",
         )
 
