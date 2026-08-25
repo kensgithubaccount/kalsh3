@@ -18,24 +18,34 @@ from datetime import UTC, date, datetime, time
 from decimal import Decimal, InvalidOperation
 from enum import StrEnum
 from itertools import pairwise
+from types import MappingProxyType
 from typing import Any, cast
 from urllib.parse import parse_qs, urlsplit
 from zoneinfo import ZoneInfo
 
-from services.forecasting.daily_temperature import SETTLEMENT_LOCATIONS, SETTLEMENT_SOURCE
+from services.forecasting.daily_temperature import (
+    SETTLEMENT_LOCATIONS,
+    SETTLEMENT_SOURCE,
+    SettlementLocation,
+)
 from services.historical_replay.archive import stable_hash
 
 from .contracts import SettlementLabel, SettlementLabelManifest, TemporalSplit
 
-PARSER_VERSION = "m28b-authoritative-weather-settlement-v3"
+PARSER_VERSION = "m28b-authoritative-weather-settlement-v4"
 ACQUISITION_SCHEMA = "kalsh3.m28b.public-settled-weather-evidence.v3"
 EVENT_ID_VERSION = "m28b-weather-event-identity-v2"
-SETTLEMENT_MAPPING_VERSION = "m28b-weather-company-daily-temperature-mapping-v2"
+SETTLEMENT_MAPPING_VERSION = "m28b-weather-company-daily-temperature-mapping-v3"
 PUBLIC_KALSHI_ORIGIN = "https://external-api.kalshi.com"
 LEGACY_NWS_SOURCE = "according to the National Weather Service's Climatological Report (Daily)"
 LABEL_AUTHORITY = (
     "Reviewed fixed-origin Kalshi public settlement evidence + exact Weather Company "
     "daily-temperature rule mapping"
+)
+_SUPPORTED_CURRENT_TWC_RULE_GRAMMARS = (
+    "CLI_IDENTIFIER_IF",
+    "LOCATION_ONLY_IF",
+    "LOCATION_ONLY_RESOLVES",
 )
 
 _SETTLEMENT_MAPPING_MATERIAL = (
@@ -44,6 +54,7 @@ _SETTLEMENT_MAPPING_MATERIAL = (
     ("DAILY_MAX", "DAILY_MIN"),
     ("RANGE", "GT", "LT"),
     "degF",
+    _SUPPORTED_CURRENT_TWC_RULE_GRAMMARS,
     tuple(
         sorted(
             (item.identifier, item.location, item.timezone)
@@ -60,7 +71,7 @@ _PREDICATE = (
     r"(?:greater than (?P<greater>[+-]?(?:\d+(?:\.\d+)?|\.\d+)))|"
     r"(?:less than (?P<less>[+-]?(?:\d+(?:\.\d+)?|\.\d+))))"
 )
-_CURRENT_RULE = re.compile(
+_CURRENT_RULE_WITH_IDENTIFIER = re.compile(
     r"\AIf the (?P<measurement>maximum|minimum) temperature recorded at "
     r"(?P<location>[^()]+?)\s*\((?P<identifier>CLI[A-Z]+)\) for "
     r"(?P<date>[A-Z][a-z]{2} \d{1,2}, \d{4}), is "
@@ -68,8 +79,35 @@ _CURRENT_RULE = re.compile(
     + rf"° fahrenheit according to {re.escape(SETTLEMENT_SOURCE)}, then the market "
     r"resolves to Yes\.\Z"
 )
+_CURRENT_RULE_LOCATION_ONLY_IF = re.compile(
+    r"\AIf the (?P<measurement>maximum|minimum) temperature recorded at "
+    r"(?P<location>[^()]+?) for "
+    r"(?P<date>[A-Z][a-z]{2} \d{1,2}, \d{4}), is "
+    + _PREDICATE
+    + rf"° fahrenheit according to {re.escape(SETTLEMENT_SOURCE)}, then the market "
+    r"resolves to Yes\.\Z"
+)
+_CURRENT_RULE_LOCATION_ONLY_RESOLVES = re.compile(
+    r"\AResolves Yes if the (?P<measurement>maximum|minimum) temperature recorded at "
+    r"(?P<location>[^()]+?) for "
+    r"(?P<date>[A-Z][a-z]{2} \d{1,2}, \d{4}), is "
+    + _PREDICATE
+    + rf"° fahrenheit according to {re.escape(SETTLEMENT_SOURCE)}\.\Z"
+)
 _NUMBER = re.compile(r"[+-]?(?:\d+(?:\.\d*)?|\.\d+)\Z")
 _SHA256 = re.compile(r"[0-9a-f]{64}\Z")
+
+
+def _build_location_authority(
+    locations: Mapping[str, SettlementLocation],
+) -> Mapping[str, SettlementLocation]:
+    authority = {item.location: item for item in locations.values()}
+    if len(authority) != len(locations):
+        raise RuntimeError("reviewed settlement-location names must be unique")
+    return MappingProxyType(authority)
+
+
+_LOCATION_AUTHORITY = _build_location_authority(SETTLEMENT_LOCATIONS)
 
 
 class HistoricalWeatherDatasetError(ValueError):
@@ -359,10 +397,35 @@ def classify_resolved_temperature_market(row: Mapping[str, Any]) -> SettlementRo
             None,
             "recognized legacy National Weather Service settlement regime",
         )
-    match = _CURRENT_RULE.fullmatch(rule)
-    if match is None:
-        raise HistoricalWeatherDatasetError("temperature-like market has unsupported exact rule")
-    contract = _parse_current_match(row, rule, match)
+
+    match = _CURRENT_RULE_WITH_IDENTIFIER.fullmatch(rule)
+    if match is not None:
+        identifier = match.group("identifier")
+        reviewed = SETTLEMENT_LOCATIONS.get(identifier)
+        if reviewed is None:
+            raise HistoricalWeatherDatasetError(
+                "temperature market uses an unreviewed settlement location"
+            )
+        if match.group("location").strip() != reviewed.location:
+            raise HistoricalWeatherDatasetError(
+                "temperature market location conflicts with reviewed authority"
+            )
+    else:
+        match = _CURRENT_RULE_LOCATION_ONLY_IF.fullmatch(rule)
+        if match is None:
+            match = _CURRENT_RULE_LOCATION_ONLY_RESOLVES.fullmatch(rule)
+        if match is None:
+            raise HistoricalWeatherDatasetError(
+                "temperature-like market has unsupported exact rule"
+            )
+        location = match.group("location")
+        reviewed = _LOCATION_AUTHORITY.get(location)
+        if reviewed is None:
+            raise HistoricalWeatherDatasetError(
+                "temperature market uses an unreviewed settlement location"
+            )
+
+    contract = _parse_current_match(row, rule, match, reviewed)
     return SettlementRowClassification(
         SettlementRegime.CURRENT_TWC, contract, "reviewed current TWC"
     )
@@ -479,20 +542,14 @@ def build_evidence_bound_weather_dataset(
 
 
 def _parse_current_match(
-    row: Mapping[str, Any], rule: str, match: re.Match[str]
+    row: Mapping[str, Any],
+    rule: str,
+    match: re.Match[str],
+    reviewed: SettlementLocation,
 ) -> ResolvedTemperatureContract:
     if row.get("status") != "settled":
         raise HistoricalWeatherDatasetError("temperature market status is not settled")
-    identifier = match.group("identifier")
-    reviewed = SETTLEMENT_LOCATIONS.get(identifier)
-    if reviewed is None:
-        raise HistoricalWeatherDatasetError(
-            "temperature market uses an unreviewed settlement location"
-        )
-    if match.group("location").strip() != reviewed.location:
-        raise HistoricalWeatherDatasetError(
-            "temperature market location conflicts with reviewed authority"
-        )
+    identifier = reviewed.identifier
     try:
         local_date = datetime.strptime(match.group("date"), "%b %d, %Y").date()
     except ValueError as exc:
