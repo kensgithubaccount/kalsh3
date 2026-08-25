@@ -311,8 +311,7 @@ class MarketLifecycleRecord:
             self.unsupported_reasons,
         )
         if any(
-            not isinstance(items, tuple)
-            or any(not isinstance(item, str) for item in items)
+            not isinstance(items, tuple) or any(not isinstance(item, str) for item in items)
             for items in values
         ):
             raise LifecycleError("lifecycle record reason/proof collections are invalid")
@@ -343,10 +342,7 @@ class MarketLifecycleRecord:
             )
         except (TypeError, ValueError) as exc:
             raise LifecycleError("lifecycle record identity material is invalid") from exc
-        if (
-            self.lifecycle_record_id != expected_digest
-            or self.content_hash != expected_digest
-        ):
+        if self.lifecycle_record_id != expected_digest or self.content_hash != expected_digest:
             raise LifecycleError("lifecycle record content-addressed identity mismatch")
 
     def _finalize(self) -> None:
