@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from collections import Counter
 from collections.abc import Iterable, Mapping
-from dataclasses import dataclass, field, replace
+from dataclasses import dataclass, field
 from datetime import datetime
 from decimal import Decimal
 from typing import Any
@@ -31,6 +31,7 @@ from .lifecycle import (
     MarketLifecycleRecord,
     ProductType,
     UniverseCaptureEvidence,
+    _LIFECYCLE_ISSUANCE_CAPABILITY,
 )
 from .quality import Family, classify
 
@@ -38,7 +39,8 @@ ROUTER_POLICY_VERSION = "ku-a1-market-universe-router-v2"
 CENSUS_SCHEMA_VERSION = "ku-a1-universe-census-v1"
 QUARANTINE_SCHEMA_VERSION = "ku-a1-market-quarantine-v1"
 COVERAGE_SCHEMA_VERSION = "ku-a1-family-coverage-v1"
-COVERAGE_DESCRIPTOR_VERSION = "ku-a1-market-coverage-descriptor-v1"
+COVERAGE_DESCRIPTOR_VERSION = "ku-a1-market-coverage-descriptor-v2"
+_ROUTER_ISSUANCE_CAPABILITY = object()
 _QUOTE_FIELDS = (
     "yes_bid_dollars",
     "yes_ask_dollars",
@@ -107,14 +109,21 @@ class UniverseCensusManifest:
     research_only: bool
     production_influence: Decimal
 
-    def __init__(
-        self,
+    def __init__(self, *_args: object, **_kwargs: object) -> None:
+        raise TypeError("UniverseCensusManifest is canonical-router-issued only")
+
+    @classmethod
+    def _issue(
+        cls,
         *,
+        capability: object,
         capture: UniverseCaptureEvidence,
         input_market_count: int,
         records: tuple[MarketLifecycleRecord, ...],
         quarantines: tuple[CensusQuarantineRecord, ...],
-    ) -> None:
+    ) -> UniverseCensusManifest:
+        if capability is not _ROUTER_ISSUANCE_CAPABILITY:
+            raise UniverseCensusError("census manifest issuance capability is invalid")
         if input_market_count < 0:
             raise UniverseCensusError("input market count cannot be negative")
         if any(record.capture_id != capture.capture_id for record in records):
@@ -144,6 +153,7 @@ class UniverseCensusManifest:
                 "0",
             )
         )
+        self = object.__new__(cls)
         object.__setattr__(self, "capture_id", capture.capture_id)
         object.__setattr__(self, "input_market_count", input_market_count)
         object.__setattr__(self, "accounted_market_count", accounted)
@@ -155,10 +165,12 @@ class UniverseCensusManifest:
         object.__setattr__(self, "content_hash", digest)
         object.__setattr__(self, "research_only", True)
         object.__setattr__(self, "production_influence", ZERO_INFLUENCE)
+        return self
 
 
 @dataclass(frozen=True, slots=True)
 class MarketCoverageDescriptor:
+    lifecycle_record_id: str
     market_ticker: str
     exchange_category: str | None
     series_ticker: str | None
@@ -188,8 +200,11 @@ class MarketCoverageDescriptor:
     def __post_init__(self) -> None:
         reasons = tuple(sorted(set(self.major_reasons)))
         issues = tuple(sorted(set(self.descriptor_issues)))
+        if not self.lifecycle_record_id:
+            raise UniverseCensusError("coverage descriptor lifecycle identity is incomplete")
         material = (
             COVERAGE_DESCRIPTOR_VERSION,
+            self.lifecycle_record_id,
             self.market_ticker,
             self.exchange_category,
             self.series_ticker,
@@ -245,11 +260,26 @@ class FamilyCoverageManifest:
     research_only: bool
     production_influence: Decimal
 
-    def __init__(
-        self,
+    def __init__(self, *_args: object, **_kwargs: object) -> None:
+        raise TypeError("FamilyCoverageManifest is canonical-router-issued only")
+
+    @classmethod
+    def _issue(
+        cls,
+        *,
+        capability: object,
         census_manifest: UniverseCensusManifest,
+        records: tuple[MarketLifecycleRecord, ...],
         descriptors: tuple[MarketCoverageDescriptor, ...],
-    ) -> None:
+    ) -> FamilyCoverageManifest:
+        if capability is not _ROUTER_ISSUANCE_CAPABILITY:
+            raise UniverseCensusError("coverage manifest issuance capability is invalid")
+        lifecycle_ids = tuple(sorted(record.lifecycle_record_id for record in records))
+        descriptor_lifecycle_ids = tuple(sorted(item.lifecycle_record_id for item in descriptors))
+        if census_manifest.lifecycle_record_ids != lifecycle_ids:
+            raise UniverseCensusError("coverage lifecycle IDs do not match census manifest")
+        if descriptor_lifecycle_ids != lifecycle_ids:
+            raise UniverseCensusError("coverage descriptors do not exactly match lifecycle records")
         descriptor_ids = tuple(sorted(item.descriptor_id for item in descriptors))
         if len(set(descriptor_ids)) != len(descriptor_ids):
             raise UniverseCensusError("duplicate coverage descriptor identity")
@@ -287,6 +317,7 @@ class FamilyCoverageManifest:
             "0",
         )
         digest = stable_hash(material)
+        self = object.__new__(cls)
         for name, value in (
             ("census_manifest_id", census_manifest.manifest_id),
             ("descriptor_ids", descriptor_ids),
@@ -307,9 +338,10 @@ class FamilyCoverageManifest:
         object.__setattr__(self, "content_hash", digest)
         object.__setattr__(self, "research_only", True)
         object.__setattr__(self, "production_influence", ZERO_INFLUENCE)
+        return self
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True, slots=True, init=False)
 class UniverseCensusResult:
     capture: UniverseCaptureEvidence
     records: tuple[MarketLifecycleRecord, ...]
@@ -317,6 +349,86 @@ class UniverseCensusResult:
     manifest: UniverseCensusManifest
     coverage_descriptors: tuple[MarketCoverageDescriptor, ...]
     coverage_manifest: FamilyCoverageManifest
+
+    def __init__(self, *_args: object, **_kwargs: object) -> None:
+        raise TypeError("UniverseCensusResult is canonical-router-issued only")
+
+    @classmethod
+    def _issue(
+        cls,
+        *,
+        capability: object,
+        capture: UniverseCaptureEvidence,
+        records: tuple[MarketLifecycleRecord, ...],
+        quarantines: tuple[CensusQuarantineRecord, ...],
+        manifest: UniverseCensusManifest,
+        coverage_descriptors: tuple[MarketCoverageDescriptor, ...],
+        coverage_manifest: FamilyCoverageManifest,
+    ) -> UniverseCensusResult:
+        if capability is not _ROUTER_ISSUANCE_CAPABILITY:
+            raise UniverseCensusError("census result issuance capability is invalid")
+        lifecycle_ids = tuple(sorted(record.lifecycle_record_id for record in records))
+        quarantine_ids = tuple(sorted(item.quarantine_id for item in quarantines))
+        descriptor_ids = tuple(sorted(item.descriptor_id for item in coverage_descriptors))
+        descriptor_lifecycle_ids = tuple(
+            sorted(item.lifecycle_record_id for item in coverage_descriptors)
+        )
+        if manifest.lifecycle_record_ids != lifecycle_ids:
+            raise UniverseCensusError("manifest/result lifecycle-ID mismatch")
+        if manifest.quarantine_ids != quarantine_ids:
+            raise UniverseCensusError("manifest/result quarantine-ID mismatch")
+        accounted = len(records) + len(quarantines)
+        if manifest.accounted_market_count != accounted:
+            raise UniverseCensusError("manifest/result accounted-market mismatch")
+        if manifest.input_market_count != accounted:
+            raise UniverseCensusError("manifest/result input-market mismatch")
+        if manifest.capture_id != capture.capture_id:
+            raise UniverseCensusError("manifest/result capture identity mismatch")
+        if any(record.capture_id != capture.capture_id for record in records):
+            raise UniverseCensusError("result lifecycle capture identity mismatch")
+        if any(item.capture_id != capture.capture_id for item in quarantines):
+            raise UniverseCensusError("result quarantine capture identity mismatch")
+        if coverage_manifest.census_manifest_id != manifest.manifest_id:
+            raise UniverseCensusError("coverage/census manifest identity mismatch")
+        if coverage_manifest.descriptor_ids != descriptor_ids:
+            raise UniverseCensusError("coverage/result descriptor-ID mismatch")
+        if descriptor_lifecycle_ids != lifecycle_ids:
+            raise UniverseCensusError("coverage descriptors do not exactly match result records")
+        record_by_id = {record.lifecycle_record_id: record for record in records}
+        for descriptor in coverage_descriptors:
+            record = record_by_id.get(descriptor.lifecycle_record_id)
+            if record is None:
+                raise UniverseCensusError("coverage descriptor has no lifecycle record")
+            expected_reasons = tuple(
+                sorted(
+                    set(
+                        (
+                            *record.semantic_blockers,
+                            *record.unsupported_reasons,
+                            *record.specialist_route_reasons,
+                        )
+                    )
+                )
+            )
+            if (
+                descriptor.market_ticker != record.market_ticker
+                or descriptor.series_ticker != record.series_ticker
+                or descriptor.product_type is not record.product_type
+                or descriptor.payout_model != record.payout_model
+                or descriptor.semantic_status != record.semantic_status
+                or descriptor.settlement_source_identity != record.settlement_source_identity
+                or descriptor.specialist_route_state != record.specialist_route_state
+                or descriptor.major_reasons != expected_reasons
+            ):
+                raise UniverseCensusError("coverage descriptor lifecycle content mismatch")
+        self = object.__new__(cls)
+        object.__setattr__(self, "capture", capture)
+        object.__setattr__(self, "records", records)
+        object.__setattr__(self, "quarantines", quarantines)
+        object.__setattr__(self, "manifest", manifest)
+        object.__setattr__(self, "coverage_descriptors", coverage_descriptors)
+        object.__setattr__(self, "coverage_manifest", coverage_manifest)
+        return self
 
 
 @dataclass(frozen=True, slots=True)
@@ -402,20 +514,27 @@ class MarketUniverseRouter:
         record_tuple = tuple(sorted(records, key=lambda item: item.market_ticker))
         quarantine_tuple = tuple(sorted(quarantines, key=lambda item: item.quarantine_id))
         descriptor_tuple = tuple(sorted(descriptors, key=lambda item: item.market_ticker))
-        manifest = UniverseCensusManifest(
+        manifest = UniverseCensusManifest._issue(
+            capability=_ROUTER_ISSUANCE_CAPABILITY,
             capture=capture,
             input_market_count=len(raw_markets),
             records=record_tuple,
             quarantines=quarantine_tuple,
         )
-        coverage = FamilyCoverageManifest(manifest, descriptor_tuple)
-        return UniverseCensusResult(
-            capture,
-            record_tuple,
-            quarantine_tuple,
-            manifest,
-            descriptor_tuple,
-            coverage,
+        coverage = FamilyCoverageManifest._issue(
+            capability=_ROUTER_ISSUANCE_CAPABILITY,
+            census_manifest=manifest,
+            records=record_tuple,
+            descriptors=descriptor_tuple,
+        )
+        return UniverseCensusResult._issue(
+            capability=_ROUTER_ISSUANCE_CAPABILITY,
+            capture=capture,
+            records=record_tuple,
+            quarantines=quarantine_tuple,
+            manifest=manifest,
+            coverage_descriptors=descriptor_tuple,
+            coverage_manifest=coverage,
         )
 
     def _route_market(
@@ -492,7 +611,8 @@ class MarketUniverseRouter:
         route_reasons = tuple(reason.value for reason in route.reasons)
         if item.quote_issue is not None:
             route_reasons = (*route_reasons, item.quote_issue)
-        current = MarketLifecycleRecord(
+        current = MarketLifecycleRecord._issue(
+            capability=_LIFECYCLE_ISSUANCE_CAPABILITY,
             capture_id=capture.capture_id,
             market_input_hash=item.input_hash,
             market_id=_text(market.raw.get("market_id")),
@@ -532,7 +652,10 @@ def _with_supersession(
         if previous.state is not current.state:
             raise UniverseCensusError("semantic state changed without material semantic evidence")
         return current
-    return replace(current, supersedes_record_id=previous.lifecycle_record_id)
+    return current._reissue_with_supersession(
+        capability=_LIFECYCLE_ISSUANCE_CAPABILITY,
+        supersedes_record_id=previous.lifecycle_record_id,
+    )
 
 
 def _m27b_routes(
@@ -580,6 +703,7 @@ def _coverage_descriptor(
         *record.specialist_route_reasons,
     )
     return MarketCoverageDescriptor(
+        lifecycle_record_id=record.lifecycle_record_id,
         market_ticker=market.ticker,
         exchange_category=event.category if event is not None else None,
         series_ticker=record.series_ticker,

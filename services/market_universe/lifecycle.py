@@ -19,6 +19,7 @@ LIFECYCLE_SCHEMA_VERSION = "ku-a1-market-lifecycle-v1"
 CAPTURE_SCHEMA_VERSION = "ku-a1-universe-capture-v1"
 ZERO_INFLUENCE = Decimal("0")
 _SHA256 = re.compile(r"[0-9a-f]{64}\Z")
+_LIFECYCLE_ISSUANCE_CAPABILITY = object()
 
 
 class LifecycleError(ValueError):
@@ -40,7 +41,11 @@ class ProductType(StrEnum):
 
 @dataclass(frozen=True, slots=True)
 class UniverseCaptureEvidence:
-    """Immutable identity of one caller-supplied captured public-universe response."""
+    """Caller-supplied identity for one offline captured public-universe response.
+
+    ``response_sha256`` is descriptive captured-input provenance for KU-A1. It is not
+    independently authenticated Kalshi acquisition or transport authority.
+    """
 
     source_authority: str
     request_locator: str
@@ -81,9 +86,9 @@ class UniverseCaptureEvidence:
         object.__setattr__(self, "content_hash", digest)
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True, slots=True, init=False)
 class MarketLifecycleRecord:
-    """Content-addressed KU-A1 state for one canonical market observation.
+    """Content-addressed KU-A1 state issued only by the canonical router.
 
     ``semantic_material_hash`` deliberately excludes market prices.  It is used by the
     router only to decide whether a prior semantic proof was materially superseded; the
@@ -114,14 +119,114 @@ class MarketLifecycleRecord:
     semantic_blockers: tuple[str, ...]
     unsupported_reasons: tuple[str, ...]
     semantic_material_hash: str
-    supersedes_record_id: str | None = None
-    schema_version: str = field(init=False, default=LIFECYCLE_SCHEMA_VERSION)
-    lifecycle_record_id: str = field(init=False)
-    content_hash: str = field(init=False)
-    research_only: bool = field(init=False, default=True)
-    production_influence: Decimal = field(init=False, default=ZERO_INFLUENCE)
+    supersedes_record_id: str | None
+    schema_version: str
+    lifecycle_record_id: str
+    content_hash: str
+    research_only: bool
+    production_influence: Decimal
 
-    def __post_init__(self) -> None:
+    def __init__(self, *_args: object, **_kwargs: object) -> None:
+        raise TypeError("MarketLifecycleRecord is canonical-router-issued only")
+
+    @classmethod
+    def _issue(
+        cls,
+        *,
+        capability: object,
+        capture_id: str,
+        market_input_hash: str,
+        market_id: str | None,
+        market_ticker: str,
+        event_id: str | None,
+        event_ticker: str,
+        series_id: str | None,
+        series_ticker: str | None,
+        product_type: ProductType,
+        payout_model: str,
+        state: LifecycleState,
+        rules_hash: str,
+        metadata_hash: str,
+        parent_evidence_hash: str | None,
+        settlement_source_identity: str | None,
+        specialist_route_id: str | None,
+        specialist_route_state: str | None,
+        specialist_route_reasons: tuple[str, ...],
+        advisory_family: str,
+        semantic_status: str | None,
+        semantic_proof_ids: tuple[str, ...],
+        semantic_blockers: tuple[str, ...],
+        unsupported_reasons: tuple[str, ...],
+        semantic_material_hash: str,
+        supersedes_record_id: str | None = None,
+    ) -> MarketLifecycleRecord:
+        if capability is not _LIFECYCLE_ISSUANCE_CAPABILITY:
+            raise LifecycleError("lifecycle issuance capability is invalid")
+        self = object.__new__(cls)
+        for name, value in (
+            ("capture_id", capture_id),
+            ("market_input_hash", market_input_hash),
+            ("market_id", market_id),
+            ("market_ticker", market_ticker),
+            ("event_id", event_id),
+            ("event_ticker", event_ticker),
+            ("series_id", series_id),
+            ("series_ticker", series_ticker),
+            ("product_type", product_type),
+            ("payout_model", payout_model),
+            ("state", state),
+            ("rules_hash", rules_hash),
+            ("metadata_hash", metadata_hash),
+            ("parent_evidence_hash", parent_evidence_hash),
+            ("settlement_source_identity", settlement_source_identity),
+            ("specialist_route_id", specialist_route_id),
+            ("specialist_route_state", specialist_route_state),
+            ("specialist_route_reasons", specialist_route_reasons),
+            ("advisory_family", advisory_family),
+            ("semantic_status", semantic_status),
+            ("semantic_proof_ids", semantic_proof_ids),
+            ("semantic_blockers", semantic_blockers),
+            ("unsupported_reasons", unsupported_reasons),
+            ("semantic_material_hash", semantic_material_hash),
+            ("supersedes_record_id", supersedes_record_id),
+        ):
+            object.__setattr__(self, name, value)
+        self._finalize()
+        return self
+
+    def _reissue_with_supersession(
+        self, *, capability: object, supersedes_record_id: str
+    ) -> MarketLifecycleRecord:
+        return type(self)._issue(
+            capability=capability,
+            capture_id=self.capture_id,
+            market_input_hash=self.market_input_hash,
+            market_id=self.market_id,
+            market_ticker=self.market_ticker,
+            event_id=self.event_id,
+            event_ticker=self.event_ticker,
+            series_id=self.series_id,
+            series_ticker=self.series_ticker,
+            product_type=self.product_type,
+            payout_model=self.payout_model,
+            state=self.state,
+            rules_hash=self.rules_hash,
+            metadata_hash=self.metadata_hash,
+            parent_evidence_hash=self.parent_evidence_hash,
+            settlement_source_identity=self.settlement_source_identity,
+            specialist_route_id=self.specialist_route_id,
+            specialist_route_state=self.specialist_route_state,
+            specialist_route_reasons=self.specialist_route_reasons,
+            advisory_family=self.advisory_family,
+            semantic_status=self.semantic_status,
+            semantic_proof_ids=self.semantic_proof_ids,
+            semantic_blockers=self.semantic_blockers,
+            unsupported_reasons=self.unsupported_reasons,
+            semantic_material_hash=self.semantic_material_hash,
+            supersedes_record_id=supersedes_record_id,
+        )
+
+    def _finalize(self) -> None:
         required = (
             self.capture_id,
             self.market_input_hash,
@@ -189,5 +294,8 @@ class MarketLifecycleRecord:
         object.__setattr__(self, "semantic_proof_ids", semantic_proofs)
         object.__setattr__(self, "semantic_blockers", blockers)
         object.__setattr__(self, "unsupported_reasons", unsupported)
+        object.__setattr__(self, "schema_version", LIFECYCLE_SCHEMA_VERSION)
         object.__setattr__(self, "lifecycle_record_id", digest)
         object.__setattr__(self, "content_hash", digest)
+        object.__setattr__(self, "research_only", True)
+        object.__setattr__(self, "production_influence", ZERO_INFLUENCE)
