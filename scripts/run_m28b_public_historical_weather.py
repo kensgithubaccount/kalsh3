@@ -26,6 +26,7 @@ from urllib.request import Request, urlopen
 from services.historical_replay.archive import stable_hash
 from services.historical_replay.client import HistoricalClient, HistoricalError
 from services.production_weather_strategy.settlement_dataset import (
+    _PAGE_EVIDENCE_CAPABILITY,
     ACQUISITION_SCHEMA,
     PUBLIC_KALSHI_ORIGIN,
     AcquisitionBoundMarketRow,
@@ -53,6 +54,26 @@ class PublicHistoricalTransport:
         self.series_ticker = series_ticker.strip()
         self.requests: list[dict[str, object]] = []
         self._market_pages: dict[tuple[str, str], PublicPageEvidence] = {}
+
+    def _issue_page_evidence(self, path: str, body: bytes) -> PublicPageEvidence:
+        """Issue evidence only while processing a response observed by this transport."""
+        try:
+            payload = json.loads(body)
+        except json.JSONDecodeError as exc:
+            raise RuntimeError("M28B public response was not JSON") from exc
+        if not isinstance(payload, dict) or not isinstance(payload.get("markets"), list):
+            raise RuntimeError("M28B public response did not contain a market page")
+        raw_markets = payload["markets"]
+        if any(not isinstance(row, dict) for row in raw_markets):
+            raise RuntimeError("M28B public response market row was malformed")
+        return PublicPageEvidence(
+            request_path=path,
+            response_sha256=hashlib.sha256(body).hexdigest(),
+            page_number=len(self.requests),
+            scope_series_ticker=self.series_ticker,
+            market_row_hashes=tuple(stable_hash(row) for row in raw_markets),
+            _capability=_PAGE_EVIDENCE_CAPABILITY,
+        )
 
     def get(
         self, path: str, headers: Mapping[str, str], *, timeout_seconds: float
@@ -97,12 +118,7 @@ class PublicHistoricalTransport:
         if not isinstance(payload, dict):
             raise RuntimeError("M28B public response root was not an object")
         if status == 200 and isinstance(payload.get("markets"), list):
-            page = PublicPageEvidence.from_response(
-                request_path=path,
-                response_bytes=body,
-                page_number=len(self.requests),
-                scope_series_ticker=self.series_ticker,
-            )
+            page = self._issue_page_evidence(path, body)
             for row in payload["markets"]:
                 if isinstance(row, dict) and isinstance(row.get("ticker"), str):
                     key = (row["ticker"], stable_hash(row))

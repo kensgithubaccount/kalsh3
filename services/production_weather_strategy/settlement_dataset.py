@@ -17,7 +17,6 @@ from dataclasses import dataclass, field
 from datetime import UTC, date, datetime, time
 from decimal import Decimal, InvalidOperation
 from enum import StrEnum
-from hashlib import sha256
 from itertools import pairwise
 from typing import Any, cast
 from urllib.parse import parse_qs, urlsplit
@@ -217,36 +216,6 @@ class PublicPageEvidence:
         object.__setattr__(self, "market_row_hashes", normalized_hashes)
         object.__setattr__(self, "acquisition_schema", ACQUISITION_SCHEMA)
         object.__setattr__(self, "content_hash", digest)
-
-    @classmethod
-    def from_response(
-        cls,
-        *,
-        request_path: str,
-        response_bytes: bytes,
-        page_number: int,
-        scope_series_ticker: str,
-    ) -> PublicPageEvidence:
-        try:
-            payload = json.loads(response_bytes)
-        except json.JSONDecodeError as exc:
-            raise HistoricalWeatherDatasetError("page evidence response is not JSON") from exc
-        if not isinstance(payload, dict) or not isinstance(payload.get("markets"), list):
-            raise HistoricalWeatherDatasetError(
-                "page evidence response does not contain a market page"
-            )
-        raw_markets = payload["markets"]
-        if any(not isinstance(row, dict) for row in raw_markets):
-            raise HistoricalWeatherDatasetError("page evidence market row is malformed")
-        market_row_hashes = tuple(stable_hash(row) for row in raw_markets)
-        return cls(
-            request_path=request_path,
-            response_sha256=sha256(response_bytes).hexdigest(),
-            page_number=page_number,
-            scope_series_ticker=scope_series_ticker,
-            market_row_hashes=market_row_hashes,
-            _capability=_PAGE_EVIDENCE_CAPABILITY,
-        )
 
 
 @dataclass(frozen=True, slots=True)

@@ -1,12 +1,18 @@
 from __future__ import annotations
 
 import importlib.util
+import json
 from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
+from unittest.mock import patch
 
 import pytest
 
+from scripts.run_m28b_public_historical_weather import (
+    ORIGIN,
+    PublicHistoricalTransport,
+)
 from services.historical_replay.client import HistoricalClient, HistoricalError
 
 
@@ -124,6 +130,38 @@ def test_runner_is_dormant_fixed_origin_no_auth_get_only_and_series_required() -
     assert "O_EXCL" in source and "0o600" in source and "os.fsync" in source
     assert 'if __name__ == "__main__"' in source
     assert "requests.post" not in source and "submit_order" not in source
+
+
+def test_real_transport_issues_page_evidence_from_mocked_http_response() -> None:
+    value = {"ticker": "KXHIGHAUS-24JUN15-B100.5"}
+    body = json.dumps({"markets": [value], "cursor": ""}).encode()
+
+    class Response:
+        status = 200
+
+        def __enter__(self) -> Response:
+            return self
+
+        def __exit__(self, *args: object) -> None:
+            return None
+
+        def geturl(self) -> str:
+            return ORIGIN
+
+        def read(self, limit: int) -> bytes:
+            assert limit > len(body)
+            return body
+
+    transport = PublicHistoricalTransport(series_ticker="KXHIGHAUS")
+    path = "/trade-api/v2/historical/markets?limit=1000&series_ticker=KXHIGHAUS"
+    with patch("scripts.run_m28b_public_historical_weather.urlopen", return_value=Response()):
+        status, payload = transport.get(path, {}, timeout_seconds=1)
+
+    assert status == 200
+    assert payload["markets"] == [value]
+    bound = transport.bind(value)
+    assert bound.market_ticker == value["ticker"]
+    assert bound.page_evidence.request_path == path
 
 
 def test_importing_runner_performs_no_network() -> None:

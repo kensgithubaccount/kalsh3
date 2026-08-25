@@ -3,10 +3,13 @@ from __future__ import annotations
 import json
 from datetime import UTC, datetime
 from decimal import Decimal
+from unittest.mock import patch
 
 import pytest
 
+from scripts.run_m28b_public_historical_weather import PublicHistoricalTransport
 from services.forecasting.daily_temperature import SETTLEMENT_LOCATIONS
+from services.historical_replay.archive import stable_hash
 from services.production_weather_strategy.contracts import (
     SettlementLabel,
     SettlementLabelManifest,
@@ -75,19 +78,34 @@ def row(
 
 
 def page_for(
-    value: dict[str, object], *, partition: str = "archive", page: int = 1
+    value: dict[str, object], *, partition: str = "archive", page: int = 1, cursor: str = ""
 ) -> PublicPageEvidence:
     if partition == "archive":
         path = "/trade-api/v2/historical/markets?limit=1000&series_ticker=KXHIGHAUS"
     else:
         path = "/trade-api/v2/markets?limit=1000&status=settled&series_ticker=KXHIGHAUS"
-    body = json.dumps({"markets": [value], "cursor": ""}, sort_keys=True).encode()
-    return PublicPageEvidence.from_response(
-        request_path=path,
-        response_bytes=body,
-        page_number=page,
-        scope_series_ticker="KXHIGHAUS",
-    )
+    body = json.dumps({"markets": [value], "cursor": cursor}, sort_keys=True).encode()
+
+    class Response:
+        status = 200
+
+        def __enter__(self) -> Response:
+            return self
+
+        def __exit__(self, *args: object) -> None:
+            return None
+
+        def geturl(self) -> str:
+            return "https://external-api.kalshi.com" + path
+
+        def read(self, limit: int) -> bytes:
+            assert limit > len(body)
+            return body
+
+    transport = PublicHistoricalTransport(series_ticker="KXHIGHAUS")
+    with patch("scripts.run_m28b_public_historical_weather.urlopen", return_value=Response()):
+        transport.get(path, {}, timeout_seconds=1)
+    return transport._market_pages[(str(value["ticker"]), stable_hash(value))]
 
 
 def bound(
@@ -307,14 +325,7 @@ def test_changed_outcome_changes_label_and_manifest_but_not_event_identity() -> 
 def test_settlement_evidence_id_is_page_and_row_derived() -> None:
     value = row()
     first = bound(value)
-    changed_page = PublicPageEvidence.from_response(
-        request_path="/trade-api/v2/historical/markets?limit=1000&series_ticker=KXHIGHAUS",
-        response_bytes=json.dumps(
-            {"markets": [value], "cursor": "different"}, sort_keys=True
-        ).encode(),
-        page_number=1,
-        scope_series_ticker="KXHIGHAUS",
-    )
+    changed_page = page_for(value, cursor="different")
     second = AcquisitionBoundMarketRow.from_page(value, changed_page)
     assert first.settlement_evidence_id != second.settlement_evidence_id
     changed_row = dict(value)
@@ -324,19 +335,37 @@ def test_settlement_evidence_id_is_page_and_row_derived() -> None:
 
 
 def test_page_evidence_requires_fixed_reviewed_series_scope_and_recent_settled_filter() -> None:
-    with pytest.raises(HistoricalWeatherDatasetError, match="series scope"):
-        PublicPageEvidence.from_response(
-            request_path="/trade-api/v2/historical/markets?limit=1000",
-            response_bytes=b'{"markets":[],"cursor":""}',
-            page_number=1,
-            scope_series_ticker="KXHIGHAUS",
-        )
-    with pytest.raises(HistoricalWeatherDatasetError, match="not settlement-scoped"):
-        PublicPageEvidence.from_response(
-            request_path="/trade-api/v2/markets?limit=1000&series_ticker=KXHIGHAUS",
-            response_bytes=b'{"markets":[],"cursor":""}',
-            page_number=1,
-            scope_series_ticker="KXHIGHAUS",
+    body = b'{"markets": [], "cursor": ""}'
+
+    class Response:
+        status = 200
+
+        def __enter__(self) -> Response:
+            return self
+
+        def __exit__(self, *args: object) -> None:
+            return None
+
+        def geturl(self) -> str:
+            return "https://external-api.kalshi.com"
+
+        def read(self, limit: int) -> bytes:
+            return body
+
+    transport = PublicHistoricalTransport(series_ticker="KXHIGHAUS")
+    with (
+        pytest.raises(HistoricalWeatherDatasetError, match="series scope"),
+        patch("scripts.run_m28b_public_historical_weather.urlopen", return_value=Response()),
+    ):
+        transport.get("/trade-api/v2/historical/markets?limit=1000", {}, timeout_seconds=1)
+    with (
+        pytest.raises(HistoricalWeatherDatasetError, match="not settlement-scoped"),
+        patch("scripts.run_m28b_public_historical_weather.urlopen", return_value=Response()),
+    ):
+        transport.get(
+            "/trade-api/v2/markets?limit=1000&series_ticker=KXHIGHAUS",
+            {},
+            timeout_seconds=1,
         )
 
 
@@ -373,6 +402,11 @@ def test_page_evidence_hash_cannot_be_caller_injected() -> None:
             scope_series_ticker="KXHIGHAUS",
             market_row_hashes=("1" * 64,),
         )
+
+
+def test_arbitrary_response_bytes_have_no_public_page_evidence_factory() -> None:
+    assert not hasattr(PublicPageEvidence, "from_response")
+    assert not hasattr(PublicPageEvidence, "from_bytes")
 
 
 def test_bound_row_must_exist_in_exact_response_page() -> None:
