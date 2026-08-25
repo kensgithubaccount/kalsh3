@@ -30,7 +30,10 @@ from services.production_weather_strategy.climate_evidence import (
     build_ghcnd_climate_observations,
     build_point_in_time_climate_feature_evidence,
 )
-from services.production_weather_strategy.contracts import ModelState
+from services.production_weather_strategy.contracts import (
+    ModelState,
+    TrainingDatasetManifest,
+)
 from services.production_weather_strategy.model_tournament import (
     EDGE_THRESHOLD,
     HYPOTHETICAL_PNL_CLASSIFICATION,
@@ -878,6 +881,91 @@ def test_development_model_artifact_rejects_wrong_training_manifest_lineage() ->
     created = datetime(2025, 1, 1, tzinfo=UTC)
     training = build_training_manifest(features, temporal_split=split, created_at=created)
     trained_at = created + timedelta(hours=1)
+
+    with pytest.raises(ModelTournamentError, match="content identity"):
+        build_development_model_artifact(
+            features,
+            tournament,
+            replace(training, manifest_id="fake"),
+            trained_at=trained_at,
+        )
+
+    with pytest.raises(ModelTournamentError, match="content identity"):
+        build_development_model_artifact(
+            features,
+            tournament,
+            replace(training, content_hash="fake"),
+            trained_at=trained_at,
+        )
+
+    with pytest.raises(ModelTournamentError, match="content identity"):
+        build_development_model_artifact(
+            features,
+            tournament,
+            replace(training, manifest_id="fake", content_hash="fake"),
+            trained_at=trained_at,
+        )
+
+    direct = TrainingDatasetManifest(
+        manifest_id="caller-invented",
+        family=training.family,
+        feature_schema_hash=training.feature_schema_hash,
+        feature_artifact_ids=training.feature_artifact_ids,
+        settlement_labels_id=training.settlement_labels_id,
+        temporal_split_hash=training.temporal_split_hash,
+        prediction_cutoff_rule=training.prediction_cutoff_rule,
+        created_at=training.created_at,
+        content_hash="caller-invented",
+    )
+    with pytest.raises(ModelTournamentError, match="content identity"):
+        build_development_model_artifact(
+            features,
+            tournament,
+            direct,
+            trained_at=trained_at,
+        )
+
+    with pytest.raises(ModelTournamentError, match="timezone-aware"):
+        build_development_model_artifact(
+            features,
+            tournament,
+            replace(training, created_at=created.replace(tzinfo=None)),
+            trained_at=trained_at,
+        )
+
+    pre_resolution_created = min(
+        label.resolved_at for label in features.settlement_labels.labels
+    ) - timedelta(microseconds=1)
+    pre_resolution_digest = stable_hash(
+        (
+            training.family,
+            training.feature_schema_hash,
+            tuple(sorted(training.feature_artifact_ids)),
+            training.settlement_labels_id,
+            training.temporal_split_hash,
+            training.prediction_cutoff_rule,
+            pre_resolution_created.astimezone(UTC).isoformat(),
+        )
+    )
+    pre_resolution_training = replace(
+        training,
+        manifest_id=pre_resolution_digest,
+        created_at=pre_resolution_created,
+        content_hash=pre_resolution_digest,
+    )
+    assert pre_resolution_training.manifest_id == pre_resolution_digest
+    assert pre_resolution_training.content_hash == pre_resolution_digest
+    assert any(
+        label.resolved_at > pre_resolution_training.created_at.astimezone(UTC)
+        for label in features.settlement_labels.labels
+    )
+    with pytest.raises(ModelTournamentError, match="unresolved future settlement labels"):
+        build_development_model_artifact(
+            features,
+            tournament,
+            pre_resolution_training,
+            trained_at=trained_at,
+        )
 
     changed_row = replace(
         features.rows[0],
