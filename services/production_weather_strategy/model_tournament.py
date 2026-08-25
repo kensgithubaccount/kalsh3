@@ -151,11 +151,14 @@ class MarketCheckpoint:
                 eligible.append(candle)
         if not eligible:
             return None
-        selected = max(eligible, key=lambda candle: int(candle["end_period_ts"]))
+        selected = max(
+            eligible,
+            key=lambda candle: int(candle["end_period_ts"]),  # type: ignore[call-overload]
+        )
         probability = _market_probability(selected)
         if probability is None:
             return None
-        selected_end = int(selected["end_period_ts"])
+        selected_end = int(selected["end_period_ts"])  # type: ignore[call-overload]
         selected_hash = stable_hash(selected)
         digest = stable_hash(
             (
@@ -363,9 +366,9 @@ def build_feature_dataset(
             labels_by_ticker[contract.market_ticker] = label
 
         for event in dataset.events:
-            partition = _partition_from_m28b(dataset.split_for_event(event.event_id))
-            previous = event_partitions.setdefault(event.event_id, partition)
-            if previous is not partition:
+            event_partition = _partition_from_m28b(dataset.split_for_event(event.event_id))
+            previous = event_partitions.setdefault(event.event_id, event_partition)
+            if previous is not event_partition:
                 raise ModelTournamentError("one event appears in contradictory temporal partitions")
 
     if len(set(source_dataset_ids)) != len(source_dataset_ids):
