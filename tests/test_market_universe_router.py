@@ -142,9 +142,9 @@ def test_unsupported_semantic_grammar_remains_discovered() -> None:
 
 
 def test_dataclasses_replace_cannot_promote_router_issued_discovered_record() -> None:
-    record = census(
-        [market(rules_primary="The official source will decide the outcome.")]
-    ).records[0]
+    record = census([market(rules_primary="The official source will decide the outcome.")]).records[
+        0
+    ]
     assert record.state is LifecycleState.DISCOVERED
     with pytest.raises(TypeError, match="canonical-router-issued only"):
         replace(

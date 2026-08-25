@@ -72,8 +72,7 @@ def test_capture_hash_is_descriptive_not_authenticated_acquisition_authority() -
     assert evidence.response_sha256 == "a" * 64
     documentation = " ".join((UniverseCaptureEvidence.__doc__ or "").split())
     assert (
-        "not independently authenticated Kalshi acquisition or transport authority"
-        in documentation
+        "not independently authenticated Kalshi acquisition or transport authority" in documentation
     )
 
 
