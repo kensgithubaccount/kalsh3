@@ -1,4 +1,4 @@
-"""KU-A1 deterministic whole-exchange discovery and semantic routing.
+"""KU-A1 deterministic whole-exchange discovery, semantic routing, and census evidence.
 
 Consumes captured public metadata only. It never performs network I/O and can mint only
 DISCOVERED or SEMANTICALLY_UNDERSTOOD research records with zero production influence.
@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from collections import Counter
 from collections.abc import Iterable, Mapping
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import datetime
 from decimal import Decimal
 from typing import Any
@@ -21,8 +21,10 @@ from services.contract_intelligence.specification import (
     SemanticsInputBundle,
     parse_comparison,
 )
+from services.opportunity_engine.live_economics import DiscoveryQuotes
+from services.opportunity_engine.structural import StructuralRoute, scan_structural_markets
 
-from .domain import Event, Market, Series, UniverseValidationError, stable_hash
+from .domain import Event, Market, Series, UniverseValidationError, exact, stable_hash
 from .lifecycle import (
     LifecycleState,
     MarketLifecycleRecord,
@@ -32,9 +34,23 @@ from .lifecycle import (
 )
 from .quality import Family, classify
 
-ROUTER_POLICY_VERSION = "ku-a1-market-universe-router-v1"
+ROUTER_POLICY_VERSION = "ku-a1-market-universe-router-v2"
 CENSUS_SCHEMA_VERSION = "ku-a1-universe-census-v1"
 QUARANTINE_SCHEMA_VERSION = "ku-a1-market-quarantine-v1"
+COVERAGE_SCHEMA_VERSION = "ku-a1-family-coverage-v1"
+COVERAGE_DESCRIPTOR_VERSION = "ku-a1-market-coverage-descriptor-v1"
+_QUOTE_FIELDS = (
+    "yes_bid_dollars",
+    "yes_ask_dollars",
+    "yes_bid_size_fp",
+    "yes_ask_size_fp",
+    "no_bid_dollars",
+    "no_ask_dollars",
+    "volume_fp",
+    "volume_24h_fp",
+    "open_interest_fp",
+    "liquidity_dollars",
+)
 
 
 class UniverseCensusError(ValueError):
@@ -114,8 +130,7 @@ class UniverseCensusManifest:
         accounted = len(lifecycle_ids) + len(quarantine_ids)
         if accounted != input_market_count:
             raise UniverseCensusError("census does not account for every supplied market")
-        counts: Counter[str] = Counter(record.state.value for record in records)
-        state_counts = tuple(sorted(counts.items()))
+        state_counts = _counts(record.state.value for record in records)
         digest = stable_hash(
             (
                 CENSUS_SCHEMA_VERSION,
@@ -143,15 +158,177 @@ class UniverseCensusManifest:
 
 
 @dataclass(frozen=True, slots=True)
+class MarketCoverageDescriptor:
+    market_ticker: str
+    exchange_category: str | None
+    series_ticker: str | None
+    recurrence: str | None
+    product_type: ProductType
+    payout_model: str
+    strike_type: str | None
+    semantic_status: str | None
+    settlement_source_identity: str | None
+    specialist_route_state: str | None
+    major_reasons: tuple[str, ...]
+    volume: Decimal
+    volume_24h: Decimal | None
+    open_interest: Decimal
+    liquidity: Decimal | None
+    yes_bid: Decimal | None
+    yes_ask: Decimal | None
+    yes_bid_size: Decimal | None
+    yes_ask_size: Decimal | None
+    descriptor_issues: tuple[str, ...]
+    schema_version: str = field(init=False, default=COVERAGE_DESCRIPTOR_VERSION)
+    descriptor_id: str = field(init=False)
+    content_hash: str = field(init=False)
+    research_only: bool = field(init=False, default=True)
+    production_influence: Decimal = field(init=False, default=ZERO_INFLUENCE)
+
+    def __post_init__(self) -> None:
+        reasons = tuple(sorted(set(self.major_reasons)))
+        issues = tuple(sorted(set(self.descriptor_issues)))
+        material = (
+            COVERAGE_DESCRIPTOR_VERSION,
+            self.market_ticker,
+            self.exchange_category,
+            self.series_ticker,
+            self.recurrence,
+            self.product_type.value,
+            self.payout_model,
+            self.strike_type,
+            self.semantic_status,
+            self.settlement_source_identity,
+            self.specialist_route_state,
+            reasons,
+            tuple(
+                str(value) if value is not None else None
+                for value in (
+                    self.volume,
+                    self.volume_24h,
+                    self.open_interest,
+                    self.liquidity,
+                    self.yes_bid,
+                    self.yes_ask,
+                    self.yes_bid_size,
+                    self.yes_ask_size,
+                )
+            ),
+            issues,
+            "DESCRIPTIVE_ONLY_NOT_DEPTH_CAPACITY_SLIPPAGE_OR_EDGE",
+            "0",
+        )
+        digest = stable_hash(material)
+        object.__setattr__(self, "major_reasons", reasons)
+        object.__setattr__(self, "descriptor_issues", issues)
+        object.__setattr__(self, "descriptor_id", digest)
+        object.__setattr__(self, "content_hash", digest)
+
+
+@dataclass(frozen=True, slots=True, init=False)
+class FamilyCoverageManifest:
+    census_manifest_id: str
+    descriptor_ids: tuple[str, ...]
+    category_counts: tuple[tuple[str, int], ...]
+    series_counts: tuple[tuple[str, int], ...]
+    recurrence_counts: tuple[tuple[str, int], ...]
+    product_counts: tuple[tuple[str, int], ...]
+    payout_counts: tuple[tuple[str, int], ...]
+    strike_type_counts: tuple[tuple[str, int], ...]
+    semantic_status_counts: tuple[tuple[str, int], ...]
+    settlement_source_counts: tuple[tuple[str, int], ...]
+    specialist_route_state_counts: tuple[tuple[str, int], ...]
+    reason_counts: tuple[tuple[str, int], ...]
+    schema_version: str
+    manifest_id: str
+    content_hash: str
+    research_only: bool
+    production_influence: Decimal
+
+    def __init__(
+        self,
+        census_manifest: UniverseCensusManifest,
+        descriptors: tuple[MarketCoverageDescriptor, ...],
+    ) -> None:
+        descriptor_ids = tuple(sorted(item.descriptor_id for item in descriptors))
+        if len(set(descriptor_ids)) != len(descriptor_ids):
+            raise UniverseCensusError("duplicate coverage descriptor identity")
+        category_counts = _counts(item.exchange_category or "UNKNOWN" for item in descriptors)
+        series_counts = _counts(item.series_ticker or "UNKNOWN" for item in descriptors)
+        recurrence_counts = _counts(item.recurrence or "UNKNOWN" for item in descriptors)
+        product_counts = _counts(item.product_type.value for item in descriptors)
+        payout_counts = _counts(item.payout_model for item in descriptors)
+        strike_counts = _counts(item.strike_type or "UNKNOWN" for item in descriptors)
+        semantic_counts = _counts(item.semantic_status or "UNAVAILABLE" for item in descriptors)
+        source_counts = _counts(
+            item.settlement_source_identity or "UNAVAILABLE" for item in descriptors
+        )
+        route_counts = _counts(item.specialist_route_state or "UNAVAILABLE" for item in descriptors)
+        reason_counts = _counts(
+            reason
+            for item in descriptors
+            for reason in (*item.major_reasons, *item.descriptor_issues)
+        )
+        material = (
+            COVERAGE_SCHEMA_VERSION,
+            census_manifest.manifest_id,
+            descriptor_ids,
+            category_counts,
+            series_counts,
+            recurrence_counts,
+            product_counts,
+            payout_counts,
+            strike_counts,
+            semantic_counts,
+            source_counts,
+            route_counts,
+            reason_counts,
+            "NO_RESEARCH_READINESS_SCORE",
+            "0",
+        )
+        digest = stable_hash(material)
+        for name, value in (
+            ("census_manifest_id", census_manifest.manifest_id),
+            ("descriptor_ids", descriptor_ids),
+            ("category_counts", category_counts),
+            ("series_counts", series_counts),
+            ("recurrence_counts", recurrence_counts),
+            ("product_counts", product_counts),
+            ("payout_counts", payout_counts),
+            ("strike_type_counts", strike_counts),
+            ("semantic_status_counts", semantic_counts),
+            ("settlement_source_counts", source_counts),
+            ("specialist_route_state_counts", route_counts),
+            ("reason_counts", reason_counts),
+        ):
+            object.__setattr__(self, name, value)
+        object.__setattr__(self, "schema_version", COVERAGE_SCHEMA_VERSION)
+        object.__setattr__(self, "manifest_id", digest)
+        object.__setattr__(self, "content_hash", digest)
+        object.__setattr__(self, "research_only", True)
+        object.__setattr__(self, "production_influence", ZERO_INFLUENCE)
+
+
+@dataclass(frozen=True, slots=True)
 class UniverseCensusResult:
     capture: UniverseCaptureEvidence
     records: tuple[MarketLifecycleRecord, ...]
     quarantines: tuple[CensusQuarantineRecord, ...]
     manifest: UniverseCensusManifest
+    coverage_descriptors: tuple[MarketCoverageDescriptor, ...]
+    coverage_manifest: FamilyCoverageManifest
+
+
+@dataclass(frozen=True, slots=True)
+class _ParsedMarket:
+    market: Market
+    input_hash: str
+    quote: DiscoveryQuotes | None
+    quote_issue: str | None
 
 
 class MarketUniverseRouter:
-    """Compose canonical parsers into KU-A1 lifecycle evidence."""
+    """Compose canonical parsers and M27B into KU-A1 lifecycle evidence."""
 
     def __init__(self) -> None:
         self._semantic_parser = ContractSpecificationParser()
@@ -166,6 +343,7 @@ class MarketUniverseRouter:
         request_locator: str,
         response_sha256: str,
         captured_at: datetime,
+        previous_records: Mapping[str, MarketLifecycleRecord] | None = None,
     ) -> UniverseCensusResult:
         capture = UniverseCaptureEvidence(
             source_authority=source_authority,
@@ -182,7 +360,7 @@ class MarketUniverseRouter:
             key=lambda item: (item[0], item[1] or ""),
         )
         occurrences: Counter[str] = Counter()
-        records: list[MarketLifecycleRecord] = []
+        parsed: list[_ParsedMarket] = []
         quarantines: list[CensusQuarantineRecord] = []
         for input_hash, observed_ticker, raw in prepared:
             ordinal = occurrences[input_hash]
@@ -201,37 +379,57 @@ class MarketUniverseRouter:
                     )
                 )
                 continue
-            records.append(
-                self._route_market(
-                    market,
-                    input_hash,
-                    capture,
-                    event_map,
-                    invalid_events,
-                    series_map,
-                    invalid_series,
-                )
+            quote, quote_issue = _discovery_quote(raw)
+            parsed.append(_ParsedMarket(market, input_hash, quote, quote_issue))
+        routes = _m27b_routes(parsed, event_map, capture.source_authority)
+        prior = previous_records or {}
+        records: list[MarketLifecycleRecord] = []
+        descriptors: list[MarketCoverageDescriptor] = []
+        for item in parsed:
+            route = routes[item.market.ticker]
+            record = self._route_market(
+                item,
+                capture,
+                event_map,
+                invalid_events,
+                series_map,
+                invalid_series,
+                route,
+                prior.get(item.market.ticker),
             )
+            records.append(record)
+            descriptors.append(_coverage_descriptor(item, record, event_map, series_map, route))
         record_tuple = tuple(sorted(records, key=lambda item: item.market_ticker))
         quarantine_tuple = tuple(sorted(quarantines, key=lambda item: item.quarantine_id))
+        descriptor_tuple = tuple(sorted(descriptors, key=lambda item: item.market_ticker))
         manifest = UniverseCensusManifest(
             capture=capture,
             input_market_count=len(raw_markets),
             records=record_tuple,
             quarantines=quarantine_tuple,
         )
-        return UniverseCensusResult(capture, record_tuple, quarantine_tuple, manifest)
+        coverage = FamilyCoverageManifest(manifest, descriptor_tuple)
+        return UniverseCensusResult(
+            capture,
+            record_tuple,
+            quarantine_tuple,
+            manifest,
+            descriptor_tuple,
+            coverage,
+        )
 
     def _route_market(
         self,
-        market: Market,
-        market_input_hash: str,
+        item: _ParsedMarket,
         capture: UniverseCaptureEvidence,
         event_map: Mapping[str, Event],
         invalid_events: Mapping[str, str],
         series_map: Mapping[str, Series],
         invalid_series: Mapping[str, str],
+        route: StructuralRoute,
+        previous: MarketLifecycleRecord | None,
     ) -> MarketLifecycleRecord:
+        market = item.market
         blockers: list[str] = []
         unsupported: list[str] = []
         event = event_map.get(market.event_ticker)
@@ -292,13 +490,15 @@ class MarketUniverseRouter:
                 series.metadata_hash if series is not None else None,
                 product.value,
                 settlement_identity,
-                spec.source_input_hash if spec is not None else None,
                 spec.semantic_hash if spec is not None else None,
             )
         )
-        return MarketLifecycleRecord(
+        route_reasons = tuple(reason.value for reason in route.reasons)
+        if item.quote_issue is not None:
+            route_reasons = (*route_reasons, item.quote_issue)
+        current = MarketLifecycleRecord(
             capture_id=capture.capture_id,
-            market_input_hash=market_input_hash,
+            market_input_hash=item.input_hash,
             market_id=_text(market.raw.get("market_id")),
             market_ticker=market.ticker,
             event_id=_text(event.raw.get("event_id")) if event is not None else None,
@@ -312,9 +512,9 @@ class MarketUniverseRouter:
             metadata_hash=market.metadata_hash,
             parent_evidence_hash=parent_hash,
             settlement_source_identity=settlement_identity,
-            specialist_route_id=None,
-            specialist_route_state=None,
-            specialist_route_reasons=(),
+            specialist_route_id=route.route_id,
+            specialist_route_state=route.state.value,
+            specialist_route_reasons=route_reasons,
             advisory_family=_advisory_family(market, event, series).value,
             semantic_status=spec.semantic_status.value if spec is not None else None,
             semantic_proof_ids=_semantic_proof_ids(spec),
@@ -322,6 +522,89 @@ class MarketUniverseRouter:
             unsupported_reasons=tuple(unsupported),
             semantic_material_hash=semantic_material_hash,
         )
+        return _with_supersession(current, previous)
+
+
+def _with_supersession(
+    current: MarketLifecycleRecord, previous: MarketLifecycleRecord | None
+) -> MarketLifecycleRecord:
+    if previous is None:
+        return current
+    if previous.market_ticker != current.market_ticker:
+        raise UniverseCensusError("previous lifecycle record market identity mismatch")
+    if previous.semantic_material_hash == current.semantic_material_hash:
+        if previous.state is not current.state:
+            raise UniverseCensusError("semantic state changed without material semantic evidence")
+        return current
+    return replace(current, supersedes_record_id=previous.lifecycle_record_id)
+
+
+def _m27b_routes(
+    parsed: list[_ParsedMarket], events: Mapping[str, Event], source_authority: str
+) -> dict[str, StructuralRoute]:
+    scan = scan_structural_markets(
+        (item.market for item in parsed),
+        events=events,
+        discovery_quotes={item.market.ticker: item.quote for item in parsed},
+        source_authority=source_authority,
+    )
+    routes = {route.market_ticker: route for route in scan.routes}
+    expected = {item.market.ticker for item in parsed}
+    if set(routes) != expected:
+        raise UniverseCensusError("M27B failed to return exactly one route per canonical market")
+    return routes
+
+
+def _coverage_descriptor(
+    item: _ParsedMarket,
+    record: MarketLifecycleRecord,
+    events: Mapping[str, Event],
+    series_map: Mapping[str, Series],
+    route: StructuralRoute,
+) -> MarketCoverageDescriptor:
+    market = item.market
+    event = events.get(market.event_ticker)
+    series = series_map.get(event.series_ticker) if event is not None else None
+    values: dict[str, Decimal | None] = {}
+    issues: list[str] = []
+    for field_name in (
+        "volume_24h_fp",
+        "liquidity_dollars",
+        "yes_bid_dollars",
+        "yes_ask_dollars",
+        "yes_bid_size_fp",
+        "yes_ask_size_fp",
+    ):
+        values[field_name], issue = _optional_exact(market.raw, field_name)
+        if issue is not None:
+            issues.append(issue)
+    reasons = (
+        *record.semantic_blockers,
+        *record.unsupported_reasons,
+        *record.specialist_route_reasons,
+    )
+    return MarketCoverageDescriptor(
+        market_ticker=market.ticker,
+        exchange_category=event.category if event is not None else None,
+        series_ticker=record.series_ticker,
+        recurrence=series.frequency if series is not None else None,
+        product_type=record.product_type,
+        payout_model=record.payout_model,
+        strike_type=_text(market.raw.get("strike_type")),
+        semantic_status=record.semantic_status,
+        settlement_source_identity=record.settlement_source_identity,
+        specialist_route_state=route.state.value,
+        major_reasons=reasons,
+        volume=market.volume,
+        volume_24h=values["volume_24h_fp"],
+        open_interest=market.open_interest,
+        liquidity=values["liquidity_dollars"],
+        yes_bid=values["yes_bid_dollars"],
+        yes_ask=values["yes_ask_dollars"],
+        yes_bid_size=values["yes_bid_size_fp"],
+        yes_ask_size=values["yes_ask_size_fp"],
+        descriptor_issues=tuple(issues),
+    )
 
 
 def _semantic_blockers(market: Market, spec: ContractSpecification) -> tuple[str, ...]:
@@ -439,6 +722,26 @@ def _fallback_payout(product: ProductType) -> str:
     }[product]
 
 
+def _discovery_quote(raw: dict[str, Any]) -> tuple[DiscoveryQuotes | None, str | None]:
+    if not all(field_name in raw for field_name in _QUOTE_FIELDS):
+        return None, None
+    try:
+        return DiscoveryQuotes.parse(raw), None
+    except UniverseValidationError:
+        return None, "INVALID_DISCOVERY_QUOTE_INPUT"
+
+
+def _optional_exact(
+    raw: Mapping[str, Any], field_name: str
+) -> tuple[Decimal | None, str | None]:
+    if field_name not in raw or raw[field_name] is None:
+        return None, None
+    try:
+        return exact(raw[field_name], field_name), None
+    except UniverseValidationError:
+        return None, f"INVALID_DESCRIPTOR_{field_name.upper()}"
+
+
 def _parse_events(
     rows: tuple[dict[str, Any], ...],
 ) -> tuple[dict[str, Event], dict[str, str]]:
@@ -489,6 +792,10 @@ def _row_hash(row: Mapping[str, Any]) -> str:
         return stable_hash(dict(row))
     except (TypeError, ValueError) as exc:
         raise UniverseCensusError("market row is not deterministic JSON evidence") from exc
+
+
+def _counts(values: Iterable[str]) -> tuple[tuple[str, int], ...]:
+    return tuple(sorted(Counter(values).items()))
 
 
 def _text(value: object) -> str | None:
