@@ -12,6 +12,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from decimal import Decimal, InvalidOperation
 from enum import StrEnum
+from types import MappingProxyType
 
 from services.historical_replay.archive import stable_hash
 from services.opportunity_engine.fees import FeeEstimateQuality, FeePolicy
@@ -29,6 +30,7 @@ MAX_EXECUTABLE_QUOTE_STALENESS_SECONDS = MARKET_CANDLE_INTERVAL_MINUTES * 60
 HISTORICAL_FEE_POLICY_EVIDENCE_SCHEMA_VERSION = "m28d-r1-historical-fee-policy-evidence-v1"
 HISTORICAL_FEE_POLICY_SEMANTICS_VERSION = "m28d-r1-reviewed-fee-policy-semantics-v1"
 FEE_ROUNDING_RULE = "ROUND_CEILING_TO_BALANCE_INCREMENT"
+_EXECUTABLE_QUOTE_EVIDENCE_CONSTRUCTION_CAPABILITY = object()
 _HISTORICAL_FEE_POLICY_AUTHORITY_CAPABILITY = object()
 
 
@@ -41,9 +43,9 @@ class NoQuoteProvenance(StrEnum):
     DERIVED_COMPLEMENT = "DERIVED_COMPLEMENT"
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True, slots=True, init=False)
 class ExecutableQuoteEvidence:
-    """One exact M28C-bound historical quote eligible for later reconstructed economics."""
+    """Builder-issued M28C-bound historical quote for later reconstructed economics."""
 
     market_ticker: str
     checkpoint_at: datetime
@@ -61,6 +63,39 @@ class ExecutableQuoteEvidence:
     schema_version: str
     evidence_id: str
     content_hash: str
+
+    def __init__(
+        self,
+        *,
+        _capability: object | None = None,
+        _values: Mapping[str, object] | None = None,
+    ) -> None:
+        if (
+            _capability is not _EXECUTABLE_QUOTE_EVIDENCE_CONSTRUCTION_CAPABILITY
+            or _values is None
+        ):
+            raise HistoricalEconomicsEvidenceError(
+                "executable quote evidence must be issued by canonical M28C builder"
+            )
+        for name in (
+            "market_ticker",
+            "checkpoint_at",
+            "response_evidence_id",
+            "selected_candle_hash",
+            "selected_candle_end_ts",
+            "yes_bid",
+            "yes_ask",
+            "no_bid",
+            "no_ask",
+            "no_quote_provenance",
+            "quote_age_seconds",
+            "max_quote_staleness_seconds",
+            "staleness_policy_version",
+            "schema_version",
+            "evidence_id",
+            "content_hash",
+        ):
+            object.__setattr__(self, name, _values[name])
 
 
 def build_executable_quote_evidence(
@@ -148,22 +183,27 @@ def build_executable_quote_evidence(
     )
     digest = stable_hash(material)
     return ExecutableQuoteEvidence(
-        market_ticker=checkpoint.market_ticker,
-        checkpoint_at=cutoff,
-        response_evidence_id=response_evidence.evidence_id,
-        selected_candle_hash=checkpoint.selected_candle_hash,
-        selected_candle_end_ts=checkpoint.selected_candle_end_ts,
-        yes_bid=yes_bid,
-        yes_ask=yes_ask,
-        no_bid=no_bid,
-        no_ask=no_ask,
-        no_quote_provenance=no_provenance,
-        quote_age_seconds=age_seconds,
-        max_quote_staleness_seconds=MAX_EXECUTABLE_QUOTE_STALENESS_SECONDS,
-        staleness_policy_version=EXECUTABLE_QUOTE_STALENESS_POLICY_VERSION,
-        schema_version=EXECUTABLE_QUOTE_SCHEMA_VERSION,
-        evidence_id=digest,
-        content_hash=digest,
+        _capability=_EXECUTABLE_QUOTE_EVIDENCE_CONSTRUCTION_CAPABILITY,
+        _values=MappingProxyType(
+            {
+                "market_ticker": checkpoint.market_ticker,
+                "checkpoint_at": cutoff,
+                "response_evidence_id": response_evidence.evidence_id,
+                "selected_candle_hash": checkpoint.selected_candle_hash,
+                "selected_candle_end_ts": checkpoint.selected_candle_end_ts,
+                "yes_bid": yes_bid,
+                "yes_ask": yes_ask,
+                "no_bid": no_bid,
+                "no_ask": no_ask,
+                "no_quote_provenance": no_provenance,
+                "quote_age_seconds": age_seconds,
+                "max_quote_staleness_seconds": MAX_EXECUTABLE_QUOTE_STALENESS_SECONDS,
+                "staleness_policy_version": EXECUTABLE_QUOTE_STALENESS_POLICY_VERSION,
+                "schema_version": EXECUTABLE_QUOTE_SCHEMA_VERSION,
+                "evidence_id": digest,
+                "content_hash": digest,
+            }
+        ),
     )
 
 

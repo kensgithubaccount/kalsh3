@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from copy import copy
+from dataclasses import replace
 from datetime import UTC, datetime
 from decimal import Decimal
 
@@ -10,6 +11,7 @@ import services.production_weather_strategy.model_tournament as model_module
 from services.historical_replay.archive import stable_hash
 from services.production_weather_strategy.historical_economics import (
     MAX_EXECUTABLE_QUOTE_STALENESS_SECONDS,
+    ExecutableQuoteEvidence,
     HistoricalEconomicsEvidenceError,
     NoQuoteProvenance,
     build_executable_quote_evidence,
@@ -78,6 +80,42 @@ def _quote_candle(
         "yes_ask": {"close_dollars": yes_ask},
         "price": {"close_dollars": "0.435"},
     }
+
+
+def test_direct_executable_quote_construction_is_rejected() -> None:
+    with pytest.raises(
+        HistoricalEconomicsEvidenceError,
+        match="must be issued by canonical M28C builder",
+    ):
+        ExecutableQuoteEvidence()
+
+
+def test_fake_quote_and_lineage_fields_cannot_mint_executable_quote() -> None:
+    with pytest.raises(TypeError):
+        ExecutableQuoteEvidence(  # type: ignore[call-arg]
+            market_ticker=TICKER,
+            response_evidence_id="fake-response",
+            selected_candle_hash="fake-candle",
+            yes_bid=Decimal("0.01"),
+            yes_ask=Decimal("0.99"),
+        )
+
+
+def test_dataclasses_replace_cannot_alter_issued_executable_quote() -> None:
+    candle = _quote_candle()
+    response, checkpoint = _checkpoint((candle,))
+    evidence = build_executable_quote_evidence(
+        response_evidence=response,
+        checkpoint=checkpoint,
+        selected_candle=candle,
+    )
+    with pytest.raises(TypeError):
+        replace(
+            evidence,
+            yes_bid=Decimal("0.01"),
+            response_evidence_id="fake-response",
+            selected_candle_hash="fake-candle",
+        )
 
 
 def test_exact_canonical_selected_candle_with_valid_bid_ask_succeeds() -> None:

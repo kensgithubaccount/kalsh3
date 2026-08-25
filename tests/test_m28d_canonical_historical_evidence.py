@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from copy import copy
+from dataclasses import replace
 from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 
@@ -12,6 +13,7 @@ from services.production_weather_strategy.forecast_vintage import (
     ForecastEvidenceClassification,
     ForecastSourceArtifact,
     ForecastVintageError,
+    ForecastVintageEvidence,
     HistoricalForecastPublicationEvidence,
     build_forecast_vintage_evidence,
     build_point_in_time_forecast_vintage_evidence,
@@ -55,6 +57,42 @@ def _proof(
         evidence_id=proof_id,
         _capability=forecast_module._FORECAST_VINTAGE_AUTHORITY_CAPABILITY,
     )
+
+
+def test_direct_forecast_vintage_construction_is_rejected() -> None:
+    with pytest.raises(ForecastVintageError, match="must be issued by reviewed builder"):
+        ForecastVintageEvidence()
+
+
+def test_direct_forecast_vintage_construction_cannot_claim_strict_authority() -> None:
+    with pytest.raises(TypeError):
+        ForecastVintageEvidence(  # type: ignore[call-arg]
+            classification=ForecastEvidenceClassification.HISTORICAL_POINT_IN_TIME,
+        )
+
+
+def test_dataclasses_replace_cannot_upgrade_replay_to_strict_authority() -> None:
+    replay = build_forecast_vintage_evidence(_artifact(), decision_cutoff=CUTOFF)
+    with pytest.raises(TypeError):
+        replace(
+            replay,
+            classification=ForecastEvidenceClassification.HISTORICAL_POINT_IN_TIME,
+        )
+
+
+def test_caller_cannot_inject_forecast_publication_evidence_id() -> None:
+    with pytest.raises(TypeError):
+        ForecastVintageEvidence(  # type: ignore[call-arg]
+            publication_evidence_id="caller-publication-proof",
+        )
+
+
+def test_caller_cannot_inject_forecast_final_identity_fields() -> None:
+    with pytest.raises(TypeError):
+        ForecastVintageEvidence(  # type: ignore[call-arg]
+            evidence_id="caller-evidence",
+            content_hash="caller-content",
+        )
 
 
 def test_ordinary_caller_forecast_evidence_remains_replay_only() -> None:

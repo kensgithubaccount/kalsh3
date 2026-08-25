@@ -8,11 +8,13 @@ promotion, risk, approval, signer, execution, or order authority is created here
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from datetime import UTC, date, datetime
 from decimal import Decimal
 from enum import StrEnum
 from hashlib import sha256
+from types import MappingProxyType
 
 from services.historical_replay.archive import stable_hash
 
@@ -22,6 +24,7 @@ FORECAST_VINTAGE_EVIDENCE_SCHEMA_VERSION = "m28d-r1-forecast-vintage-evidence-v1
 TARGET_LOCAL_DATE_TIME_SEMANTICS = "LOCAL_DATE_NO_ASSUMED_UTC_MIDNIGHT"
 _SUPPORTED_MEASUREMENTS = frozenset({"DAILY_MAX", "DAILY_MIN"})
 _FORECAST_VINTAGE_AUTHORITY_CAPABILITY = object()
+_FORECAST_VINTAGE_EVIDENCE_CONSTRUCTION_CAPABILITY = object()
 
 
 class ForecastVintageError(ValueError):
@@ -184,9 +187,9 @@ class HistoricalForecastPublicationEvidence:
             object.__setattr__(self, name, value)
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True, slots=True, init=False)
 class ForecastVintageEvidence:
-    """Cutoff-relative forecast evidence; strictness is explicit and content-addressed."""
+    """Builder-issued cutoff-relative forecast evidence with content-addressed strictness."""
 
     classification: ForecastEvidenceClassification
     provider: str
@@ -207,6 +210,40 @@ class ForecastVintageEvidence:
     schema_version: str
     evidence_id: str
     content_hash: str
+
+    def __init__(
+        self,
+        *,
+        _capability: object | None = None,
+        _values: Mapping[str, object] | None = None,
+    ) -> None:
+        if (
+            _capability is not _FORECAST_VINTAGE_EVIDENCE_CONSTRUCTION_CAPABILITY
+            or _values is None
+        ):
+            raise ForecastVintageError("forecast vintage evidence must be issued by reviewed builder")
+        for name in (
+            "classification",
+            "provider",
+            "source_identity",
+            "source_artifact_id",
+            "raw_artifact_sha256",
+            "station_id",
+            "measurement",
+            "target_local_date",
+            "forecast_reference_time",
+            "source_published_at",
+            "decision_cutoff",
+            "retrieved_at",
+            "parser_version",
+            "forecast_deg_f",
+            "publication_evidence_id",
+            "target_local_date_time_semantics",
+            "schema_version",
+            "evidence_id",
+            "content_hash",
+        ):
+            object.__setattr__(self, name, _values[name])
 
 
 def build_forecast_vintage_evidence(
@@ -295,25 +332,30 @@ def _build_vintage(
         )
     )
     return ForecastVintageEvidence(
-        classification=classification,
-        provider=artifact.provider,
-        source_identity=artifact.source_identity,
-        source_artifact_id=artifact.artifact_id,
-        raw_artifact_sha256=artifact.raw_artifact_sha256,
-        station_id=artifact.station_id,
-        measurement=artifact.measurement,
-        target_local_date=artifact.target_local_date,
-        forecast_reference_time=artifact.forecast_reference_time,
-        source_published_at=published,
-        decision_cutoff=cutoff,
-        retrieved_at=artifact.retrieved_at,
-        parser_version=artifact.parser_version,
-        forecast_deg_f=artifact.forecast_deg_f,
-        publication_evidence_id=publication_hash,
-        target_local_date_time_semantics=TARGET_LOCAL_DATE_TIME_SEMANTICS,
-        schema_version=FORECAST_VINTAGE_EVIDENCE_SCHEMA_VERSION,
-        evidence_id=digest,
-        content_hash=digest,
+        _capability=_FORECAST_VINTAGE_EVIDENCE_CONSTRUCTION_CAPABILITY,
+        _values=MappingProxyType(
+            {
+                "classification": classification,
+                "provider": artifact.provider,
+                "source_identity": artifact.source_identity,
+                "source_artifact_id": artifact.artifact_id,
+                "raw_artifact_sha256": artifact.raw_artifact_sha256,
+                "station_id": artifact.station_id,
+                "measurement": artifact.measurement,
+                "target_local_date": artifact.target_local_date,
+                "forecast_reference_time": artifact.forecast_reference_time,
+                "source_published_at": published,
+                "decision_cutoff": cutoff,
+                "retrieved_at": artifact.retrieved_at,
+                "parser_version": artifact.parser_version,
+                "forecast_deg_f": artifact.forecast_deg_f,
+                "publication_evidence_id": publication_hash,
+                "target_local_date_time_semantics": TARGET_LOCAL_DATE_TIME_SEMANTICS,
+                "schema_version": FORECAST_VINTAGE_EVIDENCE_SCHEMA_VERSION,
+                "evidence_id": digest,
+                "content_hash": digest,
+            }
+        ),
     )
 
 
