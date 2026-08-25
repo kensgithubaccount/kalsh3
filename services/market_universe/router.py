@@ -26,12 +26,12 @@ from services.opportunity_engine.structural import StructuralRoute, scan_structu
 
 from .domain import Event, Market, Series, UniverseValidationError, exact, stable_hash
 from .lifecycle import (
+    _LIFECYCLE_ISSUANCE_CAPABILITY,
     ZERO_INFLUENCE,
     LifecycleState,
     MarketLifecycleRecord,
     ProductType,
     UniverseCaptureEvidence,
-    _LIFECYCLE_ISSUANCE_CAPABILITY,
 )
 from .quality import Family, classify
 
