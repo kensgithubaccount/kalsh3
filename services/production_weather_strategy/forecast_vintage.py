@@ -217,11 +217,11 @@ class ForecastVintageEvidence:
         _capability: object | None = None,
         _values: Mapping[str, object] | None = None,
     ) -> None:
-        authorized_issuance = (
-            _capability is _FORECAST_VINTAGE_EVIDENCE_CONSTRUCTION_CAPABILITY
-            and _values is not None
-        )
-        if not authorized_issuance:
+        if _capability is not _FORECAST_VINTAGE_EVIDENCE_CONSTRUCTION_CAPABILITY:
+            raise ForecastVintageError(
+                "forecast vintage evidence must be issued by reviewed builder"
+            )
+        if _values is None:
             raise ForecastVintageError(
                 "forecast vintage evidence must be issued by reviewed builder"
             )

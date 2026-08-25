@@ -70,11 +70,11 @@ class ExecutableQuoteEvidence:
         _capability: object | None = None,
         _values: Mapping[str, object] | None = None,
     ) -> None:
-        authorized_issuance = (
-            _capability is _EXECUTABLE_QUOTE_EVIDENCE_CONSTRUCTION_CAPABILITY
-            and _values is not None
-        )
-        if not authorized_issuance:
+        if _capability is not _EXECUTABLE_QUOTE_EVIDENCE_CONSTRUCTION_CAPABILITY:
+            raise HistoricalEconomicsEvidenceError(
+                "executable quote evidence must be issued by canonical M28C builder"
+            )
+        if _values is None:
             raise HistoricalEconomicsEvidenceError(
                 "executable quote evidence must be issued by canonical M28C builder"
             )
