@@ -318,6 +318,8 @@ class MarketLifecycleRecord:
         return tuple(tuple(sorted(set(items))) for items in values)  # type: ignore[return-value]
 
     def _validate_canonical_identity(self) -> None:
+        if type(self) is not MarketLifecycleRecord:
+            raise LifecycleError("lifecycle record concrete type is not canonical")
         if self.schema_version != LIFECYCLE_SCHEMA_VERSION:
             raise LifecycleError("lifecycle record schema identity is invalid")
         if self.research_only is not True or self.production_influence != ZERO_INFLUENCE:
