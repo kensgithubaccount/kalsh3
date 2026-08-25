@@ -226,7 +226,7 @@ class MarketLifecycleRecord:
             supersedes_record_id=supersedes_record_id,
         )
 
-    def _finalize(self) -> None:
+    def _validate_lifecycle_invariants(self) -> None:
         required = (
             self.capture_id,
             self.market_input_hash,
@@ -240,6 +240,12 @@ class MarketLifecycleRecord:
         )
         if any(not isinstance(value, str) or not value.strip() for value in required):
             raise LifecycleError("lifecycle record identity/evidence is incomplete")
+        if not isinstance(self.product_type, ProductType) or not isinstance(
+            self.state, LifecycleState
+        ):
+            raise LifecycleError("lifecycle record state/product identity is invalid")
+        if self.semantic_status is not None and not isinstance(self.semantic_status, str):
+            raise LifecycleError("lifecycle semantic status is invalid")
         if self.state is LifecycleState.SEMANTICALLY_UNDERSTOOD:
             if self.product_type is not ProductType.BINARY_EVENT:
                 raise LifecycleError(
@@ -255,11 +261,16 @@ class MarketLifecycleRecord:
             raise LifecycleError(
                 "discovered record requires an explicit blocker or unsupported reason"
             )
-        route_reasons = tuple(sorted(set(self.specialist_route_reasons)))
-        semantic_proofs = tuple(sorted(set(self.semantic_proof_ids)))
-        blockers = tuple(sorted(set(self.semantic_blockers)))
-        unsupported = tuple(sorted(set(self.unsupported_reasons)))
-        material = (
+
+    def _identity_material(
+        self,
+        *,
+        specialist_route_reasons: tuple[str, ...],
+        semantic_proof_ids: tuple[str, ...],
+        semantic_blockers: tuple[str, ...],
+        unsupported_reasons: tuple[str, ...],
+    ) -> tuple[object, ...]:
+        return (
             LIFECYCLE_SCHEMA_VERSION,
             self.capture_id,
             self.market_input_hash,
@@ -278,18 +289,77 @@ class MarketLifecycleRecord:
             self.settlement_source_identity,
             self.specialist_route_id,
             self.specialist_route_state,
-            route_reasons,
+            specialist_route_reasons,
             self.advisory_family,
             self.semantic_status,
-            semantic_proofs,
-            blockers,
-            unsupported,
+            semantic_proof_ids,
+            semantic_blockers,
+            unsupported_reasons,
             self.semantic_material_hash,
             self.supersedes_record_id,
             "RESEARCH_ONLY",
             "0",
         )
-        digest = stable_hash(material)
+
+    def _canonical_sequences(
+        self,
+    ) -> tuple[tuple[str, ...], tuple[str, ...], tuple[str, ...], tuple[str, ...]]:
+        values = (
+            self.specialist_route_reasons,
+            self.semantic_proof_ids,
+            self.semantic_blockers,
+            self.unsupported_reasons,
+        )
+        if any(
+            not isinstance(items, tuple)
+            or any(not isinstance(item, str) for item in items)
+            for items in values
+        ):
+            raise LifecycleError("lifecycle record reason/proof collections are invalid")
+        return tuple(tuple(sorted(set(items))) for items in values)  # type: ignore[return-value]
+
+    def _validate_canonical_identity(self) -> None:
+        if self.schema_version != LIFECYCLE_SCHEMA_VERSION:
+            raise LifecycleError("lifecycle record schema identity is invalid")
+        if self.research_only is not True or self.production_influence != ZERO_INFLUENCE:
+            raise LifecycleError("lifecycle record authority boundary is invalid")
+        self._validate_lifecycle_invariants()
+        route_reasons, semantic_proofs, blockers, unsupported = self._canonical_sequences()
+        if (
+            self.specialist_route_reasons != route_reasons
+            or self.semantic_proof_ids != semantic_proofs
+            or self.semantic_blockers != blockers
+            or self.unsupported_reasons != unsupported
+        ):
+            raise LifecycleError("lifecycle record reason/proof collections are not canonical")
+        try:
+            expected_digest = stable_hash(
+                self._identity_material(
+                    specialist_route_reasons=route_reasons,
+                    semantic_proof_ids=semantic_proofs,
+                    semantic_blockers=blockers,
+                    unsupported_reasons=unsupported,
+                )
+            )
+        except (TypeError, ValueError) as exc:
+            raise LifecycleError("lifecycle record identity material is invalid") from exc
+        if (
+            self.lifecycle_record_id != expected_digest
+            or self.content_hash != expected_digest
+        ):
+            raise LifecycleError("lifecycle record content-addressed identity mismatch")
+
+    def _finalize(self) -> None:
+        self._validate_lifecycle_invariants()
+        route_reasons, semantic_proofs, blockers, unsupported = self._canonical_sequences()
+        digest = stable_hash(
+            self._identity_material(
+                specialist_route_reasons=route_reasons,
+                semantic_proof_ids=semantic_proofs,
+                semantic_blockers=blockers,
+                unsupported_reasons=unsupported,
+            )
+        )
         object.__setattr__(self, "specialist_route_reasons", route_reasons)
         object.__setattr__(self, "semantic_proof_ids", semantic_proofs)
         object.__setattr__(self, "semantic_blockers", blockers)
