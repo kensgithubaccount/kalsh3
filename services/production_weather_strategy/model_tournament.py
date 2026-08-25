@@ -44,7 +44,8 @@ from services.production_weather_strategy.settlement_dataset import (
 )
 
 FEATURE_SCHEMA_VERSION = "m28c-weather-features-v2"
-MARKET_CHECKPOINT_SCHEMA_VERSION = "m28c-market-checkpoint-v2"
+HISTORICAL_MARKET_RESPONSE_SCHEMA_VERSION = "m28c-historical-market-response-v1"
+MARKET_CHECKPOINT_SCHEMA_VERSION = "m28c-market-checkpoint-v3"
 TOURNAMENT_VERSION = "m28c-weather-model-tournament-v2"
 FAMILY = "DAILY_TEMPERATURE"
 PREDICTION_CUTOFF_HOUR_UTC = 3
@@ -56,6 +57,7 @@ EDGE_THRESHOLD = Decimal("0.10")
 HYPOTHETICAL_FRICTION = Decimal("0.02")
 PROBABILITY_EPSILON = Decimal("0.001")
 HYPOTHETICAL_PNL_CLASSIFICATION = "RESEARCH_ONLY_HYPOTHETICAL_PNL"
+_HISTORICAL_MARKET_RESPONSE_CAPABILITY = object()
 _MARKET_CHECKPOINT_CAPABILITY = object()
 PREDICTION_CUTOFF_RULE = (
     "03:00:00Z on target local-date label; latest 60-minute historical Kalshi candle "
@@ -80,6 +82,85 @@ class TournamentModel(StrEnum):
     POOLED_RESIDUAL = "POOLED_RESIDUAL"
     CITY_SHRUNK_RESIDUAL = "CITY_SHRUNK_RESIDUAL"
     CALIBRATED_ENSEMBLE = "CALIBRATED_ENSEMBLE"
+
+
+@dataclass(frozen=True, slots=True, init=False)
+class HistoricalMarketResponseEvidence:
+    """Capability-gated identity of one exact reviewed historical candle response."""
+
+    schema_version: str
+    request_path: str
+    market_ticker: str
+    request_start_ts: int
+    request_end_ts: int
+    interval_minutes: int
+    response_sha256: str
+    candle_hashes: tuple[str, ...]
+    evidence_id: str
+    content_hash: str
+
+    def __init__(
+        self,
+        *,
+        request_path: str,
+        market_ticker: str,
+        request_start_ts: int,
+        request_end_ts: int,
+        interval_minutes: int,
+        response_sha256: str,
+        candle_hashes: Sequence[str],
+        _capability: object | None = None,
+    ) -> None:
+        if _capability is not _HISTORICAL_MARKET_RESPONSE_CAPABILITY:
+            raise ModelTournamentError(
+                "historical market response evidence requires internal acquisition capability"
+            )
+        ticker = market_ticker.strip()
+        if not ticker:
+            raise ModelTournamentError("historical market response ticker is required")
+        if request_end_ts <= request_start_ts:
+            raise ModelTournamentError("historical market response bounds are invalid")
+        if interval_minutes != MARKET_CANDLE_INTERVAL_MINUTES:
+            raise ModelTournamentError("historical market response interval is not canonical")
+        expected_path = _candle_request_path(
+            ticker,
+            start_ts=request_start_ts,
+            end_ts=request_end_ts,
+        )
+        if request_path != expected_path:
+            raise ModelTournamentError("historical market response request path is not canonical")
+        response_hash = response_sha256.strip().lower()
+        if len(response_hash) != 64 or any(
+            character not in "0123456789abcdef" for character in response_hash
+        ):
+            raise ModelTournamentError("historical market response hash is malformed")
+        exact_candle_hashes = tuple(candle_hashes)
+        if any(not value.strip() for value in exact_candle_hashes):
+            raise ModelTournamentError("historical market response candle identity is incomplete")
+        if len(set(exact_candle_hashes)) != len(exact_candle_hashes):
+            raise ModelTournamentError("historical market response candle identity is duplicated")
+        digest = stable_hash(
+            (
+                HISTORICAL_MARKET_RESPONSE_SCHEMA_VERSION,
+                request_path,
+                ticker,
+                request_start_ts,
+                request_end_ts,
+                interval_minutes,
+                response_hash,
+                exact_candle_hashes,
+            )
+        )
+        object.__setattr__(self, "schema_version", HISTORICAL_MARKET_RESPONSE_SCHEMA_VERSION)
+        object.__setattr__(self, "request_path", request_path)
+        object.__setattr__(self, "market_ticker", ticker)
+        object.__setattr__(self, "request_start_ts", request_start_ts)
+        object.__setattr__(self, "request_end_ts", request_end_ts)
+        object.__setattr__(self, "interval_minutes", interval_minutes)
+        object.__setattr__(self, "response_sha256", response_hash)
+        object.__setattr__(self, "candle_hashes", exact_candle_hashes)
+        object.__setattr__(self, "evidence_id", digest)
+        object.__setattr__(self, "content_hash", digest)
 
 
 @dataclass(frozen=True, slots=True, init=False)
@@ -128,31 +209,59 @@ class MarketCheckpoint:
         market_ticker: str,
         checkpoint_at: datetime,
         candles: Sequence[Mapping[str, object]],
-        response_evidence_id: str,
+        response_evidence: HistoricalMarketResponseEvidence | None = None,
+        response_evidence_id: str | None = None,
     ) -> MarketCheckpoint | None:
+        if response_evidence_id is not None:
+            raise ModelTournamentError(
+                "plain response evidence ids cannot mint strict market checkpoints"
+            )
+        if not isinstance(response_evidence, HistoricalMarketResponseEvidence):
+            raise ModelTournamentError(
+                "strict market checkpoint requires bound HistoricalMarketResponseEvidence"
+            )
         ticker = market_ticker.strip()
-        if not ticker or not response_evidence_id.strip():
-            raise ModelTournamentError("market checkpoint provenance is incomplete")
+        if not ticker:
+            raise ModelTournamentError("market checkpoint ticker is required")
         cutoff = _reviewed_cutoff(checkpoint_at)
         end_ts = int(cutoff.timestamp())
         start_ts = int((cutoff - MARKET_CANDLE_LOOKBACK).timestamp())
         path = _candle_request_path(ticker, start_ts=start_ts, end_ts=end_ts)
+        if response_evidence.market_ticker != ticker:
+            raise ModelTournamentError("historical market response ticker binding is invalid")
+        if (
+            response_evidence.request_start_ts != start_ts
+            or response_evidence.request_end_ts != end_ts
+        ):
+            raise ModelTournamentError("historical market response range binding is invalid")
+        if response_evidence.interval_minutes != MARKET_CANDLE_INTERVAL_MINUTES:
+            raise ModelTournamentError("historical market response interval binding is invalid")
+        if response_evidence.request_path != path:
+            raise ModelTournamentError("historical market response path binding is invalid")
+
+        exact_candles = tuple(candles)
+        candle_hashes = tuple(stable_hash(candle) for candle in exact_candles)
+        if candle_hashes != response_evidence.candle_hashes:
+            raise ModelTournamentError(
+                "historical candles do not exactly match bound response evidence"
+            )
 
         seen_periods: set[int] = set()
-        eligible: list[Mapping[str, object]] = []
-        for candle in candles:
+        for candle in exact_candles:
             period = candle.get("end_period_ts")
             if isinstance(period, bool) or not isinstance(period, int):
                 raise ModelTournamentError("historical candlestick period is malformed")
             if period in seen_periods:
                 raise ModelTournamentError("historical candlestick period is duplicated")
             seen_periods.add(period)
-            if start_ts <= period <= end_ts:
-                eligible.append(candle)
-        if not eligible:
+            if period > end_ts:
+                raise ModelTournamentError("future candle contaminated market checkpoint")
+            if period < start_ts:
+                raise ModelTournamentError("historical candle is outside bound request range")
+        if not exact_candles:
             return None
         selected = max(
-            eligible,
+            exact_candles,
             key=lambda candle: int(candle["end_period_ts"]),  # type: ignore[call-overload]
         )
         probability = _market_probability(selected)
@@ -160,6 +269,8 @@ class MarketCheckpoint:
             return None
         selected_end = int(selected["end_period_ts"])  # type: ignore[call-overload]
         selected_hash = stable_hash(selected)
+        if selected_hash not in response_evidence.candle_hashes:
+            raise ModelTournamentError("selected candle is absent from bound response evidence")
         digest = stable_hash(
             (
                 MARKET_CHECKPOINT_SCHEMA_VERSION,
@@ -168,7 +279,7 @@ class MarketCheckpoint:
                 start_ts,
                 end_ts,
                 path,
-                response_evidence_id,
+                response_evidence.evidence_id,
                 selected_end,
                 selected_hash,
                 str(probability),
@@ -183,7 +294,7 @@ class MarketCheckpoint:
                     "request_start_ts": start_ts,
                     "request_end_ts": end_ts,
                     "request_path": path,
-                    "response_evidence_id": response_evidence_id,
+                    "response_evidence_id": response_evidence.evidence_id,
                     "selected_candle_end_ts": selected_end,
                     "selected_candle_hash": selected_hash,
                     "yes_probability": probability,
@@ -553,6 +664,29 @@ def build_development_model_artifact(
 
     if tournament.feature_dataset_id != dataset.dataset_id:
         raise ModelTournamentError("tournament result does not bind this feature dataset")
+    if training_manifest.family != FAMILY:
+        raise ModelTournamentError("training manifest family does not bind this feature dataset")
+    if training_manifest.feature_schema_hash != dataset.feature_schema_hash:
+        raise ModelTournamentError(
+            "training manifest feature schema does not bind this feature dataset"
+        )
+    expected_feature_artifact_ids = tuple(sorted(row.content_hash for row in dataset.rows))
+    if training_manifest.feature_artifact_ids != expected_feature_artifact_ids:
+        raise ModelTournamentError(
+            "training manifest feature rows do not bind this feature dataset"
+        )
+    if training_manifest.settlement_labels_id != dataset.settlement_labels.manifest_id:
+        raise ModelTournamentError(
+            "training manifest settlement labels do not bind this feature dataset"
+        )
+    if training_manifest.temporal_split_hash != dataset.temporal_split_hash:
+        raise ModelTournamentError(
+            "training manifest temporal split does not bind this feature dataset"
+        )
+    if training_manifest.prediction_cutoff_rule != PREDICTION_CUTOFF_RULE:
+        raise ModelTournamentError(
+            "training manifest prediction cutoff does not bind this feature dataset"
+        )
     fit = tournament.fit
     return ModelArtifact.build(
         family=FAMILY,

@@ -14,6 +14,7 @@ from typing import Any
 import pytest
 
 import services.production_weather_strategy.climate_evidence as climate_module
+import services.production_weather_strategy.model_tournament as model_module
 from scripts import run_m28c_public_weather_tournament as runner
 from services.forecasting.weather_calibration import parse_ghcnd_daily
 from services.forecasting.weather_source_authority import PHYSICAL_WEATHER_SOURCES
@@ -34,6 +35,7 @@ from services.production_weather_strategy.model_tournament import (
     EDGE_THRESHOLD,
     HYPOTHETICAL_PNL_CLASSIFICATION,
     MARKET_CANDLE_INTERVAL_MINUTES,
+    HistoricalMarketResponseEvidence,
     MarketCheckpoint,
     ModelTournamentError,
     TournamentFeatureDataset,
@@ -268,6 +270,39 @@ def _strict_climate_features(
     return result
 
 
+def _market_response_evidence(
+    contract: Any,
+    *,
+    cutoff: datetime,
+    candles: tuple[dict[str, object], ...],
+    market_ticker: str | None = None,
+    start_ts: int | None = None,
+    end_ts: int | None = None,
+    response_sha256: str | None = None,
+) -> HistoricalMarketResponseEvidence:
+    ticker = market_ticker or contract.market_ticker
+    exact_end = int(cutoff.timestamp()) if end_ts is None else end_ts
+    exact_start = exact_end - 24 * 60 * 60 if start_ts is None else start_ts
+    candle_hashes = tuple(stable_hash(candle) for candle in candles)
+    response_hash = response_sha256 or stable_hash(
+        ("synthetic-market-response", ticker, exact_start, exact_end, candle_hashes)
+    )
+    return HistoricalMarketResponseEvidence(
+        request_path=model_module._candle_request_path(
+            ticker,
+            start_ts=exact_start,
+            end_ts=exact_end,
+        ),
+        market_ticker=ticker,
+        request_start_ts=exact_start,
+        request_end_ts=exact_end,
+        interval_minutes=MARKET_CANDLE_INTERVAL_MINUTES,
+        response_sha256=response_hash,
+        candle_hashes=candle_hashes,
+        _capability=model_module._HISTORICAL_MARKET_RESPONSE_CAPABILITY,
+    )
+
+
 def _checkpoint_for_contract(
     contract: Any, *, probability: Decimal | None = None
 ) -> MarketCheckpoint:
@@ -280,11 +315,16 @@ def _checkpoint_for_contract(
         "yes_ask": {"close_dollars": str(min(Decimal("1"), p + Decimal("0.02")))},
         "price": {"close_dollars": str(p)},
     }
+    candles = (candle,)
     checkpoint = MarketCheckpoint.from_candles(
         market_ticker=contract.market_ticker,
         checkpoint_at=cutoff,
-        candles=(candle,),
-        response_evidence_id=f"fixture-response-{contract.market_ticker}",
+        candles=candles,
+        response_evidence=_market_response_evidence(
+            contract,
+            cutoff=cutoff,
+            candles=candles,
+        ),
     )
     assert checkpoint is not None
     return checkpoint
@@ -461,6 +501,116 @@ def test_used_climate_evidence_changes_dataset_identity_but_unused_mapping_does_
     assert first.dataset_id == unused.dataset_id
 
 
+def test_market_checkpoint_plain_caller_evidence_cannot_mint_strict_checkpoint() -> None:
+    datasets, _ = _settlement_fixture()
+    contract = datasets[0].contracts[0]
+    cutoff = datetime.combine(contract.local_date, time(3), tzinfo=UTC)
+    candle = {
+        "end_period_ts": int(cutoff.timestamp()) - 60,
+        "price": {"close_dollars": "0.50"},
+    }
+    with pytest.raises(ModelTournamentError, match="plain response evidence ids"):
+        MarketCheckpoint.from_candles(
+            market_ticker=contract.market_ticker,
+            checkpoint_at=cutoff,
+            candles=(candle,),
+            response_evidence_id="caller-invented",
+        )
+    fake_evidence: Any = "caller-invented"
+    with pytest.raises(ModelTournamentError, match="bound HistoricalMarketResponseEvidence"):
+        MarketCheckpoint.from_candles(
+            market_ticker=contract.market_ticker,
+            checkpoint_at=cutoff,
+            candles=(candle,),
+            response_evidence=fake_evidence,
+        )
+    cutoff_ts = int(cutoff.timestamp())
+    with pytest.raises(ModelTournamentError, match="internal acquisition capability"):
+        HistoricalMarketResponseEvidence(
+            request_path=model_module._candle_request_path(
+                contract.market_ticker,
+                start_ts=cutoff_ts - 24 * 60 * 60,
+                end_ts=cutoff_ts,
+            ),
+            market_ticker=contract.market_ticker,
+            request_start_ts=cutoff_ts - 24 * 60 * 60,
+            request_end_ts=cutoff_ts,
+            interval_minutes=MARKET_CANDLE_INTERVAL_MINUTES,
+            response_sha256="a" * 64,
+            candle_hashes=(stable_hash(candle),),
+        )
+
+
+def test_market_checkpoint_bound_response_rejects_ticker_range_membership_and_future_data() -> None:
+    datasets, _ = _settlement_fixture()
+    contract = datasets[0].contracts[0]
+    cutoff = datetime.combine(contract.local_date, time(3), tzinfo=UTC)
+    cutoff_ts = int(cutoff.timestamp())
+    candle = {"end_period_ts": cutoff_ts - 60, "price": {"close_dollars": "0.50"}}
+    older = {"end_period_ts": cutoff_ts - 120, "price": {"close_dollars": "0.45"}}
+    evidence = _market_response_evidence(contract, cutoff=cutoff, candles=(candle,))
+
+    other_ticker_evidence = _market_response_evidence(
+        contract,
+        cutoff=cutoff,
+        candles=(candle,),
+        market_ticker=f"{contract.market_ticker}-OTHER",
+    )
+    with pytest.raises(ModelTournamentError, match="ticker binding"):
+        MarketCheckpoint.from_candles(
+            market_ticker=contract.market_ticker,
+            checkpoint_at=cutoff,
+            candles=(candle,),
+            response_evidence=other_ticker_evidence,
+        )
+
+    other_range_evidence = _market_response_evidence(
+        contract,
+        cutoff=cutoff,
+        candles=(candle,),
+        start_ts=cutoff_ts - 23 * 60 * 60,
+    )
+    with pytest.raises(ModelTournamentError, match="range binding"):
+        MarketCheckpoint.from_candles(
+            market_ticker=contract.market_ticker,
+            checkpoint_at=cutoff,
+            candles=(candle,),
+            response_evidence=other_range_evidence,
+        )
+
+    two_candle_evidence = _market_response_evidence(
+        contract,
+        cutoff=cutoff,
+        candles=(older, candle),
+    )
+    with pytest.raises(ModelTournamentError, match="exactly match"):
+        MarketCheckpoint.from_candles(
+            market_ticker=contract.market_ticker,
+            checkpoint_at=cutoff,
+            candles=(candle,),
+            response_evidence=two_candle_evidence,
+        )
+
+    altered = {**candle, "price": {"close_dollars": "0.51"}}
+    with pytest.raises(ModelTournamentError, match="exactly match"):
+        MarketCheckpoint.from_candles(
+            market_ticker=contract.market_ticker,
+            checkpoint_at=cutoff,
+            candles=(altered,),
+            response_evidence=evidence,
+        )
+
+    future = {"end_period_ts": cutoff_ts + 1, "price": {"close_dollars": "0.90"}}
+    future_evidence = _market_response_evidence(contract, cutoff=cutoff, candles=(future,))
+    with pytest.raises(ModelTournamentError, match="future candle"):
+        MarketCheckpoint.from_candles(
+            market_ticker=contract.market_ticker,
+            checkpoint_at=cutoff,
+            candles=(future,),
+            response_evidence=future_evidence,
+        )
+
+
 def test_market_checkpoint_is_exact_03z_bounded_and_no_lookahead() -> None:
     datasets, _ = _settlement_fixture()
     contract = datasets[0].contracts[0]
@@ -469,36 +619,29 @@ def test_market_checkpoint_is_exact_03z_bounded_and_no_lookahead() -> None:
     candles = (
         {"end_period_ts": cutoff_ts - 3600, "price": {"close_dollars": "0.40"}},
         {"end_period_ts": cutoff_ts, "price": {"close_dollars": "0.55"}},
-        {"end_period_ts": cutoff_ts + 60, "price": {"close_dollars": "0.99"}},
     )
+    evidence = _market_response_evidence(contract, cutoff=cutoff, candles=candles)
     checkpoint = MarketCheckpoint.from_candles(
         market_ticker=contract.market_ticker,
         checkpoint_at=cutoff,
         candles=candles,
-        response_evidence_id="response-one",
+        response_evidence=evidence,
     )
     assert checkpoint is not None
     assert checkpoint.checkpoint_at == cutoff
     assert checkpoint.selected_candle_end_ts == cutoff_ts
+    assert checkpoint.selected_candle_hash == stable_hash(candles[-1])
+    assert checkpoint.response_evidence_id == evidence.evidence_id
     assert checkpoint.yes_probability == Decimal("0.55")
     assert checkpoint.request_end_ts == cutoff_ts
     assert checkpoint.request_start_ts == cutoff_ts - 24 * 60 * 60
     assert f"period_interval={MARKET_CANDLE_INTERVAL_MINUTES}" in checkpoint.request_path
-    assert (
-        MarketCheckpoint.from_candles(
-            market_ticker=contract.market_ticker,
-            checkpoint_at=cutoff,
-            candles=({"end_period_ts": cutoff_ts + 1, "price": {"close_dollars": "0.9"}},),
-            response_evidence_id="future-only",
-        )
-        is None
-    )
     with pytest.raises(ModelTournamentError, match="03Z"):
         MarketCheckpoint.from_candles(
             market_ticker=contract.market_ticker,
             checkpoint_at=cutoff + timedelta(hours=1),
             candles=candles,
-            response_evidence_id="wrong-hour",
+            response_evidence=evidence,
         )
 
 
@@ -513,43 +656,70 @@ def test_market_checkpoint_fallbacks_malformed_rows_and_identity_are_determinist
         "yes_ask": {"close_dollars": "0.44"},
         "price": {"close_dollars": "0.90"},
     }
+    first_evidence = _market_response_evidence(contract, cutoff=cutoff, candles=(midpoint,))
     first = MarketCheckpoint.from_candles(
         market_ticker=contract.market_ticker,
         checkpoint_at=cutoff,
         candles=(midpoint,),
-        response_evidence_id="response-one",
+        response_evidence=first_evidence,
     )
     assert first is not None and first.yes_probability == Decimal("0.42")
+    changed_midpoint = {**midpoint, "yes_ask": {"close_dollars": "0.46"}}
+    second_evidence = _market_response_evidence(
+        contract,
+        cutoff=cutoff,
+        candles=(changed_midpoint,),
+    )
     second = MarketCheckpoint.from_candles(
         market_ticker=contract.market_ticker,
         checkpoint_at=cutoff,
-        candles=({**midpoint, "yes_ask": {"close_dollars": "0.46"}},),
-        response_evidence_id="response-one",
+        candles=(changed_midpoint,),
+        response_evidence=second_evidence,
     )
-    assert second is not None and first.checkpoint_id != second.checkpoint_id
+    assert second is not None
+    assert first_evidence.evidence_id != second_evidence.evidence_id
+    assert first.checkpoint_id != second.checkpoint_id
+    third_evidence = _market_response_evidence(
+        contract,
+        cutoff=cutoff,
+        candles=(midpoint,),
+        response_sha256="b" * 64,
+    )
     third = MarketCheckpoint.from_candles(
         market_ticker=contract.market_ticker,
         checkpoint_at=cutoff,
         candles=(midpoint,),
-        response_evidence_id="response-two",
+        response_evidence=third_evidence,
     )
-    assert third is not None and first.checkpoint_id != third.checkpoint_id
+    assert third is not None
+    assert first_evidence.evidence_id != third_evidence.evidence_id
+    assert first.checkpoint_id != third.checkpoint_id
+    malformed = {"end_period_ts": "bad"}
+    malformed_evidence = _market_response_evidence(
+        contract,
+        cutoff=cutoff,
+        candles=(malformed,),
+    )
     with pytest.raises(ModelTournamentError, match="malformed"):
         MarketCheckpoint.from_candles(
             market_ticker=contract.market_ticker,
             checkpoint_at=cutoff,
-            candles=({"end_period_ts": "bad"},),
-            response_evidence_id="bad",
+            candles=(malformed,),
+            response_evidence=malformed_evidence,
         )
     with pytest.raises(ModelTournamentError, match="derived"):
         MarketCheckpoint()
 
 
-def test_current_historical_client_candle_interface_is_used_offline() -> None:
+def test_current_historical_client_candle_interface_consumes_preissued_evidence_offline() -> None:
     datasets, _ = _settlement_fixture()
     contract = datasets[0].contracts[0]
     cutoff = datetime.combine(contract.local_date, time(3), tzinfo=UTC)
     cutoff_ts = int(cutoff.timestamp())
+    candle = {
+        "end_period_ts": cutoff_ts - 60,
+        "price": {"close_dollars": "0.50"},
+    }
 
     class FakeTransport:
         def __init__(self) -> None:
@@ -561,20 +731,26 @@ def test_current_historical_client_candle_interface_is_used_offline() -> None:
             assert headers == {}
             assert timeout_seconds > 0
             self.requests.append({"path": path, "sha256": "a" * 64})
-            return 200, {
-                "candlesticks": [
-                    {
-                        "end_period_ts": cutoff_ts - 60,
-                        "price": {"close_dollars": "0.50"},
-                    }
-                ]
-            }
+            return 200, {"candlesticks": [candle]}
 
     transport = FakeTransport()
     client = HistoricalClient(transport, signer=None, timeout=1)
-    checkpoint = runner._market_checkpoint(client, transport, contract, cutoff)
+    evidence = _market_response_evidence(
+        contract,
+        cutoff=cutoff,
+        candles=(candle,),
+        response_sha256="a" * 64,
+    )
+    checkpoint = runner._market_checkpoint(
+        client,
+        transport,
+        contract,
+        cutoff,
+        response_evidence=evidence,
+    )
     assert checkpoint is not None and checkpoint.yes_probability == Decimal("0.50")
     assert transport.requests[0]["path"] == checkpoint.request_path
+    assert checkpoint.response_evidence_id == evidence.evidence_id
 
 
 def test_temporal_split_is_single_authority_and_siblings_never_cross_partitions() -> None:
@@ -693,6 +869,89 @@ def test_training_manifest_and_development_model_bind_exact_feature_and_label_li
     )
     assert model.state is ModelState.DEVELOPMENT
     assert model.training_manifest_id == training.manifest_id
+    assert tournament.promotion_authority == "NONE"
+
+
+def test_development_model_artifact_rejects_wrong_training_manifest_lineage() -> None:
+    features, _, split = _features()
+    tournament = run_model_tournament(features)
+    created = datetime(2025, 1, 1, tzinfo=UTC)
+    training = build_training_manifest(features, temporal_split=split, created_at=created)
+    trained_at = created + timedelta(hours=1)
+
+    changed_row = replace(
+        features.rows[0],
+        content_hash=stable_hash(("different-feature-row", features.rows[0].content_hash)),
+    )
+    other_features = replace(
+        features,
+        dataset_id=stable_hash(("different-feature-dataset", features.dataset_id)),
+        rows=(changed_row, *features.rows[1:]),
+        content_hash=stable_hash(("different-feature-dataset-content", features.content_hash)),
+    )
+    other_training = build_training_manifest(
+        other_features,
+        temporal_split=split,
+        created_at=created,
+    )
+    assert other_training.feature_schema_hash == training.feature_schema_hash
+    with pytest.raises(ModelTournamentError, match="feature rows"):
+        build_development_model_artifact(
+            features,
+            tournament,
+            other_training,
+            trained_at=trained_at,
+        )
+
+    with pytest.raises(ModelTournamentError, match="settlement labels"):
+        build_development_model_artifact(
+            features,
+            tournament,
+            replace(
+                training,
+                settlement_labels_id=stable_hash(
+                    ("different-settlement-label-manifest", training.settlement_labels_id)
+                ),
+            ),
+            trained_at=trained_at,
+        )
+
+    with pytest.raises(ModelTournamentError, match="temporal split"):
+        build_development_model_artifact(
+            features,
+            tournament,
+            replace(
+                training,
+                temporal_split_hash=stable_hash(
+                    ("different-temporal-split", training.temporal_split_hash)
+                ),
+            ),
+            trained_at=trained_at,
+        )
+
+    with pytest.raises(ModelTournamentError, match="prediction cutoff"):
+        build_development_model_artifact(
+            features,
+            tournament,
+            replace(training, prediction_cutoff_rule="different cutoff rule"),
+            trained_at=trained_at,
+        )
+
+    with pytest.raises(ModelTournamentError, match="family"):
+        build_development_model_artifact(
+            features,
+            tournament,
+            replace(training, family="OTHER_FAMILY"),
+            trained_at=trained_at,
+        )
+
+    model = build_development_model_artifact(
+        features,
+        tournament,
+        training,
+        trained_at=trained_at,
+    )
+    assert model.state is ModelState.DEVELOPMENT
     assert tournament.promotion_authority == "NONE"
 
 

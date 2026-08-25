@@ -8,6 +8,7 @@ invocation stops before any public request or canonical tournament execution.
 
 The offline helper below adapts market-checkpoint reconstruction to the current singular,
 explicitly bounded ``HistoricalClient.candles`` interface for future separately reviewed use.
+It requires pre-issued strict historical market-response evidence and cannot mint that authority.
 It never authenticates, signs, mutates state, or sends orders.
 """
 
@@ -20,9 +21,11 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Protocol
 
-from services.historical_replay.archive import stable_hash
 from services.historical_replay.client import HistoricalClient
-from services.production_weather_strategy.model_tournament import MarketCheckpoint
+from services.production_weather_strategy.model_tournament import (
+    HistoricalMarketResponseEvidence,
+    MarketCheckpoint,
+)
 from services.production_weather_strategy.settlement_dataset import ResolvedTemperatureContract
 
 STRICT_NOAA_BLOCK_REASON = (
@@ -40,8 +43,10 @@ def _market_checkpoint(
     transport: RequestEvidenceTransport,
     contract: ResolvedTemperatureContract,
     checkpoint_at: datetime,
+    *,
+    response_evidence: HistoricalMarketResponseEvidence,
 ) -> MarketCheckpoint | None:
-    """Build one checkpoint from the current bounded historical-candle client interface."""
+    """Build one checkpoint only from a response already carrying strict bound evidence."""
 
     cutoff = checkpoint_at
     end_ts = int(cutoff.timestamp())
@@ -62,12 +67,13 @@ def _market_checkpoint(
     response_sha = request.get("sha256")
     if not isinstance(path, str) or not isinstance(response_sha, str):
         raise RuntimeError("historical candle transport evidence is incomplete")
-    response_evidence_id = stable_hash(("m28c-candle-response-v1", path, response_sha))
+    if path != response_evidence.request_path or response_sha != response_evidence.response_sha256:
+        raise RuntimeError("historical candle transport does not match bound response evidence")
     return MarketCheckpoint.from_candles(
         market_ticker=contract.market_ticker,
         checkpoint_at=cutoff,
         candles=tuple(_as_mapping(row) for row in candles),
-        response_evidence_id=response_evidence_id,
+        response_evidence=response_evidence,
     )
 
 
