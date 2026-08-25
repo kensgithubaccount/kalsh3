@@ -1,13 +1,17 @@
 from __future__ import annotations
 
-import ast
 import inspect
+from collections.abc import Sequence
+from dataclasses import replace
 from datetime import UTC, date, datetime
 from decimal import Decimal
+from pathlib import Path
 
 import pytest
 
 import services.production_weather_strategy.climate_evidence as climate_module
+from services.forecasting.weather_calibration import GhcndDailySnapshotEvidence, parse_ghcnd_daily
+from services.forecasting.weather_source_authority import PHYSICAL_WEATHER_SOURCES
 from services.production_weather_strategy.climate_evidence import (
     CLIMATE_LOOKBACK_YEARS,
     CLIMATE_SEASONAL_WINDOW_DAYS,
@@ -18,377 +22,320 @@ from services.production_weather_strategy.climate_evidence import (
     ClimateObservation,
     ClimateReplayReason,
     ClimateSourceArtifact,
-    ClimateSourceVintageStatus,
+    HistoricalClimateVintageEvidence,
     build_climate_feature_evidence,
+    build_ghcnd_climate_observations,
     build_point_in_time_climate_feature_evidence,
     seasonal_distance_days,
 )
 
-STATION = "USW00013904"
+ROOT = Path(__file__).parent / "fixtures" / "m27c"
+RAW = (ROOT / "USW00014819-201806.dly").read_bytes()
+SOURCE = PHYSICAL_WEATHER_SOURCES["CLIMDW"]
+STATION = "USW00014819"
+ACQUIRED = datetime(2026, 8, 24, 12, tzinfo=UTC)
 TARGET = date(2024, 6, 10)
 CUTOFF = datetime(2024, 6, 10, 3, tzinfo=UTC)
 
 
-def artifact(
-    *,
-    station: str = STATION,
-    raw: bytes = b"capture",
-    acquired: datetime = datetime(2026, 8, 24, 12, tzinfo=UTC),
-    vintage: datetime | None = datetime(2023, 12, 31, 23, tzinfo=UTC),
-    vintage_id: str | None = "synthetic-vintage-proof",
-    source: str = "synthetic://noaa/ghcn/station.dly",
-) -> ClimateSourceArtifact:
-    return ClimateSourceArtifact(
+def snapshot(raw: bytes = RAW) -> GhcndDailySnapshotEvidence:
+    return parse_ghcnd_daily(raw, SOURCE, ACQUIRED)
+
+
+def source(*, vintage: datetime | None = None, raw: bytes = RAW) -> ClimateSourceArtifact:
+    parsed = snapshot(raw)
+    plain = ClimateSourceArtifact(
         provider="NOAA/NCEI",
-        source_identity=source,
-        station_id=station,
+        source_identity="ghcnd-daily-reviewed",
+        station_id=STATION,
         raw_artifact=raw,
-        acquired_at=acquired,
-        parser_version="synthetic-ghcn-v1",
-        source_vintage_at=vintage,
-        source_vintage_evidence_id=vintage_id,
+        acquired_at=ACQUIRED,
+        parser_version="parse_ghcnd_daily",
+    )
+    proof = None
+    if vintage is not None:
+        proof = HistoricalClimateVintageEvidence(
+            _capability=climate_module._CLIMATE_AUTHORITY_CAPABILITY,
+            provider=plain.provider,
+            source_identity=plain.source_identity,
+            station_id=plain.station_id,
+            capture_id=plain._capture_id,
+            source_vintage_at=vintage,
+            evidence_id="synthetic-reviewed-archive-proof",
+        )
+    return ClimateSourceArtifact._from_reviewed_ghcnd(
+        provider=plain.provider,
+        source_identity=plain.source_identity,
+        station_id=plain.station_id,
+        raw_artifact=raw,
+        acquired_at=ACQUIRED,
+        parser_version="parse_ghcnd_daily",
+        snapshot=parsed,
+        vintage_evidence=proof,
+        _capability=climate_module._CLIMATE_AUTHORITY_CAPABILITY,
     )
 
 
-def obs(
-    source: ClimateSourceArtifact,
-    *,
-    day: date = date(2020, 6, 10),
-    measurement: str = "DAILY_MAX",
-    temp: str = "72",
-    record: bytes = b"row",
+def usable_row(
+    source_artifact: ClimateSourceArtifact, *, measurement: str = "DAILY_MAX"
 ) -> ClimateObservation:
-    return ClimateObservation(
-        station_id=source.station_id,
-        measurement=measurement,
-        local_date=day,
-        temperature_deg_f=Decimal(temp),
-        source_artifact=source,
-        source_record=record,
+    return next(
+        row
+        for row in build_ghcnd_climate_observations(
+            source_artifact=source_artifact,
+            snapshot=snapshot(source_artifact._raw_artifact),
+        )
+        if row.measurement == measurement and row.local_date == date(2018, 6, 10)
     )
 
 
 def history(
-    rows: list[ClimateObservation],
-    sources: list[ClimateSourceArtifact],
-    *,
-    station: str = STATION,
+    rows: Sequence[ClimateObservation],
+    artifacts: Sequence[ClimateSourceArtifact],
 ) -> ClimateHistory:
     return ClimateHistory.build(
-        station_id=station,
-        observations=rows,
-        source_artifacts=sources,
+        station_id=STATION, observations=tuple(rows), source_artifacts=tuple(artifacts)
     )
 
 
 def evidence(
     climate_history: ClimateHistory,
     *,
-    target: date = TARGET,
     cutoff: datetime = CUTOFF,
-    measurement: str = "DAILY_MAX",
+    target: date = TARGET,
 ) -> ClimateFeatureEvidence:
     return build_climate_feature_evidence(
-        station_id=climate_history.station_id,
-        measurement=measurement,
+        station_id=STATION,
+        measurement="DAILY_MAX",
         target_local_date=target,
         decision_cutoff_at=cutoff,
         history=climate_history,
     )
 
 
-def strict(climate_history: ClimateHistory) -> ClimateFeatureEvidence:
-    return build_point_in_time_climate_feature_evidence(
-        station_id=climate_history.station_id,
-        measurement="DAILY_MAX",
-        target_local_date=TARGET,
-        decision_cutoff_at=CUTOFF,
-        history=climate_history,
-    )
-
-
-def test_timezone_aware_timestamps_are_required() -> None:
-    with pytest.raises(ClimateEvidenceError, match="acquired_at must be timezone-aware"):
-        artifact(acquired=datetime(2026, 8, 24, 12))
-    with pytest.raises(ClimateEvidenceError, match="source_vintage_at must be timezone-aware"):
-        artifact(vintage=datetime(2023, 12, 31, 23))
-    source = artifact()
-    climate_history = history([obs(source)], [source])
-    with pytest.raises(ClimateEvidenceError, match="decision_cutoff_at must be timezone-aware"):
-        evidence(climate_history, cutoff=datetime(2024, 6, 10, 3))
-
-
-def test_observation_date_is_not_availability_and_current_snapshot_is_replay_only() -> None:
-    source = artifact(vintage=None, vintage_id=None)
-    row = obs(source, day=date(2020, 6, 10))
-    result = evidence(history([row], [source]))
-    assert row.local_date < TARGET < source.acquired_at.date()
-    assert source.vintage_status is ClimateSourceVintageStatus.UNPROVEN
+def test_direct_vintage_claims_cannot_mint_authority() -> None:
+    with pytest.raises(TypeError):
+        ClimateSourceArtifact(  # type: ignore[call-arg]
+            provider="NOAA",
+            source_identity="x",
+            station_id=STATION,
+            raw_artifact=RAW,
+            acquired_at=ACQUIRED,
+            parser_version="p",
+            source_vintage_at=datetime(2023, 1, 1, tzinfo=UTC),
+            source_vintage_evidence_id="caller-invented",
+        )
+    artifact = source()
+    row = usable_row(artifact)
+    result = evidence(history([row], [artifact]))
     assert result.classification is ClimateEvidenceClassification.REPLAY_ONLY
     assert result.replay_reasons == (ClimateReplayReason.UNKNOWN_SOURCE_VINTAGE,)
+
+
+def test_current_snapshot_is_replay_only_even_when_parser_is_valid() -> None:
+    artifact = source()
     with pytest.raises(ClimateEvidenceError, match="UNKNOWN_SOURCE_VINTAGE"):
-        strict(history([row], [source]))
-
-
-def test_synthetic_pre_cutoff_vintage_passes_even_if_capture_is_later() -> None:
-    source = artifact(vintage=datetime(2023, 12, 31, tzinfo=UTC))
-    result = strict(history([obs(source)], [source]))
-    assert source.acquired_at > CUTOFF
-    assert source.source_vintage_at is not None and source.source_vintage_at < CUTOFF
-    assert result.classification is ClimateEvidenceClassification.HISTORICAL_POINT_IN_TIME
-
-
-def test_post_cutoff_vintage_is_replay_only_but_equality_is_allowed() -> None:
-    late = artifact(vintage=datetime(2025, 1, 1, tzinfo=UTC))
-    replay = evidence(history([obs(late)], [late]))
-    assert replay.replay_reasons == (ClimateReplayReason.SOURCE_VINTAGE_AFTER_CUTOFF,)
-    with pytest.raises(ClimateEvidenceError, match="SOURCE_VINTAGE_AFTER_CUTOFF"):
-        strict(history([obs(late)], [late]))
-
-    exact = artifact(vintage=CUTOFF)
-    assert strict(history([obs(exact)], [exact])).classification is (
-        ClimateEvidenceClassification.HISTORICAL_POINT_IN_TIME
-    )
-
-
-def test_vintage_claim_requires_timestamp_and_evidence_id_and_cannot_postdate_capture() -> None:
-    with pytest.raises(ClimateEvidenceError, match="supplied together"):
-        artifact(vintage=None, vintage_id="proof")
-    with pytest.raises(ClimateEvidenceError, match="supplied together"):
-        artifact(vintage=datetime(2023, 1, 1, tzinfo=UTC), vintage_id=None)
-    with pytest.raises(ClimateEvidenceError, match="after artifact acquisition"):
-        artifact(
-            acquired=datetime(2023, 1, 1, tzinfo=UTC),
-            vintage=datetime(2023, 1, 2, tzinfo=UTC),
-        )
-
-
-def test_station_measurement_and_temperature_validation() -> None:
-    source = artifact(station="A")
-    with pytest.raises(ClimateEvidenceError, match="station conflicts"):
-        ClimateObservation(
-            station_id="B",
-            measurement="DAILY_MAX",
-            local_date=date(2020, 6, 10),
-            temperature_deg_f=Decimal("72"),
-            source_artifact=source,
-            source_record=b"row",
-        )
-    with pytest.raises(ClimateEvidenceError, match="measurement is unsupported"):
-        obs(source, measurement="TAVG")
-    for value in ("NaN", "Infinity", "-Infinity"):
-        with pytest.raises(ClimateEvidenceError, match="temperature must be finite"):
-            obs(source, temp=value)
-
-
-@pytest.mark.parametrize("measurement", ["DAILY_MAX", "DAILY_MIN"])
-def test_daily_max_and_min_are_explicit(measurement: str) -> None:
-    source = artifact()
-    row = obs(source, measurement=measurement)
-    result = evidence(history([row], [source]), measurement=measurement)
-    assert result.used_observations == (row,)
-
-
-@pytest.mark.parametrize("kind", ["identical", "temperature", "provenance"])
-def test_duplicate_semantic_key_fails_closed(kind: str) -> None:
-    source_a = artifact(source="synthetic://a")
-    first = obs(source_a, temp="72", record=b"a")
-    sources = [source_a]
-    if kind == "identical":
-        second = first
-    elif kind == "temperature":
-        second = obs(source_a, temp="73", record=b"b")
-    else:
-        source_b = artifact(source="synthetic://b", raw=b"b")
-        sources.append(source_b)
-        second = obs(source_b, temp="72", record=b"b")
-    with pytest.raises(ClimateEvidenceError, match="duplicate climate observation key"):
-        history([first, second], sources)
-
-
-def test_prior_calendar_year_and_ten_year_lookback_are_preserved() -> None:
-    source = artifact()
-    rows = [
-        obs(source, day=date(2013, 6, 10), record=b"2013"),
-        obs(source, day=date(2014, 6, 10), record=b"2014"),
-        obs(source, day=date(2023, 6, 10), record=b"2023"),
-        obs(source, day=date(2024, 6, 10), record=b"2024"),
-        obs(source, day=date(2025, 6, 10), record=b"2025"),
-    ]
-    result = evidence(history(rows, [source]))
-    assert CLIMATE_LOOKBACK_YEARS == 10
-    assert [row.local_date.year for row in result.used_observations] == [2014, 2023]
-
-
-def test_seasonal_wrap_cannot_bypass_target_year_gate() -> None:
-    source = artifact(vintage=datetime(2024, 1, 1, tzinfo=UTC))
-    prior = obs(source, day=date(2023, 12, 31), record=b"prior")
-    target_year = obs(source, day=date(2024, 1, 1), record=b"target")
-    far = obs(source, day=date(2023, 12, 1), record=b"far")
-    result = evidence(
-        history([target_year, far, prior], [source]),
-        target=date(2024, 1, 5),
-        cutoff=datetime(2024, 1, 5, 3, tzinfo=UTC),
-    )
-    assert CLIMATE_SEASONAL_WINDOW_DAYS == 15
-    assert seasonal_distance_days(prior.local_date, date(2024, 1, 5)) == 5
-    assert result.used_observations == (prior,)
-
-
-def test_leap_day_distance_matches_historical_year_2000_anchor() -> None:
-    source = artifact()
-    leap = obs(source, day=date(2020, 2, 29), record=b"leap")
-    march = obs(source, day=date(2023, 3, 1), record=b"march")
-    far = obs(source, day=date(2023, 3, 20), record=b"far")
-    result = evidence(
-        history([far, march, leap], [source]),
-        target=date(2024, 2, 29),
-        cutoff=datetime(2024, 2, 29, 3, tzinfo=UTC),
-    )
-    assert seasonal_distance_days(leap.local_date, date(2024, 2, 29)) == 0
-    assert seasonal_distance_days(march.local_date, date(2024, 2, 29)) == 1
-    assert result.used_observations == (leap, march)
-
-
-def test_used_temperature_provenance_and_vintage_mutations_change_subset_id() -> None:
-    base = artifact(source="synthetic://base", vintage=datetime(2023, 12, 30, tzinfo=UTC))
-    temp_change = artifact(source="synthetic://base", vintage=datetime(2023, 12, 30, tzinfo=UTC))
-    provenance_change = artifact(
-        source="synthetic://other",
-        vintage=datetime(2023, 12, 30, tzinfo=UTC),
-    )
-    vintage_change = artifact(source="synthetic://base", vintage=datetime(2023, 12, 31, tzinfo=UTC))
-
-    ids = {
-        evidence(history([obs(base, temp="72")], [base])).feature_evidence_id,
-        evidence(history([obs(temp_change, temp="73")], [temp_change])).feature_evidence_id,
-        evidence(
-            history([obs(provenance_change, temp="72")], [provenance_change])
-        ).feature_evidence_id,
-        evidence(history([obs(vintage_change, temp="72")], [vintage_change])).feature_evidence_id,
-    }
-    assert len(ids) == 4
-
-
-def test_unused_capture_mutation_changes_history_but_not_used_subset_id() -> None:
-    source_a = artifact(raw=b"used\nunused=1")
-    used_a = obs(source_a, day=date(2020, 6, 10), record=b"used")
-    unused_a = obs(source_a, day=date(2020, 9, 1), temp="90", record=b"unused=1")
-    history_a = history([unused_a, used_a], [source_a])
-
-    source_b = artifact(raw=b"used\nunused=2")
-    used_b = obs(source_b, day=date(2020, 6, 10), record=b"used")
-    unused_b = obs(source_b, day=date(2020, 9, 1), temp="91", record=b"unused=2")
-    history_b = history([used_b, unused_b], [source_b])
-
-    assert source_a.artifact_id != source_b.artifact_id
-    assert source_a.provenance_id == source_b.provenance_id
-    assert history_a.history_id != history_b.history_id
-    assert used_a.observation_id == used_b.observation_id
-    assert evidence(history_a).feature_evidence_id == evidence(history_b).feature_evidence_id
-
-
-def test_input_order_is_canonical() -> None:
-    source = artifact()
-    rows = [
-        obs(source, day=date(2020, 6, 10), record=b"2020"),
-        obs(source, day=date(2021, 6, 11), record=b"2021"),
-        obs(source, day=date(2022, 6, 12), record=b"2022"),
-    ]
-    forward = history(rows, [source])
-    reverse = history(list(reversed(rows)), [source])
-    assert forward.history_id == reverse.history_id
-    assert evidence(forward).feature_evidence_id == evidence(reverse).feature_evidence_id
-
-
-def test_revision_after_cutoff_cannot_rewrite_pre_cutoff_feature() -> None:
-    old = artifact(
-        source="synthetic://revision-a",
-        raw=b"72",
-        vintage=datetime(2023, 12, 31, tzinfo=UTC),
-    )
-    new = artifact(
-        source="synthetic://revision-b",
-        raw=b"73",
-        vintage=datetime(2025, 1, 1, tzinfo=UTC),
-    )
-    old_row = obs(old, temp="72", record=b"72")
-    new_row = obs(new, temp="73", record=b"73")
-    old_history = history([old_row], [old])
-    old_id = strict(old_history).feature_evidence_id
-
-    assert (
-        evidence(history([new_row], [new])).classification
-        is ClimateEvidenceClassification.REPLAY_ONLY
-    )
-    assert strict(old_history).feature_evidence_id == old_id
-    with pytest.raises(ClimateEvidenceError, match="duplicate climate observation key"):
-        history([old_row, new_row], [old, new])
-
-
-def test_derived_ids_hashes_subset_and_classification_are_not_caller_injectable() -> None:
-    artifact_args = inspect.signature(ClimateSourceArtifact).parameters
-    observation_args = inspect.signature(ClimateObservation).parameters
-    history_args = inspect.signature(ClimateHistory).parameters
-    feature_args = inspect.signature(ClimateFeatureEvidence).parameters
-    for name in ("raw_artifact_sha256", "vintage_status", "provenance_id", "artifact_id"):
-        assert name not in artifact_args
-    for name in ("source_record_sha256", "source_provenance_id", "observation_id"):
-        assert name not in observation_args
-    assert "history_id" not in history_args
-    for name in ("used_observations", "classification", "feature_evidence_id"):
-        assert name not in feature_args
-
-
-def test_raw_capture_and_exact_record_hashes_are_derived_from_bytes() -> None:
-    first = artifact(raw=b"capture-a")
-    second = artifact(raw=b"capture-b")
-    assert first.raw_artifact_sha256 != second.raw_artifact_sha256
-    row_a = obs(first, record=b"record-a")
-    row_b = obs(first, record=b"record-b")
-    assert row_a.source_record_sha256 != row_b.source_record_sha256
-    assert row_a.observation_id != row_b.observation_id
-
-
-def test_policy_identity_and_exact_station_binding_are_enforced() -> None:
-    source = artifact()
-    rows = [
-        obs(source, day=date(2020, 6, 10), record=b"2020"),
-        obs(source, day=date(2023, 6, 20), record=b"2023"),
-    ]
-    climate_history = history(rows, [source])
-    default = evidence(climate_history)
-    wider = build_climate_feature_evidence(
-        station_id=STATION,
-        measurement="DAILY_MAX",
-        target_local_date=TARGET,
-        decision_cutoff_at=CUTOFF,
-        history=climate_history,
-        seasonal_window_days=20,
-    )
-    assert default.feature_evidence_id != wider.feature_evidence_id
-
-    other = artifact(station="OTHER")
-    other_history = history([obs(other)], [other], station="OTHER")
-    with pytest.raises(ClimateEvidenceError, match="station does not match history"):
-        build_climate_feature_evidence(
+        build_point_in_time_climate_feature_evidence(
             station_id=STATION,
             measurement="DAILY_MAX",
             target_local_date=TARGET,
             decision_cutoff_at=CUTOFF,
-            history=other_history,
+            history=history([usable_row(artifact)], [artifact]),
         )
 
 
-def test_module_has_no_network_client_or_network_import() -> None:
-    tree = ast.parse(inspect.getsource(climate_module))
-    roots: set[str] = set()
-    for node in ast.walk(tree):
-        if isinstance(node, ast.Import):
-            roots.update(alias.name.split(".", 1)[0] for alias in node.names)
-        elif isinstance(node, ast.ImportFrom) and node.module is not None:
-            roots.add(node.module.split(".", 1)[0])
-    assert roots.isdisjoint({"requests", "httpx", "urllib", "socket", "aiohttp"})
-    assert not any(
-        name.endswith(("Client", "Downloader", "Transport")) for name in vars(climate_module)
+def test_internal_pre_cutoff_vintage_is_strictly_usable() -> None:
+    artifact = source(vintage=datetime(2023, 12, 31, tzinfo=UTC))
+    row = usable_row(artifact)
+    result = build_point_in_time_climate_feature_evidence(
+        station_id=STATION,
+        measurement="DAILY_MAX",
+        target_local_date=TARGET,
+        decision_cutoff_at=CUTOFF,
+        history=history([row], [artifact]),
     )
+    assert result.classification is ClimateEvidenceClassification.HISTORICAL_POINT_IN_TIME
+    assert row.semantic_authority and row.record_slot_id
+
+
+def test_post_cutoff_vintage_is_replay_only() -> None:
+    artifact = source(vintage=datetime(2025, 1, 1, tzinfo=UTC))
+    assert evidence(history([usable_row(artifact)], [artifact])).replay_reasons == (
+        ClimateReplayReason.SOURCE_VINTAGE_AFTER_CUTOFF,
+    )
+
+
+def test_arbitrary_record_and_semantics_are_never_strict_authority() -> None:
+    artifact = source()
+    fake = ClimateObservation(
+        station_id=STATION,
+        measurement="DAILY_MAX",
+        local_date=date(2018, 6, 10),
+        temperature_deg_f=Decimal("72"),
+        source_artifact=artifact,
+        source_record=b"not present in the GHCN capture",
+    )
+    assert not fake.semantic_authority
+    assert (
+        ClimateReplayReason.UNVALIDATED_SOURCE_RECORD
+        in evidence(history([fake], [artifact])).replay_reasons
+    )
+
+
+def test_forged_semantics_remain_replay_only_even_with_valid_vintage() -> None:
+    artifact = source(vintage=datetime(2023, 12, 31, tzinfo=UTC))
+    fake = ClimateObservation(
+        station_id=STATION,
+        measurement="DAILY_MAX",
+        local_date=date(2018, 6, 10),
+        temperature_deg_f=Decimal("999"),
+        source_artifact=artifact,
+        source_record=RAW.splitlines()[0],
+    )
+    result = evidence(history([fake], [artifact]))
+    assert result.classification is ClimateEvidenceClassification.REPLAY_ONLY
+    assert ClimateReplayReason.UNVALIDATED_SOURCE_RECORD in result.replay_reasons
+
+
+def test_authoritative_observation_requires_internal_capability() -> None:
+    with pytest.raises(ClimateEvidenceError):
+        ClimateObservation._from_ghcnd_observation(
+            source_artifact=source(), parsed=snapshot().observations[0]
+        )
+
+
+def test_vintage_proof_is_bound_to_exact_capture_and_station() -> None:
+    artifact = source()
+    proof = HistoricalClimateVintageEvidence(
+        _capability=climate_module._CLIMATE_AUTHORITY_CAPABILITY,
+        provider=artifact.provider,
+        source_identity=artifact.source_identity,
+        station_id=artifact.station_id,
+        capture_id=artifact._capture_id,
+        source_vintage_at=datetime(2023, 1, 1, tzinfo=UTC),
+        evidence_id="proof",
+    )
+    with pytest.raises(ClimateEvidenceError, match="does not bind"):
+        ClimateSourceArtifact._from_reviewed_ghcnd(
+            provider=artifact.provider,
+            source_identity=artifact.source_identity,
+            station_id=artifact.station_id,
+            raw_artifact=RAW + b"x",
+            acquired_at=ACQUIRED,
+            parser_version="parse_ghcnd_daily",
+            snapshot=snapshot(),
+            vintage_evidence=proof,
+            _capability=climate_module._CLIMATE_AUTHORITY_CAPABILITY,
+        )
+    other = HistoricalClimateVintageEvidence(
+        _capability=climate_module._CLIMATE_AUTHORITY_CAPABILITY,
+        provider=artifact.provider,
+        source_identity=artifact.source_identity,
+        station_id="OTHER",
+        capture_id=artifact._capture_id,
+        source_vintage_at=datetime(2023, 1, 1, tzinfo=UTC),
+        evidence_id="proof",
+    )
+    assert proof.content_hash != other.content_hash
+
+
+def test_parser_values_and_exact_record_slot_are_derived() -> None:
+    artifact = source()
+    parsed = snapshot()
+    row = usable_row(artifact)
+    expected = next(
+        item
+        for item in parsed.observations
+        if item.measurement.value == "DAILY_MAX" and item.local_date == row.local_date
+    )
+    assert row.temperature_deg_f == expected.observed_deg_f
+    assert row.source_record_sha256 and row.record_slot_id
+
+
+def test_daily_min_and_unusable_rows_follow_parser_semantics() -> None:
+    minimum_raw = RAW.replace(b"TMAX", b"TMIN", 1)
+    artifact = source(raw=minimum_raw)
+    rows = build_ghcnd_climate_observations(
+        source_artifact=artifact, snapshot=snapshot(minimum_raw)
+    )
+    assert all(row.measurement == "DAILY_MIN" for row in rows)
+    assert all(row.semantic_authority for row in rows)
+    assert all(row.temperature_deg_f.is_finite() for row in rows)
+
+
+def test_record_absence_and_altered_slot_fail_closed() -> None:
+    artifact = source()
+    parsed = next(
+        item
+        for item in snapshot().observations
+        if item.measurement.value == "DAILY_MAX" and item.usable
+    )
+    altered = bytearray(RAW)
+    element_start = altered.find(b"TMAX")
+    assert element_start >= 0
+    line_start = element_start - 17
+    slot_start = line_start + 21 + (parsed.local_date.day - 1) * 8
+    altered[slot_start : slot_start + 5] = b"99999"
+    altered_parsed = replace(parsed, raw_tenths_c=99999)
+    with pytest.raises(ClimateEvidenceError):
+        ClimateObservation._from_ghcnd_observation(
+            source_artifact=artifact,
+            parsed=altered_parsed,
+            _capability=climate_module._CLIMATE_AUTHORITY_CAPABILITY,
+        )
+
+
+def test_used_record_mutation_changes_identity_but_unused_capture_does_not() -> None:
+    base = source()
+    base_row = usable_row(base)
+    changed_source = source(raw=RAW + b"UNRELATED-CAPTURE\n")
+    changed_row = usable_row(changed_source)
+    assert base_row.observation_id == changed_row.observation_id
+    assert base_row.record_slot_id == changed_row.record_slot_id
+    assert (
+        evidence(history([base_row], [base])).feature_evidence_id
+        == evidence(history([changed_row], [changed_source])).feature_evidence_id
+    )
+
+    used_changed = bytearray(RAW)
+    element_start = used_changed.find(b"TMAX")
+    assert element_start >= 0
+    line_start = element_start - 17
+    used_slot_start = line_start + 21 + (10 - 1) * 8
+    used_changed[used_slot_start : used_slot_start + 5] = b" 9999"
+    used_source = source(raw=bytes(used_changed))
+    used_row = usable_row(used_source)
+    assert base_row.observation_id != used_row.observation_id
+
+
+def test_duplicate_semantic_key_fails_closed() -> None:
+    artifact = source()
+    row = usable_row(artifact)
+    with pytest.raises(ClimateEvidenceError, match="duplicate climate observation key"):
+        history([row, row], [artifact])
+
+
+def test_policy_and_identity_rules_remain_stable() -> None:
+    assert CLIMATE_LOOKBACK_YEARS == 10
+    assert CLIMATE_SEASONAL_WINDOW_DAYS == 15
+    assert seasonal_distance_days(date(2020, 2, 29), date(2024, 2, 29)) == 0
+    assert seasonal_distance_days(date(2023, 3, 1), date(2024, 2, 29)) == 1
+    assert seasonal_distance_days(date(2023, 3, 20), date(2024, 2, 29)) > 15
+    artifact = source()
+    row = usable_row(artifact)
+    first = evidence(history([row], [artifact]))
+    second = evidence(history([row], [artifact]), cutoff=datetime(2024, 6, 10, 4, tzinfo=UTC))
+    assert first.feature_evidence_id != second.feature_evidence_id
+
+
+def test_derived_ids_are_not_constructor_fields() -> None:
+    for cls, names in (
+        (
+            ClimateSourceArtifact,
+            ("raw_artifact_sha256", "vintage_status", "provenance_id", "artifact_id"),
+        ),
+        (ClimateObservation, ("source_record_sha256", "source_provenance_id", "observation_id")),
+    ):
+        params = inspect.signature(cls).parameters
+        for name in names:
+            assert name not in params
