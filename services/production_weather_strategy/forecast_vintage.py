@@ -221,7 +221,9 @@ class ForecastVintageEvidence:
             _capability is not _FORECAST_VINTAGE_EVIDENCE_CONSTRUCTION_CAPABILITY
             or _values is None
         ):
-            raise ForecastVintageError("forecast vintage evidence must be issued by reviewed builder")
+            raise ForecastVintageError(
+                "forecast vintage evidence must be issued by reviewed builder"
+            )
         for name in (
             "classification",
             "provider",
