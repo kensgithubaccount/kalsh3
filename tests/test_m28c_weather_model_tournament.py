@@ -351,7 +351,7 @@ def test_strict_climate_evidence_is_required_and_semantics_must_match() -> None:
     checkpoints = _checkpoints(datasets)
     event = datasets[0].events[0]
     source_station = PHYSICAL_WEATHER_SOURCES[event.station_id].ghcnd_station_id
-    replay_history = _climate_history(event.event_id if False else event.station_id, strict=False)
+    replay_history = _climate_history(event.station_id, strict=False)
     replay = build_climate_feature_evidence(
         station_id=source_station,
         measurement=event.measurement,
