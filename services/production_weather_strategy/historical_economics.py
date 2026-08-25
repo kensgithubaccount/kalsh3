@@ -14,6 +14,7 @@ from decimal import Decimal, InvalidOperation
 from enum import StrEnum
 
 from services.historical_replay.archive import stable_hash
+from services.opportunity_engine.fees import FeeEstimateQuality, FeePolicy
 from services.production_weather_strategy.model_tournament import (
     HISTORICAL_MARKET_RESPONSE_SCHEMA_VERSION,
     MARKET_CANDLE_INTERVAL_MINUTES,
@@ -25,6 +26,10 @@ from services.production_weather_strategy.model_tournament import (
 EXECUTABLE_QUOTE_SCHEMA_VERSION = "m28d-r1-executable-quote-evidence-v1"
 EXECUTABLE_QUOTE_STALENESS_POLICY_VERSION = "m28d-r1-max-one-canonical-candle-v1"
 MAX_EXECUTABLE_QUOTE_STALENESS_SECONDS = MARKET_CANDLE_INTERVAL_MINUTES * 60
+HISTORICAL_FEE_POLICY_EVIDENCE_SCHEMA_VERSION = "m28d-r1-historical-fee-policy-evidence-v1"
+HISTORICAL_FEE_POLICY_SEMANTICS_VERSION = "m28d-r1-reviewed-fee-policy-semantics-v1"
+FEE_ROUNDING_RULE = "ROUND_CEILING_TO_BALANCE_INCREMENT"
+_HISTORICAL_FEE_POLICY_AUTHORITY_CAPABILITY = object()
 
 
 class HistoricalEconomicsEvidenceError(ValueError):
@@ -230,3 +235,168 @@ def _aware_utc(value: datetime, *, field_name: str) -> datetime:
     if value.tzinfo is None or value.utcoffset() is None:
         raise HistoricalEconomicsEvidenceError(f"{field_name} must be timezone-aware")
     return value.astimezone(UTC)
+
+
+@dataclass(frozen=True, slots=True, init=False)
+class HistoricalFeePolicyEvidence:
+    """Capability-gated reviewed fee policy applicable at one historical checkpoint."""
+
+    policy_id: str
+    checkpoint_at: datetime
+    effective_at: datetime
+    retired_at: datetime | None
+    source_reference: str
+    formula_version: str
+    fee_type: str
+    fee_multiplier: Decimal
+    flat_rate: Decimal | None
+    quadratic_coefficient: Decimal | None
+    maker_quadratic_coefficient: Decimal | None
+    balance_rounding_increment: Decimal
+    rounding_rule: str
+    policy_content_hash: str
+    review_evidence_id: str
+    fee_estimate_quality: FeeEstimateQuality
+    final_exchange_fee_known: bool
+    schema_version: str
+    evidence_id: str
+    content_hash: str
+
+    def __init__(
+        self,
+        *,
+        policy: FeePolicy,
+        checkpoint_at: datetime,
+        review_evidence_id: str,
+        _capability: object | None = None,
+    ) -> None:
+        if _capability is not _HISTORICAL_FEE_POLICY_AUTHORITY_CAPABILITY:
+            raise HistoricalEconomicsEvidenceError(
+                "historical fee policy evidence requires internal reviewed capability"
+            )
+        if not isinstance(policy, FeePolicy):
+            raise HistoricalEconomicsEvidenceError("explicit reviewed FeePolicy is required")
+        checkpoint = _aware_utc(checkpoint_at, field_name="fee-policy checkpoint")
+        effective = _aware_utc(policy.effective_at, field_name="fee-policy effective time")
+        retired = (
+            _aware_utc(policy.retired_at, field_name="fee-policy retired time")
+            if policy.retired_at is not None
+            else None
+        )
+        if not policy.verified:
+            raise HistoricalEconomicsEvidenceError("historical fee policy is not reviewed")
+        if checkpoint < effective:
+            raise HistoricalEconomicsEvidenceError("historical fee policy is not yet effective")
+        if retired is not None and checkpoint >= retired:
+            raise HistoricalEconomicsEvidenceError("historical fee policy is expired")
+        if not policy.applies_at(checkpoint):
+            raise HistoricalEconomicsEvidenceError(
+                "historical fee policy does not cover checkpoint"
+            )
+        review_id = review_evidence_id.strip()
+        if not review_id:
+            raise HistoricalEconomicsEvidenceError(
+                "fee policy review evidence identity is required"
+            )
+        source_reference = policy.source_reference.strip()
+        formula_version = policy.formula_version.strip()
+        if not policy.policy_id.strip() or not source_reference or not formula_version:
+            raise HistoricalEconomicsEvidenceError("fee policy identity is incomplete")
+        _validate_fee_decimal(policy.fee_multiplier, field_name="fee multiplier", allow_zero=True)
+        _validate_fee_decimal(
+            policy.balance_rounding_increment,
+            field_name="fee rounding increment",
+            allow_zero=False,
+        )
+        for value, name in (
+            (policy.flat_rate, "flat rate"),
+            (policy.quadratic_coefficient, "quadratic coefficient"),
+            (policy.maker_quadratic_coefficient, "maker quadratic coefficient"),
+        ):
+            if value is not None:
+                _validate_fee_decimal(value, field_name=name, allow_zero=True)
+        policy_hash = stable_hash(
+            (
+                HISTORICAL_FEE_POLICY_SEMANTICS_VERSION,
+                policy.policy_id,
+                effective.isoformat(),
+                retired.isoformat() if retired is not None else None,
+                source_reference,
+                formula_version,
+                policy.fee_type.value,
+                str(policy.fee_multiplier),
+                str(policy.flat_rate) if policy.flat_rate is not None else None,
+                (
+                    str(policy.quadratic_coefficient)
+                    if policy.quadratic_coefficient is not None
+                    else None
+                ),
+                (
+                    str(policy.maker_quadratic_coefficient)
+                    if policy.maker_quadratic_coefficient is not None
+                    else None
+                ),
+                str(policy.balance_rounding_increment),
+                FEE_ROUNDING_RULE,
+                policy.verified,
+                str(policy.production_influence),
+            )
+        )
+        digest = stable_hash(
+            (
+                HISTORICAL_FEE_POLICY_EVIDENCE_SCHEMA_VERSION,
+                policy_hash,
+                checkpoint.isoformat(),
+                review_id,
+                FeeEstimateQuality.DETERMINISTIC_FORMULA_ONLY.value,
+                False,
+            )
+        )
+        values = {
+            "policy_id": policy.policy_id,
+            "checkpoint_at": checkpoint,
+            "effective_at": effective,
+            "retired_at": retired,
+            "source_reference": source_reference,
+            "formula_version": formula_version,
+            "fee_type": policy.fee_type.value,
+            "fee_multiplier": policy.fee_multiplier,
+            "flat_rate": policy.flat_rate,
+            "quadratic_coefficient": policy.quadratic_coefficient,
+            "maker_quadratic_coefficient": policy.maker_quadratic_coefficient,
+            "balance_rounding_increment": policy.balance_rounding_increment,
+            "rounding_rule": FEE_ROUNDING_RULE,
+            "policy_content_hash": policy_hash,
+            "review_evidence_id": review_id,
+            "fee_estimate_quality": FeeEstimateQuality.DETERMINISTIC_FORMULA_ONLY,
+            "final_exchange_fee_known": False,
+            "schema_version": HISTORICAL_FEE_POLICY_EVIDENCE_SCHEMA_VERSION,
+            "evidence_id": digest,
+            "content_hash": digest,
+        }
+        for name, value in values.items():
+            object.__setattr__(self, name, value)
+
+
+def _issue_historical_fee_policy_evidence(
+    *,
+    policy: FeePolicy,
+    checkpoint_at: datetime,
+    review_evidence_id: str,
+    _capability: object | None = None,
+) -> HistoricalFeePolicyEvidence:
+    """Private synthetic/review seam; not a public fee-policy authority issuer."""
+
+    return HistoricalFeePolicyEvidence(
+        policy=policy,
+        checkpoint_at=checkpoint_at,
+        review_evidence_id=review_evidence_id,
+        _capability=_capability,
+    )
+
+
+def _validate_fee_decimal(value: Decimal, *, field_name: str, allow_zero: bool) -> None:
+    if not isinstance(value, Decimal) or not value.is_finite():
+        raise HistoricalEconomicsEvidenceError(f"{field_name} must be a finite Decimal")
+    if value < 0 or (not allow_zero and value == 0):
+        raise HistoricalEconomicsEvidenceError(f"{field_name} is invalid")
