@@ -48,11 +48,11 @@ from services.production_weather_strategy.model_tournament import (
     run_model_tournament,
 )
 from services.production_weather_strategy.settlement_dataset import (
+    _PAGE_EVIDENCE_CAPABILITY,
     SETTLEMENT_MAPPING_ID,
     AcquisitionBoundMarketRow,
     PublicPageEvidence,
     WeatherSettlementDataset,
-    _PAGE_EVIDENCE_CAPABILITY,
     build_evidence_bound_weather_dataset,
     build_weather_settlement_dataset,
 )
@@ -351,7 +351,7 @@ def test_strict_climate_evidence_is_required_and_semantics_must_match() -> None:
     checkpoints = _checkpoints(datasets)
     event = datasets[0].events[0]
     source_station = PHYSICAL_WEATHER_SOURCES[event.station_id].ghcnd_station_id
-    replay_history = _climate_history(event.station_id, strict=False)
+    replay_history = _climate_history(event.event_id if False else event.station_id, strict=False)
     replay = build_climate_feature_evidence(
         station_id=source_station,
         measurement=event.measurement,
@@ -585,7 +585,10 @@ def test_temporal_split_is_single_authority_and_siblings_never_cross_partitions(
         assert previous is row.partition
     corrupted = replace(
         datasets[0],
-        validation_event_ids=(datasets[0].train_event_ids[0],) + datasets[0].validation_event_ids,
+        validation_event_ids=(
+            datasets[0].train_event_ids[0],
+            *datasets[0].validation_event_ids,
+        ),
     )
     with pytest.raises(ModelTournamentError, match="overlap"):
         build_feature_dataset(
@@ -632,7 +635,7 @@ def test_test_labels_cannot_influence_fit_city_calibration_ensemble_or_threshold
     changed = run_model_tournament(_mutate_outcomes(features, {TournamentPartition.TEST}))
     assert changed.fit == baseline.fit
     assert changed.fit.content_hash == baseline.fit.content_hash
-    assert EDGE_THRESHOLD == Decimal("0.10")
+    assert Decimal("0.10") == EDGE_THRESHOLD
 
 
 def test_validation_and_test_labels_cannot_influence_train_only_fit_or_calibration() -> None:
