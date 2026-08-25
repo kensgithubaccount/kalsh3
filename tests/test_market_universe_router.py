@@ -1,3 +1,4 @@
+from copy import copy
 from dataclasses import replace
 from datetime import UTC, datetime
 from decimal import Decimal
@@ -237,6 +238,92 @@ def test_invalid_broad_descriptor_is_visible_but_not_a_semantic_blocker() -> Non
 def _previous(result):
     record = result.records[0]
     return {record.market_ticker: record}
+
+
+def _tampered_previous(record, **changes: object):
+    tampered = copy(record)
+    for name, value in changes.items():
+        object.__setattr__(tampered, name, value)
+    return {record.market_ticker: tampered}
+
+
+def test_arbitrary_previous_object_is_rejected_before_supersession() -> None:
+    with pytest.raises(UniverseCensusError, match="must be a MarketLifecycleRecord"):
+        census(
+            [market(rules_primary="The official value is at least 11.")],
+            previous_records={"KXEVENT-10": object()},
+        )
+
+
+def test_attribute_compatible_previous_object_cannot_inject_supersession_id() -> None:
+    first = census([market()])
+    prior = first.records[0]
+
+    class PlausiblePrevious:
+        market_ticker = prior.market_ticker
+        state = prior.state
+        semantic_material_hash = prior.semantic_material_hash
+        lifecycle_record_id = "caller-invented-prior-id"
+
+    with pytest.raises(UniverseCensusError, match="must be a MarketLifecycleRecord"):
+        census(
+            [market(rules_primary="The official value is at least 11.")],
+            previous_records={prior.market_ticker: PlausiblePrevious()},
+        )
+
+
+def test_tampered_previous_lifecycle_record_id_is_rejected() -> None:
+    first = census([market()])
+    prior = first.records[0]
+    with pytest.raises(UniverseCensusError, match="canonical identity is invalid"):
+        census(
+            [market(rules_primary="The official value is at least 11.")],
+            previous_records=_tampered_previous(prior, lifecycle_record_id="caller-invented"),
+        )
+
+
+def test_tampered_previous_content_hash_is_rejected() -> None:
+    first = census([market()])
+    prior = first.records[0]
+    with pytest.raises(UniverseCensusError, match="canonical identity is invalid"):
+        census(
+            [market(rules_primary="The official value is at least 11.")],
+            previous_records=_tampered_previous(prior, content_hash="caller-invented"),
+        )
+
+
+def test_tampered_previous_semantic_material_hash_is_rejected() -> None:
+    first = census([market()])
+    prior = first.records[0]
+    with pytest.raises(UniverseCensusError, match="canonical identity is invalid"):
+        census(
+            [market(rules_primary="The official value is at least 11.")],
+            previous_records=_tampered_previous(
+                prior, semantic_material_hash="caller-invented-material"
+            ),
+        )
+
+
+def test_tampered_previous_state_is_rejected() -> None:
+    first = census([market()])
+    prior = first.records[0]
+    with pytest.raises(UniverseCensusError, match="canonical identity is invalid"):
+        census(
+            [market(rules_primary="The official value is at least 11.")],
+            previous_records=_tampered_previous(prior, state=LifecycleState.DISCOVERED),
+        )
+
+
+def test_tampered_previous_semantic_proof_ids_are_rejected() -> None:
+    first = census([market()])
+    prior = first.records[0]
+    with pytest.raises(UniverseCensusError, match="canonical identity is invalid"):
+        census(
+            [market(rules_primary="The official value is at least 11.")],
+            previous_records=_tampered_previous(
+                prior, semantic_proof_ids=("caller-invented-proof",)
+            ),
+        )
 
 
 @pytest.mark.parametrize(
