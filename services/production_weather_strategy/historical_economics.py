@@ -308,13 +308,17 @@ class HistoricalFeePolicyEvidence:
             field_name="fee rounding increment",
             allow_zero=False,
         )
-        for value, name in (
+        for coefficient, coefficient_name in (
             (policy.flat_rate, "flat rate"),
             (policy.quadratic_coefficient, "quadratic coefficient"),
             (policy.maker_quadratic_coefficient, "maker quadratic coefficient"),
         ):
-            if value is not None:
-                _validate_fee_decimal(value, field_name=name, allow_zero=True)
+            if coefficient is not None:
+                _validate_fee_decimal(
+                    coefficient,
+                    field_name=coefficient_name,
+                    allow_zero=True,
+                )
         policy_hash = stable_hash(
             (
                 HISTORICAL_FEE_POLICY_SEMANTICS_VERSION,
@@ -352,7 +356,7 @@ class HistoricalFeePolicyEvidence:
                 False,
             )
         )
-        values = {
+        attributes: dict[str, object] = {
             "policy_id": policy.policy_id,
             "checkpoint_at": checkpoint,
             "effective_at": effective,
@@ -374,8 +378,8 @@ class HistoricalFeePolicyEvidence:
             "evidence_id": digest,
             "content_hash": digest,
         }
-        for name, value in values.items():
-            object.__setattr__(self, name, value)
+        for attribute_name, attribute_value in attributes.items():
+            object.__setattr__(self, attribute_name, attribute_value)
 
 
 def _issue_historical_fee_policy_evidence(
