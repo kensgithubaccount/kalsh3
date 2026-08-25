@@ -652,7 +652,9 @@ def _with_supersession(
     try:
         MarketLifecycleRecord._validate_canonical_identity(previous)
     except LifecycleError as exc:
-        raise UniverseCensusError("previous lifecycle record canonical identity is invalid") from exc
+        raise UniverseCensusError(
+            "previous lifecycle record canonical identity is invalid"
+        ) from exc
     if previous.market_ticker != current.market_ticker:
         raise UniverseCensusError("previous lifecycle record market identity mismatch")
     if previous.semantic_material_hash == current.semantic_material_hash:
