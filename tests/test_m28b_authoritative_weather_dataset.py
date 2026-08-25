@@ -34,9 +34,7 @@ from services.production_weather_strategy.settlement_dataset import (
 PRE_EXTENSION_SETTLEMENT_MAPPING_ID = (
     "184ad6fe2a8db66d6073ed01daed60a28bd41fb6250cec7aa7a8b55be26e8d23"
 )
-EXPECTED_SETTLEMENT_MAPPING_ID = (
-    "c6b61850a2111cea6dff427c8423b2752ae0f4ebe1bf4e7766ff1249eaec2dca"
-)
+EXPECTED_SETTLEMENT_MAPPING_ID = "c6b61850a2111cea6dff427c8423b2752ae0f4ebe1bf4e7766ff1249eaec2dca"
 
 
 def row(
@@ -301,9 +299,7 @@ def test_location_only_grammars_map_every_exact_reviewed_location(grammar: str) 
 
 
 def test_location_only_unreviewed_location_fails_closed() -> None:
-    value = row(
-        rule=exact_twc_rule(grammar="location_if", location="Austin-Bergstrom")
-    )
+    value = row(rule=exact_twc_rule(grammar="location_if", location="Austin-Bergstrom"))
     with pytest.raises(HistoricalWeatherDatasetError, match="unreviewed settlement location"):
         parse_resolved_temperature_market(value)
 
@@ -396,9 +392,7 @@ def test_location_only_forms_preserve_finality_and_strike_checks(grammar: str) -
     with pytest.raises(HistoricalWeatherDatasetError, match="status is not settled"):
         parse_resolved_temperature_market(row(status="closed", rule=exact))
     with pytest.raises(HistoricalWeatherDatasetError, match="settlement value conflicts"):
-        parse_resolved_temperature_market(
-            row(result="yes", settlement_value="0.0000", rule=exact)
-        )
+        parse_resolved_temperature_market(row(result="yes", settlement_value="0.0000", rule=exact))
     with pytest.raises(HistoricalWeatherDatasetError, match="strike values conflict"):
         parse_resolved_temperature_market(row(floor=99, rule=exact))
 
@@ -470,9 +464,7 @@ def test_location_only_contradictory_siblings_fail_closed() -> None:
         floor=70,
         cap=None,
         result="yes",
-        rule=exact_twc_rule(
-            grammar="location_if", strike_type="greater", floor=70, cap=None
-        ),
+        rule=exact_twc_rule(grammar="location_if", strike_type="greater", floor=70, cap=None),
     )
     yes_lt = row(
         event=event,
@@ -481,9 +473,7 @@ def test_location_only_contradictory_siblings_fail_closed() -> None:
         floor=None,
         cap=70,
         result="yes",
-        rule=exact_twc_rule(
-            grammar="location_if", strike_type="less", floor=None, cap=70
-        ),
+        rule=exact_twc_rule(grammar="location_if", strike_type="less", floor=None, cap=70),
     )
     with pytest.raises(HistoricalWeatherDatasetError, match="mutually contradictory"):
         build_weather_settlement_dataset((yes_gt, yes_lt))
