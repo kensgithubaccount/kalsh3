@@ -25,9 +25,7 @@ def _series(
     }
 
 
-def _event(
-    ticker: str = "KXEVENT", *, series_ticker: str = "KXSERIES"
-) -> dict[str, object]:
+def _event(ticker: str = "KXEVENT", *, series_ticker: str = "KXSERIES") -> dict[str, object]:
     return {
         "event_ticker": ticker,
         "series_ticker": series_ticker,
