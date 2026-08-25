@@ -2,14 +2,20 @@ from __future__ import annotations
 
 import json
 import warnings
+from collections.abc import Mapping
 from datetime import UTC, datetime
 
-from services.market_universe.router import MarketUniverseRouter
+from services.market_universe.lifecycle import MarketLifecycleRecord
+from services.market_universe.router import MarketUniverseRouter, UniverseCensusResult
 
 CAPTURED_AT = datetime(2026, 8, 25, 20, 0, tzinfo=UTC)
 
 
-def _series(*, source_name: str = "Official Source", source_url: str = "https://example.invalid") -> dict[str, object]:
+def _series(
+    *,
+    source_name: str = "Official Source",
+    source_url: str = "https://example.invalid",
+) -> dict[str, object]:
     return {
         "ticker": "KXSERIES",
         "title": "Test series",
@@ -19,7 +25,9 @@ def _series(*, source_name: str = "Official Source", source_url: str = "https://
     }
 
 
-def _event(ticker: str = "KXEVENT", *, series_ticker: str = "KXSERIES") -> dict[str, object]:
+def _event(
+    ticker: str = "KXEVENT", *, series_ticker: str = "KXSERIES"
+) -> dict[str, object]:
     return {
         "event_ticker": ticker,
         "series_ticker": series_ticker,
@@ -65,8 +73,8 @@ def _census(
     event_rows: list[dict[str, object]] | None = None,
     series_rows: list[dict[str, object]] | None = None,
     response_sha256: str = "a" * 64,
-    previous_records: dict[str, object] | None = None,
-):
+    previous_records: Mapping[str, MarketLifecycleRecord] | None = None,
+) -> UniverseCensusResult:
     return MarketUniverseRouter().census(
         market_rows=markets,
         event_rows=[_event()] if event_rows is None else event_rows,
@@ -75,11 +83,11 @@ def _census(
         request_locator="fixture://ku-a2-identity-freeze",
         response_sha256=response_sha256,
         captured_at=CAPTURED_AT,
-        previous_records=previous_records,  # type: ignore[arg-type]
+        previous_records=previous_records,
     )
 
 
-def _ids(result) -> dict[str, object]:
+def _ids(result: UniverseCensusResult) -> dict[str, object]:
     return {
         "lifecycle_record_ids": [record.lifecycle_record_id for record in result.records],
         "quarantine_ids": [record.quarantine_id for record in result.quarantines],
@@ -109,7 +117,15 @@ def test_capture_canonical_ku_a1_identity_baseline_before_private_router_refacto
     malformed_sibling.pop("rules_primary")
     baseline["mixed"] = _ids(_census([_market(), malformed_sibling]))
     baseline["settlement_sources"] = _ids(
-        _census([_market()], series_rows=[_series(source_name="Named Source", source_url="https://source.invalid/path")])
+        _census(
+            [_market()],
+            series_rows=[
+                _series(
+                    source_name="Named Source",
+                    source_url="https://source.invalid/path",
+                )
+            ],
+        )
     )
 
     first = _census([_market()])
