@@ -187,7 +187,7 @@ class MarketCheckpoint:
                     "checkpoint_id": digest,
                     "content_hash": digest,
                 }
-            )
+            ),
         )
 
 
@@ -393,8 +393,7 @@ def build_feature_dataset(
             missing_climate += 1
             continue
         yes_count = sum(
-            contract.predicate(row.temperature_deg_f)
-            for row in climate.used_observations
+            contract.predicate(row.temperature_deg_f) for row in climate.used_observations
         )
         climate_probability = (Decimal(yes_count) + Decimal(1)) / (
             Decimal(len(climate.used_observations)) + Decimal(2)
@@ -585,9 +584,7 @@ def run_model_tournament(dataset: TournamentFeatureDataset) -> ModelTournamentRe
     alpha, bias = _fit_pooled_residual(train)
     city_biases = _fit_city_biases(train, alpha, bias)
     slope, offset = _fit_calibration(train, alpha, bias, city_biases)
-    ensemble_weight = _fit_ensemble_weight(
-        validation, alpha, bias, city_biases, slope, offset
-    )
+    ensemble_weight = _fit_ensemble_weight(validation, alpha, bias, city_biases, slope, offset)
     selected_model = TournamentModel.CALIBRATED_ENSEMBLE
     fit_hash = stable_hash(
         (
@@ -754,9 +751,7 @@ def _validate_checkpoint(
 ) -> None:
     if checkpoint.market_ticker != contract.market_ticker:
         raise ModelTournamentError("market checkpoint ticker binding is invalid")
-    expected = datetime.combine(
-        contract.local_date, time(PREDICTION_CUTOFF_HOUR_UTC), tzinfo=UTC
-    )
+    expected = datetime.combine(contract.local_date, time(PREDICTION_CUTOFF_HOUR_UTC), tzinfo=UTC)
     if checkpoint.checkpoint_at != expected:
         raise ModelTournamentError("market checkpoint is not the exact reviewed 03Z cutoff")
     if checkpoint.checkpoint_at >= contract.settlement_at.astimezone(UTC):
@@ -805,9 +800,7 @@ def _validate_climate_feature(
             seasonal_distance_days(observation.local_date, contract.local_date)
             > CLIMATE_SEASONAL_WINDOW_DAYS
         ):
-            raise ModelTournamentError(
-                "climate used observation violates seasonal-window policy"
-            )
+            raise ModelTournamentError("climate used observation violates seasonal-window policy")
 
 
 def _reviewed_cutoff(value: datetime) -> datetime:
@@ -952,8 +945,7 @@ def _fit_ensemble_weight(
         weight = Decimal(step) / Decimal(20)
         predictions = {
             row.row_id: _clip(
-                weight
-                * _calibrated_city_prediction(row, alpha, bias, city_map, slope, offset)
+                weight * _calibrated_city_prediction(row, alpha, bias, city_map, slope, offset)
                 + (Decimal("1") - weight) * row.market_probability
             )
             for row in rows
@@ -1065,9 +1057,7 @@ def _event_weighted_brier(
 ) -> Decimal:
     grouped: dict[str, list[Decimal]] = defaultdict(list)
     for row in rows:
-        grouped[row.event_id].append(
-            (predictions[row.row_id] - Decimal(row.realized_yes)) ** 2
-        )
+        grouped[row.event_id].append((predictions[row.row_id] - Decimal(row.realized_yes)) ** 2)
     return _equal_event_mean(grouped, metric="Brier")
 
 
@@ -1112,9 +1102,7 @@ def _event_equal_calibration_gap(
 
 
 def _equal_event_mean(grouped: Mapping[str, Sequence[Decimal]], *, metric: str) -> Decimal:
-    event_values = [
-        sum(values, Decimal("0")) / Decimal(len(values)) for values in grouped.values()
-    ]
+    event_values = [sum(values, Decimal("0")) / Decimal(len(values)) for values in grouped.values()]
     if not event_values:
         raise ModelTournamentError(f"{metric} has no independent events")
     return sum(event_values, Decimal("0")) / Decimal(len(event_values))

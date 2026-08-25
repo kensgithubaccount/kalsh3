@@ -165,9 +165,7 @@ def test_legacy_only_series_is_explicit_exclusion_when_another_series_is_support
     client = FakeRecentClient(
         {
             "KXHIGHAUS": [_legacy_row()],
-            "KXHIGHCHI": [
-                _row(series="KXHIGHCHI", identifier="CLIMDW", location="Chicago")
-            ],
+            "KXHIGHCHI": [_row(series="KXHIGHCHI", identifier="CLIMDW", location="Chicago")],
         }
     )
     _, manifest = scope_recent_settled_markets(client, ("KXHIGHAUS", "KXHIGHCHI"))
@@ -197,9 +195,7 @@ def test_malformed_current_regime_fails_closed_instead_of_becoming_exclusion() -
     malformed = _row()
     malformed["floor_strike"] = 69
     with pytest.raises(HistoricalWeatherDatasetError, match="strike values conflict"):
-        scope_recent_settled_markets(
-            FakeRecentClient({"KXHIGHAUS": [malformed]}), ("KXHIGHAUS",)
-        )
+        scope_recent_settled_markets(FakeRecentClient({"KXHIGHAUS": [malformed]}), ("KXHIGHAUS",))
 
 
 def test_included_series_must_bind_exactly_one_reviewed_station() -> None:
@@ -219,18 +215,14 @@ def test_included_series_must_bind_exactly_one_reviewed_station() -> None:
 def test_scoping_does_not_infer_series_identity_from_requested_ticker() -> None:
     wrong = _row(series="KXHIGHCHI", identifier="CLIMDW", location="Chicago")
     with pytest.raises(SeriesScopeError, match="crossed its series identity"):
-        scope_recent_settled_markets(
-            FakeRecentClient({"KXHIGHAUS": [wrong]}), ("KXHIGHAUS",)
-        )
+        scope_recent_settled_markets(FakeRecentClient({"KXHIGHAUS": [wrong]}), ("KXHIGHAUS",))
 
 
 def test_unrelated_rows_do_not_become_current_weather_evidence() -> None:
     unrelated = _row()
     unrelated["rules_primary"] = "Will the Fed cut rates?"
     with pytest.raises(SeriesScopeError, match="no reviewed current-regime"):
-        scope_recent_settled_markets(
-            FakeRecentClient({"KXHIGHAUS": [unrelated]}), ("KXHIGHAUS",)
-        )
+        scope_recent_settled_markets(FakeRecentClient({"KXHIGHAUS": [unrelated]}), ("KXHIGHAUS",))
 
 
 def test_series_scope_uses_canonical_m28b_classifier_without_duplicate_rule_parser() -> None:

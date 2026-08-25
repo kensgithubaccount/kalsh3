@@ -369,9 +369,7 @@ def test_strict_climate_evidence_is_required_and_semantics_must_match() -> None:
         )
 
     other = next(
-        value
-        for value in strict.values()
-        if value.station_id != strict[event.event_id].station_id
+        value for value in strict.values() if value.station_id != strict[event.event_id].station_id
     )
     with pytest.raises(ModelTournamentError, match="station"):
         build_feature_dataset(
@@ -486,12 +484,15 @@ def test_market_checkpoint_is_exact_03z_bounded_and_no_lookahead() -> None:
     assert checkpoint.request_end_ts == cutoff_ts
     assert checkpoint.request_start_ts == cutoff_ts - 24 * 60 * 60
     assert f"period_interval={MARKET_CANDLE_INTERVAL_MINUTES}" in checkpoint.request_path
-    assert MarketCheckpoint.from_candles(
-        market_ticker=contract.market_ticker,
-        checkpoint_at=cutoff,
-        candles=({"end_period_ts": cutoff_ts + 1, "price": {"close_dollars": "0.9"}},),
-        response_evidence_id="future-only",
-    ) is None
+    assert (
+        MarketCheckpoint.from_candles(
+            market_ticker=contract.market_ticker,
+            checkpoint_at=cutoff,
+            candles=({"end_period_ts": cutoff_ts + 1, "price": {"close_dollars": "0.9"}},),
+            response_evidence_id="future-only",
+        )
+        is None
+    )
     with pytest.raises(ModelTournamentError, match="03Z"):
         MarketCheckpoint.from_candles(
             market_ticker=contract.market_ticker,
@@ -621,9 +622,7 @@ def _mutate_outcomes(
     dataset: TournamentFeatureDataset, partitions: set[TournamentPartition]
 ) -> TournamentFeatureDataset:
     rows = tuple(
-        replace(row, realized_yes=1 - row.realized_yes)
-        if row.partition in partitions
-        else row
+        replace(row, realized_yes=1 - row.realized_yes) if row.partition in partitions else row
         for row in dataset.rows
     )
     return replace(dataset, rows=rows)
