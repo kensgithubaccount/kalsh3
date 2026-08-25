@@ -99,3 +99,28 @@ def test_caller_cannot_supply_content_or_authority_fields() -> None:
             research_only=False,
             production_influence=Decimal("1"),
         )
+
+
+def test_identity_validation_rejects_subclass_override() -> None:
+    class ForgedLifecycleRecord(MarketLifecycleRecord):
+        def _validate_lifecycle_invariants(self) -> None:
+            return None
+
+        def _canonical_sequences(
+            self,
+        ) -> tuple[tuple[str, ...], tuple[str, ...], tuple[str, ...], tuple[str, ...]]:
+            return (), (), (), ()
+
+        def _identity_material(
+            self,
+            *,
+            specialist_route_reasons: tuple[str, ...],
+            semantic_proof_ids: tuple[str, ...],
+            semantic_blockers: tuple[str, ...],
+            unsupported_reasons: tuple[str, ...],
+        ) -> tuple[object, ...]:
+            return ("forged",)
+
+    forged = object.__new__(ForgedLifecycleRecord)
+    with pytest.raises(LifecycleError, match="concrete type is not canonical"):
+        MarketLifecycleRecord._validate_canonical_identity(forged)
