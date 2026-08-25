@@ -687,6 +687,27 @@ def build_development_model_artifact(
         raise ModelTournamentError(
             "training manifest prediction cutoff does not bind this feature dataset"
         )
+    if (
+        training_manifest.created_at.tzinfo is None
+        or training_manifest.created_at.utcoffset() is None
+    ):
+        raise ModelTournamentError("training manifest created_at must be timezone-aware")
+    expected_manifest_digest = stable_hash(
+        (
+            training_manifest.family,
+            training_manifest.feature_schema_hash,
+            tuple(sorted(training_manifest.feature_artifact_ids)),
+            training_manifest.settlement_labels_id,
+            training_manifest.temporal_split_hash,
+            training_manifest.prediction_cutoff_rule,
+            training_manifest.created_at.astimezone(UTC).isoformat(),
+        )
+    )
+    if (
+        training_manifest.manifest_id != expected_manifest_digest
+        or training_manifest.content_hash != expected_manifest_digest
+    ):
+        raise ModelTournamentError("training manifest content identity is invalid")
     fit = tournament.fit
     return ModelArtifact.build(
         family=FAMILY,

@@ -30,7 +30,10 @@ from services.production_weather_strategy.climate_evidence import (
     build_ghcnd_climate_observations,
     build_point_in_time_climate_feature_evidence,
 )
-from services.production_weather_strategy.contracts import ModelState
+from services.production_weather_strategy.contracts import (
+    ModelState,
+    TrainingDatasetManifest,
+)
 from services.production_weather_strategy.model_tournament import (
     EDGE_THRESHOLD,
     HYPOTHETICAL_PNL_CLASSIFICATION,
@@ -878,6 +881,57 @@ def test_development_model_artifact_rejects_wrong_training_manifest_lineage() ->
     created = datetime(2025, 1, 1, tzinfo=UTC)
     training = build_training_manifest(features, temporal_split=split, created_at=created)
     trained_at = created + timedelta(hours=1)
+
+    with pytest.raises(ModelTournamentError, match="content identity"):
+        build_development_model_artifact(
+            features,
+            tournament,
+            replace(training, manifest_id="fake"),
+            trained_at=trained_at,
+        )
+
+    with pytest.raises(ModelTournamentError, match="content identity"):
+        build_development_model_artifact(
+            features,
+            tournament,
+            replace(training, content_hash="fake"),
+            trained_at=trained_at,
+        )
+
+    with pytest.raises(ModelTournamentError, match="content identity"):
+        build_development_model_artifact(
+            features,
+            tournament,
+            replace(training, manifest_id="fake", content_hash="fake"),
+            trained_at=trained_at,
+        )
+
+    direct = TrainingDatasetManifest(
+        manifest_id="caller-invented",
+        family=training.family,
+        feature_schema_hash=training.feature_schema_hash,
+        feature_artifact_ids=training.feature_artifact_ids,
+        settlement_labels_id=training.settlement_labels_id,
+        temporal_split_hash=training.temporal_split_hash,
+        prediction_cutoff_rule=training.prediction_cutoff_rule,
+        created_at=training.created_at,
+        content_hash="caller-invented",
+    )
+    with pytest.raises(ModelTournamentError, match="content identity"):
+        build_development_model_artifact(
+            features,
+            tournament,
+            direct,
+            trained_at=trained_at,
+        )
+
+    with pytest.raises(ModelTournamentError, match="timezone-aware"):
+        build_development_model_artifact(
+            features,
+            tournament,
+            replace(training, created_at=created.replace(tzinfo=None)),
+            trained_at=trained_at,
+        )
 
     changed_row = replace(
         features.rows[0],
