@@ -415,7 +415,9 @@ def classify_resolved_temperature_market(row: Mapping[str, Any]) -> SettlementRo
         if match is None:
             match = _CURRENT_RULE_LOCATION_ONLY_RESOLVES.fullmatch(rule)
         if match is None:
-            raise HistoricalWeatherDatasetError("temperature-like market has unsupported exact rule")
+            raise HistoricalWeatherDatasetError(
+                "temperature-like market has unsupported exact rule"
+            )
         location = match.group("location")
         reviewed = _LOCATION_AUTHORITY.get(location)
         if reviewed is None:
