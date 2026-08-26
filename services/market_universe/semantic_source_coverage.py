@@ -30,10 +30,6 @@ from .lifecycle import (
 )
 from .router import (
     _ROUTER_ISSUANCE_CAPABILITY,
-    _CensusRoutingContext,
-    _RoutedMarket,
-    _routing_context_object_identity,
-    _semantic_proof_ids,
     CensusQuarantineRecord,
     FamilyCoverageManifest,
     MarketCoverageDescriptor,
@@ -41,6 +37,10 @@ from .router import (
     UniverseCensusError,
     UniverseCensusManifest,
     UniverseCensusResult,
+    _CensusRoutingContext,
+    _RoutedMarket,
+    _routing_context_object_identity,
+    _semantic_proof_ids,
 )
 
 A2_RECORD_SCHEMA_VERSION = "ku-a2-1-semantic-source-coverage-record-v1"

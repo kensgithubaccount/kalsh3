@@ -148,7 +148,7 @@ def test_mismatched_capture_and_census_are_rejected() -> None:
         captured_at=CAPTURED_AT,
     )
     bad = tampered_census(left, capture=right.result.capture)
-    with pytest.raises(SemanticSourceCoverageError, match="identity|receipt"):
+    with pytest.raises(SemanticSourceCoverageError, match=r"identity|receipt"):
         _validate_a1_context(bad)
 
 
