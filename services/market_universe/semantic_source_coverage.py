@@ -900,7 +900,10 @@ def _validate_projection_bindings(
         if (
             projected_quarantine.capture_id != canonical_quarantine.capture_id
             or projected_quarantine.market_input_hash != canonical_quarantine.market_input_hash
-            or projected_quarantine.observed_market_ticker != canonical_quarantine.observed_market_ticker
+            or (
+                projected_quarantine.observed_market_ticker
+                != canonical_quarantine.observed_market_ticker
+            )
             or projected_quarantine.reason != canonical_quarantine.reason
             or projected_quarantine.detail != canonical_quarantine.detail
         ):
