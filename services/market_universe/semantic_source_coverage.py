@@ -470,8 +470,8 @@ class SemanticSourceCoverageManifest:
             "specialist_route_state_counts",
             "unknown_unavailable_counts",
         )
-        for name, value in zip(aggregate_names, values, strict=True):
-            object.__setattr__(self, name, value)
+        for aggregate_name, aggregate_value in zip(aggregate_names, values, strict=True):
+            object.__setattr__(self, aggregate_name, aggregate_value)
         object.__setattr__(self, "schema_version", A2_MANIFEST_SCHEMA_VERSION)
         object.__setattr__(self, "manifest_id", digest)
         object.__setattr__(self, "content_hash", digest)
@@ -891,18 +891,18 @@ def _validate_projection_bindings(
             or projected.settlement_source_identity != canonical.settlement_source_identity
         ):
             raise SemanticSourceCoverageError("A2 record content does not bind canonical lifecycle")
-    for projected in quarantines:
-        if projected.census_manifest_id != census.manifest.manifest_id:
+    for projected_quarantine in quarantines:
+        if projected_quarantine.census_manifest_id != census.manifest.manifest_id:
             raise SemanticSourceCoverageError("A2 quarantine/census manifest identity mismatch")
-        canonical = quarantine_by_id.get(projected.quarantine_id)
-        if canonical is None:
+        canonical_quarantine = quarantine_by_id.get(projected_quarantine.quarantine_id)
+        if canonical_quarantine is None:
             raise SemanticSourceCoverageError("A2 quarantine inserts foreign identity")
         if (
-            projected.capture_id != canonical.capture_id
-            or projected.market_input_hash != canonical.market_input_hash
-            or projected.observed_market_ticker != canonical.observed_market_ticker
-            or projected.reason != canonical.reason
-            or projected.detail != canonical.detail
+            projected_quarantine.capture_id != canonical_quarantine.capture_id
+            or projected_quarantine.market_input_hash != canonical_quarantine.market_input_hash
+            or projected_quarantine.observed_market_ticker != canonical_quarantine.observed_market_ticker
+            or projected_quarantine.reason != canonical_quarantine.reason
+            or projected_quarantine.detail != canonical_quarantine.detail
         ):
             raise SemanticSourceCoverageError(
                 "A2 quarantine content does not bind canonical evidence"
