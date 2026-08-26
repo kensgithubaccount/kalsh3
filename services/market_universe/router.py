@@ -11,6 +11,7 @@ from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, field
 from datetime import datetime
 from decimal import Decimal
+from enum import StrEnum
 from typing import Any
 
 from services.contract_intelligence.specification import (
@@ -440,6 +441,98 @@ class _ParsedMarket:
     quote_issue: str | None
 
 
+class _RouteReasonOrigin(StrEnum):
+    PARENT = "PARENT"
+    SEMANTIC_BLOCKER = "SEMANTIC_BLOCKER"
+    UNSUPPORTED_FEATURE = "UNSUPPORTED_FEATURE"
+    PRODUCT = "PRODUCT"
+    M27B_ADVISORY = "M27B_ADVISORY"
+    DESCRIPTOR_ISSUE = "DESCRIPTOR_ISSUE"
+
+
+@dataclass(frozen=True, slots=True)
+class _RouteReason:
+    origin: _RouteReasonOrigin
+    code: str
+
+
+@dataclass(frozen=True, slots=True)
+class _RouteOutcome:
+    record: MarketLifecycleRecord
+    specification: ContractSpecification | None
+    reasons: tuple[_RouteReason, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class _RoutedMarket:
+    parsed: _ParsedMarket
+    outcome: _RouteOutcome
+    descriptor: MarketCoverageDescriptor
+    reasons: tuple[_RouteReason, ...]
+
+
+@dataclass(frozen=True, slots=True, init=False)
+class _CensusRoutingContext:
+    result: UniverseCensusResult
+    routed_markets: tuple[_RoutedMarket, ...]
+    quarantines: tuple[CensusQuarantineRecord, ...]
+    _object_identity_seal: tuple[object, ...]
+
+    def __init__(self, *_args: object, **_kwargs: object) -> None:
+        raise TypeError("_CensusRoutingContext is canonical-router-issued only")
+
+    @classmethod
+    def _issue(
+        cls,
+        *,
+        capability: object,
+        result: UniverseCensusResult,
+        routed_markets: tuple[_RoutedMarket, ...],
+        quarantines: tuple[CensusQuarantineRecord, ...],
+    ) -> _CensusRoutingContext:
+        if capability is not _ROUTER_ISSUANCE_CAPABILITY:
+            raise UniverseCensusError("routing context issuance capability is invalid")
+        self = object.__new__(cls)
+        object.__setattr__(self, "result", result)
+        object.__setattr__(self, "routed_markets", routed_markets)
+        object.__setattr__(self, "quarantines", quarantines)
+        object.__setattr__(
+            self,
+            "_object_identity_seal",
+            _routing_context_object_identity(result, routed_markets, quarantines),
+        )
+        return self
+
+
+def _routing_context_object_identity(
+    result: UniverseCensusResult,
+    routed_markets: tuple[_RoutedMarket, ...],
+    quarantines: tuple[CensusQuarantineRecord, ...],
+) -> tuple[object, ...]:
+    return (
+        id(result),
+        id(result.capture),
+        id(result.manifest),
+        id(result.coverage_manifest),
+        tuple((record.lifecycle_record_id, id(record)) for record in result.records),
+        tuple((item.quarantine_id, id(item)) for item in result.quarantines),
+        tuple((item.descriptor_id, id(item)) for item in result.coverage_descriptors),
+        tuple(
+            (
+                item.outcome.record.lifecycle_record_id,
+                id(item),
+                id(item.parsed),
+                id(item.outcome),
+                id(item.outcome.record),
+                id(item.outcome.specification) if item.outcome.specification is not None else None,
+                id(item.descriptor),
+            )
+            for item in routed_markets
+        ),
+        tuple((item.quarantine_id, id(item)) for item in quarantines),
+    )
+
+
 class MarketUniverseRouter:
     """Compose canonical parsers and M27B into KU-A1 lifecycle evidence."""
 
@@ -458,6 +551,29 @@ class MarketUniverseRouter:
         captured_at: datetime,
         previous_records: Mapping[str, MarketLifecycleRecord] | None = None,
     ) -> UniverseCensusResult:
+        return self._census_with_context(
+            market_rows=market_rows,
+            event_rows=event_rows,
+            series_rows=series_rows,
+            source_authority=source_authority,
+            request_locator=request_locator,
+            response_sha256=response_sha256,
+            captured_at=captured_at,
+            previous_records=previous_records,
+        ).result
+
+    def _census_with_context(
+        self,
+        *,
+        market_rows: Iterable[Mapping[str, Any]],
+        event_rows: Iterable[Mapping[str, Any]],
+        series_rows: Iterable[Mapping[str, Any]],
+        source_authority: str,
+        request_locator: str,
+        response_sha256: str,
+        captured_at: datetime,
+        previous_records: Mapping[str, MarketLifecycleRecord] | None = None,
+    ) -> _CensusRoutingContext:
         capture = UniverseCaptureEvidence(
             source_authority=source_authority,
             request_locator=request_locator,
@@ -498,9 +614,10 @@ class MarketUniverseRouter:
         prior = previous_records or {}
         records: list[MarketLifecycleRecord] = []
         descriptors: list[MarketCoverageDescriptor] = []
+        routed_markets: list[_RoutedMarket] = []
         for item in parsed:
             route = routes[item.market.ticker]
-            record = self._route_market(
+            outcome = self._route_market(
                 item,
                 capture,
                 event_map,
@@ -510,8 +627,21 @@ class MarketUniverseRouter:
                 route,
                 prior.get(item.market.ticker),
             )
+            record = outcome.record
+            descriptor = _coverage_descriptor(item, record, event_map, series_map, route)
+            descriptor_reasons = tuple(
+                _RouteReason(_RouteReasonOrigin.DESCRIPTOR_ISSUE, issue)
+                for issue in descriptor.descriptor_issues
+            )
+            reasons = tuple(
+                sorted(
+                    set((*outcome.reasons, *descriptor_reasons)),
+                    key=lambda reason: (reason.origin.value, reason.code),
+                )
+            )
             records.append(record)
-            descriptors.append(_coverage_descriptor(item, record, event_map, series_map, route))
+            descriptors.append(descriptor)
+            routed_markets.append(_RoutedMarket(item, outcome, descriptor, reasons))
         record_tuple = tuple(sorted(records, key=lambda item: item.market_ticker))
         quarantine_tuple = tuple(sorted(quarantines, key=lambda item: item.quarantine_id))
         descriptor_tuple = tuple(sorted(descriptors, key=lambda item: item.market_ticker))
@@ -528,7 +658,7 @@ class MarketUniverseRouter:
             records=record_tuple,
             descriptors=descriptor_tuple,
         )
-        return UniverseCensusResult._issue(
+        result = UniverseCensusResult._issue(
             capability=_ROUTER_ISSUANCE_CAPABILITY,
             capture=capture,
             records=record_tuple,
@@ -536,6 +666,14 @@ class MarketUniverseRouter:
             manifest=manifest,
             coverage_descriptors=descriptor_tuple,
             coverage_manifest=coverage,
+        )
+        return _CensusRoutingContext._issue(
+            capability=_ROUTER_ISSUANCE_CAPABILITY,
+            result=result,
+            routed_markets=tuple(
+                sorted(routed_markets, key=lambda item: item.outcome.record.market_ticker)
+            ),
+            quarantines=quarantine_tuple,
         )
 
     def _route_market(
@@ -548,36 +686,54 @@ class MarketUniverseRouter:
         invalid_series: Mapping[str, str],
         route: StructuralRoute,
         previous: MarketLifecycleRecord | None,
-    ) -> MarketLifecycleRecord:
+    ) -> _RouteOutcome:
         market = item.market
         blockers: list[str] = []
         unsupported: list[str] = []
+        reason_evidence: list[_RouteReason] = []
         event = event_map.get(market.event_ticker)
         if event is None:
-            blockers.append(
+            parent_reason = (
                 "INVALID_EVENT_PARENT" if market.event_ticker in invalid_events else "MISSING_EVENT"
             )
+            blockers.append(parent_reason)
+            reason_evidence.append(_RouteReason(_RouteReasonOrigin.PARENT, parent_reason))
         series_ticker = (
             event.series_ticker if event is not None else _text(market.raw.get("series_ticker"))
         )
         series = series_map.get(series_ticker) if series_ticker is not None else None
         if series_ticker is None:
             blockers.append("MISSING_SERIES_IDENTITY")
+            reason_evidence.append(
+                _RouteReason(_RouteReasonOrigin.PARENT, "MISSING_SERIES_IDENTITY")
+            )
         elif series is None:
-            blockers.append(
+            parent_reason = (
                 "INVALID_SERIES_PARENT" if series_ticker in invalid_series else "MISSING_SERIES"
             )
+            blockers.append(parent_reason)
+            reason_evidence.append(_RouteReason(_RouteReasonOrigin.PARENT, parent_reason))
         product = _product_type(market)
         if (product_blocker := _product_blocker(product)) is not None:
             unsupported.append(product_blocker)
+            reason_evidence.append(_RouteReason(_RouteReasonOrigin.PRODUCT, product_blocker))
         spec: ContractSpecification | None = None
         if event is not None and series is not None:
             spec = self._semantic_parser.parse(
                 SemanticsInputBundle.build(market.raw, event.raw, series.raw),
                 now=capture.captured_at,
             )
-            blockers.extend(_semantic_blockers(market, spec))
+            semantic_blockers = _semantic_blockers(market, spec)
+            blockers.extend(semantic_blockers)
+            reason_evidence.extend(
+                _RouteReason(_RouteReasonOrigin.SEMANTIC_BLOCKER, reason)
+                for reason in semantic_blockers
+            )
             unsupported.extend(spec.unsupported_features)
+            reason_evidence.extend(
+                _RouteReason(_RouteReasonOrigin.UNSUPPORTED_FEATURE, reason)
+                for reason in spec.unsupported_features
+            )
         settlement_identity = _settlement_source_identity(spec)
         blockers = sorted(set(blockers))
         unsupported = sorted(set(unsupported))
@@ -592,6 +748,9 @@ class MarketUniverseRouter:
         )
         if state is LifecycleState.DISCOVERED and not blockers and not unsupported:
             blockers.append("SEMANTIC_PROOF_INCOMPLETE")
+            reason_evidence.append(
+                _RouteReason(_RouteReasonOrigin.SEMANTIC_BLOCKER, "SEMANTIC_PROOF_INCOMPLETE")
+            )
         parent_hash = (
             stable_hash((event.metadata_hash, series.metadata_hash))
             if event is not None and series is not None
@@ -610,8 +769,14 @@ class MarketUniverseRouter:
             )
         )
         route_reasons = tuple(reason.value for reason in route.reasons)
+        reason_evidence.extend(
+            _RouteReason(_RouteReasonOrigin.M27B_ADVISORY, reason) for reason in route_reasons
+        )
         if item.quote_issue is not None:
             route_reasons = (*route_reasons, item.quote_issue)
+            reason_evidence.append(
+                _RouteReason(_RouteReasonOrigin.DESCRIPTOR_ISSUE, item.quote_issue)
+            )
         current = MarketLifecycleRecord._issue(
             capability=_LIFECYCLE_ISSUANCE_CAPABILITY,
             capture_id=capture.capture_id,
@@ -639,7 +804,17 @@ class MarketUniverseRouter:
             unsupported_reasons=tuple(unsupported),
             semantic_material_hash=semantic_material_hash,
         )
-        return _with_supersession(current, previous)
+        record = _with_supersession(current, previous)
+        return _RouteOutcome(
+            record=record,
+            specification=spec,
+            reasons=tuple(
+                sorted(
+                    set(reason_evidence),
+                    key=lambda reason: (reason.origin.value, reason.code),
+                )
+            ),
+        )
 
 
 def _with_supersession(
