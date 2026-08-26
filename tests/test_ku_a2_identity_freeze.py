@@ -1,9 +1,10 @@
 from __future__ import annotations
 
 import json
-import warnings
 from collections.abc import Mapping
 from datetime import UTC, datetime
+
+import pytest
 
 from services.market_universe.lifecycle import MarketLifecycleRecord
 from services.market_universe.router import MarketUniverseRouter, UniverseCensusResult
@@ -95,7 +96,9 @@ def _ids(result: UniverseCensusResult) -> dict[str, object]:
     }
 
 
-def test_capture_canonical_ku_a1_identity_baseline_before_private_router_refactor() -> None:
+def test_capture_canonical_ku_a1_identity_baseline_before_private_router_refactor(
+    capfd: pytest.CaptureFixture[str],
+) -> None:
     baseline: dict[str, object] = {}
 
     baseline["valid"] = _ids(_census([_market()]))
@@ -155,7 +158,9 @@ def test_capture_canonical_ku_a1_identity_baseline_before_private_router_refacto
     baseline["price_only_first"] = _ids(quoted)
     baseline["price_only_second"] = _ids(price_only)
 
-    warnings.warn(
-        "KU_A1_IDENTITY_BASELINE=" + json.dumps(baseline, sort_keys=True),
-        stacklevel=1,
-    )
+    payload = json.dumps(baseline, sort_keys=True)
+    with capfd.disabled():
+        print(
+            "::notice title=KU_A1_IDENTITY_BASELINE::" + payload,
+            flush=True,
+        )
