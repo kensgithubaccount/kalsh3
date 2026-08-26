@@ -27,9 +27,7 @@ def series() -> dict[str, object]:
         "title": "Test series",
         "category": "Economics",
         "frequency": "daily",
-        "settlement_sources": [
-            {"name": "Official Source", "url": "https://example.invalid/path"}
-        ],
+        "settlement_sources": [{"name": "Official Source", "url": "https://example.invalid/path"}],
     }
 
 

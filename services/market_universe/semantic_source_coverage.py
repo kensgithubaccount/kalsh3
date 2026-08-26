@@ -302,9 +302,7 @@ class SemanticSourceQuarantineRecord:
         _validate_context_identity(context)
         if not any(item is quarantine for item in context.quarantines):
             raise SemanticSourceCoverageError("A2 quarantine is not exact KU-A1 evidence")
-        material = _quarantine_identity_material(
-            context.result.manifest.manifest_id, quarantine
-        )
+        material = _quarantine_identity_material(context.result.manifest.manifest_id, quarantine)
         digest = stable_hash(material)
         self = object.__new__(cls)
         for name, value in (
@@ -802,9 +800,7 @@ def _validate_a1_context(context: _CensusRoutingContext) -> None:
         )
     if routed_lifecycle_ids != census.manifest.lifecycle_record_ids:
         raise SemanticSourceCoverageError("KU-A1 private routing context does not bind census")
-    descriptor_ids = tuple(
-        sorted(item.descriptor.descriptor_id for item in context.routed_markets)
-    )
+    descriptor_ids = tuple(sorted(item.descriptor.descriptor_id for item in context.routed_markets))
     if len(set(descriptor_ids)) != len(descriptor_ids):
         raise SemanticSourceCoverageError("KU-A1 private descriptor context duplicates identity")
     if descriptor_ids != census.coverage_manifest.descriptor_ids:

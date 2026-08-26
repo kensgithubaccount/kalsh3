@@ -259,9 +259,7 @@ def test_event_series_source_conflict_is_visible_not_collapsed() -> None:
         [market()],
         event_rows=[
             event(
-                settlement_sources=[
-                    {"name": "Event Source", "url": "https://event.invalid/path"}
-                ]
+                settlement_sources=[{"name": "Event Source", "url": "https://event.invalid/path"}]
             )
         ],
     ).records[0]
@@ -269,7 +267,6 @@ def test_event_series_source_conflict_is_visible_not_collapsed() -> None:
     assert record.lifecycle_state == LifecycleState.DISCOVERED.value
     assert "SETTLEMENT_SOURCE_CONFLICT" in record.blocking_issue_codes
     assert ReasonOrigin.SEMANTIC_BLOCKER in origins(record)
-
 
 
 def test_settlement_source_identity_uses_exact_ku_a1_aggregate_tuple() -> None:
@@ -290,6 +287,7 @@ def test_settlement_source_identity_uses_exact_ku_a1_aggregate_tuple() -> None:
     )
     assert recomputed == record.settlement_source_identity
     assert recomputed == result.census.records[0].settlement_source_identity
+
 
 def test_malformed_url_has_no_permission_or_hostname_authority() -> None:
     record = project(
