@@ -539,6 +539,8 @@ def _validate_requirement_assessments(
     if tuple(item.requirement for item in requirements) != MODELABILITY_REQUIREMENT_ORDER:
         raise ModelabilityError("A4 result must contain exactly M1-M10 once each")
     for item in requirements:
+        if type(item.requirement) is not ModelabilityRequirement:
+            raise ModelabilityError("A4 requirement tag type is not canonical")
         if type(item.state) is not ModelabilityState:
             raise ModelabilityError("A4 modelability state type is not canonical")
         if item.proof_kind is not None and type(item.proof_kind) is not ModelabilityProofKind:

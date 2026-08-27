@@ -477,6 +477,23 @@ def test_mutate_and_rehash_recipe_semantics_is_rejected() -> None:
         result._validate_canonical_identity()
 
 
+def test_equal_valued_noncanonical_requirement_tag_is_rejected() -> None:
+    class EqualRequirementTag(str):
+        pass
+
+    result = build_modelability_result(make_a32())
+    changed = list(result.requirements)
+    original = changed[0]
+    forged_requirement = EqualRequirementTag(original.requirement.value)
+    assert forged_requirement == original.requirement
+    assert type(forged_requirement) is not ModelabilityRequirement
+    changed[0] = replace(original, requirement=cast(Any, forged_requirement))
+    object.__setattr__(result, "requirements", tuple(changed))
+
+    with pytest.raises(ModelabilityError, match="requirement tag type"):
+        result._validate_canonical_identity()
+
+
 @pytest.mark.parametrize("field_name", ["state", "evidence_provenance", "missing_evidence"])
 def test_mutate_and_rehash_requirement_semantics_is_rejected(field_name: str) -> None:
     result = build_modelability_result(make_a32())
