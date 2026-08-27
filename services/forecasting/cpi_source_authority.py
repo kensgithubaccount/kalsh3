@@ -83,8 +83,8 @@ POLICY_ROWS: tuple[PolicyRow, ...] = (
             "signed one-month percentage change printed in that archived release; release "
             "material may also be inspected later for an exact embargo/release instant"
         ),
-        _DOES_NOT_PROVE_COMMON
-        + (
+        (
+            *_DOES_NOT_PROVE_COMMON,
             "published_at",
             "replay_available_at",
             "actual first-public server time",
@@ -100,8 +100,8 @@ POLICY_ROWS: tuple[PolicyRow, ...] = (
         CPISourceInterface.BLS_CPI_RELEASE_SCHEDULE_HTML,
         f"{BLS_HTTPS_ORIGIN}/schedule/news_release/cpi.htm",
         "eligible evidence for the BLS-scheduled CPI release date and time",
-        _DOES_NOT_PROVE_COMMON
-        + (
+        (
+            *_DOES_NOT_PROVE_COMMON,
             "the released CPI value",
             "actual first-public server time",
             "the actual release time if publication was delayed or rescheduled",
