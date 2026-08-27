@@ -67,9 +67,7 @@ class ModelabilityRequirement(StrEnum):
     M10_CALIBRATION_UNCERTAINTY_ABSTENTION = "M10_CALIBRATION_UNCERTAINTY_ABSTENTION"
 
 
-MODELABILITY_REQUIREMENT_ORDER: tuple[ModelabilityRequirement, ...] = tuple(
-    ModelabilityRequirement
-)
+MODELABILITY_REQUIREMENT_ORDER: tuple[ModelabilityRequirement, ...] = tuple(ModelabilityRequirement)
 
 
 @dataclass(frozen=True, slots=True)
@@ -545,10 +543,7 @@ def _validate_requirement_assessments(
         if item.state is ModelabilityState.UNKNOWN and item.blocker_evidence:
             raise ModelabilityError("A4 UNKNOWN cannot carry blocker evidence")
     if (
-        any(
-            receipt.evidence_domain is EvidenceDomain.UNASSIGNED
-            for receipt in a32.domain_receipts
-        )
+        any(receipt.evidence_domain is EvidenceDomain.UNASSIGNED for receipt in a32.domain_receipts)
         and requirements[0].state is not ModelabilityState.UNKNOWN
     ):
         raise ModelabilityError("A3.2 UNASSIGNED cannot receive modelability PASS")
