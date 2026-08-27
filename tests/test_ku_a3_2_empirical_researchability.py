@@ -9,11 +9,11 @@ from pathlib import Path
 import pytest
 
 from services.market_universe.empirical_researchability import (
+    EmpiricalResearchabilityError,
     EvidenceDomain,
     EvidenceProofKind,
-    EmpiricalResearchabilityError,
-    build_evidence_resolution_result,
     _validate_gate_resolutions,
+    build_evidence_resolution_result,
 )
 from services.market_universe.research_family_coverage import (
     ResearchFamily,
