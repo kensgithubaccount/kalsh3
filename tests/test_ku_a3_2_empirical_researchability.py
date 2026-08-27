@@ -5,13 +5,20 @@ from dataclasses import replace
 from datetime import UTC, datetime
 from decimal import Decimal
 from pathlib import Path
+from typing import cast
 
 import pytest
 
+from services.market_universe.domain import stable_hash
 from services.market_universe.empirical_researchability import (
+    A32_POLICY_VERSION,
+    A32_RESULT_SCHEMA_VERSION,
     EmpiricalResearchabilityError,
     EvidenceDomain,
     EvidenceProofKind,
+    EvidenceResolutionResult,
+    GateResolution,
+    _receipt_identity_material,
     _validate_gate_resolutions,
     build_evidence_resolution_result,
 )
@@ -98,6 +105,50 @@ def resolve(a22):
 
 def gate(receipt, gate_id: ResearchabilityGate):
     return next(resolution for resolution in receipt.gates if resolution.gate is gate_id)
+
+
+def _attacker_rehash(
+    result: EvidenceResolutionResult,
+    *,
+    domain: EvidenceDomain,
+    gates: tuple[GateResolution, ...],
+) -> None:
+    receipt = result.domain_receipts[0]
+    a31 = result.a31_result
+    mapping = next(
+        mapping
+        for mapping in a31.a22_result.mappings
+        if mapping.mapping_id == receipt.a22_mapping_id
+    )
+    prior = next(
+        prior for prior in a31.family_receipts if mapping.mapping_id in prior.a22_mapping_ids
+    )
+    receipt_hash = stable_hash(
+        _receipt_identity_material(
+            a31=a31,
+            mapping=mapping,
+            prior=prior,
+            domain=domain,
+            domain_provenance=receipt.domain_evidence_provenance,
+            gates=gates,
+        )
+    )
+    object.__setattr__(receipt, "receipt_id", receipt_hash)
+    object.__setattr__(receipt, "content_hash", receipt_hash)
+    result_hash = stable_hash(
+        (
+            A32_RESULT_SCHEMA_VERSION,
+            A32_POLICY_VERSION,
+            A31_EMPIRICAL_ARTIFACT_STATUS,
+            a31.result_id,
+            a31.a22_result.result_id,
+            tuple(item.receipt_id for item in result.domain_receipts),
+            "RESEARCH_ONLY_NO_LIFECYCLE_ECONOMICS_OR_EXECUTION_AUTHORITY",
+            "0",
+        )
+    )
+    object.__setattr__(result, "result_id", result_hash)
+    object.__setattr__(result, "content_hash", result_hash)
 
 
 def test_broad_structural_family_cannot_inherit_narrow_domain_proof() -> None:
@@ -319,6 +370,85 @@ def test_foreign_or_tampered_a31_and_a22_receipts_are_rejected() -> None:
     object.__setattr__(a31.a22_result.mappings[0], "content_hash", "tampered")
     with pytest.raises(EmpiricalResearchabilityError, match="foreign, tampered, or mismatched"):
         build_evidence_resolution_result(a31)
+
+
+def test_noncanonical_domain_and_pass_forgery_rejected_after_rehash() -> None:
+    class CallerDomain:
+        value = "CALLER_FORGED_DOMAIN"
+
+    result = resolve(project([market()]))
+    receipt = result.domain_receipts[0]
+    gates = list(receipt.gates)
+    gates[0] = replace(
+        gates[0],
+        resolved_state=GateState.PASS,
+        proof_kind=EvidenceProofKind.EMPIRICAL,
+        missing_evidence=(),
+    )
+    forged_domain = cast(EvidenceDomain, CallerDomain())
+    forged_gates = tuple(gates)
+    object.__setattr__(receipt, "evidence_domain", forged_domain)
+    object.__setattr__(receipt, "gates", forged_gates)
+    _attacker_rehash(result, domain=forged_domain, gates=forged_gates)
+
+    with pytest.raises(EmpiricalResearchabilityError, match="domain type is not canonical"):
+        result._validate_canonical_identity()
+
+
+def test_forged_gate_resolution_rejected_after_rehash() -> None:
+    result = resolve(project([market()]))
+    receipt = result.domain_receipts[0]
+    gates = list(receipt.gates)
+    gates[0] = replace(gates[0], proof_kind=EvidenceProofKind.EMPIRICAL)
+    forged_gates = tuple(gates)
+    object.__setattr__(receipt, "gates", forged_gates)
+    _attacker_rehash(result, domain=EvidenceDomain.UNASSIGNED, gates=forged_gates)
+
+    with pytest.raises(EmpiricalResearchabilityError, match="issuer-derived semantics"):
+        result._validate_canonical_identity()
+
+
+def test_forged_unknown_provenance_rejected_after_rehash() -> None:
+    result = resolve(project([market()]))
+    receipt = result.domain_receipts[0]
+    gates = list(receipt.gates)
+    gates[0] = replace(
+        gates[0],
+        evidence_provenance=(*gates[0].evidence_provenance, "CALLER:FORGED_PROVENANCE"),
+        missing_evidence=("MISSING:CALLER_AUTHORED_GAP",),
+    )
+    forged_gates = tuple(gates)
+    object.__setattr__(receipt, "gates", forged_gates)
+    _attacker_rehash(result, domain=EvidenceDomain.UNASSIGNED, gates=forged_gates)
+
+    with pytest.raises(EmpiricalResearchabilityError, match="issuer-derived semantics"):
+        result._validate_canonical_identity()
+
+
+def test_unassigned_domain_provenance_rejected_after_rehash() -> None:
+    result = resolve(project([market()]))
+    receipt = result.domain_receipts[0]
+    object.__setattr__(receipt, "domain_evidence_provenance", ("CALLER:FORGED_DOMAIN_PROOF",))
+    _attacker_rehash(
+        result,
+        domain=EvidenceDomain.UNASSIGNED,
+        gates=receipt.gates,
+    )
+
+    with pytest.raises(EmpiricalResearchabilityError, match="cannot carry domain proof"):
+        result._validate_canonical_identity()
+
+
+def test_canonical_untouched_a32_result_validates_successfully() -> None:
+    result = resolve(project([market()]))
+
+    result._validate_canonical_identity()
+    assert result.domain_receipts[0].evidence_domain is EvidenceDomain.UNASSIGNED
+    assert all(
+        resolution.resolved_state is GateState.UNKNOWN
+        for resolution in result.domain_receipts[0].gates[:6]
+    )
+    assert result.domain_receipts[0].gates[-1].resolved_state is GateState.PASS
 
 
 def test_no_numeric_readiness_score_exists() -> None:
