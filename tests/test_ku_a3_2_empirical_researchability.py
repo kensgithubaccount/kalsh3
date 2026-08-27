@@ -108,8 +108,7 @@ def test_broad_structural_family_cannot_inherit_narrow_domain_proof() -> None:
         ResearchFamily.BINARY_THRESHOLD
     }
     assert all(
-        receipt.evidence_domain is EvidenceDomain.UNASSIGNED
-        for receipt in result.domain_receipts
+        receipt.evidence_domain is EvidenceDomain.UNASSIGNED for receipt in result.domain_receipts
     )
     assert all(
         gate(receipt, ResearchabilityGate.G1_SETTLEMENT_PROOF).resolved_state is GateState.UNKNOWN
@@ -136,8 +135,7 @@ def test_weather_evidence_signals_cannot_promote_non_weather_threshold_markets()
 
     assert len(result.domain_receipts) == 2
     assert all(
-        receipt.evidence_domain is EvidenceDomain.UNASSIGNED
-        for receipt in result.domain_receipts
+        receipt.evidence_domain is EvidenceDomain.UNASSIGNED for receipt in result.domain_receipts
     )
     for receipt in result.domain_receipts:
         assert (
@@ -173,8 +171,7 @@ def test_hostname_alone_cannot_establish_domain_or_g2() -> None:
 
     assert receipt.evidence_domain is EvidenceDomain.UNASSIGNED
     assert (
-        gate(receipt, ResearchabilityGate.G2_PERMITTED_SOURCE).resolved_state
-        is GateState.UNKNOWN
+        gate(receipt, ResearchabilityGate.G2_PERMITTED_SOURCE).resolved_state is GateState.UNKNOWN
     )
 
 
@@ -223,8 +220,7 @@ def test_current_data_cannot_prove_historical_truth() -> None:
     ).domain_receipts[0]
 
     assert (
-        gate(receipt, ResearchabilityGate.G3_HISTORICAL_TRUTH).resolved_state
-        is GateState.UNKNOWN
+        gate(receipt, ResearchabilityGate.G3_HISTORICAL_TRUTH).resolved_state is GateState.UNKNOWN
     )
 
 
@@ -253,8 +249,7 @@ def test_source_presence_alone_cannot_prove_permission() -> None:
     ).domain_receipts[0]
 
     assert (
-        gate(receipt, ResearchabilityGate.G2_PERMITTED_SOURCE).resolved_state
-        is GateState.UNKNOWN
+        gate(receipt, ResearchabilityGate.G2_PERMITTED_SOURCE).resolved_state is GateState.UNKNOWN
     )
 
 
@@ -264,8 +259,7 @@ def test_semantic_shape_alone_cannot_prove_settlement_target() -> None:
     receipt = resolve(a22).domain_receipts[0]
 
     assert (
-        gate(receipt, ResearchabilityGate.G1_SETTLEMENT_PROOF).resolved_state
-        is GateState.UNKNOWN
+        gate(receipt, ResearchabilityGate.G1_SETTLEMENT_PROOF).resolved_state is GateState.UNKNOWN
     )
 
 
