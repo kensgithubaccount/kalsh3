@@ -14,9 +14,7 @@ from services.forecasting.calibration import CalibrationMethod
 from services.forecasting.macro import ReleaseTarget, ReleaseVintage
 from services.market_universe.domain import stable_hash
 from services.market_universe.empirical_researchability import (
-    A32_EMPIRICAL_ARTIFACT_STATUS if False else EvidenceDomain,
-)
-from services.market_universe.empirical_researchability import (
+    EvidenceDomain,
     EvidenceResolutionResult,
     build_evidence_resolution_result,
 )
@@ -124,7 +122,9 @@ def make_a32(
     return build_evidence_resolution_result(a31)
 
 
-def requirement(result: ModelabilityResult, item: ModelabilityRequirement) -> RequirementAssessment:
+def requirement(
+    result: ModelabilityResult, item: ModelabilityRequirement
+) -> RequirementAssessment:
     return next(value for value in result.requirements if value.requirement is item)
 
 
@@ -182,17 +182,34 @@ def test_unassigned_and_g1_to_g5_force_m1_to_m6_unknown() -> None:
     a32 = make_a32()
     result = build_modelability_result(a32)
 
-    assert all(receipt.evidence_domain is EvidenceDomain.UNASSIGNED for receipt in a32.domain_receipts)
-    assert requirement(result, ModelabilityRequirement.M1_EXACT_DOMAIN_BINDING).state is ModelabilityState.UNKNOWN
+    assert all(
+        receipt.evidence_domain is EvidenceDomain.UNASSIGNED for receipt in a32.domain_receipts
+    )
+    assert (
+        requirement(result, ModelabilityRequirement.M1_EXACT_DOMAIN_BINDING).state
+        is ModelabilityState.UNKNOWN
+    )
     gate_map = (
-        (ResearchabilityGate.G1_SETTLEMENT_PROOF, ModelabilityRequirement.M2_SETTLEMENT_LABEL_DEFINITION),
-        (ResearchabilityGate.G2_PERMITTED_SOURCE, ModelabilityRequirement.M3_PERMITTED_FEATURE_SOURCES),
-        (ResearchabilityGate.G3_HISTORICAL_TRUTH, ModelabilityRequirement.M4_HISTORICAL_LABEL_AVAILABILITY),
+        (
+            ResearchabilityGate.G1_SETTLEMENT_PROOF,
+            ModelabilityRequirement.M2_SETTLEMENT_LABEL_DEFINITION,
+        ),
+        (
+            ResearchabilityGate.G2_PERMITTED_SOURCE,
+            ModelabilityRequirement.M3_PERMITTED_FEATURE_SOURCES,
+        ),
+        (
+            ResearchabilityGate.G3_HISTORICAL_TRUTH,
+            ModelabilityRequirement.M4_HISTORICAL_LABEL_AVAILABILITY,
+        ),
         (
             ResearchabilityGate.G4_POINT_IN_TIME_RECONSTRUCTION,
             ModelabilityRequirement.M5_POINT_IN_TIME_FEATURE_RECONSTRUCTION,
         ),
-        (ResearchabilityGate.G5_EVIDENCE_UNIT_POLICY, ModelabilityRequirement.M6_EVIDENCE_UNIT_POLICY),
+        (
+            ResearchabilityGate.G5_EVIDENCE_UNIT_POLICY,
+            ModelabilityRequirement.M6_EVIDENCE_UNIT_POLICY,
+        ),
     )
     for gate, item in gate_map:
         assert a32_gate(a32, gate) == (GateState.UNKNOWN,)
@@ -224,9 +241,9 @@ def test_structural_m7_to_m10_passes_never_promote_overall_modelability() -> Non
 
 def test_g6_is_inherited_unknown_and_a4_cannot_rewrite_it() -> None:
     result = build_modelability_result(make_a32())
-    assert a32_gate(result.a32_result, ResearchabilityGate.G6_ECONOMICS_OBSERVABILITY) == (
-        GateState.UNKNOWN,
-    )
+    assert a32_gate(
+        result.a32_result, ResearchabilityGate.G6_ECONOMICS_OBSERVABILITY
+    ) == (GateState.UNKNOWN,)
     assert result.economics_observability_state is GateState.UNKNOWN
 
     object.__setattr__(result, "economics_observability_state", GateState.PASS)
@@ -332,14 +349,18 @@ def test_titles_categories_hostnames_source_names_and_routing_do_not_create_mode
         ),
     )
     result = build_modelability_result(a32)
-    assert all(receipt.evidence_domain is EvidenceDomain.UNASSIGNED for receipt in a32.domain_receipts)
+    assert all(
+        receipt.evidence_domain is EvidenceDomain.UNASSIGNED for receipt in a32.domain_receipts
+    )
     assert result.modelability_state is ModelabilityState.UNKNOWN
 
 
 def test_broad_a22_family_membership_does_not_create_modelability() -> None:
     a32 = make_a32([market("KXEVENT-10"), market("KXEVENT-11")])
     assert len(a32.domain_receipts) == 2
-    assert {receipt.family for receipt in a32.domain_receipts} == {ResearchFamily.BINARY_THRESHOLD}
+    assert {receipt.family for receipt in a32.domain_receipts} == {
+        ResearchFamily.BINARY_THRESHOLD
+    }
     assert build_modelability_result(a32).modelability_state is ModelabilityState.UNKNOWN
 
 
@@ -364,12 +385,16 @@ def test_fixture_backed_cpi_examples_cannot_create_empirical_pass() -> None:
     assert result.empirical_artifact_status == A31_EMPIRICAL_ARTIFACT_STATUS
     assert result.empirical_execution_occurred is False
     assert result.modelability_state is ModelabilityState.UNKNOWN
-    assert requirement(
-        result, ModelabilityRequirement.M4_HISTORICAL_LABEL_AVAILABILITY
-    ).state is ModelabilityState.UNKNOWN
-    assert requirement(
-        result, ModelabilityRequirement.M5_POINT_IN_TIME_FEATURE_RECONSTRUCTION
-    ).state is ModelabilityState.UNKNOWN
+    assert (
+        requirement(result, ModelabilityRequirement.M4_HISTORICAL_LABEL_AVAILABILITY).state
+        is ModelabilityState.UNKNOWN
+    )
+    assert (
+        requirement(
+            result, ModelabilityRequirement.M5_POINT_IN_TIME_FEATURE_RECONSTRUCTION
+        ).state
+        is ModelabilityState.UNKNOWN
+    )
 
 
 def test_recipe_target_is_exact_cpi_release_target_and_type_is_enforced() -> None:
@@ -475,7 +500,9 @@ def test_mutate_and_rehash_requirement_semantics_is_rejected(field_name: str) ->
             missing_evidence=(),
         )
     elif field_name == "evidence_provenance":
-        changed[0] = replace(original, evidence_provenance=(*original.evidence_provenance, "FORGED"))
+        changed[0] = replace(
+            original, evidence_provenance=(*original.evidence_provenance, "FORGED")
+        )
     else:
         changed[0] = replace(original, missing_evidence=("MISSING:FORGED",))
     object.__setattr__(result, "requirements", tuple(changed))
