@@ -63,21 +63,15 @@ class GateResolution:
 
 
 _MISSING_BY_GATE: dict[ResearchabilityGate, tuple[str, ...]] = {
-    ResearchabilityGate.G1_SETTLEMENT_PROOF: (
-        "MISSING:EXACT_SETTLEMENT_TARGET_DOMAIN_BINDING",
-    ),
-    ResearchabilityGate.G2_PERMITTED_SOURCE: (
-        "MISSING:EXPLICIT_DOMAIN_SOURCE_PERMISSION",
-    ),
+    ResearchabilityGate.G1_SETTLEMENT_PROOF: ("MISSING:EXACT_SETTLEMENT_TARGET_DOMAIN_BINDING",),
+    ResearchabilityGate.G2_PERMITTED_SOURCE: ("MISSING:EXPLICIT_DOMAIN_SOURCE_PERMISSION",),
     ResearchabilityGate.G3_HISTORICAL_TRUTH: (
         "MISSING:REPOSITORY_CANONICAL_HISTORICAL_SETTLEMENT_TRUTH",
     ),
     ResearchabilityGate.G4_POINT_IN_TIME_RECONSTRUCTION: (
         "MISSING:REPOSITORY_CANONICAL_POINT_IN_TIME_VINTAGES",
     ),
-    ResearchabilityGate.G5_EVIDENCE_UNIT_POLICY: (
-        "MISSING:REVIEWED_DOMAIN_EVIDENCE_UNIT_POLICY",
-    ),
+    ResearchabilityGate.G5_EVIDENCE_UNIT_POLICY: ("MISSING:REVIEWED_DOMAIN_EVIDENCE_UNIT_POLICY",),
     ResearchabilityGate.G6_ECONOMICS_OBSERVABILITY: (
         "MISSING:COMPLETE_HISTORICAL_AFTER_COST_OBSERVABILITY_EVIDENCE",
         "MISSING:M28D_R2_OR_EQUIVALENT_COMPLETION",
@@ -454,9 +448,7 @@ def _validate_receipt_conservation(
     a31: ResearchabilityHardGateResult,
     receipts: tuple[EvidenceDomainReceipt, ...],
 ) -> None:
-    expected_mappings = tuple(
-        sorted(a31.a22_result.mappings, key=lambda item: item.mapping_id)
-    )
+    expected_mappings = tuple(sorted(a31.a22_result.mappings, key=lambda item: item.mapping_id))
     if len(receipts) != len(expected_mappings):
         raise EmpiricalResearchabilityError("A3.2 domain mapping silently dropped or added inputs")
     if tuple(receipt.a22_mapping_id for receipt in receipts) != tuple(
