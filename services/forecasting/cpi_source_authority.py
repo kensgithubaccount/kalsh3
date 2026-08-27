@@ -232,6 +232,29 @@ def validate_cpi_source_authority(authority: ReviewedCPISourceAuthority) -> None
         raise CPISourceAuthorityError("CPI source role must have exact enum identity")
     if type(interface) is not CPISourceInterface:
         raise CPISourceAuthorityError("CPI source interface must have exact enum identity")
+    if type(authority.source_organization) is not str:
+        raise CPISourceAuthorityError("CPI source organization must have exact string type")
+    if type(authority.source_product) is not str:
+        raise CPISourceAuthorityError("CPI source product must have exact string type")
+    if type(authority.locator_shape) is not str:
+        raise CPISourceAuthorityError("CPI source locator shape must have exact string type")
+    if type(authority.evidentiary_role) is not str:
+        raise CPISourceAuthorityError("CPI evidentiary role must have exact string type")
+    if type(authority.does_not_prove) is not tuple or any(
+        type(item) is not str for item in authority.does_not_prove
+    ):
+        raise CPISourceAuthorityError("CPI negative-evidence boundary must have exact types")
+    if type(authority.authority_identity) is not str:
+        raise CPISourceAuthorityError("CPI authority identity must have exact string type")
+    if type(authority.policy_identity) is not str:
+        raise CPISourceAuthorityError("CPI policy identity must have exact string type")
+    if type(authority.research_only) is not bool or authority.research_only is not True:
+        raise CPISourceAuthorityError("CPI source authority must remain research-only")
+    if (
+        type(authority.production_influence) is not Decimal
+        or authority.production_influence != ZERO
+    ):
+        raise CPISourceAuthorityError("CPI source authority must have zero production influence")
     canonical = SOURCE_AUTHORITIES.get((profile, role))
     if canonical is not authority:
         raise CPISourceAuthorityError("unissued or reconstructed CPI source authority")
@@ -295,6 +318,8 @@ def _row_for(profile: CPISourceProfile, role: CPISourceRole) -> PolicyRow:
 
 def _validate_locator(interface: CPISourceInterface, locator: str) -> None:
     parsed = urlsplit(locator)
+    if parsed.geturl() != locator:
+        raise CPISourceAuthorityError("CPI source locator raw form is not exactly canonical")
     if (
         parsed.scheme != "https"
         or parsed.netloc != "www.bls.gov"

@@ -125,6 +125,11 @@ def test_plain_strings_cannot_substitute_for_exact_strenum_identity() -> None:
         "https://www.bls.gov/news.release/archives/cpi_13322026.htm",
         "https://www.bls.gov/news.release/archives/cpi_08122026.htm?x=1",
         "https://www.bls.gov/news.release/archives/cpi_08122026.htm#top",
+        "https://www.bls.gov/news.release/archives/cpi_08122026.htm?",
+        "https://www.bls.gov/news.release/archives/cpi_08122026.htm#",
+        "https://www.bls.gov/news.release/\narchives/cpi_08122026.htm",
+        "https://www.bls.gov/news.release/\rarchives/cpi_08122026.htm",
+        "https://www.bls.gov/news.release/\tarchives/cpi_08122026.htm",
         "https://www.bls.gov//news.release/archives/cpi_08122026.htm",
         "https://www.bls.gov/news.release/archives/%63pi_08122026.htm",
         "https://user@www.bls.gov/news.release/archives/cpi_08122026.htm",
@@ -143,6 +148,11 @@ def test_initial_release_document_locator_fails_closed(locator: str) -> None:
         "https://www.bls.gov/schedule/news_release/bls.ics",
         "https://www.bls.gov/schedule/news_release/ppi.htm",
         "https://www.bls.gov/schedule/news_release/cpi.htm?source=tracking",
+        "https://www.bls.gov/schedule/news_release/cpi.htm?",
+        "https://www.bls.gov/schedule/news_release/cpi.htm#",
+        "https://www.bls.gov/schedule/news_release/\ncpi.htm",
+        "https://www.bls.gov/schedule/news_release/\rcpi.htm",
+        "https://www.bls.gov/schedule/news_release/\tcpi.htm",
         "http://www.bls.gov/schedule/news_release/cpi.htm",
         "https://bls.gov/schedule/news_release/cpi.htm",
     ],
@@ -186,6 +196,10 @@ class OtherProfile(StrEnum):
     CORE = "cpi-u-us-city-average-all-items-sa-one-month-percent-change-initial-release"
 
 
+class EqualText(str):
+    pass
+
+
 def test_unsupported_profile_even_with_equal_string_value_cannot_resolve() -> None:
     with pytest.raises(CPISourceAuthorityError):
         resolve_cpi_source_authority(  # type: ignore[arg-type]
@@ -222,6 +236,25 @@ def test_altered_role_profile_interface_locator_shape_and_product_fail_validatio
     )
     for name, changed in fields:
         original = getattr(authority, name)
+        try:
+            object.__setattr__(authority, name, changed)
+            with pytest.raises(CPISourceAuthorityError):
+                validate_cpi_source_authority(authority)
+        finally:
+            object.__setattr__(authority, name, original)
+    validate_cpi_source_authority(authority)
+
+
+def test_equal_valued_noncanonical_runtime_types_fail_validation() -> None:
+    authority = resolve_document()
+    fields: tuple[tuple[str, object], ...] = (
+        ("research_only", 1),
+        ("production_influence", 0),
+        ("source_organization", EqualText(BLS_ORGANIZATION)),
+    )
+    for name, changed in fields:
+        original = getattr(authority, name)
+        assert changed == original
         try:
             object.__setattr__(authority, name, changed)
             with pytest.raises(CPISourceAuthorityError):
