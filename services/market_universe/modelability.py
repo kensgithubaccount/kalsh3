@@ -152,6 +152,14 @@ class CpiReleaseRecipe:
             raise ModelabilityError("A4 recipe schema identity is invalid")
         if self.research_only is not True or self.production_influence != ZERO_INFLUENCE:
             raise ModelabilityError("A4 recipe authority boundary is invalid")
+        if type(self.evidence_domain) is not EvidenceDomain:
+            raise ModelabilityError("A4 recipe evidence-domain type is not canonical")
+        if type(self.target) is not ReleaseTarget:
+            raise ModelabilityError("A4 recipe release-target type is not canonical")
+        if type(self.calibration_method) is not CalibrationMethod:
+            raise ModelabilityError("A4 recipe calibration-method type is not canonical")
+        if type(self.model_recipe) is not ModelRecipe:
+            raise ModelabilityError("A4 structural model-recipe type is not canonical")
         expected_values = _canonical_recipe_values(a32)
         for name, expected in expected_values.items():
             if getattr(self, name) != expected:
