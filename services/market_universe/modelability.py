@@ -341,7 +341,9 @@ def _canonical_recipe_values(a32: EvidenceResolutionResult) -> dict[str, object]
         ),
         "training_period_policy": "earliest contiguous eligible release events",
         "validation_period_policy": "subsequent contiguous eligible release events",
-        "test_period_policy": "latest contiguous eligible release events revealed once after selection",
+        "test_period_policy": (
+            "latest contiguous eligible release events revealed once after selection"
+        ),
         "baseline_comparator": (
             "unconditional prior-event base rate computed only from finalized labels available "
             "before each prediction cutoff"
@@ -542,9 +544,14 @@ def _validate_requirement_assessments(
             raise ModelabilityError("A4 PASS requires positive canonical proof")
         if item.state is ModelabilityState.UNKNOWN and item.blocker_evidence:
             raise ModelabilityError("A4 UNKNOWN cannot carry blocker evidence")
-    if any(receipt.evidence_domain is EvidenceDomain.UNASSIGNED for receipt in a32.domain_receipts):
-        if requirements[0].state is not ModelabilityState.UNKNOWN:
-            raise ModelabilityError("A3.2 UNASSIGNED cannot receive modelability PASS")
+    if (
+        any(
+            receipt.evidence_domain is EvidenceDomain.UNASSIGNED
+            for receipt in a32.domain_receipts
+        )
+        and requirements[0].state is not ModelabilityState.UNKNOWN
+    ):
+        raise ModelabilityError("A3.2 UNASSIGNED cannot receive modelability PASS")
 
 
 def _overall_modelability_state(
