@@ -46,7 +46,7 @@ HARD_GATE_ORDER: tuple[ResearchabilityGate, ...] = tuple(ResearchabilityGate)
 
 
 class GateState(StrEnum):
-    PASS = "PASS"
+    PASS = "PASS"  # noqa: S105 -- canonical hard-gate state, not a password
     BLOCKED = "BLOCKED"
     UNKNOWN = "UNKNOWN"
 
