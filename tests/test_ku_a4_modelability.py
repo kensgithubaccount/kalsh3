@@ -72,9 +72,7 @@ def series(
     }
 
 
-def event(
-    *, title: str = "CPI release event", category: str = "Economics"
-) -> dict[str, object]:
+def event(*, title: str = "CPI release event", category: str = "Economics") -> dict[str, object]:
     return {
         "event_ticker": "KXEVENT",
         "series_ticker": "KXSERIES",
@@ -122,15 +120,11 @@ def make_a32(
     return build_evidence_resolution_result(a31)
 
 
-def requirement(
-    result: ModelabilityResult, item: ModelabilityRequirement
-) -> RequirementAssessment:
+def requirement(result: ModelabilityResult, item: ModelabilityRequirement) -> RequirementAssessment:
     return next(value for value in result.requirements if value.requirement is item)
 
 
-def a32_gate(
-    result: EvidenceResolutionResult, gate: ResearchabilityGate
-) -> tuple[GateState, ...]:
+def a32_gate(result: EvidenceResolutionResult, gate: ResearchabilityGate) -> tuple[GateState, ...]:
     return tuple(
         next(value.resolved_state for value in receipt.gates if value.gate is gate)
         for receipt in result.domain_receipts
@@ -241,9 +235,9 @@ def test_structural_m7_to_m10_passes_never_promote_overall_modelability() -> Non
 
 def test_g6_is_inherited_unknown_and_a4_cannot_rewrite_it() -> None:
     result = build_modelability_result(make_a32())
-    assert a32_gate(
-        result.a32_result, ResearchabilityGate.G6_ECONOMICS_OBSERVABILITY
-    ) == (GateState.UNKNOWN,)
+    assert a32_gate(result.a32_result, ResearchabilityGate.G6_ECONOMICS_OBSERVABILITY) == (
+        GateState.UNKNOWN,
+    )
     assert result.economics_observability_state is GateState.UNKNOWN
 
     object.__setattr__(result, "economics_observability_state", GateState.PASS)
@@ -358,9 +352,7 @@ def test_titles_categories_hostnames_source_names_and_routing_do_not_create_mode
 def test_broad_a22_family_membership_does_not_create_modelability() -> None:
     a32 = make_a32([market("KXEVENT-10"), market("KXEVENT-11")])
     assert len(a32.domain_receipts) == 2
-    assert {receipt.family for receipt in a32.domain_receipts} == {
-        ResearchFamily.BINARY_THRESHOLD
-    }
+    assert {receipt.family for receipt in a32.domain_receipts} == {ResearchFamily.BINARY_THRESHOLD}
     assert build_modelability_result(a32).modelability_state is ModelabilityState.UNKNOWN
 
 
@@ -390,9 +382,7 @@ def test_fixture_backed_cpi_examples_cannot_create_empirical_pass() -> None:
         is ModelabilityState.UNKNOWN
     )
     assert (
-        requirement(
-            result, ModelabilityRequirement.M5_POINT_IN_TIME_FEATURE_RECONSTRUCTION
-        ).state
+        requirement(result, ModelabilityRequirement.M5_POINT_IN_TIME_FEATURE_RECONSTRUCTION).state
         is ModelabilityState.UNKNOWN
     )
 
@@ -577,8 +567,4 @@ def test_a4_has_no_execution_account_credential_signer_risk_or_order_dependency(
         "risk",
         "order",
     )
-    assert not any(
-        fragment in module
-        for module in imported
-        for fragment in forbidden_fragments
-    )
+    assert not any(fragment in module for module in imported for fragment in forbidden_fragments)
