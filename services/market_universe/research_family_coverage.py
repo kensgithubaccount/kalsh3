@@ -265,9 +265,7 @@ class ResearchFamilyMappingRecord:
             raise ResearchFamilyCoverageError("A2.2 mapping reviewed-rule identity mismatch")
         if rule.required_evidence_fields != self.evidence_fields:
             raise ResearchFamilyCoverageError("A2.2 mapping evidence-field identity mismatch")
-        expected = stable_hash(
-            _mapping_identity_material_from_record(self, rule)
-        )
+        expected = stable_hash(_mapping_identity_material_from_record(self, rule))
         if self.mapping_id != expected or self.content_hash != expected:
             raise ResearchFamilyCoverageError("A2.2 mapping content-addressed identity mismatch")
 
@@ -639,9 +637,7 @@ def _validate_mapping_conservation(
 ) -> None:
     if len(mappings) != a2.manifest.input_market_count:
         raise ResearchFamilyCoverageError("A2.2 mapping silently drops or inserts an input")
-    expected_sources = tuple(
-        sorted((*a2.manifest.record_ids, *a2.manifest.quarantine_record_ids))
-    )
+    expected_sources = tuple(sorted((*a2.manifest.record_ids, *a2.manifest.quarantine_record_ids)))
     actual_sources = tuple(sorted(item.source_record_id for item in mappings))
     if len(set(actual_sources)) != len(actual_sources) or actual_sources != expected_sources:
         raise ResearchFamilyCoverageError("A2.2 mapping source conservation is invalid")
