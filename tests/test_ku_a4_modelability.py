@@ -19,6 +19,7 @@ from services.market_universe.empirical_researchability import (
     build_evidence_resolution_result,
 )
 from services.market_universe.modelability import (
+    _A4_ISSUANCE_CAPABILITY,
     CpiReleaseRecipe,
     ModelabilityError,
     ModelabilityProofKind,
@@ -26,7 +27,6 @@ from services.market_universe.modelability import (
     ModelabilityResult,
     ModelabilityState,
     RequirementAssessment,
-    _A4_ISSUANCE_CAPABILITY,
     _canonical_recipe_values,
     _recipe_identity_material,
     _result_identity_material,
