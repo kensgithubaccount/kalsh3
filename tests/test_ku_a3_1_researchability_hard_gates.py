@@ -13,9 +13,9 @@ from services.market_universe.research_family_coverage import (
 )
 from services.market_universe.researchability_hard_gates import (
     A31_EMPIRICAL_ARTIFACT_STATUS,
+    HARD_GATE_ORDER,
     GateReason,
     GateState,
-    HARD_GATE_ORDER,
     ResearchabilityGate,
     ResearchabilityHardGateError,
     build_researchability_hard_gate_result,
