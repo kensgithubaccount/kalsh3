@@ -77,7 +77,7 @@ POLICY_ROWS: tuple[PolicyRow, ...] = (
         BLS_CPI_PRODUCT,
         CPISourceRole.HISTORICAL_INITIAL_RELEASE_DOCUMENT,
         CPISourceInterface.BLS_ARCHIVED_CPI_NEWS_RELEASE_HTML,
-        f"{BLS_HTTPS_ORIGIN}/news.release/archives/cpi_YYYYMMDD.htm",
+        f"{BLS_HTTPS_ORIGIN}/news.release/archives/cpi_MMDDYYYY.htm",
         (
             "eligible evidence for the CPI-U U.S. city average all-items seasonally adjusted "
             "signed one-month percentage change printed in that archived release; release "

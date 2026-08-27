@@ -53,6 +53,9 @@ def test_exact_reviewed_locators_resolve_without_io() -> None:
     document = resolve_document()
     calendar = resolve_cpi_source_authority(profile=PROFILE, role=CALENDAR, locator=CALENDAR_URL)
     assert document.source_interface is CPISourceInterface.BLS_ARCHIVED_CPI_NEWS_RELEASE_HTML
+    assert document.locator_shape == (
+        "https://www.bls.gov/news.release/archives/cpi_MMDDYYYY.htm"
+    )
     assert calendar.source_interface is CPISourceInterface.BLS_CPI_RELEASE_SCHEDULE_HTML
     assert "printed" in document.evidentiary_role
     assert "scheduled" in calendar.evidentiary_role
