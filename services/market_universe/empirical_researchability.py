@@ -175,8 +175,14 @@ class EvidenceDomainReceipt:
             raise EmpiricalResearchabilityError("A3.2 receipt authority boundary is invalid")
         if self.empirical_artifact_status != A31_EMPIRICAL_ARTIFACT_STATUS:
             raise EmpiricalResearchabilityError("A3.2 empirical-artifact posture is invalid")
-        if self.evidence_domain is EvidenceDomain.UNASSIGNED and self.domain_evidence_provenance:
-            raise EmpiricalResearchabilityError("unassigned A3.2 domain cannot carry domain proof")
+        if type(self.evidence_domain) is not EvidenceDomain:
+            raise EmpiricalResearchabilityError("A3.2 evidence domain type is not canonical")
+        if self.evidence_domain is not EvidenceDomain.UNASSIGNED:
+            raise EmpiricalResearchabilityError("A3.2 v1 evidence domain is not issuer-authorized")
+        if self.domain_evidence_provenance != ():
+            raise EmpiricalResearchabilityError(
+                "A3.2 v1 unassigned domain cannot carry domain proof"
+            )
         _validate_gate_resolutions(self.gates, self.evidence_domain)
 
 
@@ -479,14 +485,30 @@ def _validate_receipt_conservation(
             raise EmpiricalResearchabilityError(
                 "A3.2 receipt does not preserve exact upstream binding"
             )
+        expected_domain = EvidenceDomain.UNASSIGNED
+        expected_domain_provenance: tuple[str, ...] = ()
+        expected_gates = _gate_resolutions(
+            a31=a31,
+            mapping=mapping,
+            prior=prior,
+            domain=expected_domain,
+        )
+        if (
+            receipt.evidence_domain is not expected_domain
+            or receipt.domain_evidence_provenance != expected_domain_provenance
+            or receipt.gates != expected_gates
+        ):
+            raise EmpiricalResearchabilityError(
+                "A3.2 receipt decisions are not canonical issuer-derived semantics"
+            )
         expected_hash = stable_hash(
             _receipt_identity_material(
                 a31=a31,
                 mapping=mapping,
                 prior=prior,
-                domain=receipt.evidence_domain,
-                domain_provenance=receipt.domain_evidence_provenance,
-                gates=receipt.gates,
+                domain=expected_domain,
+                domain_provenance=expected_domain_provenance,
+                gates=expected_gates,
             )
         )
         if receipt.receipt_id != expected_hash or receipt.content_hash != expected_hash:
