@@ -264,7 +264,7 @@ def test_a2_2_result_rejects_replaced_exact_a2_object_binding() -> None:
     result = build_research_family_offline_report(original)
     object.__setattr__(result, "a2_result", replacement)
 
-    with pytest.raises(ResearchFamilyCoverageError, match="exact A2.1 object binding"):
+    with pytest.raises(ResearchFamilyCoverageError, match=r"exact A2.1 object binding"):
         result._validate_canonical_identity()
 
 
