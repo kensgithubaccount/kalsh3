@@ -1,6 +1,6 @@
 # CPI-E1 Independent Claude Adversarial Review Disposition
 
-Status: **INCORPORATED AS ADVERSARIAL INPUT; NO EMPIRICAL ACQUISITION IMPLEMENTED**
+Status: **INDEPENDENT ADVERSARIAL AND ACQUISITION-FEASIBILITY REVIEW INPUT INCORPORATED; NO EMPIRICAL ACQUISITION IMPLEMENTED**
 
 Independent-review canonical base: `82b80d207e10a64c7f477f887887166634698487`
 
@@ -8,12 +8,15 @@ Continuation base after external merge of CPI-E1 audit PR #101:
 `e4112ff8d39fb97957f52e7eb39e435887f82cec`
 
 This disposition records how the independent Claude CPI-E1 adversarial review
-changes the checkpoint. It is not independent empirical evidence, does not grant
-source permission, and does not create G1-G5 PASS authority. Missing empirical
-proof remains UNKNOWN. G6 remains UNKNOWN. A3.2/A4 consumption is unchanged.
+changes the checkpoint and how the subsequent independent Codex acquisition-
+feasibility/G3/G4 closure review resolves the prior design hold. Neither review
+is independent empirical evidence, grants source permission, or creates G1-G5
+PASS authority. Missing empirical proof remains UNKNOWN. G6 remains UNKNOWN.
+A3.2/A4 consumption is unchanged.
 
-The independent review is treated as an attack inventory, not as an instruction
-to implement every proposed mechanism verbatim.
+The independent reviews are treated as adversarial/design input, not as an
+instruction to implement proposed mechanisms verbatim and not as substitutes for
+canonical empirical evidence.
 
 ## Canonical verification results
 
@@ -135,22 +138,51 @@ name.
 7. **Identity seal.** Do not clone Claude's proposed `id()` design. Use the
    established validation pattern that fits the final issuer/consumer chain.
 
-## Deferred until independent Codex acquisition-feasibility review
+## Independent Codex acquisition-feasibility disposition
 
-No BLS/Kalshi empirical acquisition implementation or source-specific CPI
-runtime authority is committed before the Codex acquisition-feasibility audit
-returns. The following remain design constraints only until then:
+The independent Codex acquisition-feasibility and G3/G4 closure review has now
+returned against canonical
+`e4112ff8d39fb97957f52e7eb39e435887f82cec`. It is review/design input only;
+it is not canonical empirical evidence and does not itself grant source or gate
+authority.
 
-- exact BLS product/interface permission and fixed origin/path policy;
-- exact archived publication-byte identity and persistence mechanism;
-- independently proven actual publication availability;
-- source-derived initial-versus-later vintage identity;
-- whether SA-factor-vintage handling is relevant;
-- exact Kalshi historical settlement/finality/correction acquisition;
-- content-store round-trip proof for persisted raw artifacts;
-- declared acquisition scope and expected eligible source-record set;
-- parser quarantine categories and conservation manifest;
-- duplicate/relist aliasing grounded in observed exchange identities.
+Its verified high-level disposition is:
+
+1. `KXCPI` remains the strongest exact candidate for KU-A4: CPI-U, U.S. city
+   average, all items, seasonally adjusted, signed one-month percentage change,
+   a strictly-greater-than threshold family, with the Bureau of Labor Statistics
+   as the named source.
+2. Related series `KXCPIYOY`, `KXCPICORE`, and `KXCPICOREYOY` remain separate
+   domains and cannot inherit `KXCPI` authority.
+3. Historical Kalshi CPI market records are publicly obtainable. Public
+   historical rows can provide market/event identity, exact rules,
+   comparator/strike, result, settlement value, settlement timestamp, and a
+   finalized status.
+4. Public historical Kalshi rows do **not** establish a complete
+   dispute/amendment/correction/supersession history. Therefore G3 remains
+   **UNKNOWN**, and a finalized row alone must not become an eligible canonical
+   training label.
+5. Official archived BLS CPI releases can establish the exact historical
+   **initial printed CPI value** needed by the `KXCPI` candidate.
+6. The current BLS API cannot independently prove original historical
+   initial-vintage/PIT truth.
+7. Exact historical first-public server timestamp is not established by the
+   reviewed acquisition surface.
+8. KU-A4 does not require exact-to-the-second historical first-public timing.
+   G4 therefore appears supportable through a separately reviewed,
+   deterministic, conservative reconstructed-availability policy.
+9. G4 remains **UNKNOWN** today. The remaining issue appears bounded to a
+   policy/evidence prerequisite rather than an unavailable-data dead end.
+10. The immediate next implementation checkpoint remains **CPI-E1-P1 — reviewed
+    BLS CPI source governance**.
+11. After P1, the likely next bounded checkpoint is **CPI-E1-P2 — conservative
+    historical CPI PIT availability policy**.
+12. Only after P1 and P2 should CPI-E1 resume bounded empirical acquisition and
+    G1/G2/G3/G4/G5 evidence construction.
+13. G6 remains entirely separate and **UNKNOWN**.
+
+The prior Codex hold point is therefore closed. This does not authorize empirical
+acquisition or runtime CPI evidence work inside PR #102 and does not begin P1.
 
 ## Corpus completeness rule
 
@@ -168,13 +200,13 @@ is UNKNOWN.
 
 **No new CPI-E1 runtime schema is added in this continuation.**
 
-The exact empirical cohort has not been canonically acquired, BLS/CPI source
-authority is absent, and the pending Codex feasibility review may determine
-which source/interface and publication-proof fields are real rather than
-hypothetical. Adding CPI enums or authority-looking objects now would risk an
-unverified external-data assumption or a parallel trust boundary.
+The Codex feasibility review removes the acquisition dead-end concern, but it
+does not create source authority or canonical empirical evidence. This PR remains
+a review-record change only. BLS/CPI source governance is still absent, P1 has
+not begun, and adding authority-looking CPI objects here would cross the explicit
+checkpoint boundary.
 
-The later minimum schema is constrained to:
+The later minimum schema remains constrained to:
 
 - exact upstream A1/A2/A2.2 identity plus exact `ContractSpecification`
   semantic/rules identity;
@@ -191,7 +223,7 @@ The later minimum schema is constrained to:
 
 ## Gate impact
 
-The independent review does not change current conclusions:
+The independent reviews do not change current gate conclusions:
 
 - G1 exact settlement/domain binding: **UNKNOWN**
 - G2 permitted source: **UNKNOWN**
@@ -205,16 +237,22 @@ No positive blocker evidence was added. Absence of proof remains UNKNOWN.
 
 ## Next allowed move
 
-PR #101 was merged externally after its original audit commit. This follow-up
-must remain a separate draft review change.
+PR #101 was merged externally after its original audit commit. PR #102 remains a
+separate draft review change and must not contain P1 implementation.
 
-Wait for the independent Codex acquisition-feasibility audit before committing
-any BLS/Kalshi empirical acquisition or source-specific CPI runtime authority.
-After that audit, implement only the smallest source-governance/schema
-prerequisite positively supported by canonical contract semantics and the
-verified acquisition surface.
+Independent Codex acquisition-feasibility and G3/G4 closure review has now
+returned. It confirms that bounded `KXCPI`/BLS empirical acquisition is feasible
+in principle, preserves G3 as UNKNOWN, identifies a bounded conservative PIT
+policy path for G4, and confirms **CPI-E1-P1 — reviewed BLS CPI source
+governance** as the immediate next implementation checkpoint.
 
-Do not modify A3.2/A4 consumption. Do not begin M28D-R2/economics. Do not begin
-execution/risk/account work.
+After P1, the likely next bounded checkpoint is **CPI-E1-P2 — conservative
+historical CPI PIT availability policy**. Only after those reviewed prerequisites
+should CPI-E1 resume bounded empirical acquisition and G1/G2/G3/G4/G5 evidence
+construction.
 
-CPI-E1 REMAINS FAIL-CLOSED PENDING BOUNDED SOURCE/ACQUISITION PROOF
+Do not modify A3.2/A4 consumption. Do not begin M28D-R2/economics or KU-A5. Do
+not begin model execution or lifecycle/execution/risk/account/credential/signer/
+order work in this PR.
+
+CPI-E1 REMAINS FAIL-CLOSED; NEXT IMPLEMENTATION CHECKPOINT IS CPI-E1-P1
