@@ -217,10 +217,7 @@ def test_report_reuses_canonical_a2_aggregates_without_semantic_redefinition() -
     assert report.a2_category_counts is a2.manifest.category_counts
     assert report.a2_series_counts is a2.manifest.series_counts
     assert report.a2_recurrence_counts is a2.manifest.recurrence_counts
-    assert (
-        report.a2_settlement_source_origin_counts
-        is a2.manifest.settlement_source_origin_counts
-    )
+    assert report.a2_settlement_source_origin_counts is a2.manifest.settlement_source_origin_counts
     assert report.a2_unknown_unavailable_counts is a2.manifest.unknown_unavailable_counts
 
 
