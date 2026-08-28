@@ -1,7 +1,8 @@
 from __future__ import annotations
 
 import inspect
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, date, datetime, time, timedelta
+from decimal import Decimal
 from enum import StrEnum
 from pathlib import Path
 from zoneinfo import ZoneInfo
@@ -40,15 +41,25 @@ def artifact(
     )
 
 
-def test_positive_explicit_est_statement() -> None:
+def test_positive_explicit_est_statement_parses_structural_observation() -> None:
     source = artifact(
         "Transmission of material in this release is embargoed until "
         "8:30 a.m. (EST) Tuesday, January 14, 2020",
         locator="https://www.bls.gov/news.release/archives/cpi_01142020.htm",
     )
-    evidence = timing.issue_cpi_publication_evidence(source)
-    assert evidence.source_publish_at == datetime(2020, 1, 14, 8, 30, tzinfo=NY)
-    assert evidence.source_publish_at.utcoffset() == timedelta(hours=-5)
+    parsed = timing.parse_cpi_publication_timing(source)
+    assert type(parsed) is timing.ParsedCPIPublicationTiming
+    assert parsed.local_release_date == date(2020, 1, 14)
+    assert parsed.local_release_time == time(8, 30)
+    assert parsed.source_timezone_token == "EST"
+    assert parsed.publication_instant == datetime(2020, 1, 14, 8, 30, tzinfo=NY)
+    assert parsed.publication_instant.utcoffset() == timedelta(hours=-5)
+    assert parsed.source_artifact_id == source.artifact_id
+    assert parsed.raw_artifact_sha256 == source.raw_artifact_sha256
+    assert parsed.p1_authority_identity == source.p1_authority_identity
+    assert parsed.p1_policy_identity == source.p1_policy_identity
+    assert parsed.research_only is True
+    assert parsed.production_influence == Decimal("0")
 
 
 def test_positive_explicit_edt_statement_and_old_preformatted_shape() -> None:
@@ -57,9 +68,10 @@ def test_positive_explicit_edt_statement_and_old_preformatted_shape() -> None:
         "UNTIL 8:30 A.M. (EDT) Friday, August 11, 2017",
         locator="https://www.bls.gov/news.release/archives/cpi_08112017.htm",
     )
-    evidence = timing.issue_cpi_publication_evidence(source)
-    assert evidence.source_publish_at == datetime(2017, 8, 11, 8, 30, tzinfo=NY)
-    assert evidence.source_publish_at.utcoffset() == timedelta(hours=-4)
+    parsed = timing.parse_cpi_publication_timing(source)
+    assert parsed.publication_instant == datetime(2017, 8, 11, 8, 30, tzinfo=NY)
+    assert parsed.publication_instant.utcoffset() == timedelta(hours=-4)
+    assert parsed.source_timezone_token == "EDT"
 
 
 def test_positive_generic_et_statement() -> None:
@@ -68,9 +80,10 @@ def test_positive_generic_et_statement() -> None:
         "8:30 a.m. (ET) Tuesday, August 12, 2025",
         locator="https://www.bls.gov/news.release/archives/cpi_08122025.htm",
     )
-    evidence = timing.issue_cpi_publication_evidence(source)
-    assert evidence.source_publish_at == datetime(2025, 8, 12, 8, 30, tzinfo=NY)
-    assert evidence.source_publish_at.utcoffset() == timedelta(hours=-4)
+    parsed = timing.parse_cpi_publication_timing(source)
+    assert parsed.publication_instant == datetime(2025, 8, 12, 8, 30, tzinfo=NY)
+    assert parsed.publication_instant.utcoffset() == timedelta(hours=-4)
+    assert parsed.source_timezone_token == "ET"
 
 
 def test_output_uses_exact_america_new_york_zoneinfo() -> None:
@@ -79,7 +92,7 @@ def test_output_uses_exact_america_new_york_zoneinfo() -> None:
         "8:30 a.m. (ET) August 12, 2020",
         locator="https://www.bls.gov/news.release/archives/cpi_08122020.htm",
     )
-    published = timing.issue_cpi_publication_evidence(source).source_publish_at
+    published = timing.parse_cpi_publication_timing(source).publication_instant
     assert type(published.tzinfo) is ZoneInfo
     assert published.tzinfo.key == "America/New_York"
 
@@ -91,7 +104,7 @@ def test_est_on_edt_date_is_rejected() -> None:
         locator="https://www.bls.gov/news.release/archives/cpi_08122025.htm",
     )
     with pytest.raises(timing.CPIPublicationTimingError):
-        timing.issue_cpi_publication_evidence(source)
+        timing.parse_cpi_publication_timing(source)
 
 
 def test_edt_on_est_date_is_rejected() -> None:
@@ -101,11 +114,43 @@ def test_edt_on_est_date_is_rejected() -> None:
         locator="https://www.bls.gov/news.release/archives/cpi_01142020.htm",
     )
     with pytest.raises(timing.CPIPublicationTimingError):
-        timing.issue_cpi_publication_evidence(source)
+        timing.parse_cpi_publication_timing(source)
+
+
+def test_generic_et_during_fall_back_ambiguous_hour_is_rejected() -> None:
+    source = artifact(
+        "Transmission of material in this release is embargoed until "
+        "1:30 a.m. (ET) Sunday, November 2, 2025",
+        locator="https://www.bls.gov/news.release/archives/cpi_11022025.htm",
+    )
+    with pytest.raises(timing.CPIPublicationTimingError, match="locally ambiguous"):
+        timing.parse_cpi_publication_timing(source)
+
+
+@pytest.mark.parametrize(
+    ("timezone_token", "expected_offset", "expected_utc"),
+    [
+        ("EDT", timedelta(hours=-4), datetime(2025, 11, 2, 5, 30, tzinfo=UTC)),
+        ("EST", timedelta(hours=-5), datetime(2025, 11, 2, 6, 30, tzinfo=UTC)),
+    ],
+)
+def test_explicit_zone_resolves_matching_fall_back_candidate(
+    timezone_token: str,
+    expected_offset: timedelta,
+    expected_utc: datetime,
+) -> None:
+    source = artifact(
+        "Transmission of material in this release is embargoed until "
+        f"1:30 a.m. ({timezone_token}) Sunday, November 2, 2025",
+        locator="https://www.bls.gov/news.release/archives/cpi_11022025.htm",
+    )
+    parsed = timing.parse_cpi_publication_timing(source)
+    assert parsed.publication_instant.utcoffset() == expected_offset
+    assert parsed.publication_instant.astimezone(UTC) == expected_utc
 
 
 def test_public_api_has_no_caller_timestamp_or_derived_timing_parameters() -> None:
-    signature = inspect.signature(timing.issue_cpi_publication_evidence)
+    signature = inspect.signature(timing.parse_cpi_publication_timing)
     assert tuple(signature.parameters) == ("artifact",)
     source = artifact(
         "Transmission of material in this release is embargoed until "
@@ -119,10 +164,11 @@ def test_public_api_has_no_caller_timestamp_or_derived_timing_parameters() -> No
         {"timezone": "ET"},
         {"assumed_latency": timedelta(0)},
         {"replay_available_at": datetime.now(UTC)},
+        {"observation_identity": "caller"},
     )
     for kwargs in forbidden:
         with pytest.raises(TypeError):
-            timing.issue_cpi_publication_evidence(source, **kwargs)  # type: ignore[call-arg]
+            timing.parse_cpi_publication_timing(source, **kwargs)  # type: ignore[call-arg]
 
 
 def test_date_only_statement_is_rejected() -> None:
@@ -131,7 +177,7 @@ def test_date_only_statement_is_rejected() -> None:
         locator="https://www.bls.gov/news.release/archives/cpi_08122025.htm",
     )
     with pytest.raises(timing.CPIPublicationTimingError):
-        timing.issue_cpi_publication_evidence(source)
+        timing.parse_cpi_publication_timing(source)
 
 
 def test_time_only_statement_is_rejected() -> None:
@@ -140,7 +186,7 @@ def test_time_only_statement_is_rejected() -> None:
         locator="https://www.bls.gov/news.release/archives/cpi_08122025.htm",
     )
     with pytest.raises(timing.CPIPublicationTimingError):
-        timing.issue_cpi_publication_evidence(source)
+        timing.parse_cpi_publication_timing(source)
 
 
 def test_missing_timezone_is_rejected() -> None:
@@ -150,7 +196,7 @@ def test_missing_timezone_is_rejected() -> None:
         locator="https://www.bls.gov/news.release/archives/cpi_08122025.htm",
     )
     with pytest.raises(timing.CPIPublicationTimingError):
-        timing.issue_cpi_publication_evidence(source)
+        timing.parse_cpi_publication_timing(source)
 
 
 def test_conflicting_timing_statements_are_rejected() -> None:
@@ -168,7 +214,7 @@ def test_conflicting_timing_statements_are_rejected() -> None:
         extra=f"<p>{second}</p>",
     )
     with pytest.raises(timing.CPIPublicationTimingError):
-        timing.issue_cpi_publication_evidence(source)
+        timing.parse_cpi_publication_timing(source)
 
 
 def test_malformed_date_is_rejected() -> None:
@@ -178,7 +224,7 @@ def test_malformed_date_is_rejected() -> None:
         locator="https://www.bls.gov/news.release/archives/cpi_02282025.htm",
     )
     with pytest.raises(timing.CPIPublicationTimingError):
-        timing.issue_cpi_publication_evidence(source)
+        timing.parse_cpi_publication_timing(source)
 
 
 def test_malformed_time_is_rejected() -> None:
@@ -188,7 +234,7 @@ def test_malformed_time_is_rejected() -> None:
         locator="https://www.bls.gov/news.release/archives/cpi_08122025.htm",
     )
     with pytest.raises(timing.CPIPublicationTimingError):
-        timing.issue_cpi_publication_evidence(source)
+        timing.parse_cpi_publication_timing(source)
 
 
 def test_impossible_new_york_local_time_is_rejected() -> None:
@@ -198,7 +244,7 @@ def test_impossible_new_york_local_time_is_rejected() -> None:
         locator="https://www.bls.gov/news.release/archives/cpi_03092025.htm",
     )
     with pytest.raises(timing.CPIPublicationTimingError):
-        timing.issue_cpi_publication_evidence(source)
+        timing.parse_cpi_publication_timing(source)
 
 
 def test_archive_filename_cannot_create_timing() -> None:
@@ -207,7 +253,7 @@ def test_archive_filename_cannot_create_timing() -> None:
         locator="https://www.bls.gov/news.release/archives/cpi_08122025.htm",
     )
     with pytest.raises(timing.CPIPublicationTimingError):
-        timing.issue_cpi_publication_evidence(source)
+        timing.parse_cpi_publication_timing(source)
 
 
 def test_artifact_statement_locator_date_conflict_is_rejected() -> None:
@@ -217,7 +263,7 @@ def test_artifact_statement_locator_date_conflict_is_rejected() -> None:
         locator="https://www.bls.gov/news.release/archives/cpi_08132025.htm",
     )
     with pytest.raises(timing.CPIPublicationTimingError):
-        timing.issue_cpi_publication_evidence(source)
+        timing.parse_cpi_publication_timing(source)
 
 
 def test_calendar_current_api_pdf_and_txt_sources_are_rejected() -> None:
@@ -264,7 +310,7 @@ def test_changed_raw_bytes_or_hash_are_rejected_before_parsing() -> None:
     try:
         object.__setattr__(source, "raw_artifact", original + b" ")
         with pytest.raises(pit.CPIPITAvailabilityError):
-            timing.issue_cpi_publication_evidence(source)
+            timing.parse_cpi_publication_timing(source)
     finally:
         object.__setattr__(source, "raw_artifact", original)
     pit.validate_cpi_release_artifact(source)
@@ -280,28 +326,13 @@ def test_current_or_revised_vintage_cannot_masquerade_as_initial_release() -> No
     try:
         object.__setattr__(source, "vintage", "REVISED")
         with pytest.raises(pit.CPIPITAvailabilityError):
-            timing.issue_cpi_publication_evidence(source)
+            timing.parse_cpi_publication_timing(source)
     finally:
         object.__setattr__(source, "vintage", original)
     pit.validate_cpi_release_artifact(source)
 
 
-def test_caller_cannot_select_timing_evidence_identity() -> None:
-    signature = inspect.signature(timing.issue_cpi_publication_evidence)
-    assert "timing_evidence_identity" not in signature.parameters
-    source = artifact(
-        "Transmission of material in this release is embargoed until "
-        "8:30 a.m. (ET) Tuesday, August 12, 2025",
-        locator="https://www.bls.gov/news.release/archives/cpi_08122025.htm",
-    )
-    with pytest.raises(TypeError):
-        timing.issue_cpi_publication_evidence(  # type: ignore[call-arg]
-            source,
-            timing_evidence_identity="caller",
-        )
-
-
-def test_timing_identity_changes_when_authoritative_statement_changes() -> None:
+def test_observation_identity_changes_when_statement_changes() -> None:
     first = artifact(
         "Transmission of material in this release is embargoed until "
         "8:30 a.m. (ET) Tuesday, August 12, 2025",
@@ -312,9 +343,9 @@ def test_timing_identity_changes_when_authoritative_statement_changes() -> None:
         "9:00 a.m. (ET) Tuesday, August 12, 2025",
         locator="https://www.bls.gov/news.release/archives/cpi_08122025.htm",
     )
-    first_evidence = timing.issue_cpi_publication_evidence(first)
-    second_evidence = timing.issue_cpi_publication_evidence(second)
-    assert first_evidence.timing_evidence_identity != second_evidence.timing_evidence_identity
+    first_parsed = timing.parse_cpi_publication_timing(first)
+    second_parsed = timing.parse_cpi_publication_timing(second)
+    assert first_parsed.observation_identity != second_parsed.observation_identity
 
 
 def test_same_artifact_is_deterministic_for_semantics_and_identity() -> None:
@@ -323,12 +354,13 @@ def test_same_artifact_is_deterministic_for_semantics_and_identity() -> None:
         "8:30 a.m. (ET) Tuesday, August 12, 2025",
         locator="https://www.bls.gov/news.release/archives/cpi_08122025.htm",
     )
-    first = timing.issue_cpi_publication_evidence(source)
-    second = timing.issue_cpi_publication_evidence(source)
-    assert first.source_publish_at == second.source_publish_at
-    assert first.timing_semantics is second.timing_semantics
-    assert first.timing_evidence_identity == second.timing_evidence_identity
-    assert first.evidence_id == second.evidence_id
+    first = timing.parse_cpi_publication_timing(source)
+    second = timing.parse_cpi_publication_timing(source)
+    assert first == second
+    assert first.observation_identity == second.observation_identity
+    assert first.parser_policy_version == timing.PARSER_POLICY_VERSION
+    assert first.parser_schema_version == "cpi-e1-p3-parsed-publication-timing-v1"
+    assert first.text_normalization_schema == "cpi-e1-p3-html-visible-text-v1"
 
 
 def test_plain_text_detached_from_reviewed_html_shape_is_rejected() -> None:
@@ -343,22 +375,41 @@ def test_plain_text_detached_from_reviewed_html_shape_is_rejected() -> None:
         raw_artifact=statement.encode("ascii"),
     )
     with pytest.raises(timing.CPIPublicationTimingError):
-        timing.issue_cpi_publication_evidence(source)
+        timing.parse_cpi_publication_timing(source)
 
 
-def test_only_p3_is_allowed_to_consume_the_p2_private_seam() -> None:
+def test_caller_authored_bytes_parse_but_cannot_mint_p2_authority() -> None:
+    source = artifact(
+        "Transmission of material in this release is embargoed until "
+        "8:30 a.m. (ET) Tuesday, August 12, 2025",
+        locator="https://www.bls.gov/news.release/archives/cpi_08122025.htm",
+    )
+    parsed = timing.parse_cpi_publication_timing(source)
+    assert type(parsed) is timing.ParsedCPIPublicationTiming
+    assert not isinstance(parsed, pit.CPIActualPublicationEvidence)
+    with pytest.raises(pit.CPIPITAvailabilityError):
+        pit.build_cpi_reconstructed_availability(
+            source,
+            publication_evidence=parsed,  # type: ignore[arg-type]
+        )
+    module_source = inspect.getsource(timing)
+    assert not hasattr(timing, "issue_cpi_publication_evidence")
+    assert "_issue_actual_cpi_publication_evidence" not in module_source
+    assert "_PUBLICATION_AUTHORITY_CAPABILITY" not in module_source
+    assert "CPIActualPublicationEvidence" not in module_source
+    assert "Availability(" not in module_source
+
+
+def test_p2_private_publication_seam_has_no_p3_or_other_production_consumer() -> None:
     repo_root = Path(__file__).resolve().parents[1]
-    p2 = repo_root / "services/forecasting/cpi_pit_availability.py"
-    p3 = repo_root / "services/forecasting/cpi_publication_timing.py"
+    defining_module = repo_root / "services/forecasting/cpi_pit_availability.py"
     forbidden = (
         "_issue_actual_cpi_publication_evidence",
         "_PUBLICATION_AUTHORITY_CAPABILITY",
     )
-    p3_source = p3.read_text(encoding="utf-8")
-    assert all(name in p3_source for name in forbidden)
     violations: list[str] = []
     for path in sorted((repo_root / "services").rglob("*.py")):
-        if path in {p2, p3}:
+        if path == defining_module:
             continue
         source = path.read_text(encoding="utf-8")
         for name in forbidden:
