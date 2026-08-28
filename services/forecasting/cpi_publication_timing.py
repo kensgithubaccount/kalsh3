@@ -1,30 +1,40 @@
-"""Reviewed offline BLS CPI publication-timing issuer for CPI-E1-P3.
+"""Reviewed offline BLS CPI publication-timing parser for CPI-E1-P3.
 
 Only exact P1-authorized archived CPI HTML artifacts may enter this module. The
-publication instant is reconstructed from the artifact's own official embargo
-statement; callers cannot supply timing fields or timing-evidence identity.
+publication instant is parsed deterministically from the artifact's own official
+embargo statement. Parsed timing is structural research data only: byte identity
+and a reviewed locator do not establish acquisition provenance or publication
+authority.
 """
 
 from __future__ import annotations
 
 import re
+from dataclasses import dataclass, field
 from datetime import UTC, date, datetime, time, timedelta
+from decimal import Decimal
 from hashlib import sha256
 from html.parser import HTMLParser
 from zoneinfo import ZoneInfo
 
-import services.forecasting.cpi_pit_availability as pit
+from services.forecasting.cpi_pit_availability import (
+    CPIHistoricalReleaseArtifact,
+    validate_cpi_release_artifact,
+)
 from services.forecasting.cpi_source_authority import (
     CPISourceInterface,
+    CPISourceProfile,
+    CPISourceRole,
     resolve_cpi_source_authority,
 )
 from services.market_universe.domain import stable_hash
 
-POLICY_VERSION = "cpi-e1-p3-reviewed-bls-publication-timing-v1"
+PARSER_POLICY_VERSION = "cpi-e1-p3-reviewed-bls-publication-timing-parser-v1"
 TIMEZONE_NAME = "America/New_York"
 NEW_YORK = ZoneInfo(TIMEZONE_NAME)
+ZERO = Decimal("0")
 _TEXT_NORMALIZATION_SCHEMA = "cpi-e1-p3-html-visible-text-v1"
-_TIMING_EVIDENCE_SCHEMA = "cpi-e1-p3-publication-timing-evidence-v1"
+_PARSED_TIMING_SCHEMA = "cpi-e1-p3-parsed-publication-timing-v1"
 
 _MONTHS = {
     "january": 1,
@@ -58,7 +68,31 @@ _EMBARGO_RE = re.compile(
 
 
 class CPIPublicationTimingError(ValueError):
-    """Exact archived release bytes do not establish one reviewed publication instant."""
+    """Exact archived release bytes do not parse to one reviewed publication instant."""
+
+
+@dataclass(frozen=True, slots=True)
+class ParsedCPIPublicationTiming:
+    """Non-authoritative parsed timing observation bound to one structural artifact."""
+
+    profile: CPISourceProfile
+    source_role: CPISourceRole
+    source_locator: str
+    source_artifact_id: str
+    raw_artifact_sha256: str
+    p1_authority_identity: str
+    p1_policy_identity: str
+    matched_statement: str
+    local_release_date: date
+    local_release_time: time
+    source_timezone_token: str
+    publication_instant: datetime
+    observation_identity: str
+    parser_policy_version: str = field(init=False, default=PARSER_POLICY_VERSION)
+    parser_schema_version: str = field(init=False, default=_PARSED_TIMING_SCHEMA)
+    text_normalization_schema: str = field(init=False, default=_TEXT_NORMALIZATION_SCHEMA)
+    research_only: bool = field(init=False, default=True)
+    production_influence: Decimal = field(init=False, default=ZERO)
 
 
 class _VisibleTextParser(HTMLParser):
@@ -189,51 +223,51 @@ def _publication_instant(local_date: date, local_time: time, timezone_token: str
     return matching[0]
 
 
-def _timing_evidence_identity(
-    artifact: pit.CPIHistoricalReleaseArtifact,
+def _observation_identity(
+    artifact: CPIHistoricalReleaseArtifact,
     *,
     matched_statement: str,
     local_date: date,
     local_time: time,
     timezone_token: str,
-    source_publish_at: datetime,
+    publication_instant: datetime,
 ) -> str:
     statement_hash = sha256(matched_statement.encode("utf-8")).hexdigest()
     return stable_hash(
         (
-            POLICY_VERSION,
+            PARSER_POLICY_VERSION,
             _TEXT_NORMALIZATION_SCHEMA,
-            _TIMING_EVIDENCE_SCHEMA,
+            _PARSED_TIMING_SCHEMA,
             artifact.artifact_id,
             artifact.raw_artifact_sha256,
             statement_hash,
             local_date.isoformat(),
             local_time.isoformat(timespec="minutes"),
             timezone_token,
-            source_publish_at.isoformat(),
+            publication_instant.isoformat(),
             artifact.p1_authority_identity,
             artifact.p1_policy_identity,
         )
     )
 
 
-def issue_cpi_publication_evidence(
-    artifact: pit.CPIHistoricalReleaseArtifact,
-) -> pit.CPIActualPublicationEvidence:
-    """Issue exact P2 publication evidence from the artifact's own embargo statement."""
-    pit.validate_cpi_release_artifact(artifact)
+def parse_cpi_publication_timing(
+    artifact: CPIHistoricalReleaseArtifact,
+) -> ParsedCPIPublicationTiming:
+    """Parse one non-authoritative timing observation from reviewed-shape CPI HTML."""
+    validate_cpi_release_artifact(artifact)
     authority = resolve_cpi_source_authority(
         profile=artifact.profile,
         role=artifact.source_role,
         locator=artifact.source_locator,
     )
     if authority.source_interface is not CPISourceInterface.BLS_ARCHIVED_CPI_NEWS_RELEASE_HTML:
-        raise CPIPublicationTimingError("only P1-authorized archived CPI HTML is timing authority")
+        raise CPIPublicationTimingError("only P1-authorized archived CPI HTML may be parsed")
     if (
         authority.authority_identity != artifact.p1_authority_identity
         or authority.policy_identity != artifact.p1_policy_identity
     ):
-        raise CPIPublicationTimingError("CPI artifact P1 identities changed before timing issuance")
+        raise CPIPublicationTimingError("CPI artifact P1 identities changed before timing parsing")
 
     text = _normalized_visible_text(artifact.raw_artifact)
     matches = tuple(_EMBARGO_RE.finditer(text))
@@ -253,21 +287,27 @@ def issue_cpi_publication_evidence(
         raise CPIPublicationTimingError(
             "BLS embargo statement date conflicts with the authorized archive locator date"
         )
-    source_publish_at = _publication_instant(local_date, local_clock, timezone_token)
-    timing_identity = _timing_evidence_identity(
+    publication_instant = _publication_instant(local_date, local_clock, timezone_token)
+    observation_identity = _observation_identity(
         artifact,
         matched_statement=matched_statement,
         local_date=local_date,
         local_time=local_clock,
         timezone_token=timezone_token,
-        source_publish_at=source_publish_at,
+        publication_instant=publication_instant,
     )
-    evidence = pit._issue_actual_cpi_publication_evidence(
-        artifact=artifact,
-        source_publish_at=source_publish_at,
-        timing_semantics=pit.CPIPublicationTimingSemantics.ACTUAL_RELEASE_OR_EMBARGO,
-        timing_evidence_identity=timing_identity,
-        _capability=pit._PUBLICATION_AUTHORITY_CAPABILITY,
+    return ParsedCPIPublicationTiming(
+        profile=artifact.profile,
+        source_role=artifact.source_role,
+        source_locator=artifact.source_locator,
+        source_artifact_id=artifact.artifact_id,
+        raw_artifact_sha256=artifact.raw_artifact_sha256,
+        p1_authority_identity=artifact.p1_authority_identity,
+        p1_policy_identity=artifact.p1_policy_identity,
+        matched_statement=matched_statement,
+        local_release_date=local_date,
+        local_release_time=local_clock,
+        source_timezone_token=timezone_token,
+        publication_instant=publication_instant,
+        observation_identity=observation_identity,
     )
-    pit.validate_cpi_publication_evidence(evidence)
-    return evidence
