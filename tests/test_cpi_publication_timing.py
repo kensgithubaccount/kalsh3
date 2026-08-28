@@ -400,22 +400,29 @@ def test_caller_authored_bytes_parse_but_cannot_mint_p2_authority() -> None:
     assert "Availability(" not in module_source
 
 
-def test_p2_private_publication_seam_has_no_p3_or_other_production_consumer() -> None:
+def test_p2_private_publication_seam_has_only_reviewed_p4_production_consumer() -> None:
     repo_root = Path(__file__).resolve().parents[1]
-    defining_module = repo_root / "services/forecasting/cpi_pit_availability.py"
+    allowed = {
+        repo_root / "services/forecasting/cpi_pit_availability.py",
+        repo_root / "services/forecasting/cpi_evidence_issuer.py",
+    }
     forbidden = (
         "_issue_actual_cpi_publication_evidence",
         "_PUBLICATION_AUTHORITY_CAPABILITY",
     )
+    seen: set[Path] = set()
     violations: list[str] = []
     for path in sorted((repo_root / "services").rglob("*.py")):
-        if path == defining_module:
-            continue
         source = path.read_text(encoding="utf-8")
-        for name in forbidden:
-            if name in source:
-                violations.append(f"{path.relative_to(repo_root)}:{name}")
+        if any(name in source for name in forbidden):
+            seen.add(path)
+            if path not in allowed:
+                violations.append(str(path.relative_to(repo_root)))
     assert violations == []
+    assert seen == allowed
+    for path in sorted((repo_root / "scripts").rglob("*.py")):
+        source = path.read_text(encoding="utf-8")
+        assert all(name not in source for name in forbidden)
 
 
 def test_p3_has_no_io_acquisition_gate_model_economics_or_execution_dependencies() -> None:
