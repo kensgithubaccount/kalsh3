@@ -17,10 +17,11 @@ are not publication authority. The handoff is chronological only; CPI or any
 other settlement authority remains outside FR-A1.
 
 The publication record is issued only through a private capability-gated path.
-Its persisted bytes include an issuer MAC verified with the archive's separate,
-mode-600 issuer key, so a legitimate publication remains verifiable after a
-process restart. The archive/key boundary is trusted infrastructure: arbitrary
-host or issuer-key compromise is outside this checkpoint.
+Its persisted bytes include an issuer MAC verified with a separate, mode-600
+issuer key outside the caller-writable archive, so a legitimate publication
+remains verifiable after a process restart. The archive/key boundary is trusted
+infrastructure: arbitrary host or issuer-key compromise is outside this
+checkpoint.
 
 Publication uses canonical UTC and must precede the forecast's bound target
 resolution instant. If a receipt file exists without its publication file, an

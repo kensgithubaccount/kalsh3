@@ -232,6 +232,7 @@ def test_interrupted_publication_recovers_with_current_issuer_time(tmp_path, mon
     payload = json.loads(publication_path.read_bytes())
     assert payload["published_at"] == second_publication.isoformat()
     store.require_frozen(receipt, NOW + timedelta(days=1))
+    ProspectiveReceiptStore(tmp_path).require_frozen(receipt, NOW + timedelta(days=1))
 
 
 def test_publication_requires_canonical_utc(tmp_path, monkeypatch) -> None:

@@ -33,7 +33,7 @@ PROVENANCE = "PROSPECTIVE"
 PUBLICATION_SCHEMA_VERSION = "kalsh3.forward-reality.prospective-receipt-publication.v1"
 PUBLICATION_POLICY = "issuer-observed-archive-publication-utc-v1"
 _PUBLICATION_ISSUANCE_CAPABILITY = object()
-_ISSUER_KEY_FILENAME = ".prospective-receipt-issuer-key"
+_ISSUER_KEY_SUFFIX = ".prospective-receipt-issuer-key"
 
 
 def _utc_now() -> datetime:
@@ -359,7 +359,7 @@ class ProspectiveReceiptStore:
 
     def _issuer_key(self) -> bytes:
         self.root.mkdir(parents=True, exist_ok=True)
-        path = self.root / _ISSUER_KEY_FILENAME
+        path = self.root.with_name(self.root.name + _ISSUER_KEY_SUFFIX)
         try:
             fd = os.open(path, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
         except FileExistsError:
