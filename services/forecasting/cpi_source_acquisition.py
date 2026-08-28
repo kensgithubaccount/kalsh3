@@ -30,7 +30,7 @@ from services.forecasting.cpi_source_authority import (
 )
 from services.market_universe.domain import stable_hash
 
-TRANSPORT_POLICY_VERSION = "cpi-e1-p4-bounded-bls-https-get-v1"
+TRANSPORT_POLICY_VERSION = "cpi-e1-p4-bounded-bls-https-get-v2"
 ACQUISITION_SCHEMA_VERSION = "cpi-e1-p4-bls-acquisition-evidence-v1"
 BLS_HOST = "www.bls.gov"
 HTTP_METHOD = "GET"
@@ -346,7 +346,12 @@ def _fixed_origin_https_get(locator: str) -> _TransportResult:
     try:
         connection.request(HTTP_METHOD, path, headers=dict(REQUEST_HEADERS))
         response = connection.getresponse()
+        expected_body_length = response.length
+        if expected_body_length is not None and expected_body_length > MAX_RESPONSE_BYTES:
+            raise CPISourceAcquisitionError("declared BLS response length exceeded bounded size")
         body = response.read(MAX_RESPONSE_BYTES + 1)
+        if expected_body_length is not None and len(body) != expected_body_length:
+            raise CPISourceAcquisitionError("BLS response was truncated or incomplete")
         acquired_at = datetime.now(UTC)
         diagnostic_headers = tuple(
             (name, value)
