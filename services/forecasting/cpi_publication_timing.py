@@ -183,7 +183,8 @@ def _publication_instant(local_date: date, local_time: time, timezone_token: str
     matching = tuple(value for value in candidates if value.utcoffset() == required_offset)
     if len(matching) != 1:
         raise CPIPublicationTimingError(
-            f"{timezone_abbreviation} embargo token conflicts with America/New_York on the stated date"
+            f"{timezone_abbreviation} embargo token conflicts with America/New_York "
+            "on the stated date"
         )
     return matching[0]
 
