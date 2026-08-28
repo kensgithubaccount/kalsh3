@@ -247,6 +247,18 @@ def test_current_bls_api_cannot_enter_positive_artifact_path() -> None:
         artifact(locator=API_URL)
 
 
+@pytest.mark.parametrize(
+    "locator",
+    [
+        "https://www.bls.gov/news.release/archives/cpi_08122026.pdf",
+        "https://www.bls.gov/news.release/archives/cpi_08122026.txt",
+    ],
+)
+def test_unreviewed_pdf_and_txt_cannot_enter_positive_artifact_path(locator: str) -> None:
+    with pytest.raises(CPISourceAuthorityError):
+        artifact(locator=locator)
+
+
 def test_archive_filename_date_does_not_create_publication_time() -> None:
     source = artifact()
     assert "08122026" in source.source_locator
