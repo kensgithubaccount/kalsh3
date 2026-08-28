@@ -101,7 +101,9 @@ def _normalized_visible_text(raw_artifact: bytes) -> str:
         parser.feed(raw_artifact.decode("latin-1"))
         parser.close()
     except Exception as exc:
-        raise CPIPublicationTimingError("archived CPI HTML could not be normalized exactly") from exc
+        raise CPIPublicationTimingError(
+            "archived CPI HTML could not be normalized exactly"
+        ) from exc
     text = parser.normalized_text()
     if not text:
         raise CPIPublicationTimingError("archived CPI HTML contains no visible timing evidence")
@@ -111,7 +113,9 @@ def _normalized_visible_text(raw_artifact: bytes) -> str:
 def _locator_date(locator: str) -> date:
     match = _LOCATOR_RE.fullmatch(locator)
     if match is None:
-        raise CPIPublicationTimingError("CPI artifact locator is not the reviewed archived HTML shape")
+        raise CPIPublicationTimingError(
+            "CPI artifact locator is not the reviewed archived HTML shape"
+        )
     try:
         return date(
             int(match.group("year")),
@@ -162,19 +166,24 @@ def _valid_new_york_candidates(local_date: date, local_time: time) -> tuple[date
 def _publication_instant(local_date: date, local_time: time, timezone_token: str) -> datetime:
     candidates = _valid_new_york_candidates(local_date, local_time)
     if not candidates:
-        raise CPIPublicationTimingError("BLS embargo statement names an impossible New York local time")
-    token = timezone_token.upper()
-    if token == "ET":
+        raise CPIPublicationTimingError(
+            "BLS embargo statement names an impossible New York local time"
+        )
+    timezone_abbreviation = timezone_token.upper()
+    if timezone_abbreviation == "ET":
         if len(candidates) != 1:
             raise CPIPublicationTimingError("generic ET embargo statement is locally ambiguous")
         return candidates[0]
-    required_offset = {"EST": timedelta(hours=-5), "EDT": timedelta(hours=-4)}.get(token)
+    required_offset = {
+        "EST": timedelta(hours=-5),
+        "EDT": timedelta(hours=-4),
+    }.get(timezone_abbreviation)
     if required_offset is None:
         raise CPIPublicationTimingError("BLS embargo statement timezone is unsupported")
     matching = tuple(value for value in candidates if value.utcoffset() == required_offset)
     if len(matching) != 1:
         raise CPIPublicationTimingError(
-            f"{token} embargo token conflicts with America/New_York on the stated date"
+            f"{timezone_abbreviation} embargo token conflicts with America/New_York on the stated date"
         )
     return matching[0]
 
