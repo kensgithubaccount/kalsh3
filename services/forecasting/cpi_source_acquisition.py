@@ -18,13 +18,15 @@ from urllib.parse import urlsplit
 
 from services.forecasting.cpi_source_authority import (
     BLS_HTTPS_ORIGIN,
-    POLICY_IDENTITY as CANONICAL_P1_POLICY_IDENTITY,
     CPISourceInterface,
     CPISourceProfile,
     CPISourceRole,
     ReviewedCPISourceAuthority,
     resolve_cpi_source_authority,
     validate_cpi_source_authority,
+)
+from services.forecasting.cpi_source_authority import (
+    POLICY_IDENTITY as CANONICAL_P1_POLICY_IDENTITY,
 )
 from services.market_universe.domain import stable_hash
 
@@ -111,7 +113,9 @@ def _validate_diagnostic_headers(headers: tuple[tuple[str, str], ...]) -> None:
         if type(name) is not str or type(value) is not str:
             raise CPISourceAcquisitionError("diagnostic response header types are invalid")
         if name.casefold() not in _DIAGNOSTIC_HEADER_NAMES:
-            raise CPISourceAcquisitionError("unreviewed response header entered acquisition evidence")
+            raise CPISourceAcquisitionError(
+                "unreviewed response header entered acquisition evidence"
+            )
 
 
 def _validate_transport_result(result: _TransportResult, locator: str) -> datetime:
