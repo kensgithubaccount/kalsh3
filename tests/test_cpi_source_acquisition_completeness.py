@@ -116,7 +116,7 @@ def test_declared_content_length_over_size_cap_is_rejected_before_body_read(
     connection = install_response(monkeypatch, response)
     issued_before = len(acquisition._ISSUED_ACQUISITION_FINGERPRINTS)
 
-    with pytest.raises(acquisition.CPISourceAcquisitionError, match="declared.*bounded size"):
+    with pytest.raises(acquisition.CPISourceAcquisitionError, match=r"declared.*bounded size"):
         acquisition.acquire_bls_cpi_release(LOCATOR)
 
     assert response.read_calls == 0
