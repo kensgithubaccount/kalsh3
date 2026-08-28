@@ -10,8 +10,8 @@ import pytest
 
 import services.forecasting.cpi_evidence_issuer as issuer
 import services.forecasting.cpi_manual_acquisition as manual
-import services.forecasting.cpi_source_acquisition as automated
 import services.forecasting.cpi_pit_availability as pit
+import services.forecasting.cpi_source_acquisition as automated
 from services.forecasting.cpi_source_authority import CPISourceAuthorityError
 from services.historical_replay.domain import AvailabilityBasis, AvailabilityQuality
 
@@ -26,7 +26,10 @@ def html() -> bytes:
     ).encode("ascii")
 
 
-def import_manual(tmp_path, monkeypatch: pytest.MonkeyPatch) -> manual.CPIBLSManualAcquisitionEvidence:
+def import_manual(
+    tmp_path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> manual.CPIBLSManualAcquisitionEvidence:
     path = tmp_path / "cpi_08122025.htm"
     path.write_bytes(html())
     monkeypatch.setattr(manual, "_utc_now", lambda: IMPORTED_AT)
