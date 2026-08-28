@@ -40,7 +40,6 @@ _MONTHS = {
     "november": 11,
     "december": 12,
 }
-_WEEKDAYS = ("Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday")
 _LOCATOR_RE = re.compile(
     r"\Ahttps://www\.bls\.gov/news\.release/archives/cpi_"
     r"(?P<month>[0-9]{2})(?P<day>[0-9]{2})(?P<year>[0-9]{4})\.htm\Z"
@@ -67,10 +66,17 @@ class _VisibleTextParser(HTMLParser):
         super().__init__(convert_charrefs=True)
         self._parts: list[str] = []
         self._ignored_depth = 0
+        self._seen_html = False
+        self._seen_body = False
 
     def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
         del attrs
-        if tag.casefold() in {"script", "style"}:
+        normalized = tag.casefold()
+        if normalized == "html":
+            self._seen_html = True
+        elif normalized == "body":
+            self._seen_body = True
+        if normalized in {"script", "style"}:
             self._ignored_depth += 1
 
     def handle_endtag(self, tag: str) -> None:
@@ -82,6 +88,8 @@ class _VisibleTextParser(HTMLParser):
             self._parts.append(data)
 
     def normalized_text(self) -> str:
+        if not self._seen_html or not self._seen_body:
+            raise CPIPublicationTimingError("archived CPI bytes are not the reviewed HTML shape")
         return " ".join(" ".join(self._parts).split())
 
 
