@@ -10,7 +10,6 @@ from __future__ import annotations
 
 import http.client
 import ssl
-from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from decimal import Decimal
@@ -62,8 +61,6 @@ TRANSPORT_POLICY_IDENTITY = stable_hash(
     )
 )
 
-_LIVE_TRANSPORT_CAPABILITY = object()
-_TEST_TRANSPORT_CAPABILITY = object()
 _ACQUISITION_EVIDENCE_CAPABILITY = object()
 _ISSUED_ACQUISITION_FINGERPRINTS: dict[int, str] = {}
 
@@ -369,27 +366,10 @@ def _fixed_origin_https_get(locator: str) -> _TransportResult:
     )
 
 
-_Transport = Callable[[str], _TransportResult]
-
-
-def _acquire_bls_cpi_release_with_transport(
-    source_locator: str,
-    transport: _Transport,
-    *,
-    _capability: object | None = None,
-) -> CPIBLSAcquisitionEvidence:
-    """Private deterministic transport seam used by the live wrapper and offline tests."""
-    if _capability not in {_LIVE_TRANSPORT_CAPABILITY, _TEST_TRANSPORT_CAPABILITY}:
-        raise CPISourceAcquisitionError("reviewed BLS transport capability is required")
-    if _capability is _LIVE_TRANSPORT_CAPABILITY and transport is not _fixed_origin_https_get:
-        raise CPISourceAcquisitionError("live CPI acquisition must use the exact reviewed transport")
+def acquire_bls_cpi_release(source_locator: str) -> CPIBLSAcquisitionEvidence:
+    """Acquire one exact P1-authorized archived CPI HTML response from BLS."""
     authority = _reviewed_authority(source_locator)
-    try:
-        result = transport(source_locator)
-    except CPISourceAcquisitionError:
-        raise
-    except (OSError, TimeoutError, http.client.HTTPException) as exc:
-        raise CPISourceAcquisitionError(f"bounded BLS HTTPS GET failed: {exc}") from exc
+    result = _fixed_origin_https_get(source_locator)
     evidence = CPIBLSAcquisitionEvidence(
         result=result,
         authority=authority,
@@ -397,12 +377,3 @@ def _acquire_bls_cpi_release_with_transport(
     )
     validate_cpi_bls_acquisition_evidence(evidence)
     return evidence
-
-
-def acquire_bls_cpi_release(source_locator: str) -> CPIBLSAcquisitionEvidence:
-    """Acquire one exact P1-authorized archived CPI HTML response from BLS."""
-    return _acquire_bls_cpi_release_with_transport(
-        source_locator,
-        _fixed_origin_https_get,
-        _capability=_LIVE_TRANSPORT_CAPABILITY,
-    )
