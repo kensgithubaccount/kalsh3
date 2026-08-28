@@ -13,6 +13,8 @@ import pytest
 import services.forecasting.cpi_pit_availability as pit
 from services.forecasting.cpi_source_authority import (
     POLICY_IDENTITY as CANONICAL_P1_POLICY_IDENTITY,
+)
+from services.forecasting.cpi_source_authority import (
     CPISourceAuthorityError,
     CPISourceProfile,
 )
