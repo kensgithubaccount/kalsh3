@@ -448,19 +448,16 @@ def test_unknown_builder_rejects_naive_actual_ingest_time() -> None:
         pit.build_unknown_cpi_availability(actual_bot_ingest_at=datetime(2026, 8, 12, 12, 0))
 
 
-def test_private_publication_authority_seam_has_only_reviewed_p3_consumer() -> None:
+def test_private_publication_authority_seam_has_no_production_consumers() -> None:
     repo_root = Path(__file__).resolve().parents[1]
     defining_module = repo_root / "services/forecasting/cpi_pit_availability.py"
-    issuer_module = repo_root / "services/forecasting/cpi_publication_timing.py"
     forbidden = (
         "_issue_actual_cpi_publication_evidence",
         "_PUBLICATION_AUTHORITY_CAPABILITY",
     )
-    issuer_source = issuer_module.read_text(encoding="utf-8")
-    assert all(name in issuer_source for name in forbidden)
     violations: list[str] = []
     for path in sorted((repo_root / "services").rglob("*.py")):
-        if path in {defining_module, issuer_module}:
+        if path == defining_module:
             continue
         source = path.read_text(encoding="utf-8")
         for name in forbidden:
