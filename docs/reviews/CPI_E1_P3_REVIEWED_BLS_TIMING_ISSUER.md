@@ -1,243 +1,261 @@
-# CPI-E1-P3 Reviewed BLS Historical Publication-Timing Issuer
+# CPI-E1-P3 Reviewed BLS Historical Publication-Timing Parser
 
-Status: **RESEARCH-ONLY SEMANTIC ISSUER PREREQUISITE**. P3 is the smallest reviewed
-production bridge from canonical P1 source authority to canonical P2 historical PIT
-publication evidence. It performs no empirical corpus acquisition and promotes no gate.
+Status: **RESEARCH-ONLY STRUCTURAL PARSER**. P3 deterministically parses reviewed-shape
+BLS CPI historical HTML. It does not establish acquisition provenance, does not issue
+historical PIT publication authority, and promotes no gate.
 
-## Canonical base and dependencies
+## Canonical base and blocked head
 
 Canonical base:
 
 `7c6358b0da5f06ea9d021ed75bdc026f6a048ae6`
 
+Independent review identified a raw-byte provenance blocker on exact head:
+
+`71073698529969fc544b5dd52ecf6bf8eb63be66`
+
+The blocked implementation allowed a caller-constructible `CPIHistoricalReleaseArtifact`
+containing caller-authored HTML bytes at a P1-authorized locator to be converted into
+canonical P2 publication evidence. That was unsafe because:
+
+- P1 authorizes a reviewed source interface and locator shape;
+- `CPIHistoricalReleaseArtifact` binds bytes, SHA-256, and structural artifact identity;
+- neither property proves that the bytes were actually acquired from BLS;
+- therefore caller bytes are not source provenance;
+- content identity alone is not source or issuance authority.
+
+The repair decision for this checkpoint is Option C: **P3 is a pure deterministic parser
+only**. A later separately reviewed acquisition-bound checkpoint must combine reviewed
+transport/acquisition provenance, P3 parsed timing, P1 source authority, and P2 issuance.
+That future checkpoint is explicitly not implemented here.
+
+## Dependencies
+
 P1 authority module:
 
 `services/forecasting/cpi_source_authority.py`
 
-Canonical P1 policy identity remains:
-
-`fea29def84dcfc71f1ce86f268a25f038d02b8482a220e219fe88a2cea2bc3f1`
-
-P2 PIT module:
+P2 structural artifact / PIT policy module:
 
 `services/forecasting/cpi_pit_availability.py`
 
-P3 issuer/parser module:
+P3 parser module:
 
 `services/forecasting/cpi_publication_timing.py`
 
-P3 does not modify P1 or generic historical replay.
+P3 does not modify P1, P2 production semantics, or generic historical replay.
 
-## Authority boundary
+## Public parser API
 
-The public P3 positive API is exactly:
+The positive P3 API is now exactly:
 
-`issue_cpi_publication_evidence(artifact)`
+`parse_cpi_publication_timing(artifact)`
 
-The caller supplies only one exact `CPIHistoricalReleaseArtifact`. There is no caller
-parameter for `source_publish_at`, release date, release clock time, timezone, assumed
-latency, replay availability, timing semantics, or timing-evidence identity.
+The caller supplies one exact `CPIHistoricalReleaseArtifact`. There is no caller parameter
+for publication instant, release date, release clock, timezone, assumed latency, replay
+availability, or parser observation identity.
 
-P3 revalidates the P2 artifact before parsing. That revalidation fixes the exact runtime
-type, P1 profile, P1 historical-initial-release role, initial-release vintage, reviewed
-locator, raw bytes, SHA-256, artifact identity, P1 authority identity, P1 policy identity,
-research-only posture, and zero production influence.
+The return type is `ParsedCPIPublicationTiming`, a frozen/slots structural observation. It
+is deliberately non-authoritative and contains only deterministic parsed facts and exact
+bindings needed by a future provenance-bound issuer:
 
-P3 then independently resolves the same P1 authority and requires exact interface
-`BLS_ARCHIVED_CPI_NEWS_RELEASE_HTML`. Calendar, API, PDF, TXT, PPI, and other locators
-cannot enter positive issuance.
+- exact P1 profile and historical source role;
+- exact source locator;
+- source artifact ID;
+- raw artifact SHA-256;
+- P1 authority and policy identities;
+- normalized matched embargo statement;
+- parsed local release date;
+- parsed local release clock;
+- explicit source timezone token;
+- derived `America/New_York` publication instant;
+- deterministic observation identity;
+- parser policy/schema and text-normalization schema identities;
+- `research_only=True`;
+- `production_influence=0`.
 
-## Narrow official-source shape audit
+`ParsedCPIPublicationTiming` is not canonical P2 publication evidence, not replay
+`Availability`, not source provenance, not acquisition proof, not gate evidence, and not G4
+proof. Ordinary structural construction of this non-authoritative value grants no trust.
 
-Before implementation, a small read-only parser-design inspection was made of official BLS
-archived CPI HTML. It was not persisted as a corpus and is not empirical gate evidence.
-Observed official header shapes included:
+## Restored P2 private boundary
 
-- older fixed-width/preformatted archived HTML where the embargo phrase is split across
-  lines and uses uppercase forms such as `UNTIL 8:30 A.M. (EST)` followed by weekday and
-  date;
-- archived HTML using `8:30 a.m. (EDT)` followed by an optional weekday and exact date;
-- later archived HTML using generic `8:30 a.m. (ET)` with either `Month D, YYYY` or
-  `Weekday, Month D, YYYY`.
+P3 has zero access to P2 private publication issuance symbols. It does not reference:
 
-Those observations are parser-design input only. P3 does not persist, enumerate, or claim
-coverage over an empirical historical CPI corpus.
+- `_issue_actual_cpi_publication_evidence`;
+- `_PUBLICATION_AUTHORITY_CAPABILITY`.
 
-## Deterministic HTML normalization
+The architecture boundary is restored so those production symbols are permitted only in
+their defining module:
 
-P3 uses only the Python standard-library `HTMLParser`; there is no network or LLM path.
+`services/forecasting/cpi_pit_availability.py`
 
-The exact raw artifact bytes are decoded with deterministic Latin-1 byte preservation.
-The reviewed timing grammar is ASCII, so this preserves the authoritative timing bytes
-without depending on historical page charset declarations. HTML character references are
-decoded by `HTMLParser`; script and style text are excluded; remaining visible text is
-collapsed only by deterministic whitespace normalization.
+The existing P2 architecture regression is restored to its canonical no-production-
+consumer form. The P3 regression independently asserts the same repository-wide boundary.
+A future acquisition-bound issuer may deliberately reopen that boundary only under a
+separate reviewed checkpoint.
 
-The parser requires an actual HTML document shape containing both `<html>` and `<body>`.
-Detached plain text carrying an embargo-looking sentence is rejected.
+## Narrow official-source shape
 
-Normalization is bound into timing identity by schema:
+The previously reviewed parser grammar is preserved without broadening. A small read-only
+parser-design inspection of official BLS archived CPI HTML observed older fixed-width or
+preformatted headers with uppercase `A.M. (EST/EDT)` and later archived HTML using generic
+`(ET)`. Those observations remain parser-design input only; they were not persisted as an
+empirical corpus and are not gate evidence.
 
-`cpi-e1-p3-html-visible-text-v1`
-
-## Accepted actual timing statement
-
-P3 recognizes only the bounded official release-header semantic:
+P3 recognizes only the complete official semantic:
 
 `Transmission of material in this release is embargoed until ...`
 
-Matching is case-insensitive only to accommodate observed historical BLS capitalization.
-Whitespace may cross HTML/preformatted line boundaries. The grammar requires, in one
-complete statement:
+The grammar requires:
 
 - a valid 12-hour clock with minutes and `a.m.` or `p.m.`;
-- an explicit timezone token in parentheses: `EST`, `EDT`, or `ET`;
-- optional weekday text;
-- full English month name, calendar day, and four-digit year.
+- explicit `EST`, `EDT`, or `ET` in parentheses;
+- optional weekday;
+- full English month, calendar day, and four-digit year.
 
-If a weekday is present, it must agree with the parsed calendar date.
+Matching is case-insensitive only to accommodate reviewed historical capitalization and
+whitespace may cross HTML/preformatted line boundaries. The grammar is not a general BLS
+parser.
 
-P3 does not treat generic prose containing `8:30`, scheduled-release language, archive
-filename dates, ordinary BLS practice, HTTP metadata, acquisition time, or current BLS
-state as publication authority.
+## Deterministic HTML normalization
 
-## Timestamp derivation
+P3 uses only the Python standard-library `HTMLParser`. It performs no network I/O and has
+no LLM or fuzzy-matching path.
 
-After one complete statement is found, P3 derives the local calendar date and local clock
-from that statement alone.
+Raw artifact bytes are decoded deterministically with Latin-1. Script and style text are
+excluded and remaining visible text receives deterministic whitespace normalization. The
+parser requires actual `<html>` and `<body>` structure; detached plain text carrying an
+embargo-looking sentence is rejected.
 
-The archive locator is parsed only after the statement date exists. The locator date is a
-consistency check, never timestamp authority. A statement/locator date conflict fails
-closed.
+Normalization schema remains:
 
-The final `source_publish_at` is always an aware datetime backed by exact
-`ZoneInfo("America/New_York")`.
+`cpi-e1-p3-html-visible-text-v1`
 
-For `EST`, P3 requires that the stated local instant resolves under historical New York
-rules to UTC-05:00. For `EDT`, it requires UTC-04:00. If the token conflicts with the
-historical offset on that date, issuance fails.
+## P1 and artifact validation
 
-For generic `ET`, P3 resolves the exact local date/time under date-aware New York rules.
-An impossible spring-forward local time is rejected. A locally ambiguous generic-ET time
-is also rejected because the source would not identify one exact instant.
+Before parsing, P3 invokes canonical structural artifact validation. That fixes exact
+runtime artifact type, CPI profile, historical-initial-release role, initial-release
+vintage, reviewed locator, raw bytes/hash/artifact identity, P1 identities, research-only
+posture, and zero production influence.
 
-Explicit EST/EDT can select only a unique candidate with the corresponding historical
-offset.
+P3 independently resolves P1 and requires exact interface
+`BLS_ARCHIVED_CPI_NEWS_RELEASE_HTML`. Calendar, current API, PDF, TXT, PPI, and other
+interfaces cannot enter the parser.
 
-## Ambiguity and failure posture
+This is source-interface authorization only. It is intentionally not interpreted as proof
+that the bytes were transported from the locator.
 
-P3 fails closed when exact source bytes do not establish one reviewed boundary. This
-includes:
+## Timestamp derivation and DST rules
 
-- no complete embargo statement;
+The source statement itself supplies date, clock, and timezone token. The archive locator
+date is used only after the statement date is parsed, solely as a consistency check.
+Statement/locator conflict fails closed.
+
+The derived instant always uses exact `ZoneInfo("America/New_York")` semantics.
+
+- `EST` must resolve to UTC-05:00 on the stated historical local instant.
+- `EDT` must resolve to UTC-04:00.
+- generic `ET` is resolved using historical New York rules and must identify exactly one
+  local candidate.
+- spring-forward nonexistent local times are rejected.
+- generic `ET` during the fall-back ambiguous hour is rejected.
+- explicit `EST` or `EDT` during an otherwise ambiguous fall-back hour resolves only to the
+  unique candidate matching the stated historical offset.
+
+A present weekday must agree with the parsed date.
+
+## Failure posture
+
+P3 fails closed for:
+
+- missing or incomplete embargo statement;
 - date-only or time-only material;
-- absent or unsupported timezone semantics;
+- missing/unsupported timezone semantics;
 - malformed date or clock;
 - weekday/date conflict;
 - impossible New York local time;
 - ambiguous generic-ET local time;
-- EST used when New York is on EDT or vice versa;
-- multiple distinct matching embargo statements;
+- EST/EDT historical-offset mismatch;
+- multiple distinct matching statements;
 - statement/locator date conflict;
 - detached/non-HTML bytes;
 - wrong P1 profile, role, locator, interface, vintage, authority identity, or policy
   identity;
-- changed raw bytes, SHA-256, artifact identity, or content identity.
+- changed raw bytes, hash, or artifact identity.
 
-P3 never invents a timestamp. Missing or ambiguous proof remains insufficient evidence.
+No timing is inferred from archive filename, current BLS state, ordinary release practice,
+HTTP metadata, acquisition time, or a calendar page.
 
-## Deterministic timing-evidence identity
+## Deterministic observation identity
 
-The caller cannot choose `timing_evidence_identity`.
+The caller cannot choose the parser observation identity. P3 hashes the minimum reviewed
+parse chain using repository `stable_hash`, binding:
 
-P3 computes it with the repository `stable_hash` over the minimum reviewed evidence chain:
-
-- P3 policy version `cpi-e1-p3-reviewed-bls-publication-timing-v1`;
+- parser policy `cpi-e1-p3-reviewed-bls-publication-timing-parser-v1`;
 - visible-text normalization schema;
-- timing-evidence schema `cpi-e1-p3-publication-timing-evidence-v1`;
+- parsed-timing schema `cpi-e1-p3-parsed-publication-timing-v1`;
 - exact source artifact ID;
 - exact raw artifact SHA-256;
-- SHA-256 of the exact normalized matched embargo statement;
-- parsed local date;
-- parsed local clock;
-- parsed timezone token;
-- normalized `America/New_York` publication instant;
+- SHA-256 of the normalized matched statement;
+- parsed local date and clock;
+- source timezone token;
+- derived New York instant;
 - exact P1 authority identity;
 - exact P1 policy identity.
 
-The exact raw artifact remains available on `CPIHistoricalReleaseArtifact`, so the matched
-statement and identity are independently reproducible. A content hash alone does not grant
-authority; the hash is only an identity input to the reviewed P3 -> P2 issuance chain.
+This identity proves deterministic parse equivalence for the supplied structural artifact.
+It does not prove where the bytes came from and cannot grant issuance authority.
 
-## P2 issuance binding
+## Raw-byte attack regression
 
-P3 is the first and only reviewed production consumer of P2's private issuance seam:
+The repair intentionally preserves the ability to parse synthetic/caller-authored test
+bytes when they are wrapped in a structurally valid P1-authorized artifact. The regression
+then proves the security boundary:
 
-- `_issue_actual_cpi_publication_evidence`
-- `_PUBLICATION_AUTHORITY_CAPABILITY`
+- the result has exact runtime type `ParsedCPIPublicationTiming`;
+- it is not canonical P2 publication evidence;
+- P2 reconstructed-availability construction rejects it;
+- P3 exposes no old issuance API;
+- P3 source contains neither P2 private issuance symbol;
+- P3 constructs no replay `Availability`.
 
-P3 supplies only parser-derived values and fixed
-`CPIPublicationTimingSemantics.ACTUAL_RELEASE_OR_EMBARGO`. The canonical output remains
-P2's existing `CPIActualPublicationEvidence`; P3 introduces no parallel publication-proof
-type.
-
-After issuance, P3 immediately invokes P2 publication-evidence revalidation before
-returning the proof.
-
-## Private-seam architecture boundary
-
-The existing repository guard in `tests/test_cpi_pit_availability.py` is deliberately
-updated. Exactly two production files may contain either P2 private symbol:
-
-1. the defining P2 module;
-2. `services/forecasting/cpi_publication_timing.py`.
-
-Every other `services/**/*.py` remains fail-closed. The P3 tests additionally assert that
-both private symbols are actually present in P3 and absent from all other production
-modules. A later acquisition layer must call P3's public API and must not receive the P2
-capability.
+Synthetic HTML remains parser-fixture material only.
 
 ## Adversarial coverage
 
-Focused P3 coverage includes:
+Focused P3 tests cover:
 
-- positive explicit EST;
-- positive explicit EDT including old preformatted/capitalized source shape;
-- positive generic ET;
+- explicit EST;
+- explicit EDT including the old preformatted/capitalized shape;
+- generic ET;
 - exact America/New_York `ZoneInfo` output;
 - EST-on-EDT and EDT-on-EST rejection;
-- no caller timing/latency/replay parameters;
+- generic ET fall-back ambiguity rejection;
+- explicit EST/EDT fall-back candidate selection;
+- no caller timing/latency/replay/identity parameters;
 - date-only, time-only, and missing-timezone rejection;
 - conflicting statements;
-- malformed date and malformed time;
-- impossible DST local time;
+- malformed date/time;
+- DST gap rejection;
 - archive filename non-authority;
-- statement/locator date conflict;
-- calendar, current API, PDF, TXT, and wrong-product locator exclusion;
-- exact P1 profile type enforcement;
-- changed raw bytes/hash rejection before parsing;
+- locator/date conflict;
+- calendar/API/PDF/TXT/wrong-product exclusion;
+- exact P1 profile type;
+- raw-byte/hash mutation rejection;
 - revised-vintage mutation rejection;
-- caller inability to select timing-evidence identity;
-- identity change with authoritative statement change;
-- deterministic same-artifact semantics and identity;
-- detached plain-text rejection;
-- exact private-seam allowlist;
+- deterministic observation identity;
+- detached-text rejection;
+- fabricated-byte parser-only boundary;
+- repository-wide P2 private-seam confinement;
 - no I/O, acquisition, gate, model, economics, execution, risk, account, credential, or
   order dependencies.
 
-Synthetic/minimal HTML fixtures are marked `TEST FIXTURE ONLY` and are not empirical proof.
+## No acquisition and gate posture
 
-## No empirical acquisition
-
-P3 does not enumerate KXCPI markets, download a historical BLS corpus, fetch historical
-Kalshi rows, persist ArchiveManifest or DatasetManifest material, create settlement labels,
-create G1-G6 receipts, modify A3.2/A4, fit a model, calculate economics, or introduce
-execution authority.
-
-## Gate posture
-
-P1 source governance plus P2 conservative PIT policy plus P3 parser/issuer capability are
-still prerequisites, not an empirical corpus.
+P3 does not fetch BLS, enumerate KXCPI, create a historical corpus, retrieve Kalshi
+historical rows, persist ArchiveManifest/DatasetManifest material, create settlement
+labels, modify A3.2/A4, fit a model, calculate economics, or introduce execution authority.
 
 Gate posture remains:
 
@@ -252,19 +270,22 @@ No gate promotion is authorized by P3.
 
 ## Changed scope
 
-P3 is limited to:
+The repair remains confined to the existing P3 PR scope:
 
 - `services/forecasting/cpi_publication_timing.py`;
 - `tests/test_cpi_publication_timing.py`;
-- `tests/test_cpi_pit_availability.py` only for the deliberate private-seam allowlist;
-- `docs/reviews/CPI_E1_P3_REVIEWED_BLS_TIMING_ISSUER.md`.
+- `tests/test_cpi_pit_availability.py` only to restore the canonical private-seam guard;
+- this review document.
 
 No P1, generic replay, workflow, acquisition, model, economics, or execution file is
 modified.
 
 ## Smallest next checkpoint
 
-The smallest next checkpoint is focused independent review of this P3 issuer and its exact
-private-seam expansion. After review and merge, empirical CPI acquisition may begin only as
-a separate checkpoint using P3's public API. P3 itself must not acquire or promote a
-corpus.
+The immediate next checkpoint is independent delta review of this parser-only provenance
+repair on PR #105. Do not merge until that review passes.
+
+After P3 is reviewed and merged, the next implementation checkpoint is a separately
+reviewed acquisition-bound issuer that proves transport/source provenance before combining
+P3 parsed timing with P1 authority and P2 issuance. That checkpoint must be designed and
+reviewed separately; empirical corpus acquisition does not begin from this PR.
