@@ -256,7 +256,9 @@ def validate_cpi_bls_manual_acquisition_evidence(
 ) -> None:
     """Revalidate manual provenance without upgrading it to automated HTTP proof."""
     if type(evidence) is not CPIBLSManualAcquisitionEvidence:
-        raise CPIManualAcquisitionError("manual CPI acquisition evidence must have exact issued type")
+        raise CPIManualAcquisitionError(
+            "manual CPI acquisition evidence must have exact issued type"
+        )
     authority = _reviewed_authority(evidence.source_locator)
     raw_hash = sha256(evidence.raw_body).hexdigest() if type(evidence.raw_body) is bytes else None
     imported = _aware_utc(evidence.imported_at, "manual BLS import timestamp")
@@ -282,7 +284,9 @@ def validate_cpi_bls_manual_acquisition_evidence(
         type(evidence.p1_authority_identity) is str
         and evidence.p1_authority_identity == authority.authority_identity,
         type(evidence.p1_policy_identity) is str
-        and evidence.p1_policy_identity == authority.policy_identity == CANONICAL_P1_POLICY_IDENTITY,
+        and evidence.p1_policy_identity
+        == authority.policy_identity
+        == CANONICAL_P1_POLICY_IDENTITY,
         type(evidence.schema_version) is str and evidence.schema_version == MANUAL_SCHEMA_VERSION,
         type(evidence.evidence_id) is str and evidence.evidence_id == expected,
         type(evidence.content_hash) is str and evidence.content_hash == expected,
