@@ -136,7 +136,9 @@ def test_public_api_cannot_accept_caller_bytes_url_authority_or_timing() -> None
         {"timing_evidence_identity": "caller"},
     ):
         with pytest.raises(TypeError):
-            issuer.issue_acquisition_bound_cpi_evidence(evidence, **kwargs)  # type: ignore[call-arg]
+            issuer.issue_acquisition_bound_cpi_evidence(  # type: ignore[call-arg]
+                evidence, **kwargs
+            )
 
 
 @pytest.mark.parametrize(
@@ -235,7 +237,11 @@ def test_direct_replace_object_new_and_mutate_rehash_cannot_mint_evidence() -> N
     forged = object.__new__(acquisition.CPIBLSAcquisitionEvidence)
     with pytest.raises((AttributeError, acquisition.CPISourceAcquisitionError)):
         acquisition.validate_cpi_bls_acquisition_evidence(forged)
-    old_locator, old_id, old_hash = evidence.source_locator, evidence.evidence_id, evidence.content_hash
+    old_locator, old_id, old_hash = (
+        evidence.source_locator,
+        evidence.evidence_id,
+        evidence.content_hash,
+    )
     try:
         object.__setattr__(evidence, "source_locator", OTHER_LOCATOR)
         redigest = acquisition._acquisition_digest(evidence)
@@ -274,7 +280,11 @@ def test_p1_p3_and_p2_bind_to_exact_acquired_artifact() -> None:
     assert artifact.raw_artifact_sha256 == evidence.raw_body_sha256 == parsed.raw_artifact_sha256
     assert parsed.source_artifact_id == artifact.artifact_id == proof.source_artifact_id
     assert parsed.source_locator == artifact.source_locator == evidence.source_locator
-    assert parsed.p1_authority_identity == artifact.p1_authority_identity == evidence.p1_authority_identity
+    assert (
+        parsed.p1_authority_identity
+        == artifact.p1_authority_identity
+        == evidence.p1_authority_identity
+    )
     assert parsed.p1_policy_identity == artifact.p1_policy_identity == evidence.p1_policy_identity
     assert type(proof) is pit.CPIActualPublicationEvidence
     assert proof.source_publish_at == parsed.publication_instant
