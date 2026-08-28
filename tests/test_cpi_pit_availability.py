@@ -5,6 +5,7 @@ from dataclasses import replace
 from datetime import UTC, date, datetime, timedelta, timezone
 from decimal import Decimal
 from enum import StrEnum
+from pathlib import Path
 from typing import Any
 from zoneinfo import ZoneInfo
 
@@ -445,6 +446,24 @@ def test_research_only_and_zero_production_influence_are_fixed() -> None:
 def test_unknown_builder_rejects_naive_actual_ingest_time() -> None:
     with pytest.raises(pit.CPIPITAvailabilityError):
         pit.build_unknown_cpi_availability(actual_bot_ingest_at=datetime(2026, 8, 12, 12, 0))
+
+
+def test_private_publication_authority_seam_has_no_production_consumers() -> None:
+    repo_root = Path(__file__).resolve().parents[1]
+    defining_module = repo_root / "services/forecasting/cpi_pit_availability.py"
+    forbidden = (
+        "_issue_actual_cpi_publication_evidence",
+        "_PUBLICATION_AUTHORITY_CAPABILITY",
+    )
+    violations: list[str] = []
+    for path in sorted((repo_root / "services").rglob("*.py")):
+        if path == defining_module:
+            continue
+        source = path.read_text(encoding="utf-8")
+        for name in forbidden:
+            if name in source:
+                violations.append(f"{path.relative_to(repo_root)}:{name}")
+    assert violations == []
 
 
 def test_module_has_no_io_acquisition_gate_model_economics_or_execution_dependencies() -> None:
