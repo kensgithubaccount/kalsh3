@@ -4,6 +4,7 @@ from pathlib import Path
 
 import pytest
 
+import services.forward_reality.prospective_receipts as receipt_module
 from services.forecasting.domain import ForecastError, ModelFamily
 from services.forecasting.models import (
     FeatureProvenance,
@@ -139,21 +140,50 @@ def test_outcome_boundary_requires_published_receipt_and_later_outcome(tmp_path)
     with pytest.raises(ProspectiveReceiptError, match="unpublished"):
         store.require_frozen(receipt, NOW + timedelta(days=1))
     store.publish(receipt)
-    with pytest.raises(ProspectiveReceiptError, match="not later"):
+    with pytest.raises(ProspectiveReceiptError, match="trusted publication"):
         store.require_frozen(receipt, receipt.forecast_created_at)
     store.require_frozen(receipt, NOW + timedelta(days=1))
 
 
-def test_receipt_created_after_known_outcome_cannot_be_called_prospective(tmp_path) -> None:
+def test_receipt_published_after_known_outcome_cannot_be_called_prospective(
+    tmp_path, monkeypatch
+) -> None:
+    outcome_available_at = NOW + timedelta(days=1)
+    monkeypatch.setattr(
+        receipt_module, "_utc_now", lambda: outcome_available_at + timedelta(seconds=1)
+    )
     receipt = make_receipt(
-        issued_at=NOW + timedelta(days=2),
-        created_at=NOW + timedelta(days=2),
-        target_resolution_time=NOW + timedelta(days=3),
+        issued_at=NOW - timedelta(days=2),
+        created_at=NOW - timedelta(days=2),
+        target_resolution_time=NOW - timedelta(days=1),
     )
     store = ProspectiveReceiptStore(tmp_path)
     store.publish(receipt)
-    with pytest.raises(ProspectiveReceiptError, match="not later"):
-        store.require_frozen(receipt, NOW + timedelta(days=1))
+    with pytest.raises(ProspectiveReceiptError, match="trusted publication"):
+        store.require_frozen(receipt, outcome_available_at)
+
+
+def test_backdated_forecast_cannot_hide_post_outcome_publication(tmp_path, monkeypatch) -> None:
+    outcome_available_at = NOW + timedelta(days=1)
+    monkeypatch.setattr(
+        receipt_module, "_utc_now", lambda: outcome_available_at + timedelta(seconds=1)
+    )
+    receipt = make_receipt(
+        issued_at=NOW - timedelta(days=2),
+        created_at=NOW - timedelta(days=2),
+        target_resolution_time=NOW - timedelta(days=1),
+    )
+    store = ProspectiveReceiptStore(tmp_path)
+    store.publish(receipt)
+    with pytest.raises(ProspectiveReceiptError, match="trusted publication"):
+        store.require_frozen(receipt, outcome_available_at)
+
+
+def test_caller_cannot_supply_publication_timestamp(tmp_path) -> None:
+    receipt = make_receipt()
+    store = ProspectiveReceiptStore(tmp_path)
+    with pytest.raises(TypeError):
+        store.publish(receipt, published_at=NOW)  # type: ignore[call-arg]
 
 
 def test_production_influence_and_foreign_runtime_types_are_rejected() -> None:

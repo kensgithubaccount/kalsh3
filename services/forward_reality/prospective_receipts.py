@@ -12,7 +12,7 @@ import json
 import os
 from collections.abc import Mapping
 from dataclasses import dataclass
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from pathlib import Path
 
@@ -26,6 +26,13 @@ class ProspectiveReceiptError(ValueError):
 
 SCHEMA_VERSION = "kalsh3.forward-reality.prospective-prediction-receipt.v1"
 PROVENANCE = "PROSPECTIVE"
+PUBLICATION_SCHEMA_VERSION = "kalsh3.forward-reality.prospective-receipt-publication.v1"
+PUBLICATION_POLICY = "issuer-observed-archive-publication-utc-v1"
+
+
+def _utc_now() -> datetime:
+    """Issuer clock seam; production publication uses the runtime UTC clock."""
+    return datetime.now(UTC)
 
 
 def _jsonable(value: object) -> object:
@@ -230,14 +237,67 @@ class ProspectivePredictionReceipt:
         ).encode()
 
 
+@dataclass(frozen=True, slots=True)
+class ProspectiveReceiptPublication:
+    """Issuer-observed fact that a receipt entered this trusted archive."""
+
+    schema_version: str
+    receipt_id: str
+    receipt_content_hash: str
+    archive_id: str
+    published_at: datetime
+    policy: str
+    research_only: bool
+    production_influence: Decimal
+    publication_id: str
+
+    def __post_init__(self) -> None:
+        if self.schema_version != PUBLICATION_SCHEMA_VERSION:
+            raise ProspectiveReceiptError("publication schema is not recognized")
+        if type(self.published_at) is not datetime or self.published_at.tzinfo is None:
+            raise ProspectiveReceiptError("publication timestamp must be timezone-aware")
+        if self.policy != PUBLICATION_POLICY:
+            raise ProspectiveReceiptError("publication policy is not recognized")
+        if self.research_only is not True or self.production_influence != Decimal("0"):
+            raise ProspectiveReceiptError(
+                "prospective publication is research-only with zero influence"
+            )
+        if self.publication_id != stable_hash(_jsonable(self._identity_values())):
+            raise ProspectiveReceiptError("publication identity does not match immutable fields")
+
+    def _identity_values(self) -> dict[str, object]:
+        return {
+            field.name: getattr(self, field.name)
+            for field in dataclasses.fields(self)
+            if field.name != "publication_id"
+        }
+
+    def to_bytes(self) -> bytes:
+        return (
+            json.dumps(_jsonable(dataclasses.asdict(self)), sort_keys=True, separators=(",", ":"))
+            + "\n"
+        ).encode()
+
+    @classmethod
+    def from_bytes(cls, encoded: bytes) -> ProspectiveReceiptPublication:
+        try:
+            payload = json.loads(encoded)
+            payload["published_at"] = datetime.fromisoformat(payload["published_at"])
+            payload["production_influence"] = Decimal(payload["production_influence"])
+            return cls(**payload)
+        except (json.JSONDecodeError, TypeError, ValueError, KeyError) as exc:
+            raise ProspectiveReceiptError("outcome cannot bind an invalid publication") from exc
+
+
 class ProspectiveReceiptStore:
-    """Create-only filesystem archive; identical publication is idempotent."""
+    """Create-only archive with an issuer-observed publication-time boundary."""
 
     def __init__(self, root: Path) -> None:
         self.root = Path(root)
 
     def publish(self, receipt: ProspectivePredictionReceipt) -> None:
         path = self.root / f"{receipt.receipt_id}.json"
+        publication_path = self.root / f"{receipt.receipt_id}.publication.json"
         encoded = receipt.to_bytes()
         self.root.mkdir(parents=True, exist_ok=True)
         try:
@@ -259,17 +319,67 @@ class ProspectiveReceiptStore:
         finally:
             os.close(fd)
 
+        publication = self._new_publication(receipt)
+        publication_encoded = publication.to_bytes()
+        try:
+            fd = os.open(publication_path, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
+        except FileExistsError:
+            if publication_path.read_bytes() != publication_encoded:
+                raise ProspectiveReceiptError(
+                    "publication identity already exists with conflicting content"
+                ) from None
+            return
+        try:
+            view = memoryview(publication_encoded)
+            while view:
+                written = os.write(fd, view)
+                if written <= 0:
+                    raise ProspectiveReceiptError("publication archive write made no progress")
+                view = view[written:]
+            os.fsync(fd)
+        finally:
+            os.close(fd)
+
+    def _new_publication(
+        self, receipt: ProspectivePredictionReceipt
+    ) -> ProspectiveReceiptPublication:
+        published_at = _utc_now()
+        if type(published_at) is not datetime or published_at.tzinfo is None:
+            raise ProspectiveReceiptError("issuer clock must return a timezone-aware datetime")
+        values: dict[str, object] = {
+            "schema_version": PUBLICATION_SCHEMA_VERSION,
+            "receipt_id": receipt.receipt_id,
+            "receipt_content_hash": receipt.content_hash,
+            "archive_id": str(self.root.resolve()),
+            "published_at": published_at,
+            "policy": PUBLICATION_POLICY,
+            "research_only": True,
+            "production_influence": Decimal("0"),
+        }
+        publication_id = stable_hash(_jsonable(values))
+        return ProspectiveReceiptPublication(**values, publication_id=publication_id)  # type: ignore[arg-type]
+
     def require_frozen(
         self, receipt: ProspectivePredictionReceipt, outcome_available_at: datetime
     ) -> None:
         """Permit a later outcome binder to proceed only after this receipt exists."""
         if type(outcome_available_at) is not datetime or outcome_available_at.tzinfo is None:
             raise ProspectiveReceiptError("outcome availability must be a timezone-aware datetime")
-        if outcome_available_at <= receipt.forecast_created_at:
-            raise ProspectiveReceiptError("outcome is not later than the frozen receipt")
         path = self.root / f"{receipt.receipt_id}.json"
         if not path.is_file() or path.read_bytes() != receipt.to_bytes():
             raise ProspectiveReceiptError("outcome cannot bind an unpublished or changed receipt")
+        publication_path = self.root / f"{receipt.receipt_id}.publication.json"
+        if not publication_path.is_file():
+            raise ProspectiveReceiptError("outcome cannot bind an unpublished receipt")
+        publication = ProspectiveReceiptPublication.from_bytes(publication_path.read_bytes())
+        if publication.receipt_id != receipt.receipt_id:
+            raise ProspectiveReceiptError("publication is bound to a different receipt")
+        if publication.receipt_content_hash != receipt.content_hash:
+            raise ProspectiveReceiptError("publication is bound to changed receipt content")
+        if publication_path.read_bytes() != publication.to_bytes():
+            raise ProspectiveReceiptError("outcome cannot bind a changed publication")
+        if outcome_available_at <= publication.published_at:
+            raise ProspectiveReceiptError("outcome is not later than trusted publication")
 
 
 class ProspectiveOutcomeBoundary:
