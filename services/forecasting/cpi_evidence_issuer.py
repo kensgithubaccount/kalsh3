@@ -82,15 +82,11 @@ def _validate_parser_binding(
         parsed.source_role is artifact.source_role is acquisition.source_role,
         parsed.source_locator == artifact.source_locator == acquisition.source_locator,
         parsed.source_artifact_id == artifact.artifact_id,
-        parsed.raw_artifact_sha256
-        == artifact.raw_artifact_sha256
-        == acquisition.raw_body_sha256,
+        parsed.raw_artifact_sha256 == artifact.raw_artifact_sha256 == acquisition.raw_body_sha256,
         parsed.p1_authority_identity
         == artifact.p1_authority_identity
         == acquisition.p1_authority_identity,
-        parsed.p1_policy_identity
-        == artifact.p1_policy_identity
-        == acquisition.p1_policy_identity,
+        parsed.p1_policy_identity == artifact.p1_policy_identity == acquisition.p1_policy_identity,
         type(parsed.parser_policy_version) is str,
         parsed.parser_policy_version == PARSER_POLICY_VERSION,
         type(parsed.observation_identity) is str,
