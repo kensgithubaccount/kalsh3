@@ -1,3 +1,4 @@
+import json
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from pathlib import Path
@@ -17,6 +18,7 @@ from services.forecasting.models import (
 from services.forward_reality.prospective_receipts import (
     ProspectivePredictionReceipt,
     ProspectiveReceiptError,
+    ProspectiveReceiptPublication,
     ProspectiveReceiptStore,
 )
 
@@ -155,7 +157,8 @@ def test_receipt_published_after_known_outcome_cannot_be_called_prospective(
     receipt = make_receipt(
         issued_at=NOW - timedelta(days=2),
         created_at=NOW - timedelta(days=2),
-        target_resolution_time=NOW - timedelta(days=1),
+        target_resolution_time=NOW + timedelta(days=3),
+        horizon_seconds=432000,
     )
     store = ProspectiveReceiptStore(tmp_path)
     store.publish(receipt)
@@ -171,7 +174,8 @@ def test_backdated_forecast_cannot_hide_post_outcome_publication(tmp_path, monke
     receipt = make_receipt(
         issued_at=NOW - timedelta(days=2),
         created_at=NOW - timedelta(days=2),
-        target_resolution_time=NOW - timedelta(days=1),
+        target_resolution_time=NOW + timedelta(days=3),
+        horizon_seconds=432000,
     )
     store = ProspectiveReceiptStore(tmp_path)
     store.publish(receipt)
@@ -184,6 +188,71 @@ def test_caller_cannot_supply_publication_timestamp(tmp_path) -> None:
     store = ProspectiveReceiptStore(tmp_path)
     with pytest.raises(TypeError):
         store.publish(receipt, published_at=NOW)  # type: ignore[call-arg]
+
+
+def test_caller_cannot_mint_or_reconstruct_issuer_publication(tmp_path) -> None:
+    receipt = make_receipt()
+    store = ProspectiveReceiptStore(tmp_path)
+    with pytest.raises(ProspectiveReceiptError, match="reviewed issuer capability"):
+        ProspectiveReceiptPublication(
+            schema_version=receipt_module.PUBLICATION_SCHEMA_VERSION,
+            receipt_id=receipt.receipt_id,
+            receipt_content_hash=receipt.content_hash,
+            archive_id=str(tmp_path),
+            published_at=NOW - timedelta(days=30),
+            policy=receipt_module.PUBLICATION_POLICY,
+            research_only=True,
+            production_influence=Decimal("0"),
+            publication_id="forged",
+            issuer_mac="forged",
+        )
+    store.publish(receipt)
+    path = tmp_path / f"{receipt.receipt_id}.publication.json"
+    forged = json.loads(path.read_bytes())
+    forged["published_at"] = (NOW - timedelta(days=30)).isoformat()
+    forged["publication_id"] = receipt_module.stable_hash(
+        {key: value for key, value in forged.items() if key not in {"publication_id", "issuer_mac"}}
+    )
+    path.write_text(json.dumps(forged, sort_keys=True, separators=(",", ":")) + "\n")
+    with pytest.raises(ProspectiveReceiptError, match=r"conflicting|invalid"):
+        store.require_frozen(receipt, NOW + timedelta(days=1))
+
+
+def test_interrupted_publication_recovers_with_current_issuer_time(tmp_path, monkeypatch) -> None:
+    first_publication = NOW + timedelta(hours=1)
+    second_publication = NOW + timedelta(hours=2)
+    monkeypatch.setattr(receipt_module, "_utc_now", lambda: first_publication)
+    receipt = make_receipt()
+    store = ProspectiveReceiptStore(tmp_path)
+    store.publish(receipt)
+    publication_path = tmp_path / f"{receipt.receipt_id}.publication.json"
+    publication_path.unlink()
+    monkeypatch.setattr(receipt_module, "_utc_now", lambda: second_publication)
+    store.publish(receipt)
+    payload = json.loads(publication_path.read_bytes())
+    assert payload["published_at"] == second_publication.isoformat()
+    store.require_frozen(receipt, NOW + timedelta(days=1))
+
+
+def test_publication_requires_canonical_utc(tmp_path, monkeypatch) -> None:
+    from datetime import timezone
+
+    monkeypatch.setattr(
+        receipt_module,
+        "_utc_now",
+        lambda: datetime(2026, 8, 28, 13, tzinfo=timezone(timedelta(hours=1))),
+    )
+    with pytest.raises(ProspectiveReceiptError, match="canonical UTC"):
+        ProspectiveReceiptStore(tmp_path).publish(make_receipt())
+
+
+def test_publication_must_precede_target_resolution(tmp_path, monkeypatch) -> None:
+    target = NOW + timedelta(hours=1)
+    monkeypatch.setattr(receipt_module, "_utc_now", lambda: target)
+    with pytest.raises(ProspectiveReceiptError, match="target resolution"):
+        ProspectiveReceiptStore(tmp_path).publish(
+            make_receipt(target_resolution_time=target, horizon_seconds=3600)
+        )
 
 
 def test_production_influence_and_foreign_runtime_types_are_rejected() -> None:

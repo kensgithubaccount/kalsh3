@@ -16,6 +16,17 @@ occur after that trusted publication instant. Caller-supplied forecast timestamp
 are not publication authority. The handoff is chronological only; CPI or any
 other settlement authority remains outside FR-A1.
 
+The publication record is issued only through a private capability-gated path.
+Its persisted bytes include an issuer MAC verified with the archive's separate,
+mode-600 issuer key, so a legitimate publication remains verifiable after a
+process restart. The archive/key boundary is trusted infrastructure: arbitrary
+host or issuer-key compromise is outside this checkpoint.
+
+Publication uses canonical UTC and must precede the forecast's bound target
+resolution instant. If a receipt file exists without its publication file, an
+identical retry completes the pair with the current issuer time; it never
+backdates recovery.
+
 Historical replay forecasts are rejected when they carry replay time. This
 prevents the FR-A1 API from relabeling a historical prediction as prospective.
 Each materially different canonical forecast produces a different receipt
