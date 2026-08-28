@@ -139,9 +139,7 @@ def test_date_only_evidence_cannot_enter_positive_path_and_unknown_is_available(
             published_at=date(2026, 8, 12),  # type: ignore[arg-type]
             evidence_identity="fixture:date-only",
         )
-    unknown = pit.build_unknown_cpi_availability(
-        actual_bot_ingest_at=source.actual_bot_ingest_at
-    )
+    unknown = pit.build_unknown_cpi_availability(actual_bot_ingest_at=source.actual_bot_ingest_at)
     assert unknown.basis is AvailabilityBasis.UNKNOWN
     assert unknown.quality is AvailabilityQuality.DESCRIPTIVE_ONLY
     assert unknown.source_publish_at is None
@@ -265,9 +263,7 @@ def test_acquisition_time_cannot_substitute_for_publication_evidence() -> None:
 def test_actual_bot_ingest_before_conservative_boundary_fails_closed() -> None:
     published = datetime(2026, 8, 12, 8, 30, tzinfo=NY)
     boundary = pit.conservative_replay_boundary(published)
-    source = artifact(
-        ingest_at=boundary.astimezone(UTC) - timedelta(microseconds=1)
-    )
+    source = artifact(ingest_at=boundary.astimezone(UTC) - timedelta(microseconds=1))
     proof = issue(
         source,
         published_at=published,
@@ -400,9 +396,7 @@ def test_related_cpi_domains_cannot_inherit_p2_profile(profile: str) -> None:
 
 def test_wrong_p1_locator_is_rejected() -> None:
     with pytest.raises(CPISourceAuthorityError):
-        artifact(
-            locator="https://www.bls.gov/news.release/archives/ppi_08122026.htm"
-        )
+        artifact(locator="https://www.bls.gov/news.release/archives/ppi_08122026.htm")
 
 
 def test_publication_timing_identity_is_required_and_exact() -> None:
@@ -438,9 +432,7 @@ def test_research_only_and_zero_production_influence_are_fixed() -> None:
 
 def test_unknown_builder_rejects_naive_actual_ingest_time() -> None:
     with pytest.raises(pit.CPIPITAvailabilityError):
-        pit.build_unknown_cpi_availability(
-            actual_bot_ingest_at=datetime(2026, 8, 12, 12, 0)
-        )
+        pit.build_unknown_cpi_availability(actual_bot_ingest_at=datetime(2026, 8, 12, 12, 0))
 
 
 def test_module_has_no_io_acquisition_gate_model_economics_or_execution_dependencies() -> None:
