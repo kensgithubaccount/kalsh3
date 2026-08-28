@@ -346,7 +346,7 @@ def _fixed_origin_https_get(locator: str) -> _TransportResult:
     try:
         connection.request(HTTP_METHOD, path, headers=dict(REQUEST_HEADERS))
         response = connection.getresponse()
-        expected_body_length = response.length
+        expected_body_length = getattr(response, "length", None)
         if expected_body_length is not None and expected_body_length > MAX_RESPONSE_BYTES:
             raise CPISourceAcquisitionError("declared BLS response length exceeded bounded size")
         body = response.read(MAX_RESPONSE_BYTES + 1)
