@@ -3,15 +3,15 @@
 from .prospective_receipts import (
     ProspectiveOutcomeBoundary,
     ProspectivePredictionReceipt,
-    ProspectiveReceiptPublication,
     ProspectiveReceiptError,
+    ProspectiveReceiptPublication,
     ProspectiveReceiptStore,
 )
 
 __all__ = (
     "ProspectiveOutcomeBoundary",
     "ProspectivePredictionReceipt",
-    "ProspectiveReceiptPublication",
     "ProspectiveReceiptError",
+    "ProspectiveReceiptPublication",
     "ProspectiveReceiptStore",
 )
