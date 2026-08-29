@@ -252,6 +252,87 @@ def _manual_timing_evidence_identity(
     )
 
 
+def _validate_complete_bound_issuance(
+    issuance: CPIAcquisitionBoundIssuance | CPIManualAcquisitionBoundIssuance,
+    *,
+    manual: bool,
+) -> None:
+    """Revalidate a public wrapper's complete transitive P4/P5A evidence chain."""
+    if manual:
+        if type(issuance) is not CPIManualAcquisitionBoundIssuance:
+            raise CPIEvidenceIssuanceError("manual CPI issuance has wrong exact wrapper type")
+        acquisition = issuance.acquisition_evidence
+        validate_cpi_bls_manual_acquisition_evidence(acquisition)
+        canonical_artifact = _artifact_from_manual_acquisition(acquisition)
+        canonical_parsed = parse_cpi_publication_timing(canonical_artifact)
+        _validate_manual_parser_binding(canonical_parsed, canonical_artifact, acquisition)
+        canonical_timing_identity = _manual_timing_evidence_identity(
+            acquisition, canonical_artifact, canonical_parsed
+        )
+    else:
+        if type(issuance) is not CPIAcquisitionBoundIssuance:
+            raise CPIEvidenceIssuanceError("automated CPI issuance has wrong exact wrapper type")
+        automated_acquisition = issuance.acquisition_evidence
+        validate_cpi_bls_acquisition_evidence(automated_acquisition)
+        canonical_artifact = _artifact_from_acquisition(automated_acquisition)
+        canonical_parsed = parse_cpi_publication_timing(canonical_artifact)
+        _validate_parser_binding(canonical_parsed, canonical_artifact, automated_acquisition)
+        canonical_timing_identity = _timing_evidence_identity(
+            automated_acquisition, canonical_artifact, canonical_parsed
+        )
+    artifact = issuance.release_artifact
+    publication = issuance.publication_evidence
+    pit.validate_cpi_release_artifact(artifact)
+    pit.validate_cpi_publication_evidence(publication)
+    if artifact != canonical_artifact:
+        raise CPIEvidenceIssuanceError("issuance artifact is not canonically bound to acquisition")
+    if issuance.parsed_timing != canonical_parsed:
+        raise CPIEvidenceIssuanceError("issuance timing is not canonically bound to acquisition")
+    if issuance.timing_evidence_identity != canonical_timing_identity:
+        raise CPIEvidenceIssuanceError("issuance timing identity is not canonical")
+    if publication.timing_evidence_identity != canonical_timing_identity:
+        raise CPIEvidenceIssuanceError("publication timing identity is not canonical")
+    publication_bindings = (
+        publication.profile is artifact.profile,
+        publication.source_role is artifact.source_role,
+        publication.source_locator == artifact.source_locator,
+        publication.source_artifact_id == artifact.artifact_id,
+        publication.raw_artifact_sha256 == artifact.raw_artifact_sha256,
+        publication.p1_authority_identity == artifact.p1_authority_identity,
+        publication.p1_policy_identity == artifact.p1_policy_identity,
+    )
+    if not all(publication_bindings):
+        raise CPIEvidenceIssuanceError("publication evidence is not bound to exact artifact")
+    expected_availability = pit.build_cpi_reconstructed_availability(
+        artifact, publication_evidence=publication
+    )
+    if issuance.availability != expected_availability:
+        raise CPIEvidenceIssuanceError("issuance Availability is not canonically derived")
+    if (
+        type(artifact.research_only) is not bool
+        or artifact.research_only is not True
+        or artifact.production_influence != ZERO
+        or type(publication.research_only) is not bool
+        or publication.research_only is not True
+        or publication.production_influence != ZERO
+    ):
+        raise CPIEvidenceIssuanceError("CPI issuance safety flags are invalid")
+
+
+def validate_acquisition_bound_cpi_issuance(
+    issuance: CPIAcquisitionBoundIssuance,
+) -> None:
+    """Validate every constituent and binding of a P4 automated issuance wrapper."""
+    _validate_complete_bound_issuance(issuance, manual=False)
+
+
+def validate_manual_acquisition_bound_cpi_issuance(
+    issuance: CPIManualAcquisitionBoundIssuance,
+) -> None:
+    """Validate every constituent and binding of a P5A manual issuance wrapper."""
+    _validate_complete_bound_issuance(issuance, manual=True)
+
+
 def _issue_p2_from_parsed(
     *,
     artifact: pit.CPIHistoricalReleaseArtifact,

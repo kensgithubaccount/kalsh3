@@ -47,3 +47,11 @@ P6 is BLS observation truth only. It does not reconcile Kalshi, create a
 settlement record, promote G3, train or score a model, calculate economics, or
 authorize execution. The inherited P5A name `actual_bot_ingest_at` is retained
 as non-blocking semantic debt; P6 uses acquisition-mode-neutral terminology.
+
+## Bounded parser coverage
+
+The current narrative grammar is intentionally limited to the reviewed positive
+format (`increased ... in MONTH`). Official releases using `declined` or other
+sentence structures require later corpus work and are rejected by this narrow
+checkpoint. This is a coverage limitation, not an upstream provenance-authority
+claim.

@@ -9,6 +9,7 @@ import pytest
 import services.forecasting.cpi_evidence_issuer as issuer
 import services.forecasting.cpi_initial_release_value as value
 import services.forecasting.cpi_manual_acquisition as manual
+import services.forecasting.cpi_pit_availability as pit
 
 LOCATOR = "https://www.bls.gov/news.release/archives/cpi_08122025.htm"
 IMPORT_TIME = datetime(2026, 8, 28, 22, 0, tzinfo=UTC)
@@ -59,7 +60,7 @@ def test_dual_representation_returns_exact_decimal() -> None:
     ],
 )
 def test_domain_or_representation_substitution_fails_closed(kwargs: dict[str, str]) -> None:
-    with pytest.raises(value.CPIInitialReleaseValueError):
+    with pytest.raises(ValueError):
         value.parse_cpi_initial_release_value(artifact(**kwargs))
 
 
@@ -131,3 +132,38 @@ def test_safety_flags_and_bound_identity_are_revalidated(tmp_path, monkeypatch) 
     finally:
         object.__setattr__(observation, "production_influence", original)
     value.validate_cpi_initial_release_observation(observation)
+
+
+def test_wrapper_timing_identity_forgery_fails_closed(tmp_path, monkeypatch) -> None:
+    valid = _manual_issuance(tmp_path, monkeypatch)
+    forged = replace(valid, timing_evidence_identity="attacker-chosen-id")
+    with pytest.raises(ValueError):
+        value.issue_cpi_initial_release_observation(forged)
+
+
+def test_wrapper_components_must_remain_the_canonical_transitive_chain(
+    tmp_path, monkeypatch
+) -> None:
+    valid = _manual_issuance(tmp_path, monkeypatch)
+    with pytest.raises(ValueError):
+        value.issue_cpi_initial_release_observation(
+            replace(
+                valid, parsed_timing=replace(valid.parsed_timing, observation_identity="forged")
+            )
+        )
+    with pytest.raises(ValueError):
+        value.issue_cpi_initial_release_observation(
+            replace(
+                valid,
+                availability=pit.build_unknown_cpi_availability(actual_bot_ingest_at=IMPORT_TIME),
+            )
+        )
+    with pytest.raises(ValueError):
+        original = valid.publication_evidence.timing_evidence_identity
+        try:
+            object.__setattr__(valid.publication_evidence, "timing_evidence_identity", "other")
+            value.issue_cpi_initial_release_observation(valid)
+        finally:
+            object.__setattr__(
+                valid.publication_evidence, "timing_evidence_identity", original
+            )

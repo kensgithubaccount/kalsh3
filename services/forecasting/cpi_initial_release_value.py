@@ -16,6 +16,8 @@ from html.parser import HTMLParser
 from services.forecasting.cpi_evidence_issuer import (
     CPIAcquisitionBoundIssuance,
     CPIManualAcquisitionBoundIssuance,
+    validate_acquisition_bound_cpi_issuance,
+    validate_manual_acquisition_bound_cpi_issuance,
 )
 from services.forecasting.cpi_manual_acquisition import (
     ACQUISITION_MODE as MANUAL_ACQUISITION_MODE,
@@ -308,6 +310,7 @@ def _validate_issuance(
     issuance: CPIAcquisitionBoundIssuance | CPIManualAcquisitionBoundIssuance,
 ) -> tuple[bytes, str, str, str, str, str, str]:
     if type(issuance) is CPIAcquisitionBoundIssuance:
+        validate_acquisition_bound_cpi_issuance(issuance)
         acquisition = issuance.acquisition_evidence
         validate_cpi_bls_acquisition_evidence(acquisition)
         mode = "AUTOMATED_HTTPS"
@@ -316,6 +319,7 @@ def _validate_issuance(
         raw_hash = acquisition.raw_body_sha256
         acquisition_id = acquisition.evidence_id
     elif type(issuance) is CPIManualAcquisitionBoundIssuance:
+        validate_manual_acquisition_bound_cpi_issuance(issuance)
         manual_acquisition = issuance.acquisition_evidence
         validate_cpi_bls_manual_acquisition_evidence(manual_acquisition)
         mode = MANUAL_ACQUISITION_MODE
