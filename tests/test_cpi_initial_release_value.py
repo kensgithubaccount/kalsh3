@@ -164,6 +164,4 @@ def test_wrapper_components_must_remain_the_canonical_transitive_chain(
             object.__setattr__(valid.publication_evidence, "timing_evidence_identity", "other")
             value.issue_cpi_initial_release_observation(valid)
         finally:
-            object.__setattr__(
-                valid.publication_evidence, "timing_evidence_identity", original
-            )
+            object.__setattr__(valid.publication_evidence, "timing_evidence_identity", original)
