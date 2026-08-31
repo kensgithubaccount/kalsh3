@@ -149,8 +149,14 @@ def _historical_market() -> bytes:
                 "result": "yes",
                 "settlement_value_dollars": "1.0000",
                 "settlement_ts": "2025-08-12T13:09:49.950641Z",
-                "rules_primary": "If the Consumer Price Index (CPI) increases by more than 0.1% (single-decimal) in July 2025, then the market resolves to Yes.",
-                "rules_secondary": "The Expiration Value is the single-decimal value published at the Source Agency.",
+                "rules_primary": (
+                    "If the Consumer Price Index (CPI) increases by more than 0.1% "
+                    "(single-decimal) in July 2025, then the market resolves to Yes."
+                ),
+                "rules_secondary": (
+                    "The Expiration Value is the single-decimal value published at "
+                    "the Source Agency."
+                ),
             }
         },
         sort_keys=True,
