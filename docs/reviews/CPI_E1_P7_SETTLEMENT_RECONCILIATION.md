@@ -26,13 +26,24 @@ threshold unit, one-decimal initial-release rounding, authoritative source,
 and explicit revision/correction policy. Missing, conflicting, ambiguous, core,
 YoY, wrong-month, unsupported, or non-valid inputs fail closed.
 
-`KalshiFinalizedEvidence` derives its determination from raw UTF-8 JSON and
-recomputes the SHA-256 hash at validation time. It binds source identity,
-market/event/series, rules identity, semantic hash, result, binary dollar value,
-determination/finalization timestamps, lifecycle flags, and acquisition time.
-`YES` is exactly `$1`; `NO` is exactly `$0`. Caller mutation, forged hashes,
-non-final/disputed/conflicting/superseded-without-latest-authority evidence,
-and malformed values fail closed.
+`KalshiHistoricalAcquisitionEvidence` is the positive-authority boundary. Its
+only reviewed live constructor is a bounded unauthenticated HTTPS GET to
+`external-api.kalshi.com`, with exact GET method, status 200, path, selectors,
+raw bytes, hash, and transport-observed UTC acquisition time. Redirects,
+credentials, cookies, arbitrary source identities, and caller-supplied raw
+responses are rejected. Seven durable fixtures under
+`services/forecasting/fixtures/cpi_p7_public/` are fixed hash-allowlisted copies
+of those exact response bodies.
+
+`CPIHistoricalSemanticEvidence` rebuilds the `ContractSpecification` from the
+validated market, event, and series acquisitions. Callers cannot supply a
+comparator, threshold, reference period, semantic hash, or rules identity to
+the reconciliation path. `KalshiFinalizedEvidence` consumes only the validated
+market acquisition and requires explicit historical `status=finalized`,
+non-null `settlement_ts`, binary result, and exact YES/$1 or NO/$0 consistency.
+The rules version is repository-derived and content-addressed as
+`historical-market-rules-v1:<full historical market rules SHA-256>`; it is not
+Kalshi-issued. All acquisition and settlement evidence remains research-only.
 
 ## P6 bindings
 
@@ -53,8 +64,10 @@ event/market metadata, settlement responses, KXCPI identifiers, rules hashes,
 lifecycle/determination artifacts, M26 infrastructure, and archive-backed
 evidence. The repository contains generic settlement primitives and M26C
 consumers. Public unauthenticated GET acquisition was then performed on
-2026-08-31 UTC; exact response bytes were retained in local scratch storage
-only. No authenticated or trading API was used.
+2026-08-31 UTC; exact response bytes are durably retained as seven minimal
+frozen fixtures under `services/forecasting/fixtures/cpi_p7_public/`. No
+authenticated or trading API was used. Retrieval time is distinct from each
+historical `settlement_ts`.
 
 Endpoints used: `/historical/cutoff`,
 `/historical/markets?series_ticker=KXCPI&limit=1000`, three
@@ -81,9 +94,9 @@ series `19:55:19Z`.
 
 | Release | Exact Kalshi market/event/rules evidence | Exchange final | P6-derived result | SettlementRecord |
 |---|---|---|---|---|
-| July 2025 | `KXCPI-25JUL-T0.1`; `KXCPI-25JUL`; rules `e5c8ef3fded5aa6ff7fdc11be4a4d0436669a33e9f3ae083294c2c40de727243`; derived version `historical-market-rules-v1:e5c8ef3fded5aa6f`; semantic `679f866bc0a965cd5cbff5480e49f1db9f7086a86a4218862653807ef11d7976` | `finalized`; YES; `$1.0000`; expiration `0.2`; `2025-08-12T13:09:49.950641Z` | YES (`0.2 > 0.1`) | MATCHED; eligible `True` |
-| December 2025 | `KXCPI-25DEC-T0.2`; `KXCPI-25DEC`; rules `01e1d4cde33d117ce4723bb681c4ef09aab57f7d43a42909fb788a2e58b3bc23`; derived version `historical-market-rules-v1:01e1d4cde33d117c`; semantic `887a7640c9fdb06d82e639fd9dce092e414d4b05ba7a1916c7e81f4429fefb99` | `finalized`; YES; `$1.0000`; expiration `0.3%`; `2026-01-13T16:48:15.222981Z` | YES (`0.3 > 0.2`) | MATCHED; eligible `True` |
-| January 2026 | `KXCPI-26JAN-T0.1`; `KXCPI-26JAN`; rules `6c8f57e912985c25aa45b43592d22f377eb09d0273b45128d58ac91dc164193a`; derived version `historical-market-rules-v1:6c8f57e912985c25`; semantic `5306fef3d70331a75a991e62bd0eed2fe9fe27475a695384a6eccb3bac6b4e06` | `finalized`; YES; `$1.0000`; expiration `0.2`; `2026-02-13T15:08:40.596381Z` | YES (`0.2 > 0.1`) | MATCHED; eligible `True` |
+| July 2025 | `KXCPI-25JUL-T0.1`; `KXCPI-25JUL`; rules `e5c8ef3fded5aa6ff7fdc11be4a4d0436669a33e9f3ae083294c2c40de727243`; derived version `historical-market-rules-v1:e5c8ef3fded5aa6ff7fdc11be4a4d0436669a33e9f3ae083294c2c40de727243`; semantic `679f866bc0a965cd5cbff5480e49f1db9f7086a86a4218862653807ef11d7976` | `finalized`; YES; `$1.0000`; expiration `0.2`; `2025-08-12T13:09:49.950641Z` | YES (`0.2 > 0.1`) | MATCHED; eligible `True` |
+| December 2025 | `KXCPI-25DEC-T0.2`; `KXCPI-25DEC`; rules `01e1d4cde33d117ce4723bb681c4ef09aab57f7d43a42909fb788a2e58b3bc23`; derived version `historical-market-rules-v1:01e1d4cde33d117ce4723bb681c4ef09aab57f7d43a42909fb788a2e58b3bc23`; semantic `887a7640c9fdb06d82e639fd9dce092e414d4b05ba7a1916c7e81f4429fefb99` | `finalized`; YES; `$1.0000`; expiration `0.3%`; `2026-01-13T16:48:15.222981Z` | YES (`0.3 > 0.2`) | MATCHED; eligible `True` |
+| January 2026 | `KXCPI-26JAN-T0.1`; `KXCPI-26JAN`; rules `6c8f57e912985c25aa45b43592d22f377eb09d0273b45128d58ac91dc164193a`; derived version `historical-market-rules-v1:6c8f57e912985c25aa45b43592d22f377eb09d0273b45128d58ac91dc164193a`; semantic `5306fef3d70331a75a991e62bd0eed2fe9fe27475a695384a6eccb3bac6b4e06` | `finalized`; YES; `$1.0000`; expiration `0.2`; `2026-02-13T15:08:40.596381Z` | YES (`0.2 > 0.1`) | MATCHED; eligible `True` |
 
 The three selected markets produce empirical MATCHED SettlementRecords and
 eligible training labels. The API exposes explicit `status: finalized` and

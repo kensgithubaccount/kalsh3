@@ -1,21 +1,24 @@
-"""Fail-closed reconciliation of an exact CPI observation and Kalshi result.
+"""Fail-closed reconciliation of P6 CPI observations to historical Kalshi finals.
 
-This module is deliberately an offline evidence boundary.  It does not fetch
-Kalshi data and it has no dependency on execution, credentials, risk, or model
-code.  Exchange facts are reconstructed from raw JSON before they can affect a
-settlement record.
+Positive exchange authority can only enter through the reviewed public Kalshi
+GET boundary below. Frozen response bodies are content-addressed copies of that
+boundary for deterministic CI and audit replay; arbitrary JSON is never an
+acquisition API.
 """
 
 from __future__ import annotations
 
 import hashlib
+import http.client
 import json
 import re
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import UTC, datetime
 from decimal import Decimal, InvalidOperation
 from enum import StrEnum
+from pathlib import Path
 from typing import Any
+from urllib.parse import urlsplit
 
 from services.contract_intelligence.settlement import (
     DeterminationState,
@@ -26,7 +29,9 @@ from services.contract_intelligence.settlement import (
 from services.contract_intelligence.specification import (
     Comparator,
     ContractSpecification,
+    ContractSpecificationParser,
     PayoutModel,
+    SemanticsInputBundle,
     SemanticStatus,
 )
 from services.forecasting.cpi_initial_release_value import (
@@ -39,35 +44,28 @@ from services.forecasting.cpi_initial_release_value import (
     CPIUnit,
     validate_cpi_initial_release_observation,
 )
-from services.market_universe.domain import material_hashes
+from services.market_universe.domain import material_hashes, stable_hash
 
 ZERO = Decimal("0")
 ONE = Decimal("1")
 SUPPORTED_COMPARATORS = frozenset(
     {Comparator.GT, Comparator.GTE, Comparator.LT, Comparator.LTE, Comparator.EQ}
 )
-MONTH_NAMES = (
-    "january",
-    "february",
-    "march",
-    "april",
-    "may",
-    "june",
-    "july",
-    "august",
-    "september",
-    "october",
-    "november",
-    "december",
-)
 EXPECTED_MEASURED_VALUE = (
     "CPI-U U.S. city average all items seasonally adjusted change from preceding month"
 )
-POLICY_VERSION = "cpi-e1-p7-settlement-reconciliation-v1"
+POLICY_VERSION = "cpi-e1-p7-settlement-reconciliation-v2"
+KALSHI_HOST = "external-api.kalshi.com"
+KALSHI_BASE = f"https://{KALSHI_HOST}/trade-api/v2"
+HTTP_METHOD = "GET"
+SUCCESS_STATUS = 200
+MAX_RESPONSE_BYTES = 2_000_000
+HISTORICAL_RULES_VERSION_PREFIX = "historical-market-rules-v1:"
+_ACQUISITION_CAPABILITY = object()
 
 
 class CPISettlementReconciliationError(ValueError):
-    """The exact semantic or exchange evidence package failed closed."""
+    """The exact semantic, transport, or exchange evidence failed closed."""
 
 
 class ExpectedBinaryResult(StrEnum):
@@ -75,10 +73,123 @@ class ExpectedBinaryResult(StrEnum):
     NO = "NO"
 
 
+class KalshiEndpointRole(StrEnum):
+    HISTORICAL_MARKET = "historical_market"
+    EVENT = "event"
+    SERIES = "series"
+
+
+@dataclass(frozen=True, slots=True)
+class _PublicHTTPResponse:
+    request_url: str
+    method: str
+    status: int
+    raw_body: bytes
+    acquired_at: datetime
+    redirected: bool = False
+    used_credentials: bool = False
+    used_cookies: bool = False
+
+
+@dataclass(frozen=True, slots=True)
+class _FixtureManifest:
+    fixture_id: str
+    role: KalshiEndpointRole
+    url: str
+    raw_sha256: str
+    acquired_at: datetime
+    ticker: str | None = None
+    event_ticker: str | None = None
+    series_ticker: str = "KXCPI"
+
+
+def _manifest_entry(
+    fixture_id: str,
+    role: KalshiEndpointRole,
+    path: str,
+    raw_sha256: str,
+    acquired_at: str,
+    *,
+    ticker: str | None = None,
+    event_ticker: str | None = None,
+) -> _FixtureManifest:
+    return _FixtureManifest(
+        fixture_id,
+        role,
+        f"{KALSHI_BASE}{path}",
+        raw_sha256,
+        datetime.fromisoformat(acquired_at.replace("Z", "+00:00")),
+        ticker,
+        event_ticker,
+    )
+
+
+_FIXTURES = {
+    "market-jul": _manifest_entry(
+        "market-jul",
+        KalshiEndpointRole.HISTORICAL_MARKET,
+        "/historical/markets/KXCPI-25JUL-T0.1",
+        "5531efbd8268f779f5db2bb10b158e772878da9819be497022d6cd4d1b758ae7",
+        "2026-08-31T19:54:20Z",
+        ticker="KXCPI-25JUL-T0.1",
+        event_ticker="KXCPI-25JUL",
+    ),
+    "market-dec": _manifest_entry(
+        "market-dec",
+        KalshiEndpointRole.HISTORICAL_MARKET,
+        "/historical/markets/KXCPI-25DEC-T0.2",
+        "0b8142a93ed9b739e3f685366c7167371e1607228497f206bbd1bfec506bfcfc",
+        "2026-08-31T19:54:21Z",
+        ticker="KXCPI-25DEC-T0.2",
+        event_ticker="KXCPI-25DEC",
+    ),
+    "market-jan": _manifest_entry(
+        "market-jan",
+        KalshiEndpointRole.HISTORICAL_MARKET,
+        "/historical/markets/KXCPI-26JAN-T0.1",
+        "de5164c582f534a608fad0771a369417146281902a01ef1fd031b3ea6f3f2d79",
+        "2026-08-31T19:54:23Z",
+        ticker="KXCPI-26JAN-T0.1",
+        event_ticker="KXCPI-26JAN",
+    ),
+    "event-jul": _manifest_entry(
+        "event-jul",
+        KalshiEndpointRole.EVENT,
+        "/events/KXCPI-25JUL",
+        "b63394b1e12c7750d40277662f3309187601328ec73b413d4a4366bd7e992770",
+        "2026-08-31T19:54:24Z",
+        event_ticker="KXCPI-25JUL",
+    ),
+    "event-dec": _manifest_entry(
+        "event-dec",
+        KalshiEndpointRole.EVENT,
+        "/events/KXCPI-25DEC",
+        "7ba1eb6e3971520916dcf7a890fd7c7be81d07eaea2941fb19f7f0c1e6effb6b",
+        "2026-08-31T19:54:28Z",
+        event_ticker="KXCPI-25DEC",
+    ),
+    "event-jan": _manifest_entry(
+        "event-jan",
+        KalshiEndpointRole.EVENT,
+        "/events/KXCPI-26JAN",
+        "7b7947dc42f6ea7e1b0dd4ec7917e97672775a3e21d7417bc0a60f567d9c7ea8",
+        "2026-08-31T19:54:44Z",
+        event_ticker="KXCPI-26JAN",
+    ),
+    "series": _manifest_entry(
+        "series",
+        KalshiEndpointRole.SERIES,
+        "/series/KXCPI",
+        "f5c410bc20a280d5fc14e33d1b028777a3a88aa6a955938eeee03cc481866e60",
+        "2026-08-31T19:55:19Z",
+    ),
+}
+
+
 def _utc(value: object, name: str) -> datetime:
-    if not isinstance(value, datetime) or value.tzinfo is None or value.utcoffset() is None:
+    if type(value) is not datetime or value.tzinfo is None or value.utcoffset() is None:
         raise CPISettlementReconciliationError(f"{name} must be timezone-aware")
-    return value
+    return value.astimezone(UTC)
 
 
 def _decimal(value: object, name: str) -> Decimal:
@@ -102,285 +213,476 @@ def _time(value: object, name: str) -> datetime:
         raise CPISettlementReconciliationError(f"{name} is malformed") from exc
 
 
-def _hash(raw: bytes) -> str:
-    return hashlib.sha256(raw).hexdigest()
+def _payload(raw: bytes) -> dict[str, Any]:
+    try:
+        value = json.loads(raw.decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise CPISettlementReconciliationError("raw Kalshi artifact is not valid JSON") from exc
+    if type(value) is not dict:
+        raise CPISettlementReconciliationError("raw Kalshi artifact must be a JSON object")
+    nested = value.get("market") or value.get("event") or value.get("series")
+    return nested if type(nested) is dict else value
 
 
-def _historical_reference_period(payload: dict[str, Any]) -> tuple[int, int] | None:
-    text = str(payload.get("rules_primary", ""))
+def _fixture_path(entry: _FixtureManifest) -> Path:
+    return Path(__file__).with_name("fixtures") / "cpi_p7_public" / f"{entry.fixture_id}.json"
+
+
+def _validate_response(response: _PublicHTTPResponse) -> None:
+    if type(response) is not _PublicHTTPResponse:
+        raise CPISettlementReconciliationError("unreviewed HTTP response type")
+    parsed = urlsplit(response.request_url)
+    if parsed.scheme != "https" or parsed.hostname != KALSHI_HOST:
+        raise CPISettlementReconciliationError("Kalshi response escaped reviewed HTTPS host")
+    if response.method != HTTP_METHOD or response.status != SUCCESS_STATUS:
+        raise CPISettlementReconciliationError("only reviewed successful GET responses are allowed")
+    if response.redirected or response.used_credentials or response.used_cookies:
+        raise CPISettlementReconciliationError("redirected or authenticated response is forbidden")
+    if (
+        type(response.raw_body) is not bytes
+        or not response.raw_body
+        or len(response.raw_body) > MAX_RESPONSE_BYTES
+    ):
+        raise CPISettlementReconciliationError("response bytes are empty or exceed the size bound")
+    _utc(response.acquired_at, "acquisition timestamp")
+    if parsed.path != "/trade-api/v2/series/KXCPI" and not re.fullmatch(
+        r"/trade-api/v2/(?:events|historical/markets)/[A-Za-z0-9_.-]+", parsed.path
+    ):
+        raise CPISettlementReconciliationError("endpoint path is not reviewed")
+
+
+@dataclass(frozen=True, slots=True, init=False)
+class KalshiHistoricalAcquisitionEvidence:
+    """Issuer-controlled exact response from the reviewed public Kalshi API."""
+
+    fixture_id: str | None
+    request_url: str
+    method: str
+    http_status: int
+    raw_response: bytes
+    raw_artifact_hash: str
+    acquired_at: datetime
+    endpoint_role: KalshiEndpointRole
+    expected_ticker: str | None
+    expected_event_ticker: str | None
+    expected_series_ticker: str
+    research_only: bool
+    production_influence: Decimal
+
+    def __init__(
+        self,
+        *,
+        response: _PublicHTTPResponse,
+        role: KalshiEndpointRole,
+        fixture_id: str | None = None,
+        expected_ticker: str | None = None,
+        expected_event_ticker: str | None = None,
+        expected_series_ticker: str = "KXCPI",
+        _capability: object | None = None,
+    ) -> None:
+        if _capability is not _ACQUISITION_CAPABILITY:
+            raise CPISettlementReconciliationError(
+                "Kalshi acquisition requires reviewed transport capability"
+            )
+        _validate_response(response)
+        digest = hashlib.sha256(response.raw_body).hexdigest()
+        for name, value in {
+            "fixture_id": fixture_id,
+            "request_url": response.request_url,
+            "method": response.method,
+            "http_status": response.status,
+            "raw_response": response.raw_body,
+            "raw_artifact_hash": digest,
+            "acquired_at": response.acquired_at.astimezone(UTC),
+            "endpoint_role": role,
+            "expected_ticker": expected_ticker,
+            "expected_event_ticker": expected_event_ticker,
+            "expected_series_ticker": expected_series_ticker,
+            "research_only": True,
+            "production_influence": ZERO,
+        }.items():
+            object.__setattr__(self, name, value)
+
+    @property
+    def evidence_id(self) -> str:
+        return stable_hash(
+            (
+                POLICY_VERSION,
+                self.request_url,
+                self.method,
+                self.http_status,
+                self.raw_artifact_hash,
+                self.acquired_at.isoformat(),
+                self.endpoint_role.value,
+                self.expected_ticker,
+                self.expected_event_ticker,
+                self.expected_series_ticker,
+                self.research_only,
+                str(self.production_influence),
+            )
+        )
+
+
+def _issue_reviewed_public_get(
+    response: _PublicHTTPResponse, role: KalshiEndpointRole, **kwargs: Any
+) -> KalshiHistoricalAcquisitionEvidence:
+    return KalshiHistoricalAcquisitionEvidence(
+        response=response, role=role, _capability=_ACQUISITION_CAPABILITY, **kwargs
+    )
+
+
+def acquire_kalshi_historical_get(
+    request_url: str,
+    role: KalshiEndpointRole,
+    *,
+    expected_ticker: str | None = None,
+    expected_event_ticker: str | None = None,
+) -> KalshiHistoricalAcquisitionEvidence:
+    """Perform one reviewed, unauthenticated Kalshi HTTPS GET.
+
+    The caller supplies only a reviewed endpoint selector. Raw bytes, status,
+    redirects, cookies, and acquisition time come from this transport seam.
+    """
+    parsed = urlsplit(request_url)
+    if parsed.scheme != "https" or parsed.hostname != KALSHI_HOST or parsed.query:
+        raise CPISettlementReconciliationError("request escaped the reviewed Kalshi GET policy")
+    connection = http.client.HTTPSConnection(parsed.hostname, parsed.port or 443, timeout=10.0)
+    try:
+        connection.request(
+            "GET",
+            parsed.path,
+            headers={"Accept": "application/json", "User-Agent": "kalsh3-cpi-e1-p7/1.0"},
+        )
+        response = connection.getresponse()
+        body = response.read(MAX_RESPONSE_BYTES + 1)
+        status = response.status
+    except (OSError, ValueError) as exc:
+        raise CPISettlementReconciliationError("Kalshi public GET transport failed") from exc
+    finally:
+        connection.close()
+    return _issue_reviewed_public_get(
+        _PublicHTTPResponse(
+            request_url, HTTP_METHOD, status, body, datetime.now(UTC), status in range(300, 400)
+        ),
+        role,
+        expected_ticker=expected_ticker,
+        expected_event_ticker=expected_event_ticker,
+        expected_series_ticker="KXCPI",
+    )
+
+
+def load_frozen_kalshi_acquisition(fixture_id: str) -> KalshiHistoricalAcquisitionEvidence:
+    """Load only a fixed, content-addressed response from reviewed acquisition."""
+    entry = _FIXTURES.get(fixture_id)
+    if entry is None:
+        raise CPISettlementReconciliationError("unknown reviewed Kalshi fixture")
+    try:
+        raw = _fixture_path(entry).read_bytes()
+    except OSError as exc:
+        raise CPISettlementReconciliationError("durable Kalshi fixture is unavailable") from exc
+    if hashlib.sha256(raw).hexdigest() != entry.raw_sha256:
+        raise CPISettlementReconciliationError("durable Kalshi fixture hash changed")
+    return _issue_reviewed_public_get(
+        _PublicHTTPResponse(entry.url, HTTP_METHOD, SUCCESS_STATUS, raw, entry.acquired_at),
+        entry.role,
+        fixture_id=entry.fixture_id,
+        expected_ticker=entry.ticker,
+        expected_event_ticker=entry.event_ticker,
+        expected_series_ticker=entry.series_ticker,
+    )
+
+
+def validate_kalshi_acquisition(evidence: KalshiHistoricalAcquisitionEvidence) -> None:
+    if (
+        type(evidence) is not KalshiHistoricalAcquisitionEvidence
+        or evidence.research_only is not True
+        or evidence.production_influence != ZERO
+    ):
+        raise CPISettlementReconciliationError(
+            "Kalshi acquisition type or safety flags are invalid"
+        )
+    _validate_response(
+        _PublicHTTPResponse(
+            evidence.request_url,
+            evidence.method,
+            evidence.http_status,
+            evidence.raw_response,
+            evidence.acquired_at,
+        )
+    )
+    if hashlib.sha256(evidence.raw_response).hexdigest() != evidence.raw_artifact_hash:
+        raise CPISettlementReconciliationError("Kalshi raw artifact hash changed")
+    if evidence.fixture_id is not None:
+        entry = _FIXTURES.get(evidence.fixture_id)
+        if entry is None or (
+            evidence.request_url,
+            evidence.endpoint_role,
+            evidence.raw_artifact_hash,
+            evidence.acquired_at,
+            evidence.expected_ticker,
+            evidence.expected_event_ticker,
+        ) != (
+            entry.url,
+            entry.role,
+            entry.raw_sha256,
+            entry.acquired_at,
+            entry.ticker,
+            entry.event_ticker,
+        ):
+            raise CPISettlementReconciliationError("Kalshi fixture identity changed")
+    payload = _payload(evidence.raw_response)
+    if evidence.endpoint_role is KalshiEndpointRole.HISTORICAL_MARKET and (
+        payload.get("ticker") != evidence.expected_ticker
+        or payload.get("event_ticker") != evidence.expected_event_ticker
+    ):
+        raise CPISettlementReconciliationError("historical market selector mismatch")
+    if evidence.endpoint_role is KalshiEndpointRole.EVENT and (
+        payload.get("event_ticker") != evidence.expected_event_ticker
+        or payload.get("series_ticker") != "KXCPI"
+    ):
+        raise CPISettlementReconciliationError("event selector mismatch")
+    if evidence.endpoint_role is KalshiEndpointRole.SERIES and payload.get("ticker") != "KXCPI":
+        raise CPISettlementReconciliationError("series selector mismatch")
+
+
+def _reference_period(text: str) -> tuple[int, int]:
     match = re.search(
         r"in\s+(January|February|March|April|May|June|July|August|September|October|November|December)\s+(20\d{2})",
         text,
-        re.IGNORECASE,
+        re.I,
     )
     if match is None:
-        return None
-    month = MONTH_NAMES.index(match.group(1).casefold()) + 1
-    return int(match.group(2)), month
+        raise CPISettlementReconciliationError("historical rules lack an exact reference month")
+    months = [
+        "january",
+        "february",
+        "march",
+        "april",
+        "may",
+        "june",
+        "july",
+        "august",
+        "september",
+        "october",
+        "november",
+        "december",
+    ]
+    return int(match.group(2)), months.index(match.group(1).lower()) + 1
+
+
+def _semantic_fields(spec: ContractSpecification) -> tuple[object, ...]:
+    return (
+        spec.market_ticker,
+        spec.event_ticker,
+        spec.series_ticker,
+        spec.rules_version_id,
+        spec.metadata_version_id,
+        spec.market_rules_hash,
+        spec.market_metadata_hash,
+        spec.yes_proposition,
+        spec.no_proposition,
+        spec.settlement_type,
+        spec.payout_model.value,
+        spec.measured_event_or_value,
+        spec.subject_entities,
+        spec.geographic_scope,
+        spec.comparator.value,
+        spec.threshold_value,
+        spec.threshold_unit,
+        spec.occurrence_time,
+        spec.expected_expiration,
+        spec.settlement_authority,
+        tuple(x.source_hash for x in spec.settlement_sources),
+        spec.source_precedence_status,
+        spec.rounding_rules,
+        spec.revision_rules,
+        spec.correction_rules,
+        spec.strike_type,
+        spec.functional_strike,
+        spec.custom_strike,
+        spec.semantic_status.value,
+        spec.source_input_hash,
+        spec.semantic_hash,
+    )
+
+
+def _build_specification(
+    market_evidence: KalshiHistoricalAcquisitionEvidence,
+    event_evidence: KalshiHistoricalAcquisitionEvidence,
+    series_evidence: KalshiHistoricalAcquisitionEvidence,
+) -> ContractSpecification:
+    market, event, series = (
+        dict(_payload(market_evidence.raw_response)),
+        dict(_payload(event_evidence.raw_response)),
+        dict(_payload(series_evidence.raw_response)),
+    )
+    if (
+        market.get("event_ticker") != event.get("event_ticker")
+        or event.get("series_ticker") != series.get("ticker")
+        or series.get("ticker") != "KXCPI"
+    ):
+        raise CPISettlementReconciliationError("historical market/event/series identities conflict")
+    year, month = _reference_period(str(market.get("rules_primary", "")))
+    rules_hash, metadata_hash = material_hashes(market)
+    market.update(
+        {
+            "rules_version_id": HISTORICAL_RULES_VERSION_PREFIX + rules_hash,
+            "metadata_version_id": "historical-market-metadata-v1:" + metadata_hash,
+            "measured_event_or_value": EXPECTED_MEASURED_VALUE,
+            "subject_entities": ["CPI-U"],
+            "geographic_scope": "U.S. city average",
+            "threshold_unit": "percent",
+            "rounding_rules": "one decimal initial release",
+            "revision_rules": "authoritative finalized exchange result",
+            "correction_rules": "authoritative latest final explicitly required",
+            "timezone": "UTC",
+            "occurrence_datetime": f"{year:04d}-{month:02d}-01T00:00:00Z",
+            "settlement_sources": event.get("settlement_sources", []),
+            "settlement_value_dollars": None,
+        }
+    )
+    event["timezone"] = "UTC"
+    series["timezone"] = "UTC"
+    spec = ContractSpecificationParser().parse(
+        SemanticsInputBundle.build(market, event, series), datetime(2026, 8, 31, 12, tzinfo=UTC)
+    )
+    from dataclasses import replace
+
+    return replace(
+        spec,
+        market_rules_hash=rules_hash,
+        market_metadata_hash=metadata_hash,
+        rules_version_id=HISTORICAL_RULES_VERSION_PREFIX + rules_hash,
+        metadata_version_id="historical-market-metadata-v1:" + metadata_hash,
+        semantic_status=SemanticStatus.VALID,
+    )
+
+
+@dataclass(frozen=True, slots=True, init=False)
+class CPIHistoricalSemanticEvidence:
+    market: KalshiHistoricalAcquisitionEvidence
+    event: KalshiHistoricalAcquisitionEvidence
+    series: KalshiHistoricalAcquisitionEvidence
+    specification: ContractSpecification
+    semantic_evidence_id: str
+
+    def __init__(
+        self,
+        *,
+        market: KalshiHistoricalAcquisitionEvidence,
+        event: KalshiHistoricalAcquisitionEvidence,
+        series: KalshiHistoricalAcquisitionEvidence,
+        specification: ContractSpecification,
+        _capability: object | None = None,
+    ) -> None:
+        if _capability is not _ACQUISITION_CAPABILITY:
+            raise CPISettlementReconciliationError(
+                "semantic evidence requires reviewed acquisition inputs"
+            )
+        for item in (market, event, series):
+            validate_kalshi_acquisition(item)
+        rebuilt = _build_specification(market, event, series)
+        if _semantic_fields(specification) != _semantic_fields(rebuilt):
+            raise CPISettlementReconciliationError(
+                "caller-authored semantic specification rejected"
+            )
+        for name, value in {
+            "market": market,
+            "event": event,
+            "series": series,
+            "specification": rebuilt,
+            "semantic_evidence_id": stable_hash(
+                (market.evidence_id, event.evidence_id, series.evidence_id, rebuilt.semantic_hash)
+            ),
+        }.items():
+            object.__setattr__(self, name, value)
+
+
+def build_historical_semantic_evidence(
+    market: KalshiHistoricalAcquisitionEvidence,
+    event: KalshiHistoricalAcquisitionEvidence,
+    series: KalshiHistoricalAcquisitionEvidence,
+) -> CPIHistoricalSemanticEvidence:
+    return CPIHistoricalSemanticEvidence(
+        market=market,
+        event=event,
+        series=series,
+        specification=_build_specification(market, event, series),
+        _capability=_ACQUISITION_CAPABILITY,
+    )
 
 
 @dataclass(frozen=True, slots=True)
 class KalshiFinalizedEvidence:
-    """Raw-response-bound exchange determination.
-
-    The public constructor is intentionally unusable for positive authority:
-    ``from_raw_response`` derives every exchange fact from the raw artifact,
-    and validation repeats that derivation.
-    """
-
+    acquisition: KalshiHistoricalAcquisitionEvidence
     raw_response: bytes
     raw_artifact_hash: str
-    source_identity: str
-    acquired_at: datetime
     determination: ExchangeDetermination
     research_only: bool = True
     production_influence: Decimal = ZERO
 
     @classmethod
-    def from_raw_response(
-        cls, raw_response: bytes, *, source_identity: str, acquired_at: datetime
+    def from_acquisition(
+        cls, acquisition: KalshiHistoricalAcquisitionEvidence
     ) -> KalshiFinalizedEvidence:
-        if type(raw_response) is not bytes or not raw_response:
-            raise CPISettlementReconciliationError("non-empty raw exchange bytes are required")
-        if not isinstance(source_identity, str) or not source_identity.strip():
-            raise CPISettlementReconciliationError("exchange source identity is required")
-        _utc(acquired_at, "evidence acquisition timestamp")
-        payload = _payload(raw_response)
-        determination = _determination(payload, _hash(raw_response), acquired_at)
-        result = cls(raw_response, _hash(raw_response), source_identity, acquired_at, determination)
-        validate_exchange_evidence(result)
-        return result
-
-
-def _payload(raw: bytes) -> dict[str, Any]:
-    try:
-        value = json.loads(raw.decode("utf-8"))
-    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
-        raise CPISettlementReconciliationError("raw exchange artifact is not valid JSON") from exc
-    if type(value) is not dict:
-        raise CPISettlementReconciliationError("raw exchange artifact must be a JSON object")
-    return value["market"] if type(value.get("market")) is dict else value
-
-
-def _determination(
-    payload: dict[str, Any], raw_hash: str, acquired_at: datetime
-) -> ExchangeDetermination:
-    historical_api = "status" in payload
-    required = (
-        ("ticker", "status", "result", "settlement_value_dollars", "settlement_ts")
-        if historical_api
-        else (
-            "determination_id",
-            "market_ticker",
-            "state",
-            "result",
-            "settlement_value_dollars",
-            "determined_at",
-            "finalized_at",
-            "source_identity",
-        )
-    )
-    if any(key not in payload for key in required):
-        raise CPISettlementReconciliationError(
-            "raw exchange artifact lacks required determination fields"
-        )
-    try:
-        state = (
-            (
-                DeterminationState.FINALIZED
-                if str(payload["status"]).casefold() == "finalized"
-                else DeterminationState(str(payload["status"]).upper())
+        validate_kalshi_acquisition(acquisition)
+        if acquisition.endpoint_role is not KalshiEndpointRole.HISTORICAL_MARKET:
+            raise CPISettlementReconciliationError(
+                "only historical market responses determine settlement"
             )
-            if historical_api
-            else DeterminationState(str(payload["state"]))
+        payload = _payload(acquisition.raw_response)
+        if (
+            any(
+                key not in payload
+                for key in (
+                    "ticker",
+                    "status",
+                    "result",
+                    "settlement_value_dollars",
+                    "settlement_ts",
+                )
+            )
+            or str(payload["status"]).casefold() != "finalized"
+        ):
+            raise CPISettlementReconciliationError("historical market is not explicitly finalized")
+        result = str(payload["result"]).upper()
+        value = _decimal(payload["settlement_value_dollars"], "settlement_value_dollars")
+        if result not in {"YES", "NO"} or value != (ONE if result == "YES" else ZERO):
+            raise CPISettlementReconciliationError("historical binary result/value is invalid")
+        determined = _time(payload["settlement_ts"], "settlement_ts")
+        if determined > acquisition.acquired_at:
+            raise CPISettlementReconciliationError("historical determination follows acquisition")
+        determination = ExchangeDetermination(
+            str(payload["ticker"]) + "-settlement",
+            str(payload["ticker"]),
+            DeterminationState.FINALIZED,
+            result,
+            value,
+            determined,
+            acquisition.acquired_at,
+            acquisition.raw_artifact_hash,
+            None,
         )
-    except ValueError as exc:
-        raise CPISettlementReconciliationError("unsupported exchange determination state") from exc
-    settlement = (
-        None
-        if payload["settlement_value_dollars"] is None
-        else _decimal(payload["settlement_value_dollars"], "settlement_value_dollars")
-    )
-    determined_at = payload.get("settlement_ts", payload.get("determined_at"))
-    ticker = str(payload.get("ticker", payload.get("market_ticker", "")))
-    return ExchangeDetermination(
-        determination_id=str(payload.get("determination_id", ticker + "-settlement")),
-        market_ticker=str(payload.get("market_ticker", ticker)),
-        state=state,
-        result=None if payload["result"] is None else str(payload["result"]).upper(),
-        settlement_value_dollars=settlement,
-        exchange_at=_time(determined_at, "settlement_ts" if historical_api else "determined_at"),
-        received_at=acquired_at,
-        raw_hash=raw_hash,
-        supersedes_determination_id=(
-            None
-            if payload.get("supersedes_determination_id") is None
-            else str(payload["supersedes_determination_id"])
-        ),
-    )
+        return cls(
+            acquisition, acquisition.raw_response, acquisition.raw_artifact_hash, determination
+        )
 
 
 def validate_exchange_evidence(evidence: KalshiFinalizedEvidence) -> None:
-    if type(evidence) is not KalshiFinalizedEvidence or type(evidence.raw_response) is not bytes:
+    if type(evidence) is not KalshiFinalizedEvidence:
         raise CPISettlementReconciliationError("exchange evidence has wrong runtime type")
-    if evidence.raw_artifact_hash != _hash(evidence.raw_response):
-        raise CPISettlementReconciliationError("exchange raw artifact hash mismatch")
-    if evidence.research_only is not True or evidence.production_influence != ZERO:
-        raise CPISettlementReconciliationError("exchange evidence safety flags are invalid")
-    _utc(evidence.acquired_at, "evidence acquisition timestamp")
-    payload = _payload(evidence.raw_response)
-    if "source_identity" in payload and payload.get("source_identity") != evidence.source_identity:
-        raise CPISettlementReconciliationError("exchange source identity mismatch")
-    expected = _determination(payload, evidence.raw_artifact_hash, evidence.acquired_at)
-    if evidence.determination != expected:
-        raise CPISettlementReconciliationError("caller-mutated exchange determination")
-    if expected.state is not DeterminationState.FINALIZED or (
-        payload.get("finalized_at") is None and payload.get("settlement_ts") is None
-    ):
-        raise CPISettlementReconciliationError("exchange result is not finalized")
-    if expected.result not in {ExpectedBinaryResult.YES, ExpectedBinaryResult.NO}:
-        raise CPISettlementReconciliationError("exchange result is not binary")
-    expected_value = ONE if expected.result == ExpectedBinaryResult.YES else ZERO
-    if expected.settlement_value_dollars != expected_value:
-        raise CPISettlementReconciliationError("binary result and settlement value disagree")
-    if evidence.determination.exchange_at > evidence.acquired_at:
-        raise CPISettlementReconciliationError("determination is after evidence acquisition")
-    if (
-        payload.get("disputed") is True
-        or payload.get("superseded") is True
-        or str(payload.get("status", "")).casefold() in {"disputed", "amended"}
-    ):
-        raise CPISettlementReconciliationError("exchange lifecycle is disputed or superseded")
-    if payload.get("conflicting_finalized_results") is True:
-        raise CPISettlementReconciliationError("exchange has conflicting finalized results")
-    if (
-        expected.supersedes_determination_id is not None
-        and payload.get("authoritative_latest_final") is not True
-    ):
-        raise CPISettlementReconciliationError(
-            "superseding exchange final is not explicitly authoritative"
-        )
+    validate_kalshi_acquisition(evidence.acquisition)
+    if evidence != KalshiFinalizedEvidence.from_acquisition(evidence.acquisition):
+        raise CPISettlementReconciliationError("caller-mutated finalized exchange evidence")
 
 
-def expected_binary_result(
-    observation: CPIInitialReleaseObservation, specification: ContractSpecification
-) -> ExpectedBinaryResult:
-    _validate_inputs(observation, specification)
-    if specification.threshold_value is None:
-        raise CPISettlementReconciliationError("contract threshold is missing")
-    value, threshold = observation.value, specification.threshold_value
-    yes = {
-        Comparator.GT: value > threshold,
-        Comparator.GTE: value >= threshold,
-        Comparator.LT: value < threshold,
-        Comparator.LTE: value <= threshold,
-        Comparator.EQ: value == threshold,
-    }[specification.comparator]
-    return ExpectedBinaryResult.YES if yes else ExpectedBinaryResult.NO
-
-
-def reconcile_cpi_settlement(
-    observation: CPIInitialReleaseObservation,
-    specification: ContractSpecification,
-    exchange: KalshiFinalizedEvidence,
-) -> SettlementRecord:
-    """Create MATCHED or MISMATCH only after both evidence packages validate."""
-    _validate_inputs(observation, specification)
-    validate_exchange_evidence(exchange)
-    determination = exchange.determination
-    _bind_exchange_to_specification(exchange, specification)
-    if determination.result is None or determination.settlement_value_dollars is None:
-        raise CPISettlementReconciliationError("exchange binary result is incomplete")
-    expected = expected_binary_result(observation, specification)
-    status = (
-        ReconciliationStatus.MATCHED
-        if determination.result == expected
-        else ReconciliationStatus.MISMATCH
-    )
-    exchange_payload = _payload(exchange.raw_response)
-    finalized = _time(
-        exchange_payload.get("finalized_at", exchange_payload.get("settlement_ts")),
-        "finalized_at",
-    )
-    return SettlementRecord(
-        market_ticker=specification.market_ticker,
-        rules_version=specification.rules_version_id,
-        semantic_spec_id=specification.semantic_hash,
-        result=determination.result,
-        settlement_value_dollars=determination.settlement_value_dollars,
-        determined_at=determination.exchange_at,
-        finalized_at=finalized,
-        exchange_record_hash=exchange.raw_artifact_hash,
-        source_observation_id=observation.observation_id,
-        reconciliation_status=status,
-    )
-
-
-def _validate_inputs(
-    observation: CPIInitialReleaseObservation, specification: ContractSpecification
-) -> None:
+def _validate_observation(observation: CPIInitialReleaseObservation) -> None:
     try:
         validate_cpi_initial_release_observation(observation)
     except ValueError as exc:
         raise CPISettlementReconciliationError(
             "P6 observation failed transitive validation"
         ) from exc
-    if type(specification) is not ContractSpecification:
-        raise CPISettlementReconciliationError("exact ContractSpecification is required")
-    if (
-        specification.semantic_status is not SemanticStatus.VALID
-        or specification.payout_model is not PayoutModel.SIMPLE_BINARY
-    ):
-        raise CPISettlementReconciliationError(
-            "contract semantics are not valid simple binary semantics"
-        )
-    if (
-        not specification.market_ticker.startswith("KXCPI")
-        or not specification.event_ticker.startswith("KXCPI")
-        or specification.series_ticker != "KXCPI"
-    ):
-        raise CPISettlementReconciliationError("contract is not the intended KXCPI family")
-    if not specification.rules_version_id.strip() or not specification.market_rules_hash.strip():
-        raise CPISettlementReconciliationError("contract rules identity is incomplete")
-    if (
-        specification.comparator not in SUPPORTED_COMPARATORS
-        or specification.threshold_value is None
-        or not specification.threshold_unit
-    ):
-        raise CPISettlementReconciliationError("contract comparator or threshold is unsupported")
-    if specification.threshold_unit.casefold() not in {"percent", "%", "percentage points"}:
-        raise CPISettlementReconciliationError(
-            "contract threshold unit is not CPI percentage points"
-        )
-    measured = " ".join(specification.measured_event_or_value.casefold().replace(",", "").split())
-    if measured != EXPECTED_MEASURED_VALUE.casefold() or specification.subject_entities != (
-        "CPI-U",
-    ):
-        raise CPISettlementReconciliationError("contract measured domain is not the P6 CPI domain")
-    if (
-        specification.geographic_scope != "U.S. city average"
-        or specification.rounding_rules != "one decimal initial release"
-    ):
-        raise CPISettlementReconciliationError("contract geography or rounding policy is not exact")
-    if (
-        not specification.settlement_authority
-        or not specification.settlement_sources
-        or specification.source_precedence_status not in {"EXCHANGE_NAMED", "AGREE"}
-    ):
-        raise CPISettlementReconciliationError(
-            "contract settlement authority is incomplete or ambiguous"
-        )
-    if (
-        specification.ambiguities
-        or specification.contradictions
-        or specification.unsupported_features
-    ):
-        raise CPISettlementReconciliationError("contract contains unresolved semantic issues")
-    if (
-        specification.revision_rules != "authoritative finalized exchange result"
-        or specification.correction_rules != "authoritative latest final explicitly required"
-    ):
-        raise CPISettlementReconciliationError("contract revision/correction policy is not exact")
     if (
         observation.unit is not CPIUnit.PERCENT
         or observation.seasonal_basis is not CPISeasonalBasis.SA
@@ -390,45 +692,117 @@ def _validate_inputs(
         or observation.geography is not CPIGeography.US_CITY_AVERAGE
     ):
         raise CPISettlementReconciliationError("P6 observation is outside the exact CPI domain")
-    if specification.occurrence_time and (
-        observation.reference_year != specification.occurrence_time.year
-        or observation.reference_month != specification.occurrence_time.month
+
+
+def _validate_specification(
+    observation: CPIInitialReleaseObservation, spec: ContractSpecification
+) -> None:
+    _validate_observation(observation)
+    if (
+        type(spec) is not ContractSpecification
+        or spec.semantic_status is not SemanticStatus.VALID
+        or spec.payout_model is not PayoutModel.SIMPLE_BINARY
+    ):
+        raise CPISettlementReconciliationError(
+            "contract semantics are not valid simple binary semantics"
+        )
+    if (
+        spec.series_ticker != "KXCPI"
+        or not spec.market_ticker.startswith("KXCPI-")
+        or not spec.event_ticker.startswith("KXCPI-")
+    ):
+        raise CPISettlementReconciliationError("contract is not the intended KXCPI family")
+    if (
+        spec.comparator not in SUPPORTED_COMPARATORS
+        or spec.threshold_value is None
+        or spec.threshold_unit != "percent"
+    ):
+        raise CPISettlementReconciliationError("contract comparator or threshold is unsupported")
+    if (
+        spec.measured_event_or_value != EXPECTED_MEASURED_VALUE
+        or spec.subject_entities != ("CPI-U",)
+        or spec.geographic_scope != "U.S. city average"
+    ):
+        raise CPISettlementReconciliationError("contract measured domain is not the P6 CPI domain")
+    if (
+        spec.rounding_rules != "one decimal initial release"
+        or spec.revision_rules != "authoritative finalized exchange result"
+        or spec.correction_rules != "authoritative latest final explicitly required"
+    ):
+        raise CPISettlementReconciliationError("contract policy is not exact")
+    if (
+        spec.ambiguities
+        or spec.contradictions
+        or spec.unsupported_features
+        or not spec.settlement_authority
+        or not spec.settlement_sources
+    ):
+        raise CPISettlementReconciliationError("contract contains unresolved semantic issues")
+    if spec.occurrence_time and (observation.reference_year, observation.reference_month) != (
+        spec.occurrence_time.year,
+        spec.occurrence_time.month,
     ):
         raise CPISettlementReconciliationError("P6 reference month conflicts with contract")
 
 
-def _bind_exchange_to_specification(
-    exchange: KalshiFinalizedEvidence, specification: ContractSpecification
-) -> None:
-    payload = _payload(exchange.raw_response)
-    for key, expected in (
-        ("market_ticker", specification.market_ticker),
-        ("event_ticker", specification.event_ticker),
-        ("series_ticker", specification.series_ticker),
-        ("rules_version_id", specification.rules_version_id),
-        ("market_rules_hash", specification.market_rules_hash),
-        ("semantic_spec_id", specification.semantic_hash),
+def expected_binary_result(
+    observation: CPIInitialReleaseObservation, semantic: CPIHistoricalSemanticEvidence
+) -> ExpectedBinaryResult:
+    if type(semantic) is not CPIHistoricalSemanticEvidence:
+        raise CPISettlementReconciliationError("trusted historical semantic evidence is required")
+    rebuilt = _build_specification(semantic.market, semantic.event, semantic.series)
+    if _semantic_fields(semantic.specification) != _semantic_fields(rebuilt):
+        raise CPISettlementReconciliationError("semantic evidence was mutated")
+    spec = rebuilt
+    _validate_specification(observation, spec)
+    if spec.threshold_value is None:
+        raise CPISettlementReconciliationError("contract threshold is missing")
+    yes = {
+        Comparator.GT: observation.value > spec.threshold_value,
+        Comparator.GTE: observation.value >= spec.threshold_value,
+        Comparator.LT: observation.value < spec.threshold_value,
+        Comparator.LTE: observation.value <= spec.threshold_value,
+        Comparator.EQ: observation.value == spec.threshold_value,
+    }[spec.comparator]
+    return ExpectedBinaryResult.YES if yes else ExpectedBinaryResult.NO
+
+
+def reconcile_cpi_settlement(
+    observation: CPIInitialReleaseObservation,
+    semantic: CPIHistoricalSemanticEvidence,
+    exchange: KalshiFinalizedEvidence,
+) -> SettlementRecord:
+    if type(semantic) is not CPIHistoricalSemanticEvidence:
+        raise CPISettlementReconciliationError("trusted historical semantic evidence is required")
+    validate_exchange_evidence(exchange)
+    spec = _build_specification(semantic.market, semantic.event, semantic.series)
+    if (
+        _semantic_fields(semantic.specification) != _semantic_fields(spec)
+        or exchange.acquisition.raw_artifact_hash != semantic.market.raw_artifact_hash
     ):
-        actual = (
-            payload.get("ticker")
-            if "status" in payload and key == "market_ticker"
-            else payload.get(key)
+        raise CPISettlementReconciliationError(
+            "semantic or exchange evidence was not transitively bound"
         )
-        if actual is not None and actual != expected:
-            raise CPISettlementReconciliationError(
-                f"exchange evidence conflicts with contract {key}"
-            )
-    if "status" in payload:
-        market_rules_hash, _ = material_hashes(payload)
-        if market_rules_hash != specification.market_rules_hash:
-            raise CPISettlementReconciliationError("historical market rules hash mismatch")
-    if specification.occurrence_time:
-        reference = (
-            _historical_reference_period(payload)
-            if "status" in payload
-            else (payload.get("reference_year"), payload.get("reference_month"))
-        )
-        if reference != (specification.occurrence_time.year, specification.occurrence_time.month):
-            raise CPISettlementReconciliationError(
-                "exchange reference year conflicts with contract"
-            )
+    _validate_specification(observation, spec)
+    if (
+        exchange.determination.result is None
+        or exchange.determination.settlement_value_dollars is None
+    ):
+        raise CPISettlementReconciliationError("historical determination is incomplete")
+    status = (
+        ReconciliationStatus.MATCHED
+        if exchange.determination.result == expected_binary_result(observation, semantic)
+        else ReconciliationStatus.MISMATCH
+    )
+    return SettlementRecord(
+        market_ticker=spec.market_ticker,
+        rules_version=spec.rules_version_id,
+        semantic_spec_id=spec.semantic_hash,
+        result=exchange.determination.result,
+        settlement_value_dollars=exchange.determination.settlement_value_dollars,
+        determined_at=exchange.determination.exchange_at,
+        finalized_at=exchange.determination.exchange_at,
+        exchange_record_hash=exchange.raw_artifact_hash,
+        source_observation_id=observation.observation_id,
+        reconciliation_status=status,
+    )
