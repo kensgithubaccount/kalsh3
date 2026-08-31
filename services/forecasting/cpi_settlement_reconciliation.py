@@ -60,6 +60,10 @@ KALSHI_BASE = f"https://{KALSHI_HOST}/trade-api/v2"
 HTTP_METHOD = "GET"
 SUCCESS_STATUS = 200
 MAX_RESPONSE_BYTES = 2_000_000
+CONTRACT_TERMS_SHA256 = "2317b1d8e823082b409f6ff3415fb135804d9682681f9f92f640b3681b29a872"
+KXCPI_SEMANTIC_POLICY_IDENTITY = stable_hash(
+    (POLICY_VERSION, CONTRACT_TERMS_SHA256, "reviewed CPI-U SA MoM one-decimal KXCPI terms mapping")
+)
 HISTORICAL_RULES_VERSION_PREFIX = "historical-market-rules-v1:"
 _ACQUISITION_CAPABILITY = object()
 
@@ -77,6 +81,7 @@ class KalshiEndpointRole(StrEnum):
     HISTORICAL_MARKET = "historical_market"
     EVENT = "event"
     SERIES = "series"
+    CONTRACT_TERMS = "contract_terms"
 
 
 @dataclass(frozen=True, slots=True)
@@ -183,6 +188,13 @@ _FIXTURES = {
         "f5c410bc20a280d5fc14e33d1b028777a3a88aa6a955938eeee03cc481866e60",
         "2026-08-31T19:55:19Z",
     ),
+    "contract-terms": _FixtureManifest(
+        "contract-terms",
+        KalshiEndpointRole.CONTRACT_TERMS,
+        "https://assets.kalshi.com/contract_terms/CPI.pdf",
+        CONTRACT_TERMS_SHA256,
+        datetime.fromisoformat("2026-08-31T17:33:02+00:00"),
+    ),
 }
 
 
@@ -225,14 +237,26 @@ def _payload(raw: bytes) -> dict[str, Any]:
 
 
 def _fixture_path(entry: _FixtureManifest) -> Path:
-    return Path(__file__).with_name("fixtures") / "cpi_p7_public" / f"{entry.fixture_id}.json"
+    filename = (
+        "CPI-contract-terms.pdf"
+        if entry.role is KalshiEndpointRole.CONTRACT_TERMS
+        else f"{entry.fixture_id}.json"
+    )
+    return Path(__file__).with_name("fixtures") / "cpi_p7_public" / filename
 
 
-def _validate_response(response: _PublicHTTPResponse) -> None:
+def _validate_response(
+    response: _PublicHTTPResponse, role: KalshiEndpointRole | None = None
+) -> None:
     if type(response) is not _PublicHTTPResponse:
         raise CPISettlementReconciliationError("unreviewed HTTP response type")
     parsed = urlsplit(response.request_url)
-    if parsed.scheme != "https" or parsed.hostname != KALSHI_HOST:
+    terms_url = (
+        role is KalshiEndpointRole.CONTRACT_TERMS
+        and parsed.hostname == "assets.kalshi.com"
+        and parsed.path == "/contract_terms/CPI.pdf"
+    )
+    if parsed.scheme != "https" or (parsed.hostname != KALSHI_HOST and not terms_url):
         raise CPISettlementReconciliationError("Kalshi response escaped reviewed HTTPS host")
     if response.method != HTTP_METHOD or response.status != SUCCESS_STATUS:
         raise CPISettlementReconciliationError("only reviewed successful GET responses are allowed")
@@ -245,6 +269,8 @@ def _validate_response(response: _PublicHTTPResponse) -> None:
     ):
         raise CPISettlementReconciliationError("response bytes are empty or exceed the size bound")
     _utc(response.acquired_at, "acquisition timestamp")
+    if role is KalshiEndpointRole.CONTRACT_TERMS:
+        return
     if parsed.path != "/trade-api/v2/series/KXCPI" and not re.fullmatch(
         r"/trade-api/v2/(?:events|historical/markets)/[A-Za-z0-9_.-]+", parsed.path
     ):
@@ -284,7 +310,7 @@ class KalshiHistoricalAcquisitionEvidence:
             raise CPISettlementReconciliationError(
                 "Kalshi acquisition requires reviewed transport capability"
             )
-        _validate_response(response)
+        _validate_response(response, role)
         digest = hashlib.sha256(response.raw_body).hexdigest()
         for name, value in {
             "fixture_id": fixture_id,
@@ -331,6 +357,31 @@ def _issue_reviewed_public_get(
     )
 
 
+def _read_complete_response(response: Any) -> bytes:
+    """Read bounded HTTP bytes only when stdlib length/transfer is complete."""
+    expected = getattr(response, "length", None)
+    if expected is not None:
+        if type(expected) is not int or isinstance(expected, bool):
+            raise CPISettlementReconciliationError("HTTP response length metadata is invalid")
+        if expected < 0:
+            raise CPISettlementReconciliationError("HTTP response length metadata is invalid")
+        if expected > MAX_RESPONSE_BYTES:
+            raise CPISettlementReconciliationError("declared response length exceeded bound")
+    try:
+        body = response.read(MAX_RESPONSE_BYTES + 1)
+    except http.client.IncompleteRead as exc:
+        raise CPISettlementReconciliationError("HTTP response was incomplete") from exc
+    except http.client.HTTPException as exc:
+        raise CPISettlementReconciliationError("HTTP response could not be read") from exc
+    if type(body) is not bytes or not body:
+        raise CPISettlementReconciliationError("HTTP response body is empty")
+    if expected is not None and len(body) != expected:
+        raise CPISettlementReconciliationError("HTTP response length does not match body")
+    if len(body) > MAX_RESPONSE_BYTES:
+        raise CPISettlementReconciliationError("HTTP response exceeded bound")
+    return body
+
+
 def acquire_kalshi_historical_get(
     request_url: str,
     role: KalshiEndpointRole,
@@ -344,19 +395,35 @@ def acquire_kalshi_historical_get(
     redirects, cookies, and acquisition time come from this transport seam.
     """
     parsed = urlsplit(request_url)
-    if parsed.scheme != "https" or parsed.hostname != KALSHI_HOST or parsed.query:
+    allowed_terms = role is KalshiEndpointRole.CONTRACT_TERMS
+    if (
+        parsed.scheme != "https"
+        or parsed.query
+        or (
+            parsed.hostname != KALSHI_HOST
+            and not (allowed_terms and parsed.hostname == "assets.kalshi.com")
+        )
+    ):
         raise CPISettlementReconciliationError("request escaped the reviewed Kalshi GET policy")
     connection = http.client.HTTPSConnection(parsed.hostname, parsed.port or 443, timeout=10.0)
     try:
         connection.request(
             "GET",
             parsed.path,
-            headers={"Accept": "application/json", "User-Agent": "kalsh3-cpi-e1-p7/1.0"},
+            headers={
+                "Accept": "application/pdf" if allowed_terms else "application/json",
+                "User-Agent": "kalsh3-cpi-e1-p7/1.0",
+            },
         )
         response = connection.getresponse()
-        body = response.read(MAX_RESPONSE_BYTES + 1)
         status = response.status
-    except (OSError, ValueError) as exc:
+        body = _read_complete_response(response)
+    except (
+        OSError,
+        ValueError,
+        http.client.HTTPException,
+        CPISettlementReconciliationError,
+    ) as exc:
         raise CPISettlementReconciliationError("Kalshi public GET transport failed") from exc
     finally:
         connection.close()
@@ -408,7 +475,8 @@ def validate_kalshi_acquisition(evidence: KalshiHistoricalAcquisitionEvidence) -
             evidence.http_status,
             evidence.raw_response,
             evidence.acquired_at,
-        )
+        ),
+        evidence.endpoint_role,
     )
     if hashlib.sha256(evidence.raw_response).hexdigest() != evidence.raw_artifact_hash:
         raise CPISettlementReconciliationError("Kalshi raw artifact hash changed")
@@ -430,6 +498,19 @@ def validate_kalshi_acquisition(evidence: KalshiHistoricalAcquisitionEvidence) -
             entry.event_ticker,
         ):
             raise CPISettlementReconciliationError("Kalshi fixture identity changed")
+    if (
+        evidence.endpoint_role
+        in {
+            KalshiEndpointRole.EVENT,
+            KalshiEndpointRole.SERIES,
+        }
+        and evidence.expected_series_ticker != "KXCPI"
+    ):
+        raise CPISettlementReconciliationError("KXCPI series selector changed")
+    if evidence.endpoint_role is KalshiEndpointRole.CONTRACT_TERMS:
+        if evidence.raw_artifact_hash != CONTRACT_TERMS_SHA256:
+            raise CPISettlementReconciliationError("official CPI contract terms hash changed")
+        return
     payload = _payload(evidence.raw_response)
     if evidence.endpoint_role is KalshiEndpointRole.HISTORICAL_MARKET and (
         payload.get("ticker") != evidence.expected_ticker
@@ -438,10 +519,12 @@ def validate_kalshi_acquisition(evidence: KalshiHistoricalAcquisitionEvidence) -
         raise CPISettlementReconciliationError("historical market selector mismatch")
     if evidence.endpoint_role is KalshiEndpointRole.EVENT and (
         payload.get("event_ticker") != evidence.expected_event_ticker
-        or payload.get("series_ticker") != "KXCPI"
+        or payload.get("series_ticker") != evidence.expected_series_ticker
     ):
         raise CPISettlementReconciliationError("event selector mismatch")
-    if evidence.endpoint_role is KalshiEndpointRole.SERIES and payload.get("ticker") != "KXCPI":
+    if evidence.endpoint_role is KalshiEndpointRole.SERIES and (
+        payload.get("ticker") != evidence.expected_series_ticker
+    ):
         raise CPISettlementReconciliationError("series selector mismatch")
 
 
@@ -510,7 +593,11 @@ def _build_specification(
     market_evidence: KalshiHistoricalAcquisitionEvidence,
     event_evidence: KalshiHistoricalAcquisitionEvidence,
     series_evidence: KalshiHistoricalAcquisitionEvidence,
+    terms_evidence: KalshiHistoricalAcquisitionEvidence,
 ) -> ContractSpecification:
+    validate_kalshi_acquisition(terms_evidence)
+    if terms_evidence.endpoint_role is not KalshiEndpointRole.CONTRACT_TERMS:
+        raise CPISettlementReconciliationError("official KXCPI contract terms are required")
     market, event, series = (
         dict(_payload(market_evidence.raw_response)),
         dict(_payload(event_evidence.raw_response)),
@@ -522,6 +609,43 @@ def _build_specification(
         or series.get("ticker") != "KXCPI"
     ):
         raise CPISettlementReconciliationError("historical market/event/series identities conflict")
+    if terms_evidence.raw_artifact_hash != CONTRACT_TERMS_SHA256:
+        raise CPISettlementReconciliationError(
+            "official CPI contract terms are not the reviewed artifact"
+        )
+    if series.get("contract_terms_url") != "https://assets.kalshi.com/contract_terms/CPI.pdf":
+        raise CPISettlementReconciliationError(
+            "KXCPI series does not bind the reviewed official contract terms"
+        )
+    rules_primary = str(market.get("rules_primary", ""))
+    rules_secondary = str(market.get("rules_secondary", ""))
+    required_primary_terms = (
+        "consumer price index",
+        "increases",
+        "single-decimal",
+        "%",
+    )
+    if any(term not in rules_primary.casefold() for term in required_primary_terms):
+        raise CPISettlementReconciliationError(
+            "historical market rules do not prove the reviewed KXCPI observation domain"
+        )
+    if "single-decimal" not in rules_secondary.casefold():
+        raise CPISettlementReconciliationError(
+            "historical market rules do not prove the settlement precision"
+        )
+    event_sources = event.get("settlement_sources")
+    series_sources = series.get("settlement_sources")
+    if event_sources != series_sources or not event_sources:
+        raise CPISettlementReconciliationError(
+            "historical settlement authority conflicts with KXCPI series authority"
+        )
+    if not any(
+        type(source) is dict
+        and source.get("name") == "Bureau of Labor Statistics"
+        and source.get("url") == "https://www.bls.gov/cpi/"
+        for source in event_sources
+    ):
+        raise CPISettlementReconciliationError("historical BLS settlement authority is unproven")
     year, month = _reference_period(str(market.get("rules_primary", "")))
     rules_hash, metadata_hash = material_hashes(market)
     market.update(
@@ -563,6 +687,7 @@ class CPIHistoricalSemanticEvidence:
     market: KalshiHistoricalAcquisitionEvidence
     event: KalshiHistoricalAcquisitionEvidence
     series: KalshiHistoricalAcquisitionEvidence
+    contract_terms: KalshiHistoricalAcquisitionEvidence
     specification: ContractSpecification
     semantic_evidence_id: str
 
@@ -572,6 +697,7 @@ class CPIHistoricalSemanticEvidence:
         market: KalshiHistoricalAcquisitionEvidence,
         event: KalshiHistoricalAcquisitionEvidence,
         series: KalshiHistoricalAcquisitionEvidence,
+        contract_terms: KalshiHistoricalAcquisitionEvidence,
         specification: ContractSpecification,
         _capability: object | None = None,
     ) -> None:
@@ -579,9 +705,9 @@ class CPIHistoricalSemanticEvidence:
             raise CPISettlementReconciliationError(
                 "semantic evidence requires reviewed acquisition inputs"
             )
-        for item in (market, event, series):
+        for item in (market, event, series, contract_terms):
             validate_kalshi_acquisition(item)
-        rebuilt = _build_specification(market, event, series)
+        rebuilt = _build_specification(market, event, series, contract_terms)
         if _semantic_fields(specification) != _semantic_fields(rebuilt):
             raise CPISettlementReconciliationError(
                 "caller-authored semantic specification rejected"
@@ -590,9 +716,17 @@ class CPIHistoricalSemanticEvidence:
             "market": market,
             "event": event,
             "series": series,
+            "contract_terms": contract_terms,
             "specification": rebuilt,
             "semantic_evidence_id": stable_hash(
-                (market.evidence_id, event.evidence_id, series.evidence_id, rebuilt.semantic_hash)
+                (
+                    market.evidence_id,
+                    event.evidence_id,
+                    series.evidence_id,
+                    contract_terms.evidence_id,
+                    rebuilt.semantic_hash,
+                    KXCPI_SEMANTIC_POLICY_IDENTITY,
+                )
             ),
         }.items():
             object.__setattr__(self, name, value)
@@ -602,12 +736,14 @@ def build_historical_semantic_evidence(
     market: KalshiHistoricalAcquisitionEvidence,
     event: KalshiHistoricalAcquisitionEvidence,
     series: KalshiHistoricalAcquisitionEvidence,
+    contract_terms: KalshiHistoricalAcquisitionEvidence,
 ) -> CPIHistoricalSemanticEvidence:
     return CPIHistoricalSemanticEvidence(
         market=market,
         event=event,
         series=series,
-        specification=_build_specification(market, event, series),
+        contract_terms=contract_terms,
+        specification=_build_specification(market, event, series, contract_terms),
         _capability=_ACQUISITION_CAPABILITY,
     )
 
@@ -750,7 +886,9 @@ def expected_binary_result(
 ) -> ExpectedBinaryResult:
     if type(semantic) is not CPIHistoricalSemanticEvidence:
         raise CPISettlementReconciliationError("trusted historical semantic evidence is required")
-    rebuilt = _build_specification(semantic.market, semantic.event, semantic.series)
+    rebuilt = _build_specification(
+        semantic.market, semantic.event, semantic.series, semantic.contract_terms
+    )
     if _semantic_fields(semantic.specification) != _semantic_fields(rebuilt):
         raise CPISettlementReconciliationError("semantic evidence was mutated")
     spec = rebuilt
@@ -775,7 +913,9 @@ def reconcile_cpi_settlement(
     if type(semantic) is not CPIHistoricalSemanticEvidence:
         raise CPISettlementReconciliationError("trusted historical semantic evidence is required")
     validate_exchange_evidence(exchange)
-    spec = _build_specification(semantic.market, semantic.event, semantic.series)
+    spec = _build_specification(
+        semantic.market, semantic.event, semantic.series, semantic.contract_terms
+    )
     if (
         _semantic_fields(semantic.specification) != _semantic_fields(spec)
         or exchange.acquisition.raw_artifact_hash != semantic.market.raw_artifact_hash

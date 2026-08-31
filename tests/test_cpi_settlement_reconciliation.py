@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import hashlib
+import http.client
 from dataclasses import replace
 from datetime import UTC, datetime
 from pathlib import Path
@@ -9,6 +11,7 @@ import pytest
 
 import services.forecasting.cpi_evidence_issuer as issuer
 import services.forecasting.cpi_manual_acquisition as manual
+import services.forecasting.cpi_settlement_reconciliation as reconciliation
 from services.forecasting.cpi_initial_release_value import (
     CPIInitialReleaseObservation,
     issue_cpi_initial_release_observation,
@@ -70,7 +73,8 @@ def _bundle(
     market = load_frozen_kalshi_acquisition(f"market-{prefix}")
     event = load_frozen_kalshi_acquisition(f"event-{prefix}")
     series = load_frozen_kalshi_acquisition("series")
-    return market, event, series, build_historical_semantic_evidence(market, event, series)
+    terms = load_frozen_kalshi_acquisition("contract-terms")
+    return market, event, series, build_historical_semantic_evidence(market, event, series, terms)
 
 
 @pytest.mark.parametrize(
@@ -142,6 +146,7 @@ def test_semantics_are_rebuilt_and_arbitrary_spec_is_rejected(
             market=market,
             event=event,
             series=series,
+            contract_terms=semantic.contract_terms,
             specification=replace(
                 semantic.specification, comparator=semantic.specification.comparator
             ),
@@ -184,7 +189,12 @@ def test_caller_mutated_specification_cannot_enter_authority(
     forged = replace(semantic.specification, **changes)
     with pytest.raises(CPISettlementReconciliationError):
         CPIHistoricalSemanticEvidence(
-            market=market, event=event, series=series, specification=forged, _capability=None
+            market=market,
+            event=event,
+            series=series,
+            contract_terms=semantic.contract_terms,
+            specification=forged,
+            _capability=None,
         )
 
 
@@ -202,3 +212,124 @@ def test_safety_flags_are_fixed() -> None:
     object.__setattr__(acquisition, "research_only", False)
     with pytest.raises(CPISettlementReconciliationError):
         validate_kalshi_acquisition(acquisition)
+
+
+def test_official_terms_are_durable_and_content_addressed() -> None:
+    terms = load_frozen_kalshi_acquisition("contract-terms")
+    assert terms.raw_artifact_hash == reconciliation.CONTRACT_TERMS_SHA256
+    assert terms.request_url == "https://assets.kalshi.com/contract_terms/CPI.pdf"
+    object.__setattr__(terms, "raw_response", terms.raw_response + b"x")
+    with pytest.raises(CPISettlementReconciliationError):
+        validate_kalshi_acquisition(terms)
+
+
+def test_terms_url_and_hash_mutations_fail() -> None:
+    terms = load_frozen_kalshi_acquisition("contract-terms")
+    object.__setattr__(terms, "request_url", "https://evil.example/CPI.pdf")
+    with pytest.raises(CPISettlementReconciliationError):
+        validate_kalshi_acquisition(terms)
+
+    terms = load_frozen_kalshi_acquisition("contract-terms")
+    object.__setattr__(terms, "raw_artifact_hash", "0" * 64)
+    with pytest.raises(CPISettlementReconciliationError):
+        validate_kalshi_acquisition(terms)
+
+
+def test_missing_historical_terms_binding_cannot_be_filled_by_p7_constants() -> None:
+    market, event, series, semantic = _bundle("jul")
+    del semantic
+    forged_series = series
+    raw = forged_series.raw_response.replace(
+        b"https://assets.kalshi.com/contract_terms/CPI.pdf", b"https://evil.example/CPI.pdf"
+    )
+    object.__setattr__(forged_series, "raw_response", raw)
+    object.__setattr__(forged_series, "raw_artifact_hash", hashlib.sha256(raw).hexdigest())
+    object.__setattr__(forged_series, "fixture_id", None)
+    with pytest.raises(CPISettlementReconciliationError):
+        build_historical_semantic_evidence(
+            market, event, forged_series, load_frozen_kalshi_acquisition("contract-terms")
+        )
+
+
+def test_historical_market_rules_are_required_for_semantic_authority() -> None:
+    market, event, series, _semantic = _bundle("jul")
+    forged_market = market
+    raw = forged_market.raw_response.replace(b"single-decimal", b"whole-number")
+    object.__setattr__(forged_market, "raw_response", raw)
+    object.__setattr__(forged_market, "raw_artifact_hash", hashlib.sha256(raw).hexdigest())
+    object.__setattr__(forged_market, "fixture_id", None)
+    with pytest.raises(CPISettlementReconciliationError):
+        build_historical_semantic_evidence(
+            forged_market, event, series, load_frozen_kalshi_acquisition("contract-terms")
+        )
+
+
+class _FakeHTTPResponse:
+    def __init__(self, body: bytes, length: int | None) -> None:
+        self.body = body
+        self.length = length
+        self.status = 200
+        self.read_calls = 0
+
+    def read(self, limit: int) -> bytes:
+        self.read_calls += 1
+        return self.body[:limit]
+
+
+@pytest.mark.parametrize("declared,body,raises", [(2, b"{}", False), (3, b"{}", True)])
+def test_definite_http_length_is_checked(declared: int, body: bytes, raises: bool) -> None:
+    response = _FakeHTTPResponse(body, declared)
+    if raises:
+        with pytest.raises(CPISettlementReconciliationError):
+            reconciliation._read_complete_response(response)
+    else:
+        assert reconciliation._read_complete_response(response) == body
+
+
+def test_declared_oversize_rejects_before_read() -> None:
+    response = _FakeHTTPResponse(b"{}", reconciliation.MAX_RESPONSE_BYTES + 1)
+    with pytest.raises(CPISettlementReconciliationError):
+        reconciliation._read_complete_response(response)
+    assert response.read_calls == 0
+
+
+def test_incomplete_read_fails_closed() -> None:
+    class Incomplete(_FakeHTTPResponse):
+        def read(self, limit: int) -> bytes:
+            del limit
+            raise http.client.IncompleteRead(b"{}", 4)
+
+    with pytest.raises(CPISettlementReconciliationError):
+        reconciliation._read_complete_response(Incomplete(b"", None))
+
+
+def test_close_delimited_response_is_explicitly_supported() -> None:
+    assert reconciliation._read_complete_response(_FakeHTTPResponse(b"{}", None)) == b"{}"
+
+
+def test_valid_json_prefix_with_incomplete_definite_response_never_issues_evidence(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    body = b'{"ticker":"KXCPI-25JUL-T0.1","status":"finalized","result":"yes"}'
+
+    class Connection:
+        def __init__(self, *args: object, **kwargs: object) -> None:
+            del args, kwargs
+
+        def request(self, *args: object, **kwargs: object) -> None:
+            del args, kwargs
+
+        def getresponse(self) -> _FakeHTTPResponse:
+            return _FakeHTTPResponse(body, len(body) + 10)
+
+        def close(self) -> None:
+            pass
+
+    monkeypatch.setattr(http.client, "HTTPSConnection", Connection)
+    with pytest.raises(CPISettlementReconciliationError):
+        reconciliation.acquire_kalshi_historical_get(
+            "https://external-api.kalshi.com/trade-api/v2/historical/markets/KXCPI-25JUL-T0.1",
+            reconciliation.KalshiEndpointRole.HISTORICAL_MARKET,
+            expected_ticker="KXCPI-25JUL-T0.1",
+            expected_event_ticker="KXCPI-25JUL",
+        )

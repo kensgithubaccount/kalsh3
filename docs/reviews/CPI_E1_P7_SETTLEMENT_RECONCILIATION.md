@@ -31,12 +31,39 @@ only reviewed live constructor is a bounded unauthenticated HTTPS GET to
 `external-api.kalshi.com`, with exact GET method, status 200, path, selectors,
 raw bytes, hash, and transport-observed UTC acquisition time. Redirects,
 credentials, cookies, arbitrary source identities, and caller-supplied raw
-responses are rejected. Seven durable fixtures under
+responses are rejected. Eight durable fixtures under
 `services/forecasting/fixtures/cpi_p7_public/` are fixed hash-allowlisted copies
 of those exact response bodies.
 
+The final authority-chain repair keeps the issuance seam owned by this exact
+reviewed module; `tests/test_cpi_settlement_architecture.py` fails if its
+private capability, transport-response type, issuer, or completeness helper is
+referenced by another forecasting production module. The transport captures
+stdlib's parsed definite response length before reading, rejects declared
+oversize responses before reading, requires exact byte completeness, and
+translates `IncompleteRead`/HTTP exceptions to fail-closed errors. Close-
+delimited responses remain explicitly supported only when stdlib reports no
+definite length.
+
+The durable eighth fixture is the exact unauthenticated GET response from
+`https://assets.kalshi.com/contract_terms/CPI.pdf`, acquired
+`2026-08-31T17:33:02Z`, SHA-256
+`2317b1d8e823082b409f6ff3415fb135804d9682681f9f92f640b3681b29a872`, stored as
+`services/forecasting/fixtures/cpi_p7_public/CPI-contract-terms.pdf`. Its
+content-addressed repository policy identity is
+`KXCPI_SEMANTIC_POLICY_IDENTITY` (derived from the full terms hash and the
+reviewed CPI-U SA MoM one-decimal mapping). This identity is repository-derived,
+not exchange-issued.
+
 `CPIHistoricalSemanticEvidence` rebuilds the `ContractSpecification` from the
-validated market, event, and series acquisitions. Callers cannot supply a
+validated market, event, series, and exact official terms acquisitions. The
+historical market rules must themselves contain the CPI and single-decimal
+language; the event and series must agree on the BLS settlement source; and the
+historical KXCPI series must point to the exact terms URL. The terms artifact
+supplies the reviewed domain mapping (CPI-U, U.S. city average, all items,
+seasonally adjusted month-over-month, initial one-decimal treatment), while
+market-specific historical rules remain primary for comparator, threshold, and
+reference month. Callers cannot supply a
 comparator, threshold, reference period, semantic hash, or rules identity to
 the reconciliation path. `KalshiFinalizedEvidence` consumes only the validated
 market acquisition and requires explicit historical `status=finalized`,
