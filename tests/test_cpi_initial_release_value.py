@@ -3,6 +3,8 @@ from __future__ import annotations
 from dataclasses import replace
 from datetime import UTC, datetime
 from decimal import Decimal
+from hashlib import sha256
+from pathlib import Path
 
 import pytest
 
@@ -65,6 +67,42 @@ def test_arbitrary_malformed_earlier_cell_is_not_a_placeholder() -> None:
 
 def test_trailing_12_month_value_is_not_selected_as_current() -> None:
     assert value.parse_cpi_initial_release_value(artifact(trailing="9.9")).value == Decimal("0.2")
+
+
+def test_exact_p5a_empirical_targets_if_saved_artifacts_are_available(monkeypatch) -> None:
+    targets = (
+        (
+            "https://www.bls.gov/news.release/archives/cpi_08122025.htm",
+            Path.home() / "Downloads/Consumer Price Index News Release - 2025 M07 Results.html",
+            "5b869d4365bc0f58db9814e3da09105f0fd944e4bbf16c39b5511f774a03dc4b",
+            Decimal("0.2"),
+        ),
+        (
+            "https://www.bls.gov/news.release/archives/cpi_01132026.htm",
+            Path.home() / "Downloads/Consumer Price Index News Release - 2025 M12 Results.html",
+            "8351af0db99f8b1e338abe1b33cb062a70e61d2b154c0ec26aaed964f52b489e",
+            Decimal("0.3"),
+        ),
+        (
+            "https://www.bls.gov/news.release/archives/cpi_02132026.htm",
+            Path.home() / "Downloads/Consumer Price Index News Release - 2026 M01 Results.html",
+            "3b46aebecd5aa2d66f6f8abc38e47381e180a73db6cf87313ecc8eeddebd69f8",
+            Decimal("0.2"),
+        ),
+    )
+    if not all(path.is_file() for _, path, _, _ in targets):
+        pytest.skip("reviewed P5A empirical files are not available in this environment")
+    for locator, path, expected_sha, expected_value in targets:
+        body = path.read_bytes()
+        assert sha256(body).hexdigest() == expected_sha
+        monkeypatch.setattr(manual, "_utc_now", lambda: IMPORT_TIME)
+        acquisition = manual.attest_and_import_manual_bls_cpi_release(
+            locator, path, operator_attestation=manual.OPERATOR_ATTESTATION
+        )
+        issuance = issuer.issue_manual_acquisition_bound_cpi_evidence(acquisition)
+        observation = value.issue_cpi_initial_release_observation(issuance)
+        assert observation.value == expected_value
+        assert observation.acquisition_mode == manual.ACQUISITION_MODE
 
 
 @pytest.mark.parametrize(
