@@ -279,14 +279,20 @@ def _parse_table(body: bytes, expected_year: int, expected_month: int) -> Decima
     values = all_items[0][1:]
     if len(values) != len(periods) + 1:
         raise CPIInitialReleaseValueError("Table A All items row has unexpected columns")
+    seasonal_values = values[:-1]
+    earlier_values = seasonal_values[:-1]
+    current_value = seasonal_values[-1]
     if any(
-        value.strip() == ""
-        or value.strip() == "-"
-        or not re.fullmatch(r"-?(?:0|[1-9][0-9]*)\.[0-9]", value.replace(" ", ""))
-        for value in values
+        value.strip() != "-"
+        and not re.fullmatch(r"-?(?:0|[1-9][0-9]*)\.[0-9]", value.replace(" ", ""))
+        for value in earlier_values
     ):
-        raise CPIInitialReleaseValueError("Table A contains missing or malformed monthly values")
-    return _decimal(values[-2])
+        raise CPIInitialReleaseValueError("Table A contains malformed earlier monthly values")
+    if current_value.strip() == "-":
+        raise CPIInitialReleaseValueError("Table A current monthly value cannot be a placeholder")
+    current = _decimal(current_value)
+    _decimal(values[-1])  # Validate the separate trailing 12-month NSA column.
+    return current
 
 
 def parse_cpi_initial_release_value(body: bytes) -> ParsedCPIInitialReleaseValue:

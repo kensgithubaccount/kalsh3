@@ -18,7 +18,9 @@ IMPORT_TIME = datetime(2026, 8, 28, 22, 0, tzinfo=UTC)
 def artifact(
     *,
     narrative: str = "0.2",
+    earlier: str = "0.3",
     table: str = "0.2",
+    trailing: str = "2.7",
     month: str = "Jul. 2025",
     title: str = (
         "Table A. Percent changes in CPI for All Urban Consumers (CPI-U): U.S. city average"
@@ -34,7 +36,7 @@ def artifact(
     reported today.</p>
     <p>{title}</p><table><tr><th>Seasonally adjusted changes from preceding month</th></tr>
     <tr><th>Jun. 2025</th><th>{month}</th><th>Unadjusted 12-mos. ended Jul. 2025</th></tr>
-    <tr><td>{row_label}</td><td>0.3</td><td>{table}</td><td>2.7</td></tr></table>
+    <tr><td>{row_label}</td><td>{earlier}</td><td>{table}</td><td>{trailing}</td></tr></table>
     </body></html>""".encode()
 
 
@@ -42,6 +44,27 @@ def test_dual_representation_returns_exact_decimal() -> None:
     parsed = value.parse_cpi_initial_release_value(artifact())
     assert parsed.value == Decimal("0.2")
     assert (parsed.reference_year, parsed.reference_month) == (2025, 7)
+
+
+def test_earlier_bls_placeholder_passes_but_current_placeholder_does_not() -> None:
+    assert value.parse_cpi_initial_release_value(artifact(earlier="-")).value == Decimal("0.2")
+    with pytest.raises(value.CPIInitialReleaseValueError):
+        value.parse_cpi_initial_release_value(artifact(table="-"))
+
+
+@pytest.mark.parametrize("current", ["", "0.20", "malformed"])
+def test_current_value_must_be_present_and_exactly_one_decimal(current: str) -> None:
+    with pytest.raises(value.CPIInitialReleaseValueError):
+        value.parse_cpi_initial_release_value(artifact(table=current))
+
+
+def test_arbitrary_malformed_earlier_cell_is_not_a_placeholder() -> None:
+    with pytest.raises(value.CPIInitialReleaseValueError):
+        value.parse_cpi_initial_release_value(artifact(earlier="0.20"))
+
+
+def test_trailing_12_month_value_is_not_selected_as_current() -> None:
+    assert value.parse_cpi_initial_release_value(artifact(trailing="9.9")).value == Decimal("0.2")
 
 
 @pytest.mark.parametrize(
