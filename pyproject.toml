@@ -9,7 +9,7 @@ description = "Safety-first prediction-market research and execution platform"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
-    "websockets==16.1.1",
+    "websockets==17.1",
 ]
 
 [dependency-groups]
