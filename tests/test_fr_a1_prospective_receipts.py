@@ -104,7 +104,8 @@ def make_receipt(**forecast_changes: object) -> ProspectivePredictionReceipt:
     )
 
 
-def test_receipt_is_content_addressed_and_create_only(tmp_path) -> None:
+def test_receipt_is_content_addressed_and_create_only(tmp_path, monkeypatch) -> None:
+    monkeypatch.setattr(receipt_module, "_utc_now", lambda: NOW + timedelta(hours=1))
     receipt = make_receipt()
     store = ProspectiveReceiptStore(tmp_path)
     store.publish(receipt)
@@ -136,7 +137,10 @@ def test_historical_replay_cannot_be_relabelled_as_prospective() -> None:
         make_receipt(replay_time=NOW)
 
 
-def test_outcome_boundary_requires_published_receipt_and_later_outcome(tmp_path) -> None:
+def test_outcome_boundary_requires_published_receipt_and_later_outcome(
+    tmp_path, monkeypatch
+) -> None:
+    monkeypatch.setattr(receipt_module, "_utc_now", lambda: NOW + timedelta(hours=1))
     receipt = make_receipt()
     store = ProspectiveReceiptStore(tmp_path)
     with pytest.raises(ProspectiveReceiptError, match="unpublished"):
@@ -190,7 +194,8 @@ def test_caller_cannot_supply_publication_timestamp(tmp_path) -> None:
         store.publish(receipt, published_at=NOW)  # type: ignore[call-arg]
 
 
-def test_caller_cannot_mint_or_reconstruct_issuer_publication(tmp_path) -> None:
+def test_caller_cannot_mint_or_reconstruct_issuer_publication(tmp_path, monkeypatch) -> None:
+    monkeypatch.setattr(receipt_module, "_utc_now", lambda: NOW + timedelta(hours=1))
     receipt = make_receipt()
     store = ProspectiveReceiptStore(tmp_path)
     with pytest.raises(ProspectiveReceiptError, match="reviewed issuer capability"):
