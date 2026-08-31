@@ -14,8 +14,7 @@ PRIVATE_NAMES = frozenset(
 )
 
 
-def test_private_kalshi_acquisition_symbols_have_one_production_owner() -> None:
-    root = Path("services/forecasting")
+def _violations(root: Path) -> list[str]:
     violations: list[str] = []
     for path in root.rglob("*.py"):
         if path == OWNER:
@@ -26,4 +25,19 @@ def test_private_kalshi_acquisition_symbols_have_one_production_owner() -> None:
                 violations.append(f"{path}:{node.lineno}:{node.id}")
             if isinstance(node, ast.Attribute) and node.attr in PRIVATE_NAMES:
                 violations.append(f"{path}:{node.lineno}:{node.attr}")
-    assert violations == []
+    return violations
+
+
+def test_private_kalshi_acquisition_symbols_have_one_production_owner() -> None:
+    assert _violations(Path("services")) == []
+
+
+def test_guard_detects_an_unauthorized_services_module(tmp_path: Path) -> None:
+    unauthorized = tmp_path / "services" / "execution" / "attacker.py"
+    unauthorized.parent.mkdir(parents=True)
+    unauthorized.write_text(
+        "from services.forecasting.cpi_settlement_reconciliation import "
+        "_issue_reviewed_public_get\n"
+        "_issue_reviewed_public_get(None, None)\n"
+    )
+    assert _violations(tmp_path / "services")

@@ -264,6 +264,28 @@ def test_historical_market_rules_are_required_for_semantic_authority() -> None:
         )
 
 
+@pytest.mark.parametrize(
+    "field,value",
+    [
+        ("geographic_scope", "different geography"),
+        ("basket", "core items"),
+        ("measured_event_or_value", "different measurement"),
+        ("rounding_rules", "whole number"),
+        ("revision_rules", "revised"),
+        ("correction_rules", "uncertain"),
+        ("contract_terms_url", "https://evil.example/CPI.pdf"),
+        ("contract_terms_sha256", "0" * 64),
+        ("settlement_authority_url", "https://evil.example/bls"),
+        ("payout_model", "non-binary"),
+    ],
+)
+def test_every_normalized_policy_field_is_content_addressed(field: str, value: str) -> None:
+    policy = replace(reconciliation.KXCPI_SEMANTIC_POLICY, **cast(Any, {field: value}))
+    assert reconciliation._semantic_policy_identity(policy) != (
+        reconciliation.KXCPI_SEMANTIC_POLICY_IDENTITY
+    )
+
+
 class _FakeHTTPResponse:
     def __init__(self, body: bytes, length: int | None) -> None:
         self.body = body

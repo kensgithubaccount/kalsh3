@@ -51,9 +51,6 @@ ONE = Decimal("1")
 SUPPORTED_COMPARATORS = frozenset(
     {Comparator.GT, Comparator.GTE, Comparator.LT, Comparator.LTE, Comparator.EQ}
 )
-EXPECTED_MEASURED_VALUE = (
-    "CPI-U U.S. city average all items seasonally adjusted change from preceding month"
-)
 POLICY_VERSION = "cpi-e1-p7-settlement-reconciliation-v2"
 KALSHI_HOST = "external-api.kalshi.com"
 KALSHI_BASE = f"https://{KALSHI_HOST}/trade-api/v2"
@@ -61,9 +58,7 @@ HTTP_METHOD = "GET"
 SUCCESS_STATUS = 200
 MAX_RESPONSE_BYTES = 2_000_000
 CONTRACT_TERMS_SHA256 = "2317b1d8e823082b409f6ff3415fb135804d9682681f9f92f640b3681b29a872"
-KXCPI_SEMANTIC_POLICY_IDENTITY = stable_hash(
-    (POLICY_VERSION, CONTRACT_TERMS_SHA256, "reviewed CPI-U SA MoM one-decimal KXCPI terms mapping")
-)
+CONTRACT_TERMS_URL = "https://assets.kalshi.com/contract_terms/CPI.pdf"
 HISTORICAL_RULES_VERSION_PREFIX = "historical-market-rules-v1:"
 _ACQUISITION_CAPABILITY = object()
 
@@ -82,6 +77,61 @@ class KalshiEndpointRole(StrEnum):
     EVENT = "event"
     SERIES = "series"
     CONTRACT_TERMS = "contract_terms"
+
+
+@dataclass(frozen=True, slots=True)
+class KXCPIReviewedSemanticPolicy:
+    """Content-addressed bridge from reviewed Kalshi terms to the P6 domain."""
+
+    policy_version: str
+    contract_terms_url: str
+    contract_terms_sha256: str
+    measured_event_or_value: str
+    subject_entities: tuple[str, ...]
+    geographic_scope: str
+    basket: str
+    seasonal_basis: str
+    horizon: str
+    threshold_unit: str
+    rounding_rules: str
+    revision_rules: str
+    correction_rules: str
+    settlement_authority_name: str
+    settlement_authority_url: str
+    payout_model: str
+    settlement_type: str
+    timezone: str
+
+
+KXCPI_SEMANTIC_POLICY = KXCPIReviewedSemanticPolicy(
+    policy_version=POLICY_VERSION,
+    contract_terms_url=CONTRACT_TERMS_URL,
+    contract_terms_sha256=CONTRACT_TERMS_SHA256,
+    measured_event_or_value=(
+        "CPI-U U.S. city average all items seasonally adjusted change from preceding month"
+    ),
+    subject_entities=("CPI-U",),
+    geographic_scope="U.S. city average",
+    basket="all items",
+    seasonal_basis="seasonally adjusted",
+    horizon="month-over-month",
+    threshold_unit="percent",
+    rounding_rules="one decimal initial release",
+    revision_rules="first-sentence initial release; no post-expiration revision",
+    correction_rules="authoritative finalized exchange result; latest final for amendment",
+    settlement_authority_name="Bureau of Labor Statistics",
+    settlement_authority_url="https://www.bls.gov/cpi/",
+    payout_model="simple_binary",
+    settlement_type="binary",
+    timezone="UTC",
+)
+
+
+def _semantic_policy_identity(policy: KXCPIReviewedSemanticPolicy) -> str:
+    return stable_hash(tuple(getattr(policy, field) for field in policy.__dataclass_fields__))
+
+
+KXCPI_SEMANTIC_POLICY_IDENTITY = _semantic_policy_identity(KXCPI_SEMANTIC_POLICY)
 
 
 @dataclass(frozen=True, slots=True)
@@ -508,7 +558,7 @@ def validate_kalshi_acquisition(evidence: KalshiHistoricalAcquisitionEvidence) -
     ):
         raise CPISettlementReconciliationError("KXCPI series selector changed")
     if evidence.endpoint_role is KalshiEndpointRole.CONTRACT_TERMS:
-        if evidence.raw_artifact_hash != CONTRACT_TERMS_SHA256:
+        if evidence.raw_artifact_hash != KXCPI_SEMANTIC_POLICY.contract_terms_sha256:
             raise CPISettlementReconciliationError("official CPI contract terms hash changed")
         return
     payload = _payload(evidence.raw_response)
@@ -609,11 +659,12 @@ def _build_specification(
         or series.get("ticker") != "KXCPI"
     ):
         raise CPISettlementReconciliationError("historical market/event/series identities conflict")
-    if terms_evidence.raw_artifact_hash != CONTRACT_TERMS_SHA256:
+    if terms_evidence.raw_artifact_hash != KXCPI_SEMANTIC_POLICY.contract_terms_sha256:
         raise CPISettlementReconciliationError(
             "official CPI contract terms are not the reviewed artifact"
         )
-    if series.get("contract_terms_url") != "https://assets.kalshi.com/contract_terms/CPI.pdf":
+    policy = KXCPI_SEMANTIC_POLICY
+    if series.get("contract_terms_url") != policy.contract_terms_url:
         raise CPISettlementReconciliationError(
             "KXCPI series does not bind the reviewed official contract terms"
         )
@@ -641,8 +692,8 @@ def _build_specification(
         )
     if not any(
         type(source) is dict
-        and source.get("name") == "Bureau of Labor Statistics"
-        and source.get("url") == "https://www.bls.gov/cpi/"
+        and source.get("name") == policy.settlement_authority_name
+        and source.get("url") == policy.settlement_authority_url
         for source in event_sources
     ):
         raise CPISettlementReconciliationError("historical BLS settlement authority is unproven")
@@ -652,14 +703,14 @@ def _build_specification(
         {
             "rules_version_id": HISTORICAL_RULES_VERSION_PREFIX + rules_hash,
             "metadata_version_id": "historical-market-metadata-v1:" + metadata_hash,
-            "measured_event_or_value": EXPECTED_MEASURED_VALUE,
-            "subject_entities": ["CPI-U"],
-            "geographic_scope": "U.S. city average",
-            "threshold_unit": "percent",
-            "rounding_rules": "one decimal initial release",
-            "revision_rules": "authoritative finalized exchange result",
-            "correction_rules": "authoritative latest final explicitly required",
-            "timezone": "UTC",
+            "measured_event_or_value": policy.measured_event_or_value,
+            "subject_entities": list(policy.subject_entities),
+            "geographic_scope": policy.geographic_scope,
+            "threshold_unit": policy.threshold_unit,
+            "rounding_rules": policy.rounding_rules,
+            "revision_rules": policy.revision_rules,
+            "correction_rules": policy.correction_rules,
+            "timezone": policy.timezone,
             "occurrence_datetime": f"{year:04d}-{month:02d}-01T00:00:00Z",
             "settlement_sources": event.get("settlement_sources", []),
             "settlement_value_dollars": None,
@@ -851,19 +902,19 @@ def _validate_specification(
     if (
         spec.comparator not in SUPPORTED_COMPARATORS
         or spec.threshold_value is None
-        or spec.threshold_unit != "percent"
+        or spec.threshold_unit != KXCPI_SEMANTIC_POLICY.threshold_unit
     ):
         raise CPISettlementReconciliationError("contract comparator or threshold is unsupported")
     if (
-        spec.measured_event_or_value != EXPECTED_MEASURED_VALUE
-        or spec.subject_entities != ("CPI-U",)
-        or spec.geographic_scope != "U.S. city average"
+        spec.measured_event_or_value != KXCPI_SEMANTIC_POLICY.measured_event_or_value
+        or spec.subject_entities != KXCPI_SEMANTIC_POLICY.subject_entities
+        or spec.geographic_scope != KXCPI_SEMANTIC_POLICY.geographic_scope
     ):
         raise CPISettlementReconciliationError("contract measured domain is not the P6 CPI domain")
     if (
-        spec.rounding_rules != "one decimal initial release"
-        or spec.revision_rules != "authoritative finalized exchange result"
-        or spec.correction_rules != "authoritative latest final explicitly required"
+        spec.rounding_rules != KXCPI_SEMANTIC_POLICY.rounding_rules
+        or spec.revision_rules != KXCPI_SEMANTIC_POLICY.revision_rules
+        or spec.correction_rules != KXCPI_SEMANTIC_POLICY.correction_rules
     ):
         raise CPISettlementReconciliationError("contract policy is not exact")
     if (

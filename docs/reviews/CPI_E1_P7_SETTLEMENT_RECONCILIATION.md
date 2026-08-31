@@ -35,6 +35,11 @@ responses are rejected. Eight durable fixtures under
 `services/forecasting/fixtures/cpi_p7_public/` are fixed hash-allowlisted copies
 of those exact response bodies.
 
+The architecture guard scans `services/**/*.py`, not only forecasting, and
+allows the four guarded private symbols only in this exact owner. It also has
+a regression fixture proving an unauthorized `services/execution` module is
+detected.
+
 The final authority-chain repair keeps the issuance seam owned by this exact
 reviewed module; `tests/test_cpi_settlement_architecture.py` fails if its
 private capability, transport-response type, issuer, or completeness helper is
@@ -60,10 +65,16 @@ validated market, event, series, and exact official terms acquisitions. The
 historical market rules must themselves contain the CPI and single-decimal
 language; the event and series must agree on the BLS settlement source; and the
 historical KXCPI series must point to the exact terms URL. The terms artifact
-supplies the reviewed domain mapping (CPI-U, U.S. city average, all items,
-seasonally adjusted month-over-month, initial one-decimal treatment), while
-market-specific historical rules remain primary for comparator, threshold, and
-reference month. Callers cannot supply a
+supplies the source-explicit mapping for CPI-U, seasonally adjusted
+month-over-month percent change, one-decimal treatment, BLS authority,
+first-sentence report convention, and no post-expiration revision. It does not
+literally state “U.S. city average” or “all items”; those are the
+repository-reviewed normalization to the exact canonical P6 domain. The
+complete normalization is content-addressed in the immutable
+`KXCPIReviewedSemanticPolicy` record `KXCPI_SEMANTIC_POLICY`, which
+also binds the exact terms URL/hash, basket, geography, unit, finality, payout,
+and correction mappings. Market-specific historical rules remain primary for
+comparator, threshold, and reference month. Callers cannot supply a
 comparator, threshold, reference period, semantic hash, or rules identity to
 the reconciliation path. `KalshiFinalizedEvidence` consumes only the validated
 market acquisition and requires explicit historical `status=finalized`,
