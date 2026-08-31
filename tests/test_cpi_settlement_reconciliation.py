@@ -26,6 +26,7 @@ from services.forecasting.cpi_settlement_reconciliation import (
     KalshiFinalizedEvidence,
     expected_binary_result,
     reconcile_cpi_settlement,
+    validate_exchange_evidence,
 )
 
 NOW = datetime(2026, 8, 31, 12, tzinfo=UTC)
@@ -136,6 +137,48 @@ def _exchange(
         source_identity="public-kalshi-api-v2",
         acquired_at=NOW,
     )
+
+
+def _historical_market() -> bytes:
+    return json.dumps(
+        {
+            "market": {
+                "ticker": "KXCPI-25JUL-T0.1",
+                "event_ticker": "KXCPI-25JUL",
+                "status": "finalized",
+                "result": "yes",
+                "settlement_value_dollars": "1.0000",
+                "settlement_ts": "2025-08-12T13:09:49.950641Z",
+                "rules_primary": "If the Consumer Price Index (CPI) increases by more than 0.1% (single-decimal) in July 2025, then the market resolves to Yes.",
+                "rules_secondary": "The Expiration Value is the single-decimal value published at the Source Agency.",
+            }
+        },
+        sort_keys=True,
+    ).encode()
+
+
+def test_public_historical_market_shape_is_raw_bound() -> None:
+    evidence = KalshiFinalizedEvidence.from_raw_response(
+        _historical_market(),
+        source_identity="external-api.kalshi.com/trade-api/v2",
+        acquired_at=NOW,
+    )
+    assert evidence.determination.market_ticker == "KXCPI-25JUL-T0.1"
+    assert evidence.determination.state.value == "FINALIZED"
+    assert evidence.determination.result == "YES"
+    assert evidence.determination.exchange_at.isoformat() == "2025-08-12T13:09:49.950641+00:00"
+    validate_exchange_evidence(evidence)
+
+
+def test_public_market_status_is_not_inferred_from_result() -> None:
+    raw = json.loads(_historical_market())
+    raw["market"]["status"] = "closed"
+    with pytest.raises(CPISettlementReconciliationError):
+        KalshiFinalizedEvidence.from_raw_response(
+            json.dumps(raw).encode(),
+            source_identity="external-api.kalshi.com/trade-api/v2",
+            acquired_at=NOW,
+        )
 
 
 def test_exact_match_is_eligible_and_transitively_bound(

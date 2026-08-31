@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 from dataclasses import dataclass
 from datetime import datetime
 from decimal import Decimal, InvalidOperation
@@ -38,11 +39,26 @@ from services.forecasting.cpi_initial_release_value import (
     CPIUnit,
     validate_cpi_initial_release_observation,
 )
+from services.market_universe.domain import material_hashes
 
 ZERO = Decimal("0")
 ONE = Decimal("1")
 SUPPORTED_COMPARATORS = frozenset(
     {Comparator.GT, Comparator.GTE, Comparator.LT, Comparator.LTE, Comparator.EQ}
+)
+MONTH_NAMES = (
+    "january",
+    "february",
+    "march",
+    "april",
+    "may",
+    "june",
+    "july",
+    "august",
+    "september",
+    "october",
+    "november",
+    "december",
 )
 EXPECTED_MEASURED_VALUE = (
     "CPI-U U.S. city average all items seasonally adjusted change from preceding month"
@@ -90,6 +106,19 @@ def _hash(raw: bytes) -> str:
     return hashlib.sha256(raw).hexdigest()
 
 
+def _historical_reference_period(payload: dict[str, Any]) -> tuple[int, int] | None:
+    text = str(payload.get("rules_primary", ""))
+    match = re.search(
+        r"in\s+(January|February|March|April|May|June|July|August|September|October|November|December)\s+(20\d{2})",
+        text,
+        re.IGNORECASE,
+    )
+    if match is None:
+        return None
+    month = MONTH_NAMES.index(match.group(1).casefold()) + 1
+    return int(match.group(2)), month
+
+
 @dataclass(frozen=True, slots=True)
 class KalshiFinalizedEvidence:
     """Raw-response-bound exchange determination.
@@ -130,28 +159,41 @@ def _payload(raw: bytes) -> dict[str, Any]:
         raise CPISettlementReconciliationError("raw exchange artifact is not valid JSON") from exc
     if type(value) is not dict:
         raise CPISettlementReconciliationError("raw exchange artifact must be a JSON object")
-    return value
+    return value["market"] if type(value.get("market")) is dict else value
 
 
 def _determination(
     payload: dict[str, Any], raw_hash: str, acquired_at: datetime
 ) -> ExchangeDetermination:
+    historical_api = "status" in payload
     required = (
-        "determination_id",
-        "market_ticker",
-        "state",
-        "result",
-        "settlement_value_dollars",
-        "determined_at",
-        "finalized_at",
-        "source_identity",
+        ("ticker", "status", "result", "settlement_value_dollars", "settlement_ts")
+        if historical_api
+        else (
+            "determination_id",
+            "market_ticker",
+            "state",
+            "result",
+            "settlement_value_dollars",
+            "determined_at",
+            "finalized_at",
+            "source_identity",
+        )
     )
     if any(key not in payload for key in required):
         raise CPISettlementReconciliationError(
             "raw exchange artifact lacks required determination fields"
         )
     try:
-        state = DeterminationState(str(payload["state"]))
+        state = (
+            (
+                DeterminationState.FINALIZED
+                if str(payload["status"]).casefold() == "finalized"
+                else DeterminationState(str(payload["status"]).upper())
+            )
+            if historical_api
+            else DeterminationState(str(payload["state"]))
+        )
     except ValueError as exc:
         raise CPISettlementReconciliationError("unsupported exchange determination state") from exc
     settlement = (
@@ -159,13 +201,15 @@ def _determination(
         if payload["settlement_value_dollars"] is None
         else _decimal(payload["settlement_value_dollars"], "settlement_value_dollars")
     )
+    determined_at = payload.get("settlement_ts", payload.get("determined_at"))
+    ticker = str(payload.get("ticker", payload.get("market_ticker", "")))
     return ExchangeDetermination(
-        determination_id=str(payload["determination_id"]),
-        market_ticker=str(payload["market_ticker"]),
+        determination_id=str(payload.get("determination_id", ticker + "-settlement")),
+        market_ticker=str(payload.get("market_ticker", ticker)),
         state=state,
-        result=None if payload["result"] is None else str(payload["result"]),
+        result=None if payload["result"] is None else str(payload["result"]).upper(),
         settlement_value_dollars=settlement,
-        exchange_at=_time(payload["determined_at"], "determined_at"),
+        exchange_at=_time(determined_at, "settlement_ts" if historical_api else "determined_at"),
         received_at=acquired_at,
         raw_hash=raw_hash,
         supersedes_determination_id=(
@@ -185,12 +229,14 @@ def validate_exchange_evidence(evidence: KalshiFinalizedEvidence) -> None:
         raise CPISettlementReconciliationError("exchange evidence safety flags are invalid")
     _utc(evidence.acquired_at, "evidence acquisition timestamp")
     payload = _payload(evidence.raw_response)
-    if payload.get("source_identity") != evidence.source_identity:
+    if "source_identity" in payload and payload.get("source_identity") != evidence.source_identity:
         raise CPISettlementReconciliationError("exchange source identity mismatch")
     expected = _determination(payload, evidence.raw_artifact_hash, evidence.acquired_at)
     if evidence.determination != expected:
         raise CPISettlementReconciliationError("caller-mutated exchange determination")
-    if expected.state is not DeterminationState.FINALIZED or payload.get("finalized_at") is None:
+    if expected.state is not DeterminationState.FINALIZED or (
+        payload.get("finalized_at") is None and payload.get("settlement_ts") is None
+    ):
         raise CPISettlementReconciliationError("exchange result is not finalized")
     if expected.result not in {ExpectedBinaryResult.YES, ExpectedBinaryResult.NO}:
         raise CPISettlementReconciliationError("exchange result is not binary")
@@ -199,7 +245,11 @@ def validate_exchange_evidence(evidence: KalshiFinalizedEvidence) -> None:
         raise CPISettlementReconciliationError("binary result and settlement value disagree")
     if evidence.determination.exchange_at > evidence.acquired_at:
         raise CPISettlementReconciliationError("determination is after evidence acquisition")
-    if payload.get("disputed") is True or payload.get("superseded") is True:
+    if (
+        payload.get("disputed") is True
+        or payload.get("superseded") is True
+        or str(payload.get("status", "")).casefold() in {"disputed", "amended"}
+    ):
         raise CPISettlementReconciliationError("exchange lifecycle is disputed or superseded")
     if payload.get("conflicting_finalized_results") is True:
         raise CPISettlementReconciliationError("exchange has conflicting finalized results")
@@ -247,7 +297,11 @@ def reconcile_cpi_settlement(
         if determination.result == expected
         else ReconciliationStatus.MISMATCH
     )
-    finalized = _time(_payload(exchange.raw_response)["finalized_at"], "finalized_at")
+    exchange_payload = _payload(exchange.raw_response)
+    finalized = _time(
+        exchange_payload.get("finalized_at", exchange_payload.get("settlement_ts")),
+        "finalized_at",
+    )
     return SettlementRecord(
         market_ticker=specification.market_ticker,
         rules_version=specification.rules_version_id,
@@ -355,16 +409,26 @@ def _bind_exchange_to_specification(
         ("market_rules_hash", specification.market_rules_hash),
         ("semantic_spec_id", specification.semantic_hash),
     ):
-        if payload.get(key) != expected:
+        actual = (
+            payload.get("ticker")
+            if "status" in payload and key == "market_ticker"
+            else payload.get(key)
+        )
+        if actual is not None and actual != expected:
             raise CPISettlementReconciliationError(
                 f"exchange evidence conflicts with contract {key}"
             )
+    if "status" in payload:
+        market_rules_hash, _ = material_hashes(payload)
+        if market_rules_hash != specification.market_rules_hash:
+            raise CPISettlementReconciliationError("historical market rules hash mismatch")
     if specification.occurrence_time:
-        if payload.get("reference_year") != specification.occurrence_time.year:
+        reference = (
+            _historical_reference_period(payload)
+            if "status" in payload
+            else (payload.get("reference_year"), payload.get("reference_month"))
+        )
+        if reference != (specification.occurrence_time.year, specification.occurrence_time.month):
             raise CPISettlementReconciliationError(
                 "exchange reference year conflicts with contract"
-            )
-        if payload.get("reference_month") != specification.occurrence_time.month:
-            raise CPISettlementReconciliationError(
-                "exchange reference month conflicts with contract"
             )
