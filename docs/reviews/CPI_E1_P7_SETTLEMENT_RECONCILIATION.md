@@ -37,8 +37,8 @@ of those exact response bodies.
 
 The architecture guard scans `services/**/*.py`, not only forecasting, and
 allows the four guarded private symbols only in this exact owner. It also has
-a regression fixture proving an unauthorized `services/execution` module is
-detected.
+regression fixtures proving an unauthorized production module under `services/`
+(including aliased imports) is detected.
 
 The final authority-chain repair keeps the issuance seam owned by this exact
 reviewed module; `tests/test_cpi_settlement_architecture.py` fails if its
@@ -56,9 +56,9 @@ The durable eighth fixture is the exact unauthenticated GET response from
 `2317b1d8e823082b409f6ff3415fb135804d9682681f9f92f640b3681b29a872`, stored as
 `services/forecasting/fixtures/cpi_p7_public/CPI-contract-terms.pdf`. Its
 content-addressed repository policy identity is
-`KXCPI_SEMANTIC_POLICY_IDENTITY` (derived from the full terms hash and the
-reviewed CPI-U SA MoM one-decimal mapping). This identity is repository-derived,
-not exchange-issued.
+`283343eb473846880398f681842523a2c51a18af4ab4079cf999e0f7a9911b8a` (the
+full `KXCPIReviewedSemanticPolicy` contents, including the terms hash and all
+normalized mappings). This identity is repository-derived, not exchange-issued.
 
 `CPIHistoricalSemanticEvidence` rebuilds the `ContractSpecification` from the
 validated market, event, series, and exact official terms acquisitions. The

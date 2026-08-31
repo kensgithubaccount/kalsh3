@@ -134,6 +134,55 @@ def _semantic_policy_identity(policy: KXCPIReviewedSemanticPolicy) -> str:
 KXCPI_SEMANTIC_POLICY_IDENTITY = _semantic_policy_identity(KXCPI_SEMANTIC_POLICY)
 
 
+def _validated_policy() -> KXCPIReviewedSemanticPolicy:
+    policy = KXCPI_SEMANTIC_POLICY
+    if _semantic_policy_identity(policy) != KXCPI_SEMANTIC_POLICY_IDENTITY:
+        raise CPISettlementReconciliationError("reviewed KXCPI semantic policy identity changed")
+    return policy
+
+
+def _policy_population(policy: KXCPIReviewedSemanticPolicy) -> CPIPopulation:
+    if policy.subject_entities == ("CPI-U",):
+        return CPIPopulation.CPI_U
+    raise CPISettlementReconciliationError("reviewed policy has an unsupported population")
+
+
+def _policy_geography(policy: KXCPIReviewedSemanticPolicy) -> CPIGeography:
+    if policy.geographic_scope == "U.S. city average":
+        return CPIGeography.US_CITY_AVERAGE
+    raise CPISettlementReconciliationError("reviewed policy has an unsupported geography")
+
+
+def _policy_basket(policy: KXCPIReviewedSemanticPolicy) -> CPIBasket:
+    if policy.basket == "all items":
+        return CPIBasket.ALL_ITEMS
+    raise CPISettlementReconciliationError("reviewed policy has an unsupported basket")
+
+
+def _policy_seasonal_basis(policy: KXCPIReviewedSemanticPolicy) -> CPISeasonalBasis:
+    if policy.seasonal_basis == "seasonally adjusted":
+        return CPISeasonalBasis.SA
+    raise CPISettlementReconciliationError("reviewed policy has an unsupported seasonal basis")
+
+
+def _policy_horizon(policy: KXCPIReviewedSemanticPolicy) -> CPIHorizon:
+    if policy.horizon == "month-over-month":
+        return CPIHorizon.MOM
+    raise CPISettlementReconciliationError("reviewed policy has an unsupported horizon")
+
+
+def _policy_unit(policy: KXCPIReviewedSemanticPolicy) -> CPIUnit:
+    if policy.threshold_unit == "percent":
+        return CPIUnit.PERCENT
+    raise CPISettlementReconciliationError("reviewed policy has an unsupported unit")
+
+
+def _policy_payout_model(policy: KXCPIReviewedSemanticPolicy) -> PayoutModel:
+    if policy.payout_model == "simple_binary":
+        return PayoutModel.SIMPLE_BINARY
+    raise CPISettlementReconciliationError("reviewed policy has an unsupported payout model")
+
+
 @dataclass(frozen=True, slots=True)
 class _PublicHTTPResponse:
     request_url: str
@@ -663,7 +712,7 @@ def _build_specification(
         raise CPISettlementReconciliationError(
             "official CPI contract terms are not the reviewed artifact"
         )
-    policy = KXCPI_SEMANTIC_POLICY
+    policy = _validated_policy()
     if series.get("contract_terms_url") != policy.contract_terms_url:
         raise CPISettlementReconciliationError(
             "KXCPI series does not bind the reviewed official contract terms"
@@ -710,14 +759,16 @@ def _build_specification(
             "rounding_rules": policy.rounding_rules,
             "revision_rules": policy.revision_rules,
             "correction_rules": policy.correction_rules,
+            "settlement_type": policy.settlement_type,
+            "payout_model": policy.payout_model,
             "timezone": policy.timezone,
             "occurrence_datetime": f"{year:04d}-{month:02d}-01T00:00:00Z",
             "settlement_sources": event.get("settlement_sources", []),
             "settlement_value_dollars": None,
         }
     )
-    event["timezone"] = "UTC"
-    series["timezone"] = "UTC"
+    event["timezone"] = policy.timezone
+    series["timezone"] = policy.timezone
     spec = ContractSpecificationParser().parse(
         SemanticsInputBundle.build(market, event, series), datetime(2026, 8, 31, 12, tzinfo=UTC)
     )
@@ -729,6 +780,9 @@ def _build_specification(
         market_metadata_hash=metadata_hash,
         rules_version_id=HISTORICAL_RULES_VERSION_PREFIX + rules_hash,
         metadata_version_id="historical-market-metadata-v1:" + metadata_hash,
+        settlement_type=policy.settlement_type,
+        payout_model=_policy_payout_model(policy),
+        timezone=policy.timezone,
         semantic_status=SemanticStatus.VALID,
     )
 
@@ -864,6 +918,7 @@ def validate_exchange_evidence(evidence: KalshiFinalizedEvidence) -> None:
 
 
 def _validate_observation(observation: CPIInitialReleaseObservation) -> None:
+    policy = _validated_policy()
     try:
         validate_cpi_initial_release_observation(observation)
     except ValueError as exc:
@@ -871,12 +926,12 @@ def _validate_observation(observation: CPIInitialReleaseObservation) -> None:
             "P6 observation failed transitive validation"
         ) from exc
     if (
-        observation.unit is not CPIUnit.PERCENT
-        or observation.seasonal_basis is not CPISeasonalBasis.SA
-        or observation.horizon is not CPIHorizon.MOM
-        or observation.basket is not CPIBasket.ALL_ITEMS
-        or observation.population is not CPIPopulation.CPI_U
-        or observation.geography is not CPIGeography.US_CITY_AVERAGE
+        observation.unit is not _policy_unit(policy)
+        or observation.seasonal_basis is not _policy_seasonal_basis(policy)
+        or observation.horizon is not _policy_horizon(policy)
+        or observation.basket is not _policy_basket(policy)
+        or observation.population is not _policy_population(policy)
+        or observation.geography is not _policy_geography(policy)
     ):
         raise CPISettlementReconciliationError("P6 observation is outside the exact CPI domain")
 
@@ -884,11 +939,12 @@ def _validate_observation(observation: CPIInitialReleaseObservation) -> None:
 def _validate_specification(
     observation: CPIInitialReleaseObservation, spec: ContractSpecification
 ) -> None:
+    policy = _validated_policy()
     _validate_observation(observation)
     if (
         type(spec) is not ContractSpecification
         or spec.semantic_status is not SemanticStatus.VALID
-        or spec.payout_model is not PayoutModel.SIMPLE_BINARY
+        or spec.payout_model is not _policy_payout_model(policy)
     ):
         raise CPISettlementReconciliationError(
             "contract semantics are not valid simple binary semantics"
@@ -902,19 +958,21 @@ def _validate_specification(
     if (
         spec.comparator not in SUPPORTED_COMPARATORS
         or spec.threshold_value is None
-        or spec.threshold_unit != KXCPI_SEMANTIC_POLICY.threshold_unit
+        or spec.threshold_unit != policy.threshold_unit
     ):
         raise CPISettlementReconciliationError("contract comparator or threshold is unsupported")
     if (
-        spec.measured_event_or_value != KXCPI_SEMANTIC_POLICY.measured_event_or_value
-        or spec.subject_entities != KXCPI_SEMANTIC_POLICY.subject_entities
-        or spec.geographic_scope != KXCPI_SEMANTIC_POLICY.geographic_scope
+        spec.measured_event_or_value != policy.measured_event_or_value
+        or spec.subject_entities != policy.subject_entities
+        or spec.geographic_scope != policy.geographic_scope
     ):
         raise CPISettlementReconciliationError("contract measured domain is not the P6 CPI domain")
     if (
-        spec.rounding_rules != KXCPI_SEMANTIC_POLICY.rounding_rules
-        or spec.revision_rules != KXCPI_SEMANTIC_POLICY.revision_rules
-        or spec.correction_rules != KXCPI_SEMANTIC_POLICY.correction_rules
+        spec.rounding_rules != policy.rounding_rules
+        or spec.revision_rules != policy.revision_rules
+        or spec.correction_rules != policy.correction_rules
+        or spec.settlement_type != policy.settlement_type
+        or spec.timezone != policy.timezone
     ):
         raise CPISettlementReconciliationError("contract policy is not exact")
     if (

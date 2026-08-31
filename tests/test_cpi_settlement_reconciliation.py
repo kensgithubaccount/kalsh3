@@ -286,6 +286,38 @@ def test_every_normalized_policy_field_is_content_addressed(field: str, value: s
     )
 
 
+def test_reviewed_policy_identity_is_pinned() -> None:
+    assert (
+        reconciliation.KXCPI_SEMANTIC_POLICY_IDENTITY
+        == "283343eb473846880398f681842523a2c51a18af4ab4079cf999e0f7a9911b8a"
+    )
+
+
+@pytest.mark.parametrize(
+    "field,value",
+    [
+        ("basket", "core items"),
+        ("seasonal_basis", "not seasonally adjusted"),
+        ("horizon", "year-over-year"),
+        ("payout_model", "multi_binary"),
+        ("settlement_type", "scalar"),
+        ("timezone", "America/New_York"),
+    ],
+)
+def test_mutated_policy_cannot_change_runtime_domain(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    field: str,
+    value: str,
+) -> None:
+    observation = _observation(tmp_path, monkeypatch, "july", "0.2", 2025)
+    _market, _event, _series, semantic = _bundle("jul")
+    mutated = replace(reconciliation.KXCPI_SEMANTIC_POLICY, **cast(Any, {field: value}))
+    monkeypatch.setattr(reconciliation, "KXCPI_SEMANTIC_POLICY", mutated)
+    with pytest.raises(CPISettlementReconciliationError):
+        expected_binary_result(observation, semantic)
+
+
 class _FakeHTTPResponse:
     def __init__(self, body: bytes, length: int | None) -> None:
         self.body = body
