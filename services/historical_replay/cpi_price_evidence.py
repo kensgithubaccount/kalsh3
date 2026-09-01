@@ -10,11 +10,32 @@ from hashlib import sha256
 from pathlib import Path
 from typing import Any
 
+from services.contract_intelligence.specification import (
+    ContractSpecificationParser,
+    SemanticsInputBundle,
+)
 from services.historical_replay.archive import stable_hash
 
 SCHEMA_VERSION = "cpi-e1-p9a-historical-price-evidence-v1"
 MAX_CANDLE_AGE_SECONDS = 60 * 60
 PROVENANCE_MODE = "RECONSTRUCTED_PUBLIC_HISTORICAL"
+
+
+def strict_json_loads(raw: bytes | str) -> Any:
+    """Parse evidence JSON rejecting duplicate keys and non-standard constants."""
+
+    def pairs(items: list[tuple[str, Any]]) -> dict[str, Any]:
+        result: dict[str, Any] = {}
+        for key, value in items:
+            if key in result:
+                raise ValueError(f"duplicate JSON key: {key}")
+            result[key] = value
+        return result
+
+    def constant(value: str) -> None:
+        raise ValueError(f"non-standard JSON constant: {value}")
+
+    return json.loads(raw, object_pairs_hook=pairs, parse_constant=constant)
 
 
 def _decimal(value: object, field: str) -> Decimal | None:
@@ -186,16 +207,37 @@ def build_price_evidence(
 def validate_frozen_cohort(root: Path) -> dict[str, int]:
     """Offline integrity/completeness validation for the tracked P9A cohort."""
     manifest_path = root / "manifest.json"
-    manifest = json.loads(manifest_path.read_text())
+    manifest = strict_json_loads(manifest_path.read_bytes())
     recorded = manifest.pop("final_manifest_sha256", None)
     if recorded != stable_hash(manifest):
         raise ValueError("frozen manifest hash mismatch")
+    inventory_path = root / "market_inventory.json"
+    if not inventory_path.is_file():
+        raise ValueError("missing frozen market inventory")
+    inventory_raw = inventory_path.read_bytes()
+    if sha256(inventory_raw).hexdigest() != manifest.get("market_inventory_sha256"):
+        raise ValueError("market inventory hash mismatch")
+    inventory = strict_json_loads(inventory_raw)
+    inventory_rows = inventory.get("markets") if isinstance(inventory, dict) else None
+    if not isinstance(inventory_rows, list) or len(inventory_rows) != 474:
+        raise ValueError("frozen market inventory is incomplete")
+    inventory_by_ticker = {row.get("ticker"): row for row in inventory_rows}
+    if len(inventory_by_ticker) != 474:
+        raise ValueError("frozen market inventory ticker identity is duplicated")
     rows = manifest.get("markets")
     events = manifest.get("events")
     if not isinstance(rows, list) or len(rows) != 474:
         raise ValueError("frozen cohort must contain exactly 474 markets")
     if not isinstance(events, list) or len(events) != 60:
         raise ValueError("frozen cohort must contain exactly 60 events")
+    if (
+        manifest.get("research_only") is not True
+        or manifest.get("production_influence") != "0"
+        or manifest.get("provenance_mode") != PROVENANCE_MODE
+        or manifest.get("actual_bot_ingest_at") is not None
+        or manifest.get("prospective_observation") is not False
+    ):
+        raise ValueError("frozen cohort safety or provenance fields are invalid")
     tickers = [row.get("market_ticker") for row in rows]
     if any(not isinstance(ticker, str) for ticker in tickers) or len(set(tickers)) != 474:
         raise ValueError("market ticker identity is duplicated or malformed")
@@ -207,25 +249,144 @@ def validate_frozen_cohort(root: Path) -> dict[str, int]:
     for row in rows:
         event = row.get("event_ticker")
         grouped.setdefault(str(event), []).append(row)
+        inventory_row = inventory_by_ticker.get(row.get("market_ticker"))
+        if inventory_row is None:
+            raise ValueError("market is absent from frozen inventory")
+        if row.get("market_row_hash") != stable_hash(inventory_row):
+            raise ValueError("market inventory row hash mismatch")
+        if row.get("event_ticker") != inventory_row.get("event_ticker"):
+            raise ValueError("market inventory event binding mismatch")
+        row_open = datetime.fromisoformat(str(row["market_open"]).replace("Z", "+00:00"))
+        inventory_open = datetime.fromisoformat(
+            str(inventory_row["open_time"]).replace("Z", "+00:00")
+        )
+        if row_open != inventory_open:
+            raise ValueError("market inventory open timestamp mismatch")
+        row_close = datetime.fromisoformat(str(row["market_close"]).replace("Z", "+00:00"))
+        inventory_close = datetime.fromisoformat(
+            str(inventory_row["close_time"]).replace("Z", "+00:00")
+        )
+        if row_close != inventory_close:
+            raise ValueError("market inventory close timestamp mismatch")
+        semantics = ContractSpecificationParser().parse(
+            SemanticsInputBundle.build(
+                inventory_row,
+                {"event_ticker": inventory_row["event_ticker"], "series_ticker": "KXCPI"},
+                {"ticker": "KXCPI", "category": "Economics"},
+            )
+        )
+        if (
+            row.get("comparator") != semantics.comparator.name
+            or row.get("comparator_symbol") != semantics.comparator.value
+            or row.get("threshold") != str(semantics.threshold_value)
+            or row.get("payout_model") != semantics.payout_model.value
+            or row.get("semantic_hash") != semantics.semantic_hash
+        ):
+            raise ValueError("canonical contract semantics mismatch")
         if row.get("underlying_event_id") != f"kalshi:{event}":
             raise ValueError("market is bound to the wrong underlying event")
+        if row.get("point_in_time_feature_eligible") is not False:
+            raise ValueError("retrospective volume was marked PIT-eligible")
+        if row.get("retrospective_full_lifecycle_volume") != str(
+            inventory_row.get("volume_fp", "0")
+        ):
+            raise ValueError("retrospective volume mismatch")
+        if row.get("research_only") is not True or row.get("production_influence") != "0":
+            raise ValueError("market safety fields are invalid")
+        if (
+            row.get("actual_bot_ingest_at") is not None
+            or row.get("prospective_observation") is not False
+        ):
+            raise ValueError("market provenance fields are invalid")
         raw_path = root / str(row.get("raw_artifact"))
         if not raw_path.is_file():
             raise ValueError(f"missing raw artifact: {raw_path}")
         raw = raw_path.read_bytes()
         if sha256(raw).hexdigest() != row.get("raw_sha256"):
             raise ValueError(f"raw artifact hash mismatch: {raw_path}")
-        payload = json.loads(raw)
+        payload = strict_json_loads(raw)
         candles = payload.get("candlesticks")
-        selected_hash = row.get("selected_candle_hash")
+        if not isinstance(candles, list) or any(not isinstance(candle, dict) for candle in candles):
+            raise ValueError("frozen candle response shape is invalid")
         selected_end = row.get("candle_end_period_ts")
-        selected = [candle for candle in candles or [] if stable_hash(candle) == selected_hash]
-        if selected_end is not None and len(selected) != 1:
-            raise ValueError("selected candle identity is absent or duplicated")
-        if selected_end is not None and selected_end >= int(
+        selected_hash = row.get("selected_candle_hash")
+        cutoff = int(
             datetime.fromisoformat(str(row["market_close"]).replace("Z", "+00:00")).timestamp()
-        ):
+        )
+        candidates = [
+            c
+            for c in candles
+            if isinstance(c.get("end_period_ts"), int) and c["end_period_ts"] < cutoff
+        ]
+        selected = max(candidates, key=lambda c: c["end_period_ts"]) if candidates else None
+        if (selected is None) != (selected_end is None):
+            raise ValueError("selected candle presence is inconsistent")
+        if selected_end is not None and selected_end >= cutoff:
             raise ValueError("selected candle is not strictly before market close")
+        if selected is not None and (
+            selected["end_period_ts"] != selected_end or stable_hash(selected) != selected_hash
+        ):
+            raise ValueError("selected candle is not the latest admissible candle")
+        actual_bid = (
+            None
+            if selected is None
+            else _decimal(selected.get("yes_bid", {}).get("close"), "yes_bid")
+        )
+        actual_ask = (
+            None
+            if selected is None
+            else _decimal(selected.get("yes_ask", {}).get("close"), "yes_ask")
+        )
+        actual_no_bid = None if actual_ask is None else Decimal(1) - actual_ask
+        actual_no_ask = None if actual_bid is None else Decimal(1) - actual_bid
+        actual_age = None if selected is None else cutoff - int(selected["end_period_ts"])
+        actual_volume = (
+            None
+            if selected is None
+            else _nonnegative_decimal(selected.get("volume", "0"), "candle_volume")
+        )
+        for field, value in (
+            ("yes_bid", actual_bid),
+            ("yes_ask", actual_ask),
+            ("no_bid", actual_no_bid),
+            ("no_ask", actual_no_ask),
+            ("candle_volume", actual_volume),
+        ):
+            manifest_value = row.get(field)
+            if value is None:
+                matches = manifest_value is None
+            else:
+                try:
+                    matches = Decimal(str(manifest_value)) == value
+                except Exception:
+                    matches = False
+            if not matches:
+                raise ValueError(f"derived field mismatch: {field}")
+        if row.get("quote_age_seconds") != actual_age:
+            raise ValueError("derived field mismatch: quote_age_seconds")
+        expected_state = (
+            "NO_CANDLE"
+            if selected is None
+            else "STALE"
+            if actual_age is not None and actual_age > MAX_CANDLE_AGE_SECONDS
+            else "FRESH"
+        )
+        if row.get("staleness_state") != expected_state:
+            raise ValueError("derived field mismatch: staleness_state")
+        missing: list[str] = []
+        if selected is None:
+            missing.append("NO_CANDLE_STRICTLY_BEFORE_CLOSE")
+        elif actual_bid is None or actual_ask is None:
+            missing.append("INCOMPLETE_YES_QUOTE")
+        else:
+            if actual_ask == 1:
+                missing.append("YES_ENTRY_BOUNDARY_ASK_1.00")
+            if actual_bid == 0:
+                missing.append("NO_ENTRY_BOUNDARY_FROM_YES_BID_0.00")
+        if actual_age is not None and actual_age > MAX_CANDLE_AGE_SECONDS:
+            missing.append("STALE_OVER_1H")
+        if row.get("missing_side_reason") != (";".join(missing) or None):
+            raise ValueError("derived field mismatch: missing_side_reason")
         if row.get("yes_ask") not in (None, "1.0000") and row.get("yes_bid") not in (
             None,
             "0.0000",

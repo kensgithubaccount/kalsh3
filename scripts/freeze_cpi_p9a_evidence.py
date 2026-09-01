@@ -9,21 +9,41 @@ import shutil
 from hashlib import sha256
 from pathlib import Path
 
+from services.contract_intelligence.specification import (
+    ContractSpecificationParser,
+    SemanticsInputBundle,
+)
 from services.historical_replay.archive import stable_hash
-from services.historical_replay.cpi_price_evidence import PROVENANCE_MODE, SCHEMA_VERSION
+from services.historical_replay.cpi_price_evidence import (
+    PROVENANCE_MODE,
+    SCHEMA_VERSION,
+    strict_json_loads,
+)
 
 CANONICAL_BASE = "7aa43ea605fb44bc7db2572385bc61382ad5d5e1"
 RUNTIME_HASH = "d671ef2cda78a8e1a720126a73fed4e0228afc69bd72c86878bdcd5acbfc6699"
 PUBLIC_ORIGIN = "https://external-api.kalshi.com"
 
 
-def freeze(runtime: Path, destination: Path) -> dict[str, object]:
-    source_manifest = json.loads((runtime / "manifest.json").read_text())
+def freeze(runtime: Path, destination: Path, inventory_path: Path) -> dict[str, object]:
+    source_manifest = strict_json_loads((runtime / "manifest.json").read_bytes())
     original = source_manifest.copy()
     original_hash = original.pop("manifest_sha256")
     if original_hash != RUNTIME_HASH or stable_hash(original) != RUNTIME_HASH:
         raise ValueError("runtime manifest does not match the approved P9A hash")
+    inventory_raw = inventory_path.read_bytes()
+    inventory_hash = sha256(inventory_raw).hexdigest()
+    if inventory_hash != source_manifest["market_inventory"]["sha256"]:
+        raise ValueError("market inventory does not match the original runtime hash")
+    inventory = strict_json_loads(inventory_raw)
+    inventory_rows = inventory.get("markets")
+    if not isinstance(inventory_rows, list) or len(inventory_rows) != 474:
+        raise ValueError("market inventory is not the original complete cohort")
+    inventory_by_ticker = {row["ticker"]: row for row in inventory_rows}
     destination.mkdir(parents=True, exist_ok=True)
+    inventory_destination = destination / "market_inventory.json"
+    if inventory_path.resolve() != inventory_destination.resolve():
+        shutil.copyfile(inventory_path, inventory_destination)
     raw_destination = destination / "raw"
     raw_destination.mkdir(exist_ok=True)
     frozen_rows = []
@@ -32,7 +52,7 @@ def freeze(runtime: Path, destination: Path) -> dict[str, object]:
         source_raw = runtime / source_row["raw_artifact"]
         destination_raw = raw_destination / raw_name
         shutil.copyfile(source_raw, destination_raw)
-        payload = json.loads(source_raw.read_text())
+        payload = strict_json_loads(source_raw.read_bytes())
         candles = payload["candlesticks"]
         selected_end = source_row["candle_end_period_ts"]
         selected = next(
@@ -47,7 +67,20 @@ def freeze(runtime: Path, destination: Path) -> dict[str, object]:
                 60,
             )
         )
+        inventory_row = inventory_by_ticker.get(source_row["market_ticker"])
+        if inventory_row is None:
+            raise ValueError("runtime market is absent from inventory")
+        semantics = ContractSpecificationParser().parse(
+            SemanticsInputBundle.build(
+                inventory_row,
+                {"event_ticker": inventory_row["event_ticker"], "series_ticker": "KXCPI"},
+                {"ticker": "KXCPI", "category": "Economics"},
+            )
+        )
+        if semantics.comparator.value != ">" or semantics.threshold_value is None:
+            raise ValueError(f"unresolved CPI semantics for {source_row['market_ticker']}")
         row = dict(source_row)
+        row.pop("historical_total_volume", None)
         row.update(
             {
                 "schema_version": SCHEMA_VERSION,
@@ -56,12 +89,21 @@ def freeze(runtime: Path, destination: Path) -> dict[str, object]:
                 "endpoint_source_role": "KALSHI_PUBLIC_HISTORICAL_CANDLESTICKS",
                 "request_url": PUBLIC_ORIGIN + source_row["request_path"],
                 "request_identity": request_identity,
+                "market_row_hash": stable_hash(inventory_row),
+                "comparator": semantics.comparator.name,
+                "comparator_symbol": semantics.comparator.value,
+                "threshold": str(semantics.threshold_value),
+                "payout_model": semantics.payout_model.value,
+                "semantic_hash": semantics.semantic_hash,
+                "semantic_parser_version": ContractSpecificationParser.version,
                 "selected_candle_hash": None if selected is None else stable_hash(selected),
                 "raw_artifact": f"raw/{raw_name}",
                 "raw_artifact_sha256": sha256(source_raw.read_bytes()).hexdigest(),
                 "retrospective_retrieval": True,
                 "actual_bot_ingest_at": None,
                 "prospective_observation": False,
+                "retrospective_full_lifecycle_volume": inventory_row.get("volume_fp", "0"),
+                "point_in_time_feature_eligible": False,
             }
         )
         frozen_rows.append(row)
@@ -78,6 +120,9 @@ def freeze(runtime: Path, destination: Path) -> dict[str, object]:
         "production_influence": "0",
         "event_target": 60,
         "market_target": 474,
+        "market_inventory_artifact": "market_inventory.json",
+        "market_inventory_sha256": inventory_hash,
+        "market_inventory_bytes": len(inventory_raw),
         "original_runtime_manifest_sha256": RUNTIME_HASH,
         "events": source_manifest["events"],
         "markets": frozen_rows,
@@ -93,8 +138,13 @@ if __name__ == "__main__":
     parser.add_argument(
         "--destination", type=Path, default=Path("evidence/cpi_p9a_historical_price")
     )
+    parser.add_argument(
+        "--inventory",
+        type=Path,
+        default=Path("evidence/cpi_p9a_historical_price/market_inventory.json"),
+    )
     args = parser.parse_args()
-    result = freeze(args.runtime, args.destination)
+    result = freeze(args.runtime, args.destination, args.inventory)
     print(
         json.dumps(
             {
