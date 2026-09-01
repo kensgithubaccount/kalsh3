@@ -25,6 +25,17 @@ Official locators:
 
 Every ZIP member was read and SHA-256 hashed. Each inventory line is: exact member path, uncompressed bytes, SHA-256.
 
+## Durable source-artifact freeze
+
+The exact raw ZIP bytes are now durably preserved at:
+
+`docs/reviews/artifacts/bls-annual-zips/archive-2021.zip`
+`docs/reviews/artifacts/bls-annual-zips/archive-2022.zip`
+`docs/reviews/artifacts/bls-annual-zips/archive-2023.zip`
+`docs/reviews/artifacts/bls-annual-zips/archive-2024.zip`
+
+Their sizes are 3,850,081; 3,975,550; 4,519,339; and 4,442,173 bytes respectively. Their hashes are the four hashes in the ZIP table above (2024 hash: `e8eeaccce382d4378b837d38b0c32d86d8efb05d92ab6df0ea04c02e59dffdf7`). These are exact byte copies of the browser-attested downloads, not recompressed archives. The ZIPs therefore preserve every member byte; the inventory preserves every member path, size, and SHA-256.
+
 ## Complete 2021 member inventory
 
 ~~~text
@@ -496,11 +507,11 @@ Added:
 
 The importer accepts only the exact reviewed annual locator shape and an exact browser attestation; hashes the raw ZIP and every member; rejects unsafe paths, duplicate names, malformed XLSX, wrong year/month, missing Table 1, wrong row/column, or non-one-decimal values; binds the reviewed release locator and reference month; and exposes an immutable tuple of research-only observations. merge_annual_archive_imports rejects duplicate/conflicting months. It reuses the canonical P6 CPI domain enums and emits no alternative CPI truth semantics. It never reads historical SA columns.
 
-Annual archive authority is granted to the 36 new events in this receipt and the prior 12 2024 events, subject to the existing P7 settlement evidence gate. Existing 3 P7-era events are unchanged and not duplicated. Final authoritative independent-event count with both exact BLS and P7-compatible settlement evidence remains 3; conceptual combined coverage is 46 after the 43 BLS events in the June 2021–December 2024 target window are paired with settlement evidence. The full published 60-event Kalshi-era cohort therefore has 14 releases still needing the corresponding exact BLS/P7 evidence path.
+Annual archive authority is granted to the 43 June 2021–December 2024 BLS release events, subject to the existing P7 settlement evidence gate. Existing 3 P7-era events are unchanged and not duplicated. Final covered Kalshi event slots are 46 (43 archive-backed releases + 3 later P7-compatible events). Thirteen additional BLS-published release months remain for the 60-event cohort: January–September 2025 and November–December 2025, plus January 2026. October 2025 is a separate no-release event and is not a BLS release or CPI observation; no value is manufactured for it.
 
 ## Verification
 
-- P8 importer tests: 4 passed.
+- P8 importer tests: 5 passed.
 - git diff --check: passed for P8 files.
 - Full CPI tests: passed (110 tests in the focused P8/P5A/P6/P7 set).
 - Full pytest, Ruff, format, strict mypy, and make verify: run at handoff; any unrelated shared-worktree changes are excluded from this P8 commit.

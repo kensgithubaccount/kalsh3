@@ -14,9 +14,9 @@ from services.forecasting.cpi_annual_archive_acquisition import (
 
 @pytest.mark.parametrize("year", (2021, 2022, 2023, 2024))
 def test_supplied_annual_archive_has_twelve_current_month_observations(year: int) -> None:
-    path = Path(f"/Users/ksyme/Downloads/archive-{year}.zip")
-    if not path.exists():
-        pytest.skip("browser-supplied audit artifact is not present")
+    path = (
+        Path(__file__).parents[1] / "docs/reviews/artifacts/bls-annual-zips" / f"archive-{year}.zip"
+    )
     receipt = import_attested_bls_annual_archive(
         path, year=year, operator_attestation=ARCHIVE_ATTESTATION
     )
@@ -29,9 +29,7 @@ def test_supplied_annual_archive_has_twelve_current_month_observations(year: int
 
 
 def test_annual_archive_merge_rejects_duplicate_month() -> None:
-    path = Path("/Users/ksyme/Downloads/archive-2023.zip")
-    if not path.exists():
-        pytest.skip("browser-supplied audit artifact is not present")
+    path = Path(__file__).parents[1] / "docs/reviews/artifacts/bls-annual-zips/archive-2023.zip"
     receipt = import_attested_bls_annual_archive(
         path, year=2023, operator_attestation=ARCHIVE_ATTESTATION
     )
