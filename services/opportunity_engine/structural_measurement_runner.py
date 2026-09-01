@@ -43,6 +43,7 @@ from services.contract_intelligence.specification import (
 from services.market_universe import public_read
 from services.market_universe.archive import UniverseObservationArchive
 from services.market_universe.collect import (
+    DEFAULT_MAX_PAGES,
     MAX_EVENT_RECONCILIATION_REQUESTS,
     OPEN_NON_MVE_V2,
     PublicUniverseTransport,
@@ -57,6 +58,7 @@ from services.market_universe.pricing import PriceLadder
 from services.market_universe.sync import (
     Completeness,
     MemoryUniverseRepository,
+    SyncProgress,
     UniverseSynchronizer,
 )
 
@@ -115,6 +117,7 @@ def refresh_universe(
     *,
     transport: object | None = None,
     clock: Callable[[], datetime] = lambda: datetime.now(UTC),
+    progress: Callable[[SyncProgress], None] | None = None,
 ) -> UniverseRefreshResult:
     """Bounded public-only universe refresh.
 
@@ -127,7 +130,14 @@ def refresh_universe(
     live_transport = transport if transport is not None else PublicUniverseTransport()
     archive = UniverseObservationArchive(archive_path)
     repo = MemoryUniverseRepository()
-    synchronizer = UniverseSynchronizer(live_transport, repo, archive=archive, clock=clock)  # type: ignore[arg-type]
+    synchronizer = UniverseSynchronizer(
+        live_transport,
+        repo,
+        archive=archive,
+        clock=clock,
+        max_pages=DEFAULT_MAX_PAGES,
+        progress=progress,
+    )  # type: ignore[arg-type]
     market_run = synchronizer.sync("markets", parameters=dict(OPEN_NON_MVE_V2.markets_parameters))
     event_run = synchronizer.sync("events", parameters=dict(OPEN_NON_MVE_V2.events_parameters))
     market_events = {item.event_ticker for item in repo.markets.values()}
@@ -441,6 +451,7 @@ def run_scan_cycle(
     series_read: SeriesReader = _default_series_read,
     orderbook_acquirer: Callable[..., Any] = acquire_orderbook_snapshot,
     clock: Callable[[], datetime] = lambda: datetime.now(UTC),
+    progress: Callable[[SyncProgress], None] | None = None,
 ) -> ScanCycleResult:
     """Run one cycle exclusively for this store across all processes."""
     with store.cycle_lock():
@@ -454,6 +465,7 @@ def run_scan_cycle(
             series_read=series_read,
             orderbook_acquirer=orderbook_acquirer,
             clock=clock,
+            progress=progress,
         )
 
 
@@ -468,6 +480,7 @@ def _run_scan_cycle_unlocked(
     series_read: SeriesReader = _default_series_read,
     orderbook_acquirer: Callable[..., Any] = acquire_orderbook_snapshot,
     clock: Callable[[], datetime] = lambda: datetime.now(UTC),
+    progress: Callable[[SyncProgress], None] | None = None,
 ) -> ScanCycleResult:
     """One full read-only scan/measure/persist cycle. Never places an order, never authenticates,
     never mutates the canonical M27B discovery/confirmation implementation.
@@ -481,7 +494,9 @@ def _run_scan_cycle_unlocked(
     not ambiguity-censored. Incomplete refreshes write no observations or lifecycle events.
     """
     scan_run_id = new_scan_run_id()
-    refresh = refresh_universe(archive_path, transport=universe_transport, clock=clock)
+    refresh = refresh_universe(
+        archive_path, transport=universe_transport, clock=clock, progress=progress
+    )
     if not refresh.complete:
         # A successful prefix is not evidence that previously observed relationships disappeared.
         return ScanCycleResult(scan_run_id, 0, 0, (), refresh_complete=False)
@@ -615,23 +630,43 @@ def _parser() -> argparse.ArgumentParser:
 def main(argv: list[str] | None = None) -> int:
     args = _parser().parse_args(argv)
     if not args.live_public_read:
-        print("Structural measurement: NOT STARTED")
-        print("Reason: explicit --live-public-read permission is required")
+        print("Structural measurement: NOT STARTED", flush=True)
+        print("Reason: explicit --live-public-read permission is required", flush=True)
         return 2
     store = StructuralMeasurementStore(args.evidence_db)
-    print("Starting M27B.2 structural-lead measurement (research only, production_influence=0)")
+    print(
+        "Starting M27B.2 structural-lead measurement (research only, production_influence=0)",
+        flush=True,
+    )
+    incomplete = False
+
+    def _cli_progress(progress: SyncProgress) -> None:
+        print(
+            f"progress {progress.resource}: {progress.pages} pages, "
+            f"{progress.records_received} records, {datetime.now(UTC).isoformat()}",
+            flush=True,
+        )
+
     for result in run_forever(
         archive_path=str(args.archive),
         store=store,
         source_authority=args.source_authority,
         cadence_seconds=args.cadence_seconds,
         max_iterations=args.max_iterations,
+        progress=_cli_progress,
     ):
+        incomplete = incomplete or not result.refresh_complete
         print(
             f"scan {result.scan_run_id}: {result.independent_cohorts_observed} cohorts, "
-            f"{result.discovery_leads} leads, {len(result.observations)} observations recorded"
+            f"{result.discovery_leads} leads, {len(result.observations)} observations recorded, "
+            f"refresh_complete={result.refresh_complete}",
+            flush=True,
         )
-    return 0
+    print(
+        f"measurement complete: refresh_complete={not incomplete}, production_influence=0",
+        flush=True,
+    )
+    return 1 if incomplete else 0
 
 
 if __name__ == "__main__":
