@@ -546,6 +546,15 @@ def test_ambiguous_observation_censors_lifetime_without_extending_lower_bound() 
     assert lifetime.observed_lifetime_lower_bound_seconds == Decimal(0)
     assert lifetime.consecutive_observations == 0
     assert lifetime.disappeared_at is None
+    assert not lifetime.still_active
+    assert lifetime.ambiguity_censored_at == NOW + timedelta(minutes=15)
+    assert lifetime.observed_lifetime_upper_bound_seconds is None
+    summary = summarize_run(
+        [first, ambiguous], [lifetime], scans_completed=2, independent_cohorts_observed=1
+    )
+    assert summary.still_active_count == 0
+    assert summary.disappeared_count == 0
+    assert summary.ambiguity_censored_count == 1
 
 
 def test_ambiguous_interval_cannot_be_bridged_by_later_visible_observation() -> None:
@@ -597,6 +606,10 @@ def test_ambiguous_then_disappeared_preserves_censoring_and_excludes_ambiguity()
     assert disappeared.state is MeasurementState.DISAPPEARED
     assert lifetime.last_seen_at == NOW
     assert lifetime.observed_lifetime_lower_bound_seconds == Decimal(0)
+    assert not lifetime.still_active
+    assert lifetime.disappeared_at == NOW + timedelta(minutes=30)
+    assert lifetime.ambiguity_censored_at is None
+    assert lifetime.observed_lifetime_upper_bound_seconds == Decimal(1800)
 
 
 def test_compute_lifetime_rejects_mixed_relationships() -> None:
@@ -644,6 +657,8 @@ def test_summarize_run_separates_frequency_persistence_and_executability() -> No
     assert summary.after_cost_positive_count == 1
     assert summary.exact_confirmation_rate == Decimal(1)
     assert summary.gross_gap_distribution and summary.depth_distribution
-    assert summary.still_active_count == 1 and summary.disappeared_count == 0
+    assert summary.still_active_count == 1
+    assert summary.disappeared_count == 0
+    assert summary.ambiguity_censored_count == 0
     with pytest.raises(OpportunityError, match="non-negative"):
         summarize_run([], [], scans_completed=-1, independent_cohorts_observed=0)

@@ -474,12 +474,10 @@ class LeadLifetime:
 
     ``observed_lifetime_lower_bound``/``upper_bound`` are directly-observed bounds, never an
     estimate: the lower bound is the exact span between the first and last scan that actually saw
-    the relationship; ambiguous observations are censoring records and do not count as seen. The
-    upper bound (when the relationship has disappeared) is the exact span to the scan that first
-    failed to reproduce it. A relationship still active carries no upper bound (right-censored)
-    -- this is the literal answer to "do these survive long enough for a non-colocated system to
-    observe and act": read the lower bound against the configured scan cadence, never a modeled
-    estimate.
+    the relationship; ambiguous observations are censoring records and do not count as seen. A
+    relationship ending in an affirmative state is still active and right-censored, while one
+    ending in ``AMBIGUOUS`` is closed by an explicit ambiguity censor. ``disappeared_at`` and
+    ``ambiguity_censored_at`` are mutually exclusive; only disappearance supplies an upper bound.
     """
 
     relationship_id: str
@@ -492,6 +490,7 @@ class LeadLifetime:
     consecutive_observations: int
     still_active: bool
     disappeared_at: datetime | None
+    ambiguity_censored_at: datetime | None
     observed_lifetime_lower_bound_seconds: Decimal
     observed_lifetime_upper_bound_seconds: Decimal | None
     maximum_gross_inversion: Decimal | None
@@ -529,16 +528,19 @@ def compute_lifetime(observations: Sequence[LeadObservation]) -> LeadLifetime:
         raise OpportunityError("lifetime cannot span an ambiguous observation gap")
     first_seen_at = seen[0].observed_at
     last_seen_at = seen[-1].observed_at
-    disappeared = [
-        observation for observation in ordered if observation.state is MeasurementState.DISAPPEARED
-    ]
-    disappeared_after_last_seen = [
-        observation for observation in disappeared if observation.observed_at > last_seen_at
-    ]
-    disappeared_at = (
-        disappeared_after_last_seen[0].observed_at if disappeared_after_last_seen else None
-    )
-    still_active = disappeared_at is None
+    terminal = ordered[-1]
+    if terminal.state is MeasurementState.DISAPPEARED:
+        disappeared_at = terminal.observed_at
+        ambiguity_censored_at = None
+        still_active = False
+    elif terminal.state is MeasurementState.AMBIGUOUS:
+        disappeared_at = None
+        ambiguity_censored_at = terminal.observed_at
+        still_active = False
+    else:
+        disappeared_at = None
+        ambiguity_censored_at = None
+        still_active = True
 
     consecutive = 0
     for observation in reversed(ordered):
@@ -571,6 +573,7 @@ def compute_lifetime(observations: Sequence[LeadObservation]) -> LeadLifetime:
         consecutive,
         still_active,
         disappeared_at,
+        ambiguity_censored_at,
         lower_bound,
         upper_bound,
         max(gross_values) if gross_values else None,
@@ -592,8 +595,12 @@ def _median(values: Sequence[Decimal]) -> Decimal | None:
 
 @dataclass(frozen=True, slots=True)
 class MeasurementRunSummary:
-    """Event-level summary. Frequency, persistence, and after-cost executability are kept as
-    separate fields/sections by construction -- never blended into a single score."""
+    """Event-level summary with separate frequency, persistence, and executability sections.
+
+    Persistence categories are mutually exclusive: affirmative right-censored lifetimes are
+    active, disappeared lifetimes have an observed disappearance, and ambiguity-censored
+    lifetimes have neither an active nor disappearance claim.
+    """
 
     # -- frequency --
     scans_completed: int
@@ -606,6 +613,7 @@ class MeasurementRunSummary:
     lead_lifetime_median_seconds: Decimal | None
     still_active_count: int
     disappeared_count: int
+    ambiguity_censored_count: int
 
     # -- after-cost executability --
     exact_confirmation_attempts: int
@@ -638,7 +646,12 @@ def summarize_run(
         lifetime.observed_lifetime_lower_bound_seconds for lifetime in lifetimes
     )
     still_active = sum(1 for lifetime in lifetimes if lifetime.still_active)
-    disappeared = sum(1 for lifetime in lifetimes if not lifetime.still_active)
+    disappeared = sum(1 for lifetime in lifetimes if lifetime.disappeared_at is not None)
+    ambiguity_censored = sum(
+        1 for lifetime in lifetimes if lifetime.ambiguity_censored_at is not None
+    )
+    if still_active + disappeared + ambiguity_censored != len(lifetimes):
+        raise OpportunityError("lifetime status categories must be exhaustive")
 
     confirmable_states = (
         MeasurementState.INSUFFICIENT_DEPTH,
@@ -676,6 +689,7 @@ def summarize_run(
         _median(list(lifetime_lowers)),
         still_active,
         disappeared,
+        ambiguity_censored,
         attempts,
         exact_rate,
         after_cost_positive,

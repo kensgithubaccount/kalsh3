@@ -12,7 +12,12 @@ from urllib.parse import urlencode
 from services.market_universe import public_read
 from services.market_universe.market_snapshot import FRESHNESS
 from services.market_universe.orderbook_snapshot import acquire_orderbook_snapshot
-from services.opportunity_engine.structural_measurement import MeasurementState, relationship_id
+from services.opportunity_engine.structural_measurement import (
+    MeasurementState,
+    compute_lifetime,
+    relationship_id,
+    summarize_run,
+)
 from services.opportunity_engine.structural_measurement_runner import (
     attempt_exact_confirmation,
     refresh_universe,
@@ -420,6 +425,8 @@ def test_ambiguous_cohort_is_not_recorded_as_disappeared(tmp_path: Path) -> None
         store=store,
         source_authority="test",
         universe_transport=first_transport,
+        series_read=_series_transport(raw_series()),
+        orderbook_acquirer=_orderbook_acquirer({}),
         clock=lambda: NOW,
     )
     ambiguous_transport = FakeUniverseTransport(
@@ -435,11 +442,70 @@ def test_ambiguous_cohort_is_not_recorded_as_disappeared(tmp_path: Path) -> None
         store=store,
         source_authority="test",
         universe_transport=ambiguous_transport,
+        series_read=_series_transport(raw_series()),
+        orderbook_acquirer=_orderbook_acquirer({}),
         clock=lambda: NOW + timedelta(minutes=15),
     )
     states = [observation.state for observation in store.all_observations()]
     assert MeasurementState.AMBIGUOUS in states
     assert MeasurementState.DISAPPEARED not in states
+
+
+def test_ambiguous_episode_is_censored_and_recurrence_starts_a_new_episode(
+    tmp_path: Path,
+) -> None:
+    store = StructuralMeasurementStore(tmp_path / "evidence.sqlite3")
+    inverted = FakeUniverseTransport(
+        [
+            semantic_market_fields("LOW", "1", quote=quote_fields(".20", ".45")),
+            semantic_market_fields("HIGH", "2", quote=quote_fields(".55", ".60")),
+        ],
+        [raw_event()],
+    )
+    ambiguous = FakeUniverseTransport(
+        [
+            semantic_market_fields("LOW", "1", quote=quote_fields(".20", ".45")),
+            semantic_market_fields("HIGH", "2", quote=quote_fields(".55", ".60")),
+            semantic_market_fields("DUP", "2", quote=quote_fields(".55", ".60")),
+        ],
+        [raw_event()],
+    )
+    kwargs = {
+        "archive_path": str(tmp_path / "archive.sqlite3"),
+        "store": store,
+        "source_authority": "test",
+        "series_read": _series_transport(raw_series()),
+        "orderbook_acquirer": _orderbook_acquirer({}),
+    }
+    first_result = run_scan_cycle(**kwargs, universe_transport=inverted, clock=lambda: NOW)
+    run_scan_cycle(
+        **kwargs, universe_transport=ambiguous, clock=lambda: NOW + timedelta(minutes=15)
+    )
+    recurrence_result = run_scan_cycle(
+        **kwargs, universe_transport=inverted, clock=lambda: NOW + timedelta(minutes=30)
+    )
+    histories = [store.for_relationship(rel) for rel in store.relationship_ids()]
+    assert len(histories) == 2
+    censored, active = sorted(histories, key=lambda history: history[0].observed_at)
+    censored_lifetime = compute_lifetime(censored)
+    active_lifetime = compute_lifetime(active)
+    assert censored[-1].state is MeasurementState.AMBIGUOUS
+    assert not censored_lifetime.still_active
+    assert censored_lifetime.ambiguity_censored_at == NOW + timedelta(minutes=15)
+    assert censored_lifetime.disappeared_at is None
+    assert active_lifetime.still_active
+    assert active_lifetime.ambiguity_censored_at is None
+    summary = summarize_run(
+        list(first_result.observations)
+        + list(recurrence_result.observations)
+        + store.all_observations()[1:-1],
+        [censored_lifetime, active_lifetime],
+        scans_completed=3,
+        independent_cohorts_observed=1,
+    )
+    assert summary.still_active_count == 1
+    assert summary.disappeared_count == 0
+    assert summary.ambiguity_censored_count == 1
 
 
 def test_recurrence_after_disappearance_starts_a_new_persistence_episode(tmp_path: Path) -> None:
@@ -462,6 +528,8 @@ def test_recurrence_after_disappearance_starts_a_new_persistence_episode(tmp_pat
         "archive_path": str(tmp_path / "a.sqlite3"),
         "store": store,
         "source_authority": "test",
+        "series_read": _series_transport(raw_series()),
+        "orderbook_acquirer": _orderbook_acquirer({}),
     }
     run_scan_cycle(**kwargs, universe_transport=inverted, clock=lambda: NOW)
     run_scan_cycle(
