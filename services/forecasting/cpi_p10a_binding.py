@@ -38,6 +38,7 @@ MONTHS = {
 }
 EVENT_RE = re.compile(r"^(?:CPI|KXCPI)-(\d{2})([A-Z]{3})$")
 PREDICATE_RE = re.compile(r"more than\s+(-?\d+(?:\.\d+)?)%.*?in\s+([A-Za-z]+)\s+(\d{4})", re.I)
+P7_TIMING_ARTIFACT = Path("docs/reviews/artifacts/cpi-p7-release-timing.json")
 
 
 class P10ABindingError(ValueError):
@@ -109,23 +110,28 @@ def build_binding(repository_root: str | Path) -> dict[str, Any]:
             observation.member_sha256,
             observation.release_instant.astimezone(UTC),
         )
-    truth.update(
-        {
-            month: (
-                value,
-                P7_OBSERVATION_IDS[month],
-                datetime(
-                    month[0] + (month[1] == 12),
-                    1 if month[1] == 12 else month[1] + 1,
-                    10,
-                    13,
-                    30,
-                    tzinfo=UTC,
-                ),
-            )
-            for month, value in P7_VALUES.items()
-        }
-    )
+    timing = json.loads((root / P7_TIMING_ARTIFACT).read_bytes())
+    if timing.get("authority") != "CPI_E1_P6_P7_REVIEW_RECEIPT":
+        raise P10ABindingError("P7 timing authority is invalid")
+    for item in timing.get("events", []):
+        year, month_number = (int(part) for part in item["reference_month"].split("-"))
+        month = (year, month_number)
+        if month not in P7_VALUES or item["observation_id"] != P7_OBSERVATION_IDS[month]:
+            raise P10ABindingError("P7 timing receipt does not bind the exact observation")
+        local_raw = datetime.fromisoformat(str(item["publication_local"]))
+        expected_offset = -4 if local_raw.month in (4, 5, 6, 7, 8, 9, 10) else -5
+        offset = local_raw.utcoffset()
+        if offset is None or offset.total_seconds() != expected_offset * 3600:
+            raise P10ABindingError("P7 timing receipt timezone is invalid")
+        local = local_raw.astimezone(UTC)
+        published = _time(item["publication_utc"])
+        if local != published or item["source_url"] != (
+            "https://www.bls.gov/news.release/archives/cpi_" + published.strftime("%m%d%Y") + ".htm"
+        ):
+            raise P10ABindingError("P7 timing receipt timestamp or URL is inconsistent")
+        truth[month] = (P7_VALUES[month], item["observation_id"], published)
+    if set(P7_VALUES) - set(truth):
+        raise P10ABindingError("P7 timing authority is incomplete")
     p9a_by_ticker = {row["market_ticker"]: row for row in manifest["markets"]}
     rows: list[EventRow] = []
     for market in inventory:
@@ -141,17 +147,7 @@ def build_binding(repository_root: str | Path) -> dict[str, Any]:
                 raise P10ABindingError("missing P9A evidence identity")
             if p9a.get("underlying_event_id") != f"kalshi:{event}":
                 raise P10ABindingError("underlying event identity mismatch")
-            try:
-                predicate, predicate_month = _predicate(market)
-            except P10ABindingError:
-                # Three historical rows contain a known Kalshi placeholder in
-                # rules_primary.  The frozen P9A semantic parser already bound
-                # their exact GT threshold; the event ticker supplies only the
-                # independently checked reference month.
-                if p9a.get("comparator") != "GT":
-                    raise
-                predicate = Decimal(str(p9a["threshold"]))
-                predicate_month = reference
+            predicate, predicate_month = _predicate(market)
             if predicate_month != reference:
                 raise P10ABindingError("predicate/reference month mismatch")
             if p9a.get("comparator") != "GT" or p9a.get("comparator_symbol") != ">":
@@ -240,36 +236,80 @@ def build_binding(repository_root: str | Path) -> dict[str, Any]:
         )
     bound = [row for row in rows if row.rejection is None]
     scored_rows = [row for row in bound if row.probability is not None]
+    p9a_bound = [p9a_by_ticker[row.market_ticker] for row in bound]
+    quote_counts = {
+        "two_sided": sum(
+            row.get("yes_bid") not in (None, "0.0000")
+            and row.get("yes_ask") not in (None, "1.0000")
+            for row in p9a_bound
+        ),
+        "one_sided": sum(
+            (row.get("yes_bid") in (None, "0.0000")) != (row.get("yes_ask") in (None, "1.0000"))
+            for row in p9a_bound
+        ),
+        "boundary": sum(
+            row.get("yes_bid") in (None, "0.0000") or row.get("yes_ask") in (None, "1.0000")
+            for row in p9a_bound
+        ),
+        "stale": sum(row.get("staleness_state") == "STALE" for row in p9a_bound),
+        "unusable": len(bound) - len(scored_rows),
+        "midpoint_eligible": sum(
+            row.get("yes_bid") not in (None, "0.0000")
+            and row.get("yes_ask") not in (None, "1.0000")
+            for row in p9a_bound
+        ),
+    }
 
     def subgroup(key: Callable[[EventRow], bool]) -> dict[str, float | int]:
         selected = [row for row in scored_rows if key(row)]
+        by_event: dict[str, list[EventRow]] = {}
+        for row in selected:
+            by_event.setdefault(row.event_ticker, []).append(row)
+        event_brier = [
+            sum((float(_probability(row)) - row.outcome) ** 2 for row in members) / len(members)
+            for members in by_event.values()
+        ]
+        event_log_loss = [
+            sum(_logloss(_probability(row), row.outcome) for row in members) / len(members)
+            for members in by_event.values()
+        ]
         return {
             "rows": len(selected),
-            "events": len({row.event_ticker for row in selected}),
-            "brier": (
-                sum((float(_probability(row)) - row.outcome) ** 2 for row in selected)
-                / len(selected)
-                if selected
-                else float("nan")
-            ),
-            "log_loss": (
-                sum(_logloss(_probability(row), row.outcome) for row in selected) / len(selected)
-                if selected
-                else float("nan")
-            ),
+            "events": len(by_event),
+            "brier": sum(event_brier) / len(event_brier) if event_brier else float("nan"),
+            "log_loss": sum(event_log_loss) / len(event_log_loss)
+            if event_log_loss
+            else float("nan"),
         }
 
     calibration = []
     for lower in (0.0, 0.2, 0.4, 0.6, 0.8):
-        selected = [row for row in scored_rows if lower <= float(_probability(row)) < lower + 0.2]
+        by_event: dict[str, list[EventRow]] = {}
+        for row in scored_rows:
+            by_event.setdefault(row.event_ticker, []).append(row)
+        event_values = [
+            (
+                sum(float(_probability(row)) for row in members) / len(members),
+                sum(row.outcome for row in members) / len(members),
+            )
+            for members in by_event.values()
+        ]
+        selected = [value for value in event_values if lower <= value[0] < lower + 0.2]
         calibration.append(
             {
                 "bin": f"[{lower:.1f},{lower + 0.2:.1f})",
-                "rows": len(selected),
-                "mean_prediction": sum(float(_probability(row)) for row in selected) / len(selected)
+                "events": len(selected),
+                "sibling_rows": sum(
+                    len(members)
+                    for members in by_event.values()
+                    if lower
+                    <= sum(float(_probability(row)) for row in members) / len(members)
+                    < lower + 0.2
+                ),
+                "mean_prediction": sum(value[0] for value in selected) / len(selected)
                 if selected
                 else None,
-                "event_rate": sum(row.outcome for row in selected) / len(selected)
+                "event_rate": sum(value[1] for value in selected) / len(selected)
                 if selected
                 else None,
             }
@@ -287,6 +327,11 @@ def build_binding(repository_root: str | Path) -> dict[str, Any]:
                 "strictly pre-cutoff YES ask with non-boundary YES bid and ask; "
                 "no midpoint or last trade"
             ),
+            "quote_counts": quote_counts,
+            "midpoint": (
+                "optional non-executable diagnostic only on two-sided quotes; "
+                "never used as an entry price"
+            ),
         },
         "bound_events": len(groups),
         "usable_events": len(usable_events),
@@ -295,11 +340,13 @@ def build_binding(repository_root: str | Path) -> dict[str, Any]:
             for row in rows
             if row.rejection
         ],
-        "event_scores": event_scores,
-        "brier_score": sum(item["brier"] for item in event_scores) / len(event_scores),
-        "log_loss": sum(item["log_loss"] for item in event_scores) / len(event_scores),
+        "crossing_price_diagnostic": event_scores,
+        "crossing_price_brier_diagnostic": sum(item["brier"] for item in event_scores)
+        / len(event_scores),
+        "crossing_price_log_loss_diagnostic": sum(item["log_loss"] for item in event_scores)
+        / len(event_scores),
         "log_loss_clipping": "probabilities clipped to [0.01, 0.99] before natural-log scoring",
-        "calibration": calibration,
+        "crossing_price_calibration_clustered_by_event": calibration,
         "performance_by_time_to_cutoff": {
             "fresh_age_le_1h": subgroup(
                 lambda row: row.quote_age_seconds is not None and row.quote_age_seconds <= 3600

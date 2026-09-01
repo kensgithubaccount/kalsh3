@@ -1,0 +1,32 @@
+{
+  "authority": "CPI_E1_P6_P7_REVIEW_RECEIPT",
+  "events": [
+    {
+      "reference_month": "2025-07",
+      "publication_local": "2025-08-12T08:30:00-04:00",
+      "publication_utc": "2025-08-12T12:30:00Z",
+      "source_url": "https://www.bls.gov/news.release/archives/cpi_08122025.htm",
+      "artifact_sha256": "5b869d4365bc0f58db9814e3da09105f0fd944e4bbf16c39b5511f774a03dc4b",
+      "observation_id": "74b5c6f504d448ac475a5598e50a0602b249368acd26b90642c066ecd96f4c65"
+    },
+    {
+      "reference_month": "2025-12",
+      "publication_local": "2026-01-13T08:30:00-05:00",
+      "publication_utc": "2026-01-13T13:30:00Z",
+      "source_url": "https://www.bls.gov/news.release/archives/cpi_01132026.htm",
+      "artifact_sha256": "8351af0db99f8b1e338abe1b33cb062a70e61d2b154c0ec26aaed964f52b489e",
+      "observation_id": "9cbc587c2fe7a8664e9a9546ad6a672e7914719cadc62a9cf03025affc4be0af"
+    },
+    {
+      "reference_month": "2026-01",
+      "publication_local": "2026-02-13T08:30:00-05:00",
+      "publication_utc": "2026-02-13T13:30:00Z",
+      "source_url": "https://www.bls.gov/news.release/archives/cpi_02132026.htm",
+      "artifact_sha256": "3b46aebecd5aa2d66f6f8abc38e47381e180a73db6cf87313ecc8eeddebd69f8",
+      "observation_id": "6b566274e63c5c6d65f11ab193c0275b30264cdeae428bb24a442dde0bfdbbda"
+    }
+  ],
+  "provenance": "P6/P7 reviewed receipt; exact source URLs, P6 artifact hashes, and observation identities are recorded in docs/reviews/CPI_E1_P7_SETTLEMENT_RECONCILIATION.md",
+  "research_only": true,
+  "production_influence": "0"
+}
