@@ -39,6 +39,7 @@ from services.opportunity_engine.structural import (
 )
 from services.opportunity_engine.structural_measurement import (
     FeeTreatment,
+    LeadLifetime,
     MeasurementState,
     compute_lifetime,
     record_ambiguous,
@@ -583,7 +584,7 @@ def test_ambiguous_interval_cannot_be_bridged_by_later_visible_observation() -> 
         compute_lifetime([first, ambiguous, returned])
 
 
-def test_ambiguous_then_disappeared_preserves_censoring_and_excludes_ambiguity() -> None:
+def test_ambiguous_then_disappeared_is_rejected_as_two_terminal_states() -> None:
     lead, _low, _high = inverted_lead()
     first = record_discovery_only(
         lead,
@@ -601,15 +602,33 @@ def test_ambiguous_then_disappeared_preserves_censoring_and_excludes_ambiguity()
     disappeared = record_disappeared(
         first, scan_run_id="scan-3", observed_at=NOW + timedelta(minutes=30)
     )
-    lifetime = compute_lifetime([first, ambiguous, disappeared])
     assert ambiguous.state is MeasurementState.AMBIGUOUS
     assert disappeared.state is MeasurementState.DISAPPEARED
-    assert lifetime.last_seen_at == NOW
-    assert lifetime.observed_lifetime_lower_bound_seconds == Decimal(0)
-    assert not lifetime.still_active
-    assert lifetime.disappeared_at == NOW + timedelta(minutes=30)
-    assert lifetime.ambiguity_censored_at is None
-    assert lifetime.observed_lifetime_upper_bound_seconds == Decimal(1800)
+    with pytest.raises(OpportunityError, match="terminal observation"):
+        compute_lifetime([first, ambiguous, disappeared])
+
+
+def test_malformed_lifetime_status_is_rejected() -> None:
+    fields = dict(
+        relationship_id="relationship",
+        event_ticker="event",
+        broad_market_ticker="broad",
+        narrow_market_ticker="narrow",
+        first_seen_at=NOW,
+        last_seen_at=NOW,
+        observation_count=1,
+        consecutive_observations=1,
+        still_active=True,
+        disappeared_at=NOW + timedelta(minutes=15),
+        ambiguity_censored_at=None,
+        observed_lifetime_lower_bound_seconds=Decimal(0),
+        observed_lifetime_upper_bound_seconds=Decimal(900),
+        maximum_gross_inversion=None,
+        maximum_confirmed_depth=None,
+        maximum_after_cost_gap=None,
+    )
+    with pytest.raises(OpportunityError, match="exactly one"):
+        LeadLifetime(**fields)
 
 
 def test_compute_lifetime_rejects_mixed_relationships() -> None:

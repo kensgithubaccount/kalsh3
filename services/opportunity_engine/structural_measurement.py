@@ -497,6 +497,27 @@ class LeadLifetime:
     maximum_confirmed_depth: Decimal | None
     maximum_after_cost_gap: Decimal | None
 
+    def __post_init__(self) -> None:
+        active = (
+            self.still_active and self.disappeared_at is None and self.ambiguity_censored_at is None
+        )
+        disappeared = (
+            not self.still_active
+            and self.disappeared_at is not None
+            and self.ambiguity_censored_at is None
+        )
+        ambiguity_censored = (
+            not self.still_active
+            and self.disappeared_at is None
+            and self.ambiguity_censored_at is not None
+        )
+        if sum((active, disappeared, ambiguity_censored)) != 1:
+            raise OpportunityError(
+                "lifetime status must be exactly one of active, disappeared, or ambiguity-censored"
+            )
+        if ambiguity_censored and self.observed_lifetime_upper_bound_seconds is not None:
+            raise OpportunityError("ambiguity-censored lifetime cannot have an upper bound")
+
 
 def compute_lifetime(observations: Sequence[LeadObservation]) -> LeadLifetime:
     if not observations:
@@ -508,24 +529,17 @@ def compute_lifetime(observations: Sequence[LeadObservation]) -> LeadLifetime:
     seen = [observation for observation in ordered if observation.state in _SEEN_STATES]
     if not seen:
         raise OpportunityError("a lifetime requires at least one 'seen' observation")
-    if any(
-        observation.state is MeasurementState.DISAPPEARED
-        and any(
-            later.state in _SEEN_STATES and later.observed_at > observation.observed_at
-            for later in ordered
-        )
-        for observation in ordered
-    ):
-        raise OpportunityError("lifetime cannot span a closed observation gap")
-    if any(
-        observation.state is MeasurementState.AMBIGUOUS
-        and any(
-            later.state in _SEEN_STATES and later.observed_at > observation.observed_at
-            for later in ordered
-        )
-        for observation in ordered
-    ):
-        raise OpportunityError("lifetime cannot span an ambiguous observation gap")
+    for index, observation in enumerate(ordered):
+        if (
+            observation.state in (MeasurementState.DISAPPEARED, MeasurementState.AMBIGUOUS)
+            and index < len(ordered) - 1
+        ):
+            gap = (
+                "closed observation gap"
+                if observation.state is MeasurementState.DISAPPEARED
+                else "ambiguous observation gap"
+            )
+            raise OpportunityError(f"terminal observation cannot be followed: {gap}")
     first_seen_at = seen[0].observed_at
     last_seen_at = seen[-1].observed_at
     terminal = ordered[-1]
