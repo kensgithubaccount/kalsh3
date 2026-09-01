@@ -19,6 +19,9 @@ def _copy(tmp_path: Path) -> Path:
     target = tmp_path / "cohort"
     target.mkdir(parents=True)
     shutil.copy2(ROOT / "manifest.json", target / "manifest.json")
+    (target / "acquisition_manifest.json").symlink_to(
+        (ROOT / "acquisition_manifest.json").resolve()
+    )
     (target / "market_inventory.json").symlink_to((ROOT / "market_inventory.json").resolve())
     raw_target = target / "raw"
     raw_target.mkdir()
@@ -54,6 +57,26 @@ def _rewrite_raw(path: Path, mutate: Callable[[dict[str, Any], dict[str, Any]], 
     row["raw_artifact_sha256"] = digest
     from services.historical_replay.archive import stable_hash
 
+    manifest["final_manifest_sha256"] = stable_hash(manifest)
+    manifest_path.write_text(json.dumps(manifest, sort_keys=True, indent=2) + "\n")
+
+
+def _rewrite_acquisition(path: Path, mutate: Callable[[dict[str, Any]], None]) -> None:
+    manifest_path = path / "manifest.json"
+    manifest = json.loads(manifest_path.read_text())
+    manifest.pop("final_manifest_sha256")
+    acquisition_path = path / manifest["acquisition_manifest_artifact"]
+    acquisition = json.loads(acquisition_path.read_text())
+    mutate(acquisition)
+    from services.historical_replay.archive import stable_hash
+
+    acquisition["manifest_sha256"] = stable_hash(
+        {key: value for key, value in acquisition.items() if key != "manifest_sha256"}
+    )
+    raw = json.dumps(acquisition, sort_keys=True, indent=2).encode() + b"\n"
+    acquisition_path.unlink()
+    acquisition_path.write_bytes(raw)
+    manifest["acquisition_manifest_sha256"] = hashlib.sha256(raw).hexdigest()
     manifest["final_manifest_sha256"] = stable_hash(manifest)
     manifest_path.write_text(json.dumps(manifest, sort_keys=True, indent=2) + "\n")
 
@@ -123,7 +146,7 @@ def test_duplicate_ticker_fails(tmp_path: Path) -> None:
         target,
         lambda manifest: manifest["markets"].__setitem__(1, dict(manifest["markets"][0])),
     )
-    with pytest.raises(ValueError, match="duplicated"):
+    with pytest.raises(ValueError, match="duplicated|acquisition market identities"):
         validate_frozen_cohort(target)
 
 
@@ -133,7 +156,7 @@ def test_wrong_event_binding_fails(tmp_path: Path) -> None:
         target,
         lambda manifest: manifest["markets"][0].__setitem__("underlying_event_id", "kalshi:WRONG"),
     )
-    with pytest.raises(ValueError, match="wrong underlying"):
+    with pytest.raises(ValueError, match="wrong underlying|acquisition market identity"):
         validate_frozen_cohort(target)
 
 
@@ -195,12 +218,12 @@ def test_retrospective_volume_cannot_become_pit_feature(tmp_path: Path) -> None:
         (
             "request_path",
             "/trade-api/v2/historical/markets/DETACHED/candlesticks",
-            "request identity",
+            "request identity|acquisition market identity",
         ),
-        ("request_start_ts", 0, "request identity"),
-        ("request_end_ts", 0, "request identity"),
-        ("period_interval_minutes", 1, "request identity"),
-        ("request_identity", "forged", "request identity"),
+        ("request_start_ts", 0, "request identity|acquisition market identity"),
+        ("request_end_ts", 0, "request identity|acquisition market identity"),
+        ("period_interval_minutes", 1, "request identity|acquisition market identity"),
+        ("request_identity", "forged", "request identity|acquisition market identity"),
         ("raw_artifact_sha256", "0" * 64, "raw artifact hash"),
     ],
 )
@@ -216,7 +239,7 @@ def test_replay_recomputes_canonical_request_and_raw_identity(
 def test_wrong_payload_ticker_fails_after_raw_rehash(tmp_path: Path) -> None:
     target = _copy(tmp_path)
     _rewrite_raw(target, lambda payload, _row: payload.__setitem__("ticker", "OTHER"))
-    with pytest.raises(ValueError, match="ticker"):
+    with pytest.raises(ValueError, match="ticker|acquisition raw identity"):
         validate_frozen_cohort(target)
 
 
@@ -226,6 +249,68 @@ def test_non_kxcpi_inventory_provenance_fails(tmp_path: Path) -> None:
         target, lambda manifest: manifest["market_inventory_request"].__setitem__("path", "/wrong")
     )
     with pytest.raises(ValueError, match="inventory provenance"):
+        validate_frozen_cohort(target)
+
+
+@pytest.mark.parametrize(
+    "mutation,match",
+    [
+        (lambda m: m.__setitem__("series_ticker", "OTHER"), "approved acquisition manifest digest"),
+        (lambda m: m["market_inventory"].__setitem__("path", "/wrong"), "approved acquisition manifest digest"),
+        (lambda m: m["market_inventory"].__setitem__("sha256", "0" * 64), "approved acquisition manifest digest"),
+    ],
+)
+def test_acquisition_receipt_mutations_fail_closed(
+    tmp_path: Path, mutation: Callable[[dict[str, Any]], None], match: str
+) -> None:
+    target = _copy(tmp_path)
+    _rewrite_acquisition(target, mutation)
+    with pytest.raises(ValueError, match=match):
+        validate_frozen_cohort(target)
+
+
+def test_missing_acquisition_receipt_fails(tmp_path: Path) -> None:
+    target = _copy(tmp_path)
+    (target / "acquisition_manifest.json").unlink()
+    with pytest.raises(ValueError, match="missing acquisition manifest"):
+        validate_frozen_cohort(target)
+
+
+def test_acquisition_artifact_path_replacement_fails(tmp_path: Path) -> None:
+    target = _copy(tmp_path)
+    _rewrite(
+        target,
+        lambda manifest: manifest.__setitem__("acquisition_manifest_artifact", "manifest.json"),
+    )
+    with pytest.raises(ValueError, match="artifact path"):
+        validate_frozen_cohort(target)
+
+
+def test_coherent_inventory_substitution_fails_against_receipt(tmp_path: Path) -> None:
+    target = _copy(tmp_path)
+    inventory = target / "market_inventory.json"
+    original = inventory.read_bytes()
+    inventory.unlink()
+    changed = original.replace(b'"CPI-21AUG"', b'"OTHER-21AUG"', 1)
+    inventory.write_bytes(changed)
+    manifest_path = target / "manifest.json"
+    manifest = json.loads(manifest_path.read_text())
+    manifest.pop("final_manifest_sha256")
+    digest = hashlib.sha256(changed).hexdigest()
+    manifest["market_inventory_sha256"] = digest
+    manifest["market_inventory_request"]["response_sha256"] = digest
+    acquisition_path = target / manifest["acquisition_manifest_artifact"]
+    acquisition = json.loads(acquisition_path.read_text())
+    acquisition["market_inventory"]["sha256"] = digest
+    acquisition_raw = json.dumps(acquisition, sort_keys=True, indent=2).encode() + b"\n"
+    acquisition_path.unlink()
+    acquisition_path.write_bytes(acquisition_raw)
+    manifest["acquisition_manifest_sha256"] = hashlib.sha256(acquisition_raw).hexdigest()
+    from services.historical_replay.archive import stable_hash
+
+    manifest["final_manifest_sha256"] = stable_hash(manifest)
+    manifest_path.write_text(json.dumps(manifest, sort_keys=True, indent=2) + "\n")
+    with pytest.raises(ValueError, match="approved acquisition manifest digest"):
         validate_frozen_cohort(target)
 
 
@@ -286,4 +371,5 @@ def test_close_boundary_candle_is_not_selected(tmp_path: Path) -> None:
         )
 
     _rewrite_raw(target, append_boundary)
-    assert validate_frozen_cohort(target)["siblings"] == 474
+    with pytest.raises(ValueError, match="acquisition raw identity"):
+        validate_frozen_cohort(target)

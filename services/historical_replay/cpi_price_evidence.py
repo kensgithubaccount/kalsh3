@@ -24,6 +24,7 @@ PROVENANCE_MODE = "RECONSTRUCTED_PUBLIC_HISTORICAL"
 PUBLIC_ORIGIN = "https://external-api.kalshi.com"
 KXCPI_INVENTORY_PATH = "/trade-api/v2/historical/markets?limit=1000&series_ticker=KXCPI"
 KXCPI_INVENTORY_CURSOR = ""
+APPROVED_RUNTIME_MANIFEST_DIGEST = "d671ef2cda78a8e1a720126a73fed4e0228afc69bd72c86878bdcd5acbfc6699"
 
 
 @dataclass(frozen=True, slots=True)
@@ -305,8 +306,36 @@ def validate_frozen_cohort(root: Path) -> dict[str, int]:
     if not inventory_path.is_file():
         raise ValueError("missing frozen market inventory")
     inventory_raw = inventory_path.read_bytes()
-    if sha256(inventory_raw).hexdigest() != manifest.get("market_inventory_sha256"):
+    inventory_sha256 = sha256(inventory_raw).hexdigest()
+    if inventory_sha256 != manifest.get("market_inventory_sha256"):
         raise ValueError("market inventory hash mismatch")
+    if manifest.get("acquisition_manifest_artifact") != "acquisition_manifest.json":
+        raise ValueError("acquisition manifest artifact path is invalid")
+    acquisition_path = root / "acquisition_manifest.json"
+    if not acquisition_path.is_file():
+        raise ValueError("missing acquisition manifest")
+    acquisition_raw = acquisition_path.read_bytes()
+    if sha256(acquisition_raw).hexdigest() != manifest.get("acquisition_manifest_sha256"):
+        raise ValueError("acquisition manifest raw hash mismatch")
+    acquisition = strict_json_loads(acquisition_raw)
+    if not isinstance(acquisition, dict):
+        raise ValueError("acquisition manifest is malformed")
+    acquisition_digest = acquisition.copy()
+    acquisition_recorded = acquisition_digest.pop("manifest_sha256", None)
+    if (
+        manifest.get("approved_acquisition_manifest_sha256")
+        != APPROVED_RUNTIME_MANIFEST_DIGEST
+        or acquisition_recorded != APPROVED_RUNTIME_MANIFEST_DIGEST
+        or stable_hash(acquisition_digest) != APPROVED_RUNTIME_MANIFEST_DIGEST
+    ):
+        raise ValueError("approved acquisition manifest digest mismatch")
+    if (
+        acquisition.get("series_ticker") != "KXCPI"
+        or acquisition.get("market_inventory", {}).get("path") != KXCPI_INVENTORY_PATH
+        or acquisition.get("market_inventory", {}).get("sha256") != inventory_sha256
+        or manifest.get("market_inventory_sha256") != inventory_sha256
+    ):
+        raise ValueError("acquisition inventory authority mismatch")
     inventory = strict_json_loads(inventory_raw)
     if (
         manifest.get("series_ticker") != "KXCPI"
@@ -331,6 +360,21 @@ def validate_frozen_cohort(root: Path) -> dict[str, int]:
         raise ValueError("frozen market inventory ticker identity is duplicated")
     rows = manifest.get("markets")
     events = manifest.get("events")
+    acquisition_rows = acquisition.get("markets")
+    acquisition_events = acquisition.get("events")
+    if not isinstance(acquisition_rows, list) or len(acquisition_rows) != 474:
+        raise ValueError("acquisition market cohort is incomplete")
+    if not isinstance(acquisition_events, list) or len(acquisition_events) != 60:
+        raise ValueError("acquisition event cohort is incomplete")
+    if {row.get("market_ticker") for row in acquisition_rows} != {
+        row.get("market_ticker") for row in rows
+    }:
+        raise ValueError("acquisition market identities do not match frozen cohort")
+    if {event.get("event_ticker") for event in acquisition_events} != {
+        event.get("event_ticker") for event in events
+    }:
+        raise ValueError("acquisition event identities do not match frozen cohort")
+    acquisition_by_ticker = {row["market_ticker"]: row for row in acquisition_rows}
     if not isinstance(rows, list) or len(rows) != 474:
         raise ValueError("frozen cohort must contain exactly 474 markets")
     if not isinstance(events, list) or len(events) != 60:
@@ -361,6 +405,23 @@ def validate_frozen_cohort(root: Path) -> dict[str, int]:
             raise ValueError("market inventory row hash mismatch")
         if row.get("event_ticker") != inventory_row.get("event_ticker"):
             raise ValueError("market inventory event binding mismatch")
+        acquisition_row = acquisition_by_ticker.get(row.get("market_ticker"))
+        if acquisition_row is None:
+            raise ValueError("market is absent from acquisition manifest")
+        for field in (
+            "event_ticker",
+            "underlying_event_id",
+            "raw_artifact",
+            "request_path",
+            "request_start_ts",
+            "request_end_ts",
+            "period_interval_minutes",
+        ):
+            if acquisition_row.get(field) != row.get(field):
+                raise ValueError("acquisition market identity mismatch")
+        for field in ("raw_sha256",):
+            if acquisition_row.get(field) != row.get(field):
+                raise ValueError("acquisition raw identity mismatch")
         if not re.fullmatch(
             r"(?:KXCPI|CPI)-[0-9]{2}[A-Z]{3}(?:-T(?:N?[0-9]+(?:\.[0-9]+)?|-[0-9]+(?:\.[0-9]+)?))?",
             str(row.get("market_ticker")),

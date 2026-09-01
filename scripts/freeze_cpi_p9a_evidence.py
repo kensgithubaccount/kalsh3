@@ -31,7 +31,8 @@ PUBLIC_ORIGIN = "https://external-api.kalshi.com"
 
 
 def freeze(runtime: Path, destination: Path, inventory_path: Path) -> dict[str, object]:
-    source_manifest = strict_json_loads((runtime / "manifest.json").read_bytes())
+    runtime_manifest_raw = (runtime / "manifest.json").read_bytes()
+    source_manifest = strict_json_loads(runtime_manifest_raw)
     original = source_manifest.copy()
     original_hash = original.pop("manifest_sha256")
     if original_hash != RUNTIME_HASH or stable_hash(original) != RUNTIME_HASH:
@@ -46,6 +47,8 @@ def freeze(runtime: Path, destination: Path, inventory_path: Path) -> dict[str, 
         raise ValueError("market inventory is not the original complete cohort")
     inventory_by_ticker = {row["ticker"]: row for row in inventory_rows}
     destination.mkdir(parents=True, exist_ok=True)
+    acquisition_destination = destination / "acquisition_manifest.json"
+    acquisition_destination.write_bytes(runtime_manifest_raw)
     inventory_destination = destination / "market_inventory.json"
     if inventory_path.resolve() != inventory_destination.resolve():
         shutil.copyfile(inventory_path, inventory_destination)
@@ -129,6 +132,9 @@ def freeze(runtime: Path, destination: Path, inventory_path: Path) -> dict[str, 
         "event_target": 60,
         "market_target": 474,
         "market_inventory_artifact": "market_inventory.json",
+        "acquisition_manifest_artifact": "acquisition_manifest.json",
+        "acquisition_manifest_sha256": sha256(runtime_manifest_raw).hexdigest(),
+        "approved_acquisition_manifest_sha256": RUNTIME_HASH,
         "series_ticker": "KXCPI",
         "series_membership_invariant": "INVENTORY_RESPONSE_FILTERED_BY_SERIES_TICKER_KXCPI",
         "market_inventory_request": {
