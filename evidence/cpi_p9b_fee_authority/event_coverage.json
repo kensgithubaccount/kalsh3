@@ -1,0 +1,400 @@
+{
+  "counts": {
+    "exact": 31,
+    "locator_only": 14,
+    "unknown": 15
+  },
+  "intersection_count": 28,
+  "p8_p9a_exact_taker_intersection": [
+    "CPI-22DEC",
+    "CPI-22NOV",
+    "CPI-22OCT",
+    "CPI-23APR",
+    "CPI-23AUG",
+    "CPI-23DEC",
+    "CPI-23FEB",
+    "CPI-23JAN",
+    "CPI-23JUL",
+    "CPI-23JUN",
+    "CPI-23MAR",
+    "CPI-23MAY",
+    "CPI-23NOV",
+    "CPI-23OCT",
+    "CPI-23SEP",
+    "CPI-24APR",
+    "CPI-24AUG",
+    "CPI-24FEB",
+    "CPI-24JAN",
+    "CPI-24JUL",
+    "CPI-24JUN",
+    "CPI-24MAR",
+    "CPI-24MAY",
+    "CPI-24OCT",
+    "CPI-24SEP",
+    "KXCPI-24DEC",
+    "KXCPI-24NOV",
+    "KXCPI-25JAN"
+  ],
+  "p9a_events": [
+    {
+      "authority_id": "UNKNOWN_PRE_2022_09_22",
+      "decision_timestamp": "2021-09-13T23:00:00Z",
+      "event_ticker": "CPI-21AUG",
+      "status": "unknown"
+    },
+    {
+      "authority_id": "UNKNOWN_PRE_2022_09_22",
+      "decision_timestamp": "2022-01-12T04:59:00Z",
+      "event_ticker": "CPI-21DEC",
+      "status": "unknown"
+    },
+    {
+      "authority_id": "UNKNOWN_PRE_2022_09_22",
+      "decision_timestamp": "2021-08-10T23:00:00Z",
+      "event_ticker": "CPI-21JUL",
+      "status": "unknown"
+    },
+    {
+      "authority_id": "UNKNOWN_PRE_2022_09_22",
+      "decision_timestamp": "2021-07-12T23:00:00Z",
+      "event_ticker": "CPI-21JUN",
+      "status": "unknown"
+    },
+    {
+      "authority_id": "UNKNOWN_PRE_2022_09_22",
+      "decision_timestamp": "2021-12-10T00:00:00Z",
+      "event_ticker": "CPI-21NOV",
+      "status": "unknown"
+    },
+    {
+      "authority_id": "UNKNOWN_PRE_2022_09_22",
+      "decision_timestamp": "2021-11-10T00:00:00Z",
+      "event_ticker": "CPI-21OCT",
+      "status": "unknown"
+    },
+    {
+      "authority_id": "UNKNOWN_PRE_2022_09_22",
+      "decision_timestamp": "2021-10-12T23:00:00Z",
+      "event_ticker": "CPI-21SEP",
+      "status": "unknown"
+    },
+    {
+      "authority_id": "UNKNOWN_PRE_2022_09_22",
+      "decision_timestamp": "2022-05-11T12:25:00Z",
+      "event_ticker": "CPI-22APR",
+      "status": "unknown"
+    },
+    {
+      "authority_id": "UNKNOWN_PRE_2022_09_22",
+      "decision_timestamp": "2022-09-13T12:25:00Z",
+      "event_ticker": "CPI-22AUG",
+      "status": "unknown"
+    },
+    {
+      "authority_id": "b002a5ae260c68f543a9c4630233c9d311c580ad70620e7db37eac14437007b3",
+      "decision_timestamp": "2023-01-12T13:25:00Z",
+      "event_ticker": "CPI-22DEC",
+      "status": "exact"
+    },
+    {
+      "authority_id": "UNKNOWN_PRE_2022_09_22",
+      "decision_timestamp": "2022-03-10T13:25:00Z",
+      "event_ticker": "CPI-22FEB",
+      "status": "unknown"
+    },
+    {
+      "authority_id": "UNKNOWN_PRE_2022_09_22",
+      "decision_timestamp": "2022-02-10T13:25:00Z",
+      "event_ticker": "CPI-22JAN",
+      "status": "unknown"
+    },
+    {
+      "authority_id": "UNKNOWN_PRE_2022_09_22",
+      "decision_timestamp": "2022-08-10T12:25:00Z",
+      "event_ticker": "CPI-22JUL",
+      "status": "unknown"
+    },
+    {
+      "authority_id": "UNKNOWN_PRE_2022_09_22",
+      "decision_timestamp": "2022-07-13T12:25:00Z",
+      "event_ticker": "CPI-22JUN",
+      "status": "unknown"
+    },
+    {
+      "authority_id": "UNKNOWN_PRE_2022_09_22",
+      "decision_timestamp": "2022-04-12T12:25:00Z",
+      "event_ticker": "CPI-22MAR",
+      "status": "unknown"
+    },
+    {
+      "authority_id": "UNKNOWN_PRE_2022_09_22",
+      "decision_timestamp": "2022-06-10T12:25:00Z",
+      "event_ticker": "CPI-22MAY",
+      "status": "unknown"
+    },
+    {
+      "authority_id": "b002a5ae260c68f543a9c4630233c9d311c580ad70620e7db37eac14437007b3",
+      "decision_timestamp": "2022-12-13T13:25:00Z",
+      "event_ticker": "CPI-22NOV",
+      "status": "exact"
+    },
+    {
+      "authority_id": "b002a5ae260c68f543a9c4630233c9d311c580ad70620e7db37eac14437007b3",
+      "decision_timestamp": "2022-11-10T13:25:00Z",
+      "event_ticker": "CPI-22OCT",
+      "status": "exact"
+    },
+    {
+      "authority_id": "b002a5ae260c68f543a9c4630233c9d311c580ad70620e7db37eac14437007b3",
+      "decision_timestamp": "2022-10-13T12:25:00Z",
+      "event_ticker": "CPI-22SEP",
+      "status": "exact"
+    },
+    {
+      "authority_id": "b002a5ae260c68f543a9c4630233c9d311c580ad70620e7db37eac14437007b3",
+      "decision_timestamp": "2023-05-10T12:25:00Z",
+      "event_ticker": "CPI-23APR",
+      "status": "exact"
+    },
+    {
+      "authority_id": "b002a5ae260c68f543a9c4630233c9d311c580ad70620e7db37eac14437007b3",
+      "decision_timestamp": "2023-09-13T12:25:00Z",
+      "event_ticker": "CPI-23AUG",
+      "status": "exact"
+    },
+    {
+      "authority_id": "b002a5ae260c68f543a9c4630233c9d311c580ad70620e7db37eac14437007b3",
+      "decision_timestamp": "2024-01-11T13:25:00Z",
+      "event_ticker": "CPI-23DEC",
+      "status": "exact"
+    },
+    {
+      "authority_id": "b002a5ae260c68f543a9c4630233c9d311c580ad70620e7db37eac14437007b3",
+      "decision_timestamp": "2023-03-14T12:25:00Z",
+      "event_ticker": "CPI-23FEB",
+      "status": "exact"
+    },
+    {
+      "authority_id": "b002a5ae260c68f543a9c4630233c9d311c580ad70620e7db37eac14437007b3",
+      "decision_timestamp": "2023-02-14T13:25:00Z",
+      "event_ticker": "CPI-23JAN",
+      "status": "exact"
+    },
+    {
+      "authority_id": "b002a5ae260c68f543a9c4630233c9d311c580ad70620e7db37eac14437007b3",
+      "decision_timestamp": "2023-08-10T12:25:00Z",
+      "event_ticker": "CPI-23JUL",
+      "status": "exact"
+    },
+    {
+      "authority_id": "b002a5ae260c68f543a9c4630233c9d311c580ad70620e7db37eac14437007b3",
+      "decision_timestamp": "2023-07-12T12:25:00Z",
+      "event_ticker": "CPI-23JUN",
+      "status": "exact"
+    },
+    {
+      "authority_id": "b002a5ae260c68f543a9c4630233c9d311c580ad70620e7db37eac14437007b3",
+      "decision_timestamp": "2023-04-12T12:25:00Z",
+      "event_ticker": "CPI-23MAR",
+      "status": "exact"
+    },
+    {
+      "authority_id": "b002a5ae260c68f543a9c4630233c9d311c580ad70620e7db37eac14437007b3",
+      "decision_timestamp": "2023-06-13T12:25:00Z",
+      "event_ticker": "CPI-23MAY",
+      "status": "exact"
+    },
+    {
+      "authority_id": "b002a5ae260c68f543a9c4630233c9d311c580ad70620e7db37eac14437007b3",
+      "decision_timestamp": "2023-12-12T13:25:00Z",
+      "event_ticker": "CPI-23NOV",
+      "status": "exact"
+    },
+    {
+      "authority_id": "b002a5ae260c68f543a9c4630233c9d311c580ad70620e7db37eac14437007b3",
+      "decision_timestamp": "2023-11-14T13:25:00Z",
+      "event_ticker": "CPI-23OCT",
+      "status": "exact"
+    },
+    {
+      "authority_id": "b002a5ae260c68f543a9c4630233c9d311c580ad70620e7db37eac14437007b3",
+      "decision_timestamp": "2023-10-12T12:25:00Z",
+      "event_ticker": "CPI-23SEP",
+      "status": "exact"
+    },
+    {
+      "authority_id": "b002a5ae260c68f543a9c4630233c9d311c580ad70620e7db37eac14437007b3",
+      "decision_timestamp": "2024-05-15T12:25:00Z",
+      "event_ticker": "CPI-24APR",
+      "status": "exact"
+    },
+    {
+      "authority_id": "b002a5ae260c68f543a9c4630233c9d311c580ad70620e7db37eac14437007b3",
+      "decision_timestamp": "2024-09-11T12:25:00Z",
+      "event_ticker": "CPI-24AUG",
+      "status": "exact"
+    },
+    {
+      "authority_id": "b002a5ae260c68f543a9c4630233c9d311c580ad70620e7db37eac14437007b3",
+      "decision_timestamp": "2024-03-12T12:25:00Z",
+      "event_ticker": "CPI-24FEB",
+      "status": "exact"
+    },
+    {
+      "authority_id": "b002a5ae260c68f543a9c4630233c9d311c580ad70620e7db37eac14437007b3",
+      "decision_timestamp": "2024-02-13T13:25:00Z",
+      "event_ticker": "CPI-24JAN",
+      "status": "exact"
+    },
+    {
+      "authority_id": "b002a5ae260c68f543a9c4630233c9d311c580ad70620e7db37eac14437007b3",
+      "decision_timestamp": "2024-08-14T12:25:00Z",
+      "event_ticker": "CPI-24JUL",
+      "status": "exact"
+    },
+    {
+      "authority_id": "b002a5ae260c68f543a9c4630233c9d311c580ad70620e7db37eac14437007b3",
+      "decision_timestamp": "2024-07-11T12:25:00Z",
+      "event_ticker": "CPI-24JUN",
+      "status": "exact"
+    },
+    {
+      "authority_id": "b002a5ae260c68f543a9c4630233c9d311c580ad70620e7db37eac14437007b3",
+      "decision_timestamp": "2024-04-10T12:25:00Z",
+      "event_ticker": "CPI-24MAR",
+      "status": "exact"
+    },
+    {
+      "authority_id": "b002a5ae260c68f543a9c4630233c9d311c580ad70620e7db37eac14437007b3",
+      "decision_timestamp": "2024-06-12T12:25:00Z",
+      "event_ticker": "CPI-24MAY",
+      "status": "exact"
+    },
+    {
+      "authority_id": "b002a5ae260c68f543a9c4630233c9d311c580ad70620e7db37eac14437007b3",
+      "decision_timestamp": "2024-11-13T13:25:00Z",
+      "event_ticker": "CPI-24OCT",
+      "status": "exact"
+    },
+    {
+      "authority_id": "b002a5ae260c68f543a9c4630233c9d311c580ad70620e7db37eac14437007b3",
+      "decision_timestamp": "2024-10-10T12:25:00Z",
+      "event_ticker": "CPI-24SEP",
+      "status": "exact"
+    },
+    {
+      "authority_id": "b002a5ae260c68f543a9c4630233c9d311c580ad70620e7db37eac14437007b3",
+      "decision_timestamp": "2025-01-15T13:25:00Z",
+      "event_ticker": "KXCPI-24DEC",
+      "status": "exact"
+    },
+    {
+      "authority_id": "b002a5ae260c68f543a9c4630233c9d311c580ad70620e7db37eac14437007b3",
+      "decision_timestamp": "2024-12-11T13:25:00Z",
+      "event_ticker": "KXCPI-24NOV",
+      "status": "exact"
+    },
+    {
+      "authority_id": "OCT_2025_LOCATOR_ONLY",
+      "decision_timestamp": "2025-05-13T12:25:00Z",
+      "event_ticker": "KXCPI-25APR",
+      "status": "locator_only"
+    },
+    {
+      "authority_id": "OCT_2025_LOCATOR_ONLY",
+      "decision_timestamp": "2025-09-11T12:25:00Z",
+      "event_ticker": "KXCPI-25AUG",
+      "status": "locator_only"
+    },
+    {
+      "authority_id": "OCT_2025_LOCATOR_ONLY",
+      "decision_timestamp": "2026-01-13T13:29:00Z",
+      "event_ticker": "KXCPI-25DEC",
+      "status": "locator_only"
+    },
+    {
+      "authority_id": "b002a5ae260c68f543a9c4630233c9d311c580ad70620e7db37eac14437007b3",
+      "decision_timestamp": "2025-03-12T12:25:00Z",
+      "event_ticker": "KXCPI-25FEB",
+      "status": "exact"
+    },
+    {
+      "authority_id": "b002a5ae260c68f543a9c4630233c9d311c580ad70620e7db37eac14437007b3",
+      "decision_timestamp": "2025-02-12T13:25:00Z",
+      "event_ticker": "KXCPI-25JAN",
+      "status": "exact"
+    },
+    {
+      "authority_id": "OCT_2025_LOCATOR_ONLY",
+      "decision_timestamp": "2025-08-12T12:29:00Z",
+      "event_ticker": "KXCPI-25JUL",
+      "status": "locator_only"
+    },
+    {
+      "authority_id": "OCT_2025_LOCATOR_ONLY",
+      "decision_timestamp": "2025-07-15T12:29:00Z",
+      "event_ticker": "KXCPI-25JUN",
+      "status": "locator_only"
+    },
+    {
+      "authority_id": "b002a5ae260c68f543a9c4630233c9d311c580ad70620e7db37eac14437007b3",
+      "decision_timestamp": "2025-04-10T12:25:00Z",
+      "event_ticker": "KXCPI-25MAR",
+      "status": "exact"
+    },
+    {
+      "authority_id": "OCT_2025_LOCATOR_ONLY",
+      "decision_timestamp": "2025-06-11T12:25:00Z",
+      "event_ticker": "KXCPI-25MAY",
+      "status": "locator_only"
+    },
+    {
+      "authority_id": "OCT_2025_LOCATOR_ONLY",
+      "decision_timestamp": "2025-12-18T13:29:00Z",
+      "event_ticker": "KXCPI-25NOV",
+      "status": "locator_only"
+    },
+    {
+      "authority_id": "OCT_2025_LOCATOR_ONLY",
+      "decision_timestamp": "2025-11-13T13:29:00Z",
+      "event_ticker": "KXCPI-25OCT",
+      "status": "locator_only"
+    },
+    {
+      "authority_id": "OCT_2025_LOCATOR_ONLY",
+      "decision_timestamp": "2025-10-15T12:29:00Z",
+      "event_ticker": "KXCPI-25SEP",
+      "status": "locator_only"
+    },
+    {
+      "authority_id": "OCT_2025_LOCATOR_ONLY",
+      "decision_timestamp": "2026-05-12T12:25:00Z",
+      "event_ticker": "KXCPI-26APR",
+      "status": "locator_only"
+    },
+    {
+      "authority_id": "OCT_2025_LOCATOR_ONLY",
+      "decision_timestamp": "2026-03-11T12:29:00Z",
+      "event_ticker": "KXCPI-26FEB",
+      "status": "locator_only"
+    },
+    {
+      "authority_id": "OCT_2025_LOCATOR_ONLY",
+      "decision_timestamp": "2026-02-13T13:29:00Z",
+      "event_ticker": "KXCPI-26JAN",
+      "status": "locator_only"
+    },
+    {
+      "authority_id": "OCT_2025_LOCATOR_ONLY",
+      "decision_timestamp": "2026-04-10T12:25:00Z",
+      "event_ticker": "KXCPI-26MAR",
+      "status": "locator_only"
+    },
+    {
+      "authority_id": "OCT_2025_LOCATOR_ONLY",
+      "decision_timestamp": "2026-06-10T12:25:00Z",
+      "event_ticker": "KXCPI-26MAY",
+      "status": "locator_only"
+    }
+  ]
+}

@@ -1,0 +1,25 @@
+{
+  "schema_version": "cpi-p9b-fee-authority-v1",
+  "canonical_base": "e8c6faff5a72db6010fd4ae22713b0a0831b947e",
+  "canonical_tree": "353aeba5d99c67c5baa4c72901965b323367ecbf",
+  "p9a_manifest": "evidence/cpi_p9a_historical_price/manifest.json",
+  "authority_scope": "KXCPI general taker fees only",
+  "artifacts": [
+    {"authority_identity": "c13ece879021b9df29c3bac195b2c580f4876e9e77d7cde8fbd1a9c5b95da200", "path": "raw/cftc-49335-cover.pdf", "sha256": "c13ece879021b9df29c3bac195b2c580f4876e9e77d7cde8fbd1a9c5b95da200", "authority_type": "taker", "filing": "49335", "receipt_date": "2022-09-09", "effective_date": "2022-09-22", "status": "exact", "source_url": "https://www.cftc.gov/filings/orgrules/rule091222kexdcm001.pdf"},
+    {"authority_identity": "2823becfd0252406cad15e51a1a4c68ca991a068fc36d2ade4c935116f83a85a", "path": "raw/cftc-49335-redline.pdf", "sha256": "2823becfd0252406cad15e51a1a4c68ca991a068fc36d2ade4c935116f83a85a", "authority_type": "taker", "filing": "49335", "receipt_date": "2022-09-09", "effective_date": "2022-09-22", "status": "exact", "source_url": "https://www.cftc.gov/filings/orgrules/rule091222kexdcm002.pdf"},
+    {"authority_identity": "b002a5ae260c68f543a9c4630233c9d311c580ad70620e7db37eac14437007b3", "path": "raw/cftc-49335-final-schedule.pdf", "sha256": "b002a5ae260c68f543a9c4630233c9d311c580ad70620e7db37eac14437007b3", "authority_type": "taker", "filing": "49335", "receipt_date": "2022-09-09", "effective_date": "2022-09-22", "status": "exact", "source_url": "https://www.cftc.gov/filings/orgrules/rule091222kexdcm003.pdf"},
+    {"authority_identity": "1185c41174304316cd6c68c6bd9eba3170e8082ff31a60b730b89b7da60b58e8", "path": "raw/md-1-25-cv-01283-28-1.pdf", "sha256": "1185c41174304316cd6c68c6bd9eba3170e8082ff31a60b730b89b7da60b58e8", "authority_type": "taker", "case": "KalshiEX LLC v. Martin et al.", "docket": "1:25-cv-01283-ABA", "document": "28-1", "filed_date": "2025-05-12", "last_updated": "2025-05-06", "status": "exact", "source_url": "https://www.ingame.com/wp-content/uploads/2025/05/document.pdf"},
+    {"authority_identity": "OCT_2025_LOCATOR_ONLY", "path": null, "sha256": null, "authority_type": "taker", "status": "locator_only", "source_url": "https://kalshi.com/docs/kalshi-fee-schedule.pdf", "last_updated": "2025-10-01", "notes": "Locator/discovery evidence only; no immutable retained artifact."}
+  ],
+  "timelines": {
+    "taker": [
+      {"start": null, "end": "2022-09-22T00:00:00Z", "status": "unknown", "authority_type": "taker", "authority_identity": "UNKNOWN_PRE_2022_09_22", "formula": null, "rounding": null, "kxcpi_applicability": "unknown"},
+      {"start": "2022-09-22T00:00:00Z", "end": "2025-05-06T00:00:00Z", "status": "exact", "authority_type": "taker", "authority_identity": "b002a5ae260c68f543a9c4630233c9d311c580ad70620e7db37eac14437007b3", "formula": "round_up(0.07 * C * P * (1-P))", "rounding": "next_cent", "kxcpi_applicability": "general"},
+      {"start": "2025-05-06T00:00:00Z", "end": null, "status": "locator_only", "authority_type": "taker", "authority_identity": "OCT_2025_LOCATOR_ONLY", "formula": "round_up(0.07 * C * P * (1-P))", "rounding": "next_cent", "kxcpi_applicability": "general"}
+    ],
+    "maker": [{"start": null, "end": null, "status": "unknown", "authority_type": "maker", "authority_identity": "MAKER_UNRESOLVED", "formula": null, "rounding": null, "kxcpi_applicability": "unknown"}]
+  },
+  "p8_reference_events": ["CPI-22OCT","CPI-22NOV","CPI-22DEC","CPI-23JAN","CPI-23FEB","CPI-23MAR","CPI-23APR","CPI-23MAY","CPI-23JUN","CPI-23JUL","CPI-23AUG","CPI-23SEP","CPI-23OCT","CPI-23NOV","CPI-23DEC","CPI-24JAN","CPI-24FEB","CPI-24MAR","CPI-24APR","CPI-24MAY","CPI-24JUN","CPI-24JUL","CPI-24AUG","CPI-24SEP","CPI-24OCT","KXCPI-24NOV","KXCPI-24DEC","KXCPI-25JAN"],
+  "exceptions": ["CFTC 61349 excluded: perpetual futures/FCM customers.", "Conditional rebates, waivers, and market-maker programs are non-general.", "Maker authority is unresolved and never inferred from taker authority."]
+  ,"excluded_authorities": [{"filing": "61349", "authority_status": "excluded", "reason": "perpetual futures/FCM customers"}]
+}
