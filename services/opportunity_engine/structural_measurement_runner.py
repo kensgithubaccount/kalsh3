@@ -508,8 +508,7 @@ def run_scan_cycle(
             route
             for route in ambiguous_routes
             if route.event_ticker == previous.event_ticker
-            and route.market_ticker
-            in {previous.broad_market_ticker, previous.narrow_market_ticker}
+            and route.market_ticker in {previous.broad_market_ticker, previous.narrow_market_ticker}
         ]
         if len({route.market_ticker for route in matching_ambiguous_routes}) >= 2:
             observation = record_ambiguous(

@@ -467,9 +467,7 @@ def test_recurrence_after_disappearance_starts_a_new_persistence_episode(tmp_pat
     run_scan_cycle(
         **kwargs, universe_transport=monotonic, clock=lambda: NOW + timedelta(minutes=15)
     )
-    run_scan_cycle(
-        **kwargs, universe_transport=inverted, clock=lambda: NOW + timedelta(minutes=30)
-    )
+    run_scan_cycle(**kwargs, universe_transport=inverted, clock=lambda: NOW + timedelta(minutes=30))
     histories = [store.for_relationship(rel) for rel in store.relationship_ids()]
     assert len(histories) == 2
     assert any(history[-1].state is MeasurementState.DISAPPEARED for history in histories)
