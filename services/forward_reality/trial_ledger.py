@@ -9,7 +9,7 @@ import math
 import os
 import secrets
 import sqlite3
-from collections.abc import Callable, Mapping
+from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from enum import StrEnum
@@ -99,13 +99,21 @@ class Trial:
         return getattr(self.definition, name)
 
 
-Clock = Callable[[], datetime]
+def _fr_a2_utc_now() -> datetime:
+    return datetime.now(UTC)
 
 
 class TrialLedger:
     """Authenticated journal authority with a rebuildable SQLite index."""
 
-    _clock: Clock | None
+    __slots__ = (
+        "_head_path",
+        "_journal_path",
+        "_key",
+        "_key_existed",
+        "_key_path",
+        "_path",
+    )
 
     def __init__(self, path: str | Path) -> None:
         self._path = Path(path)
@@ -113,16 +121,8 @@ class TrialLedger:
         self._key_path = self._path.with_name(self._path.name + ".issuer-key")
         self._head_path = self._path.with_name(self._path.name + ".head")
         self._key_existed = self._key_path.exists()
-        self._key = _load_or_create_key(self._key_path)
-        self._clock = None
+        self._key = _fr_a2_load_issuer_key(self._key_path)
         self._open_or_create()
-
-    @classmethod
-    def _for_tests(cls, path: str | Path, clock: Clock) -> TrialLedger:
-        """Test-only deterministic owner; production services must not reference this."""
-        ledger = cls(path)
-        ledger._clock = clock
-        return ledger
 
     def register(
         self,
@@ -168,6 +168,8 @@ class TrialLedger:
             "created_at": _timestamp(created_at),
             **identity,
             "evaluation_plan": evaluation_plan.value,
+            "initial_status": TrialStatus.PLANNED.value,
+            "initial_recorded_at": _timestamp(created_at),
             "research_only": True,
             "production_influence": 0,
             "schema_version": SCHEMA_VERSION,
@@ -189,7 +191,7 @@ class TrialLedger:
             _hash(_canonical(payload)),
             "",
         )
-        return self._append_definition(definition)
+        return self._append_registration(definition)
 
     def advance(self, trial_id: str, status: TrialStatus) -> Trial:
         trial = self.get(trial_id)
@@ -240,8 +242,7 @@ class TrialLedger:
         return self._events()
 
     def _now(self) -> datetime:
-        clock = self._clock
-        value = clock() if clock is not None else datetime.now(UTC)
+        value = _fr_a2_utc_now()
         if (
             type(value) is not datetime
             or value.tzinfo is None
@@ -250,7 +251,7 @@ class TrialLedger:
             raise LedgerError("issuer time must be canonical UTC")
         return value.astimezone(UTC)
 
-    def _append_definition(self, definition: TrialDefinition) -> Trial:
+    def _append_registration(self, definition: TrialDefinition) -> Trial:
         if definition.trial_id in self._definitions():
             raise LedgerError("duplicate or conflicting trial definition")
         previous = self._head()["last_entry_hash"]
@@ -259,15 +260,14 @@ class TrialLedger:
             "ledger_id": self._ledger_id(),
             "global_sequence": self._head()["last_sequence"] + 1,
             "previous_entry_hash": previous,
-            "entry_type": "DEFINITION",
-            "payload": _definition_payload(definition),
+            "entry_type": "REGISTRATION",
+            "payload": _registration_payload(definition),
             "content_hash": definition.content_hash,
             "created_at": _timestamp(definition.created_at),
             "research_only": True,
             "production_influence": 0,
         }
         self._append(entry)
-        self._append_event(definition, TrialStatus.PLANNED, definition.created_at, 1)
         self._rebuild_index()
         return self.get(definition.trial_id)
 
@@ -352,7 +352,21 @@ class TrialLedger:
         definitions = self._definitions()
         result: list[TrialStatusEvent] = []
         for entry in _read_entries(self._journal_path, self._key, self._head()):
-            if entry["entry_type"] == "STATUS":
+            if entry["entry_type"] == "REGISTRATION":
+                payload = entry["payload"]
+                trial_id = str(payload["trial_id"])
+                result.append(
+                    TrialStatusEvent(
+                        int(entry["global_sequence"]),
+                        trial_id,
+                        1,
+                        TrialStatus.PLANNED,
+                        _parse_timestamp(payload["created_at"]),
+                        str(entry["content_hash"]),
+                        str(entry["issuer_mac"]),
+                    )
+                )
+            elif entry["entry_type"] == "STATUS":
                 payload = entry["payload"]
                 trial_id = str(payload["trial_id"])
                 if trial_id not in definitions:
@@ -377,9 +391,12 @@ class TrialLedger:
     def _definitions(self) -> dict[str, TrialDefinition]:
         result: dict[str, TrialDefinition] = {}
         for entry in _read_entries(self._journal_path, self._key, self._head()):
-            if entry["entry_type"] == "DEFINITION":
+            if entry["entry_type"] == "REGISTRATION":
                 payload = entry["payload"]
-                result[str(payload["trial_id"])] = _definition_from_payload(payload, entry)
+                trial_id = str(payload["trial_id"])
+                if trial_id in result:
+                    raise LedgerError("duplicate trial registration")
+                result[trial_id] = _definition_from_payload(payload, entry)
         return result
 
     def _open_or_create(self) -> None:
@@ -393,6 +410,23 @@ class TrialLedger:
             raise LedgerError("authenticated journal and checkpoint are missing")
         self._head()
         list(_read_entries(self._journal_path, self._key, self._head()))
+        definitions = self._definitions()
+        entries = _read_entries(self._journal_path, self._key, self._head())
+        positions = {
+            str(entry["payload"]["trial_id"]): int(entry["global_sequence"])
+            for entry in entries
+            if entry["entry_type"] == "REGISTRATION"
+        }
+        for definition in definitions.values():
+            if any(
+                parent not in definitions or positions[parent] >= positions[definition.trial_id]
+                for parent in definition.parent_trial_ids
+            ):
+                raise LedgerError("parent trial is not a prior valid registration")
+            _replay(
+                definition,
+                tuple(event for event in self._events() if event.trial_id == definition.trial_id),
+            )
         self._rebuild_index()
 
     def _rebuild_index(self) -> None:
@@ -407,7 +441,7 @@ class TrialLedger:
                 )
 
 
-def _definition_payload(d: TrialDefinition) -> dict[str, object]:
+def _registration_payload(d: TrialDefinition) -> dict[str, object]:
     return {
         "trial_id": d.trial_id,
         "created_at": _timestamp(d.created_at),
@@ -416,6 +450,8 @@ def _definition_payload(d: TrialDefinition) -> dict[str, object]:
         "feature_specification_identity": d.feature_specification_identity,
         "evaluation_plan": d.evaluation_plan.value,
         "evaluation_plan_identity": d.evaluation_plan.identity,
+        "initial_status": TrialStatus.PLANNED.value,
+        "initial_recorded_at": _timestamp(d.created_at),
         "parent_trial_ids": d.parent_trial_ids,
         "reason": d.reason,
         "underlying_event_id": d.underlying_event_id,
@@ -434,6 +470,8 @@ def _definition_from_payload(
         plan.identity != payload["evaluation_plan_identity"]
         or payload["research_only"] is not True
         or payload["production_influence"] != 0
+        or payload["initial_status"] != TrialStatus.PLANNED.value
+        or payload["initial_recorded_at"] != payload["created_at"]
     ):
         raise LedgerError("definition safety or evaluation identity mismatch")
     content_hash = _hash(_canonical(payload))
@@ -518,7 +556,7 @@ def _replay(definition: TrialDefinition, events: tuple[TrialStatusEvent, ...]) -
     return current
 
 
-def _load_or_create_key(path: Path) -> bytes:
+def _fr_a2_load_issuer_key(path: Path) -> bytes:
     if path.exists():
         value = path.read_bytes()
         if len(value) != 32:
