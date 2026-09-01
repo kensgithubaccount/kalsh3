@@ -123,12 +123,118 @@ def test_acquisition_mutations_fail(
         validate_kalshi_acquisition(forged)
 
 
+@pytest.mark.parametrize(
+    "url",
+    [
+        "https://external-api.kalshi.com:8443/trade-api/v2/historical/markets/KXCPI-25JUL-T0.1",
+        "https://external-api.kalshi.com:443/trade-api/v2/historical/markets/KXCPI-25JUL-T0.1",
+        "https://user@external-api.kalshi.com/trade-api/v2/historical/markets/KXCPI-25JUL-T0.1",
+        "https://user:pass@external-api.kalshi.com/trade-api/v2/historical/markets/KXCPI-25JUL-T0.1",
+        "https://external-api.kalshi.com/trade-api/v2/historical/markets/KXCPI-25JUL-T0.1#fragment",
+        "https://external-api.kalshi.com/trade-api/v2/historical/markets/KXCPI-25JUL-T0.1?x=1",
+        "https://external-api.kalshi.com/trade-api/v2/events/KXCPI-25JUL",
+    ],
+)
+def test_noncanonical_or_mismatched_market_urls_fail(url: str) -> None:
+    acquisition = load_frozen_kalshi_acquisition("market-jul")
+    object.__setattr__(acquisition, "request_url", url)
+    with pytest.raises(CPISettlementReconciliationError):
+        validate_kalshi_acquisition(acquisition)
+
+
+@pytest.mark.parametrize(
+    "fixture_id,url,role",
+    [
+        (
+            "event-jul",
+            "https://external-api.kalshi.com/trade-api/v2/events/KXCPI-25DEC",
+            reconciliation.KalshiEndpointRole.EVENT,
+        ),
+        (
+            "event-jul",
+            "https://external-api.kalshi.com/trade-api/v2/historical/markets/KXCPI-25JUL-T0.1",
+            reconciliation.KalshiEndpointRole.HISTORICAL_MARKET,
+        ),
+        (
+            "series",
+            "https://external-api.kalshi.com/trade-api/v2/series/KXCPI-OTHER",
+            reconciliation.KalshiEndpointRole.SERIES,
+        ),
+        (
+            "contract-terms",
+            "https://assets.kalshi.com:443/contract_terms/CPI.pdf",
+            reconciliation.KalshiEndpointRole.CONTRACT_TERMS,
+        ),
+        (
+            "contract-terms",
+            "https://user@assets.kalshi.com/contract_terms/CPI.pdf",
+            reconciliation.KalshiEndpointRole.CONTRACT_TERMS,
+        ),
+        (
+            "contract-terms",
+            "https://assets.kalshi.com/contract_terms/CPI.pdf#x",
+            reconciliation.KalshiEndpointRole.CONTRACT_TERMS,
+        ),
+    ],
+)
+def test_role_and_terms_url_bindings_fail(
+    fixture_id: str, url: str, role: reconciliation.KalshiEndpointRole
+) -> None:
+    acquisition = load_frozen_kalshi_acquisition(fixture_id)
+    object.__setattr__(acquisition, "request_url", url)
+    object.__setattr__(acquisition, "endpoint_role", role)
+    with pytest.raises(CPISettlementReconciliationError):
+        validate_kalshi_acquisition(acquisition)
+
+
 def test_frozen_artifact_hash_is_recomputed() -> None:
     acquisition = load_frozen_kalshi_acquisition("market-jul")
     forged = acquisition
     object.__setattr__(forged, "raw_artifact_hash", "0" * 64)
     with pytest.raises(CPISettlementReconciliationError):
         validate_kalshi_acquisition(forged)
+
+
+@pytest.mark.parametrize(
+    "raw,role",
+    [
+        (
+            b'{"market":{"ticker":"A","ticker":"B"}}',
+            reconciliation.KalshiEndpointRole.HISTORICAL_MARKET,
+        ),
+        (
+            b'{"market":{"result":"YES","result":"NO"}}',
+            reconciliation.KalshiEndpointRole.HISTORICAL_MARKET,
+        ),
+        (
+            b'{"market":{"ticker":"A"},"event":{"event_ticker":"E"}}',
+            reconciliation.KalshiEndpointRole.HISTORICAL_MARKET,
+        ),
+        (
+            b'{"market":{"ticker":"A"},"series":{"ticker":"KXCPI"}}',
+            reconciliation.KalshiEndpointRole.HISTORICAL_MARKET,
+        ),
+        (
+            b'{"market":{"ticker":"A"},"ticker":"B"}',
+            reconciliation.KalshiEndpointRole.HISTORICAL_MARKET,
+        ),
+        (b'{"event":{"event_ticker":"E"}}', reconciliation.KalshiEndpointRole.HISTORICAL_MARKET),
+        (b'{"ticker":"A"}', reconciliation.KalshiEndpointRole.HISTORICAL_MARKET),
+        (b'{"market":', reconciliation.KalshiEndpointRole.HISTORICAL_MARKET),
+        (b"[]", reconciliation.KalshiEndpointRole.HISTORICAL_MARKET),
+        (b'{"series":{"ticker":"KXCPI"}}', reconciliation.KalshiEndpointRole.EVENT),
+        (
+            b'{"series":{"ticker":"KXCPI"},"series":{"ticker":"KXCPI"}}',
+            reconciliation.KalshiEndpointRole.SERIES,
+        ),
+        (b'{"series":{"ticker":NaN}}', reconciliation.KalshiEndpointRole.SERIES),
+    ],
+)
+def test_ambiguous_or_nonstandard_json_fails(
+    raw: bytes, role: reconciliation.KalshiEndpointRole
+) -> None:
+    with pytest.raises(CPISettlementReconciliationError):
+        reconciliation._payload(raw, role)
 
 
 def test_semantics_are_rebuilt_and_arbitrary_spec_is_rejected(

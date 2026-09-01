@@ -145,6 +145,23 @@ rules SHA listed above, which remains an independent-review limitation.
 Sibling strikes share one release dependency and must not be counted as
 independent evidence events.
 
+## Codex Security findings repaired
+
+The reviewed acquisition boundary now reconstructs one canonical URL from the
+endpoint role and expected selector before the GET and during every later
+validation. It rejects explicit ports (including `:443`), userinfo, queries,
+fragments, alternate paths, percent-encoded alternatives, and role/selector
+mismatches. Historical market, event, series, and contract-terms paths are
+validated exactly.
+
+Authority-bearing JSON uses duplicate-key rejection at every object depth and
+rejects non-standard constants. Payload selection is role-specific: market,
+event, and series responses require their exact reviewed wrapper shape, with
+the documented event `markets` list, and conflicting wrappers or top-level
+authoritative fields fail closed. These repairs address the two Codex Security
+medium findings from the preceding exact head; this receipt records the repair
+but does not itself constitute the independent security re-review.
+
 ## Tests and G3 implication
 
 The focused suite covers exact matching, first-class mismatch, identity/rules

@@ -17,7 +17,7 @@ from datetime import UTC, datetime
 from decimal import Decimal, InvalidOperation
 from enum import StrEnum
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 from urllib.parse import urlsplit
 
 from services.contract_intelligence.settlement import (
@@ -324,15 +324,45 @@ def _time(value: object, name: str) -> datetime:
         raise CPISettlementReconciliationError(f"{name} is malformed") from exc
 
 
-def _payload(raw: bytes) -> dict[str, Any]:
+def _reject_duplicate_json_keys(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
+    result: dict[str, Any] = {}
+    for key, value in pairs:
+        if key in result:
+            raise CPISettlementReconciliationError("duplicate JSON object key")
+        result[key] = value
+    return result
+
+
+def _reject_json_constant(value: str) -> Any:
+    raise CPISettlementReconciliationError(f"non-standard JSON constant: {value}")
+
+
+def _payload(raw: bytes, role: KalshiEndpointRole) -> dict[str, Any]:
     try:
-        value = json.loads(raw.decode("utf-8"))
+        value = json.loads(
+            raw.decode("utf-8"),
+            object_pairs_hook=_reject_duplicate_json_keys,
+            parse_constant=_reject_json_constant,
+        )
     except (UnicodeDecodeError, json.JSONDecodeError) as exc:
         raise CPISettlementReconciliationError("raw Kalshi artifact is not valid JSON") from exc
     if type(value) is not dict:
         raise CPISettlementReconciliationError("raw Kalshi artifact must be a JSON object")
-    nested = value.get("market") or value.get("event") or value.get("series")
-    return nested if type(nested) is dict else value
+    wrapper = {
+        KalshiEndpointRole.HISTORICAL_MARKET: "market",
+        KalshiEndpointRole.EVENT: "event",
+        KalshiEndpointRole.SERIES: "series",
+    }.get(role)
+    if wrapper is None:
+        raise CPISettlementReconciliationError("JSON payload role is unsupported")
+    allowed_keys = {wrapper}
+    if role is KalshiEndpointRole.EVENT:
+        allowed_keys.add("markets")
+    if set(value) != allowed_keys or type(value.get(wrapper)) is not dict:
+        raise CPISettlementReconciliationError("raw Kalshi artifact wrapper is ambiguous")
+    if role is KalshiEndpointRole.EVENT and type(value.get("markets")) is not list:
+        raise CPISettlementReconciliationError("event response markets field is malformed")
+    return cast(dict[str, Any], value[wrapper])
 
 
 def _fixture_path(entry: _FixtureManifest) -> Path:
@@ -344,19 +374,53 @@ def _fixture_path(entry: _FixtureManifest) -> Path:
     return Path(__file__).with_name("fixtures") / "cpi_p7_public" / filename
 
 
+def _canonical_url(
+    role: KalshiEndpointRole,
+    *,
+    expected_ticker: str | None,
+    expected_event_ticker: str | None,
+    expected_series_ticker: str,
+) -> str:
+    if role is KalshiEndpointRole.CONTRACT_TERMS:
+        return CONTRACT_TERMS_URL
+    if role is KalshiEndpointRole.HISTORICAL_MARKET:
+        if expected_ticker is None or not re.fullmatch(r"KXCPI-[A-Za-z0-9_.-]+", expected_ticker):
+            raise CPISettlementReconciliationError("historical market selector is invalid")
+        return f"{KALSHI_BASE}/historical/markets/{expected_ticker}"
+    if role is KalshiEndpointRole.EVENT:
+        if expected_event_ticker is None or not re.fullmatch(
+            r"KXCPI-[A-Za-z0-9_.-]+", expected_event_ticker
+        ):
+            raise CPISettlementReconciliationError("event selector is invalid")
+        return f"{KALSHI_BASE}/events/{expected_event_ticker}"
+    if role is KalshiEndpointRole.SERIES and expected_series_ticker == "KXCPI":
+        return f"{KALSHI_BASE}/series/KXCPI"
+    raise CPISettlementReconciliationError("KXCPI series selector is invalid")
+
+
 def _validate_response(
-    response: _PublicHTTPResponse, role: KalshiEndpointRole | None = None
+    response: _PublicHTTPResponse,
+    role: KalshiEndpointRole,
+    *,
+    expected_ticker: str | None,
+    expected_event_ticker: str | None,
+    expected_series_ticker: str,
 ) -> None:
     if type(response) is not _PublicHTTPResponse:
         raise CPISettlementReconciliationError("unreviewed HTTP response type")
     parsed = urlsplit(response.request_url)
-    terms_url = (
-        role is KalshiEndpointRole.CONTRACT_TERMS
-        and parsed.hostname == "assets.kalshi.com"
-        and parsed.path == "/contract_terms/CPI.pdf"
+    if parsed.username is not None or parsed.password is not None:
+        raise CPISettlementReconciliationError("userinfo is forbidden in Kalshi URLs")
+    if parsed.port is not None or parsed.query or parsed.fragment:
+        raise CPISettlementReconciliationError("noncanonical Kalshi URL components are forbidden")
+    canonical_url = _canonical_url(
+        role,
+        expected_ticker=expected_ticker,
+        expected_event_ticker=expected_event_ticker,
+        expected_series_ticker=expected_series_ticker,
     )
-    if parsed.scheme != "https" or (parsed.hostname != KALSHI_HOST and not terms_url):
-        raise CPISettlementReconciliationError("Kalshi response escaped reviewed HTTPS host")
+    if response.request_url != canonical_url:
+        raise CPISettlementReconciliationError("Kalshi URL does not match reviewed endpoint")
     if response.method != HTTP_METHOD or response.status != SUCCESS_STATUS:
         raise CPISettlementReconciliationError("only reviewed successful GET responses are allowed")
     if response.redirected or response.used_credentials or response.used_cookies:
@@ -370,10 +434,6 @@ def _validate_response(
     _utc(response.acquired_at, "acquisition timestamp")
     if role is KalshiEndpointRole.CONTRACT_TERMS:
         return
-    if parsed.path != "/trade-api/v2/series/KXCPI" and not re.fullmatch(
-        r"/trade-api/v2/(?:events|historical/markets)/[A-Za-z0-9_.-]+", parsed.path
-    ):
-        raise CPISettlementReconciliationError("endpoint path is not reviewed")
 
 
 @dataclass(frozen=True, slots=True, init=False)
@@ -409,7 +469,13 @@ class KalshiHistoricalAcquisitionEvidence:
             raise CPISettlementReconciliationError(
                 "Kalshi acquisition requires reviewed transport capability"
             )
-        _validate_response(response, role)
+        _validate_response(
+            response,
+            role,
+            expected_ticker=expected_ticker,
+            expected_event_ticker=expected_event_ticker,
+            expected_series_ticker=expected_series_ticker,
+        )
         digest = hashlib.sha256(response.raw_body).hexdigest()
         for name, value in {
             "fixture_id": fixture_id,
@@ -493,17 +559,18 @@ def acquire_kalshi_historical_get(
     The caller supplies only a reviewed endpoint selector. Raw bytes, status,
     redirects, cookies, and acquisition time come from this transport seam.
     """
-    parsed = urlsplit(request_url)
-    allowed_terms = role is KalshiEndpointRole.CONTRACT_TERMS
-    if (
-        parsed.scheme != "https"
-        or parsed.query
-        or (
-            parsed.hostname != KALSHI_HOST
-            and not (allowed_terms and parsed.hostname == "assets.kalshi.com")
-        )
-    ):
+    canonical_url = _canonical_url(
+        role,
+        expected_ticker=expected_ticker,
+        expected_event_ticker=expected_event_ticker,
+        expected_series_ticker="KXCPI",
+    )
+    if request_url != canonical_url:
         raise CPISettlementReconciliationError("request escaped the reviewed Kalshi GET policy")
+    parsed = urlsplit(canonical_url)
+    if parsed.hostname is None:
+        raise CPISettlementReconciliationError("reviewed Kalshi URL has no hostname")
+    allowed_terms = role is KalshiEndpointRole.CONTRACT_TERMS
     connection = http.client.HTTPSConnection(parsed.hostname, parsed.port or 443, timeout=10.0)
     try:
         connection.request(
@@ -576,6 +643,9 @@ def validate_kalshi_acquisition(evidence: KalshiHistoricalAcquisitionEvidence) -
             evidence.acquired_at,
         ),
         evidence.endpoint_role,
+        expected_ticker=evidence.expected_ticker,
+        expected_event_ticker=evidence.expected_event_ticker,
+        expected_series_ticker=evidence.expected_series_ticker,
     )
     if hashlib.sha256(evidence.raw_response).hexdigest() != evidence.raw_artifact_hash:
         raise CPISettlementReconciliationError("Kalshi raw artifact hash changed")
@@ -610,7 +680,7 @@ def validate_kalshi_acquisition(evidence: KalshiHistoricalAcquisitionEvidence) -
         if evidence.raw_artifact_hash != KXCPI_SEMANTIC_POLICY.contract_terms_sha256:
             raise CPISettlementReconciliationError("official CPI contract terms hash changed")
         return
-    payload = _payload(evidence.raw_response)
+    payload = _payload(evidence.raw_response, evidence.endpoint_role)
     if evidence.endpoint_role is KalshiEndpointRole.HISTORICAL_MARKET and (
         payload.get("ticker") != evidence.expected_ticker
         or payload.get("event_ticker") != evidence.expected_event_ticker
@@ -698,9 +768,9 @@ def _build_specification(
     if terms_evidence.endpoint_role is not KalshiEndpointRole.CONTRACT_TERMS:
         raise CPISettlementReconciliationError("official KXCPI contract terms are required")
     market, event, series = (
-        dict(_payload(market_evidence.raw_response)),
-        dict(_payload(event_evidence.raw_response)),
-        dict(_payload(series_evidence.raw_response)),
+        dict(_payload(market_evidence.raw_response, KalshiEndpointRole.HISTORICAL_MARKET)),
+        dict(_payload(event_evidence.raw_response, KalshiEndpointRole.EVENT)),
+        dict(_payload(series_evidence.raw_response, KalshiEndpointRole.SERIES)),
     )
     if (
         market.get("event_ticker") != event.get("event_ticker")
@@ -871,7 +941,7 @@ class KalshiFinalizedEvidence:
             raise CPISettlementReconciliationError(
                 "only historical market responses determine settlement"
             )
-        payload = _payload(acquisition.raw_response)
+        payload = _payload(acquisition.raw_response, KalshiEndpointRole.HISTORICAL_MARKET)
         if (
             any(
                 key not in payload
