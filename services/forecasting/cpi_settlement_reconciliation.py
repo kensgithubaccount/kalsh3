@@ -19,6 +19,7 @@ from enum import StrEnum
 from pathlib import Path
 from typing import Any, cast
 from urllib.parse import urlsplit
+from weakref import WeakValueDictionary
 
 from services.contract_intelligence.settlement import (
     DeterminationState,
@@ -62,7 +63,18 @@ CONTRACT_TERMS_SHA256 = "2317b1d8e823082b409f6ff3415fb135804d9682681f9f92f640b36
 CONTRACT_TERMS_URL = "https://assets.kalshi.com/contract_terms/CPI.pdf"
 HISTORICAL_RULES_VERSION_PREFIX = "historical-market-rules-v1:"
 _ACQUISITION_CAPABILITY = object()
-_ISSUED_KALSHI_ACQUISITION_FINGERPRINTS: dict[int, str] = {}
+# Identity-safe issuance registry: keyed by id() (a plain int, safe to hash
+# normally) but the accept/reject decision is an `is` identity check against
+# the weakly-held value, never a value-equality or bare-address comparison.
+# A WeakValueDictionary entry is dropped the instant its referent is
+# garbage-collected, so no stale entry can ever outlive the object it was
+# issued for. Because CPython only guarantees a unique id() among objects
+# with overlapping lifetimes, any object alive at validation time can only
+# find its own entry (or none) here -- never another live object's entry,
+# and never a resurrected dead one. See docs/reviews/CPI_E1_P7R_ISSUANCE_IDENTITY_REPAIR.md.
+_ISSUED_KALSHI_ACQUISITION_EVIDENCE: WeakValueDictionary[
+    int, KalshiHistoricalAcquisitionEvidence
+] = WeakValueDictionary()
 
 
 class CPISettlementReconciliationError(ValueError):
@@ -438,7 +450,7 @@ def _validate_response(
         return
 
 
-@dataclass(frozen=True, slots=True, init=False)
+@dataclass(frozen=True, slots=True, init=False, weakref_slot=True)
 class KalshiHistoricalAcquisitionEvidence:
     """Issuer-controlled exact response from the reviewed public Kalshi API."""
 
@@ -502,7 +514,7 @@ class KalshiHistoricalAcquisitionEvidence:
         fingerprint = _kalshi_acquisition_fingerprint(self)
         object.__setattr__(self, "issuance_fingerprint", fingerprint)
         object.__setattr__(self, "evidence_id", fingerprint)
-        _ISSUED_KALSHI_ACQUISITION_FINGERPRINTS[id(self)] = fingerprint
+        _ISSUED_KALSHI_ACQUISITION_EVIDENCE[id(self)] = self
 
 
 def _kalshi_acquisition_fingerprint(
@@ -657,7 +669,7 @@ def validate_kalshi_acquisition(evidence: KalshiHistoricalAcquisitionEvidence) -
     if (
         evidence.issuance_fingerprint != expected_fingerprint
         or evidence.evidence_id != expected_fingerprint
-        or _ISSUED_KALSHI_ACQUISITION_FINGERPRINTS.get(id(evidence)) != expected_fingerprint
+        or _ISSUED_KALSHI_ACQUISITION_EVIDENCE.get(id(evidence)) is not evidence
     ):
         raise CPISettlementReconciliationError(
             "unissued, reconstructed, or mutated Kalshi acquisition evidence"
