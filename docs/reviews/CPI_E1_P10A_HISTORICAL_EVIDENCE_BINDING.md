@@ -117,6 +117,21 @@ revised historical value is manufactured as a feature.
 
 Verdict: **PREDICTOR EVIDENCE ACQUISITION REQUIRED**.
 
+The acquisition specification is deliberately provider-neutral: one professional
+CPI consensus or nowcast family with one immutable artifact per release event.
+Each artifact must contain the exact reference month, forecast value and unit,
+public source URL, raw response bytes or durable receipt, raw SHA-256,
+publication timestamp with timezone, retrieval timestamp, and a provenance
+record proving the value was public no later than that event's market cutoff.
+The provider must cover the repaired event window, preserve original vintages
+without later revisions, and expose enough prior releases for a chronological
+rolling evaluation. A candidate is rejected if any vintage timestamp is
+caller-authored, only recoverable from a current snapshot, published after the
+cutoff, revised without the original value, or ambiguous at the reference-month
+level. Acquisition should first freeze a small coverage receipt and artifact
+inventory; only after independent review may a separate milestone preregister
+the rolling baseline and challenger.
+
 The smallest next profitability-relevant action is to acquire and freeze one
 small, independently timestamped contemporaneous predictor family for the same
 42-event domain, then preregister a rolling prior-release baseline and one
