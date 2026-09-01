@@ -425,9 +425,15 @@
       "underlying_event_id": "kalshi:KXCPI-26MAY"
     }
   ],
-  "final_manifest_sha256": "290c8697a4fa3b47c67ae471619ac22ffe50cc7fc036156805ffbd5ed358a3e9",
+  "final_manifest_sha256": "bfc2aa94140249ad36f5df1e972e8a9b63f24594f9496b3f7c5123b5c9253bdf",
   "market_inventory_artifact": "market_inventory.json",
   "market_inventory_bytes": 891842,
+  "market_inventory_request": {
+    "cursor": "",
+    "cursor_exhausted": true,
+    "path": "/trade-api/v2/historical/markets?limit=1000&series_ticker=KXCPI",
+    "response_sha256": "1f0de2b979f10aa3ff378b7b27b1cc34f4729ddf02f0c45c87935fdbb10df998"
+  },
   "market_inventory_sha256": "1f0de2b979f10aa3ff378b7b27b1cc34f4729ddf02f0c45c87935fdbb10df998",
   "market_target": 474,
   "markets": [
@@ -22717,5 +22723,7 @@
   "provenance_mode": "RECONSTRUCTED_PUBLIC_HISTORICAL",
   "research_only": true,
   "retrospective_retrieval": true,
-  "schema_version": "cpi-e1-p9a-historical-price-evidence-v1"
+  "schema_version": "cpi-e1-p9a-historical-price-evidence-v1",
+  "series_membership_invariant": "INVENTORY_RESPONSE_FILTERED_BY_SERIES_TICKER_KXCPI",
+  "series_ticker": "KXCPI"
 }

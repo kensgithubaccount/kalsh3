@@ -79,12 +79,35 @@ feature rows.
 
 ## Verification
 
-Focused P9A plus historical-client and executable-quote tests: **34 passed**.
+## P9A.1 offline replay identity repair
 
-After self-containment repair, the expanded offline replay/adversarial suite:
-**21 passed**. It covers inventory mutation/deletion, semantic mutation, all
-derived quote fields, selected-candle identity, strict duplicate-key/nonfinite
-JSON rejection, retrospective-volume quarantine, and the exact 60/474 counts.
+Replay now independently rebuilds each candle request from the immutable
+inventory ticker and open/close timestamps: the 90-day bounded window, 60-minute
+interval, URL-encoded ticker path, deterministic query, and request identity
+must all match the derived row. The raw payload must be an object whose ticker
+matches the inventory ticker; the canonical raw filename and both recorded raw
+hashes are checked against the bytes.
+
+The frozen inventory provenance is retained in the derived manifest as the
+exact KXCPI-filtered request path, exhausted cursor, response hash, and the
+explicit `INVENTORY_RESPONSE_FILTERED_BY_SERIES_TICKER_KXCPI` invariant. Every
+row remains bound to a hashed row in that response and to its CPI event/market
+ticker grammar; no synthetic per-row series claim replaces the inventory
+request evidence.
+
+Before selection, replay validates every candle's object shape, integer bounds,
+strict timestamp order, 60-minute UTC grid, quote-container shape, finite
+[0,1] quote values, and non-crossed YES bid/ask pair. The selected candle
+continues to satisfy `end_period_ts < market_close`; a close-boundary candle is
+never selected. Historical raw and market-inventory bytes are unchanged.
+
+Focused P9A plus historical-client and executable-quote tests: **36 passed**.
+
+After the P9A.1 repair, the expanded offline replay/adversarial suite:
+**36 passed**. It covers inventory mutation/deletion, request reconstruction,
+series provenance, payload and candle-integrity mutations, all derived quote
+fields, selected-candle identity, strict duplicate-key/nonfinite JSON rejection,
+retrospective-volume quarantine, and the exact 60/474 counts.
 
 Full repository suite: **3052 passed, 3 skipped**. Skips are PostgreSQL tests
 because `KALSH3_TEST_POSTGRES_DSN` was not set.

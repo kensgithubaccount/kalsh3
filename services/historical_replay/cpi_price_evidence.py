@@ -3,12 +3,14 @@
 from __future__ import annotations
 
 import json
+import re
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from hashlib import sha256
 from pathlib import Path
 from typing import Any
+from urllib.parse import quote
 
 from services.contract_intelligence.specification import (
     ContractSpecificationParser,
@@ -19,6 +21,44 @@ from services.historical_replay.archive import stable_hash
 SCHEMA_VERSION = "cpi-e1-p9a-historical-price-evidence-v1"
 MAX_CANDLE_AGE_SECONDS = 60 * 60
 PROVENANCE_MODE = "RECONSTRUCTED_PUBLIC_HISTORICAL"
+PUBLIC_ORIGIN = "https://external-api.kalshi.com"
+KXCPI_INVENTORY_PATH = "/trade-api/v2/historical/markets?limit=1000&series_ticker=KXCPI"
+KXCPI_INVENTORY_CURSOR = ""
+
+
+@dataclass(frozen=True, slots=True)
+class CanonicalCandleRequest:
+    path: str
+    url: str
+    start_ts: int
+    end_ts: int
+    period_interval_minutes: int
+    request_identity: str
+
+
+def canonical_candle_request(market: dict[str, Any]) -> CanonicalCandleRequest:
+    ticker = market.get("ticker")
+    if not isinstance(ticker, str) or not ticker:
+        raise ValueError("market ticker is malformed")
+    try:
+        opened = int(
+            datetime.fromisoformat(str(market["open_time"]).replace("Z", "+00:00")).timestamp()
+        )
+        close = int(
+            datetime.fromisoformat(str(market["close_time"]).replace("Z", "+00:00")).timestamp()
+        )
+    except (KeyError, TypeError, ValueError, OverflowError) as exc:
+        raise ValueError("market timestamps are malformed") from exc
+    if opened >= close:
+        raise ValueError("market open must precede close")
+    start = max(opened, close - int(timedelta(days=90).total_seconds()))
+    path = (
+        f"/trade-api/v2/historical/markets/{quote(ticker, safe='')}/candlesticks"
+        f"?start_ts={start}&end_ts={close}&period_interval=60"
+    )
+    return CanonicalCandleRequest(
+        path, PUBLIC_ORIGIN + path, start, close, 60, stable_hash((path, start, close, 60))
+    )
 
 
 def strict_json_loads(raw: bytes | str) -> Any:
@@ -60,6 +100,56 @@ def _nonnegative_decimal(value: object, field: str) -> Decimal | None:
     if not result.is_finite() or result < 0:
         raise ValueError(f"{field} is negative or non-finite")
     return result
+
+
+def validate_candle_payload(
+    payload: object,
+    *,
+    market_ticker: str,
+    request_start_ts: int,
+    request_end_ts: int,
+    period_interval_minutes: int,
+) -> list[dict[str, Any]]:
+    if not isinstance(payload, dict) or payload.get("ticker") != market_ticker:
+        raise ValueError("candle payload ticker mismatch")
+    candles = payload.get("candlesticks")
+    if not isinstance(candles, list):
+        raise ValueError("candle payload candlesticks are malformed")
+    previous: int | None = None
+    output: list[dict[str, Any]] = []
+    for candle in candles:
+        if not isinstance(candle, dict):
+            raise ValueError("candle is malformed")
+        period = candle.get("end_period_ts")
+        if isinstance(period, bool) or not isinstance(period, int):
+            raise ValueError("candle timestamp is malformed")
+        if not request_start_ts <= period <= request_end_ts:
+            raise ValueError("candle timestamp is outside request bounds")
+        if previous is not None and period <= previous:
+            raise ValueError("candle timestamps are not strictly ordered")
+        if period % (period_interval_minutes * 60) != 0:
+            raise ValueError("candle timestamp is off-grid")
+        previous = period
+        for field in ("yes_bid", "yes_ask"):
+            quote_container = candle.get(field)
+            if quote_container is not None and not isinstance(quote_container, dict):
+                raise ValueError("quote container is malformed")
+            if isinstance(quote_container, dict):
+                _decimal(quote_container.get("close"), field)
+        bid = (
+            None
+            if not isinstance(candle.get("yes_bid"), dict)
+            else _decimal(candle["yes_bid"].get("close"), "yes_bid")
+        )
+        ask = (
+            None
+            if not isinstance(candle.get("yes_ask"), dict)
+            else _decimal(candle["yes_ask"].get("close"), "yes_ask")
+        )
+        if bid is not None and ask is not None and bid > ask:
+            raise ValueError("YES bid exceeds ask")
+        output.append(candle)
+    return output
 
 
 @dataclass(frozen=True, slots=True)
@@ -218,6 +308,21 @@ def validate_frozen_cohort(root: Path) -> dict[str, int]:
     if sha256(inventory_raw).hexdigest() != manifest.get("market_inventory_sha256"):
         raise ValueError("market inventory hash mismatch")
     inventory = strict_json_loads(inventory_raw)
+    if (
+        manifest.get("series_ticker") != "KXCPI"
+        or manifest.get("series_membership_invariant")
+        != "INVENTORY_RESPONSE_FILTERED_BY_SERIES_TICKER_KXCPI"
+        or manifest.get("market_inventory_request")
+        != {
+            "path": KXCPI_INVENTORY_PATH,
+            "cursor": KXCPI_INVENTORY_CURSOR,
+            "cursor_exhausted": True,
+            "response_sha256": manifest.get("market_inventory_sha256"),
+        }
+    ):
+        raise ValueError("frozen KXCPI inventory provenance is invalid")
+    if not isinstance(inventory, dict) or inventory.get("cursor") not in (None, ""):
+        raise ValueError("frozen KXCPI inventory cursor is not exhausted")
     inventory_rows = inventory.get("markets") if isinstance(inventory, dict) else None
     if not isinstance(inventory_rows, list) or len(inventory_rows) != 474:
         raise ValueError("frozen market inventory is incomplete")
@@ -256,6 +361,33 @@ def validate_frozen_cohort(root: Path) -> dict[str, int]:
             raise ValueError("market inventory row hash mismatch")
         if row.get("event_ticker") != inventory_row.get("event_ticker"):
             raise ValueError("market inventory event binding mismatch")
+        if not re.fullmatch(
+            r"(?:KXCPI|CPI)-[0-9]{2}[A-Z]{3}(?:-T(?:N?[0-9]+(?:\.[0-9]+)?|-[0-9]+(?:\.[0-9]+)?))?",
+            str(row.get("market_ticker")),
+        ):
+            raise ValueError("market ticker grammar is invalid")
+        if not re.fullmatch(r"(?:KXCPI|CPI)-[0-9]{2}[A-Z]{3}", str(row.get("event_ticker"))):
+            raise ValueError("event ticker grammar is invalid")
+        if (
+            not isinstance(inventory_row.get("rules_primary"), str)
+            or "CPI" not in inventory_row["rules_primary"]
+        ):
+            raise ValueError("inventory row is not a CPI series member")
+        request = canonical_candle_request(inventory_row)
+        if any(
+            row.get(field) != value
+            for field, value in (
+                ("request_path", request.path),
+                ("request_url", request.url),
+                ("request_start_ts", request.start_ts),
+                ("request_end_ts", request.end_ts),
+                ("period_interval_minutes", request.period_interval_minutes),
+                ("request_identity", request.request_identity),
+            )
+        ):
+            raise ValueError("canonical candle request identity mismatch")
+        if row.get("raw_artifact") != f"raw/{row.get('market_ticker')}.json":
+            raise ValueError("raw artifact path is detached from market ticker")
         row_open = datetime.fromisoformat(str(row["market_open"]).replace("Z", "+00:00"))
         inventory_open = datetime.fromisoformat(
             str(inventory_row["open_time"]).replace("Z", "+00:00")
@@ -302,12 +434,17 @@ def validate_frozen_cohort(root: Path) -> dict[str, int]:
         if not raw_path.is_file():
             raise ValueError(f"missing raw artifact: {raw_path}")
         raw = raw_path.read_bytes()
-        if sha256(raw).hexdigest() != row.get("raw_sha256"):
+        raw_hash = sha256(raw).hexdigest()
+        if raw_hash != row.get("raw_sha256") or raw_hash != row.get("raw_artifact_sha256"):
             raise ValueError(f"raw artifact hash mismatch: {raw_path}")
         payload = strict_json_loads(raw)
-        candles = payload.get("candlesticks")
-        if not isinstance(candles, list) or any(not isinstance(candle, dict) for candle in candles):
-            raise ValueError("frozen candle response shape is invalid")
+        candles = validate_candle_payload(
+            payload,
+            market_ticker=str(row["market_ticker"]),
+            request_start_ts=request.start_ts,
+            request_end_ts=request.end_ts,
+            period_interval_minutes=request.period_interval_minutes,
+        )
         selected_end = row.get("candle_end_period_ts")
         selected_hash = row.get("selected_candle_hash")
         cutoff = int(

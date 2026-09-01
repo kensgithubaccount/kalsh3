@@ -42,12 +42,12 @@ def test_builds_strict_preclose_complement_quotes() -> None:
 
 
 def test_postclose_candle_is_explicit_missing_evidence() -> None:
-    postclose = candle(end=int(datetime(2025, 8, 12, 12, 26, tzinfo=UTC).timestamp()))
+    postclose = candle(end=1_755_003_600)
     result = build_price_evidence(
         market(),
         request_path="/x",
-        request_start_ts=1,
-        request_end_ts=2,
+        request_start_ts=0,
+        request_end_ts=2_000_000_000,
         raw_body=b"{}",
         retrieved_at=datetime(2026, 1, 1, tzinfo=UTC),
         candles=[postclose],
@@ -63,8 +63,8 @@ def test_boundary_quotes_do_not_claim_both_executable_sides() -> None:
     result = build_price_evidence(
         market(),
         request_path="/x",
-        request_start_ts=1,
-        request_end_ts=2,
+        request_start_ts=0,
+        request_end_ts=2_000_000_000,
         raw_body=b"{}",
         retrieved_at=datetime(2026, 1, 1, tzinfo=UTC),
         candles=[boundary],

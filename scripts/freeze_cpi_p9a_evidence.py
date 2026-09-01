@@ -8,6 +8,7 @@ import json
 import shutil
 from hashlib import sha256
 from pathlib import Path
+from typing import cast
 
 from services.contract_intelligence.specification import (
     ContractSpecificationParser,
@@ -15,9 +16,13 @@ from services.contract_intelligence.specification import (
 )
 from services.historical_replay.archive import stable_hash
 from services.historical_replay.cpi_price_evidence import (
+    KXCPI_INVENTORY_CURSOR,
+    KXCPI_INVENTORY_PATH,
     PROVENANCE_MODE,
     SCHEMA_VERSION,
+    canonical_candle_request,
     strict_json_loads,
+    validate_candle_payload,
 )
 
 CANONICAL_BASE = "7aa43ea605fb44bc7db2572385bc61382ad5d5e1"
@@ -53,23 +58,22 @@ def freeze(runtime: Path, destination: Path, inventory_path: Path) -> dict[str, 
         destination_raw = raw_destination / raw_name
         shutil.copyfile(source_raw, destination_raw)
         payload = strict_json_loads(source_raw.read_bytes())
-        candles = payload["candlesticks"]
+        inventory_row = inventory_by_ticker.get(source_row["market_ticker"])
+        if inventory_row is None:
+            raise ValueError("runtime market is absent from inventory")
+        request = canonical_candle_request(inventory_row)
+        candles = validate_candle_payload(
+            payload,
+            market_ticker=inventory_row["ticker"],
+            request_start_ts=request.start_ts,
+            request_end_ts=request.end_ts,
+            period_interval_minutes=request.period_interval_minutes,
+        )
         selected_end = source_row["candle_end_period_ts"]
         selected = next(
             (candle for candle in candles if candle.get("end_period_ts") == selected_end),
             None,
         )
-        request_identity = stable_hash(
-            (
-                source_row["request_path"],
-                source_row["request_start_ts"],
-                source_row["request_end_ts"],
-                60,
-            )
-        )
-        inventory_row = inventory_by_ticker.get(source_row["market_ticker"])
-        if inventory_row is None:
-            raise ValueError("runtime market is absent from inventory")
         semantics = ContractSpecificationParser().parse(
             SemanticsInputBundle.build(
                 inventory_row,
@@ -87,8 +91,12 @@ def freeze(runtime: Path, destination: Path, inventory_path: Path) -> dict[str, 
                 "canonical_base": CANONICAL_BASE,
                 "provenance_mode": PROVENANCE_MODE,
                 "endpoint_source_role": "KALSHI_PUBLIC_HISTORICAL_CANDLESTICKS",
-                "request_url": PUBLIC_ORIGIN + source_row["request_path"],
-                "request_identity": request_identity,
+                "request_path": request.path,
+                "request_url": request.url,
+                "request_start_ts": request.start_ts,
+                "request_end_ts": request.end_ts,
+                "period_interval_minutes": request.period_interval_minutes,
+                "request_identity": request.request_identity,
                 "market_row_hash": stable_hash(inventory_row),
                 "comparator": semantics.comparator.name,
                 "comparator_symbol": semantics.comparator.value,
@@ -121,6 +129,14 @@ def freeze(runtime: Path, destination: Path, inventory_path: Path) -> dict[str, 
         "event_target": 60,
         "market_target": 474,
         "market_inventory_artifact": "market_inventory.json",
+        "series_ticker": "KXCPI",
+        "series_membership_invariant": "INVENTORY_RESPONSE_FILTERED_BY_SERIES_TICKER_KXCPI",
+        "market_inventory_request": {
+            "path": KXCPI_INVENTORY_PATH,
+            "cursor": KXCPI_INVENTORY_CURSOR,
+            "cursor_exhausted": True,
+            "response_sha256": inventory_hash,
+        },
         "market_inventory_sha256": inventory_hash,
         "market_inventory_bytes": len(inventory_raw),
         "original_runtime_manifest_sha256": RUNTIME_HASH,
@@ -148,8 +164,8 @@ if __name__ == "__main__":
     print(
         json.dumps(
             {
-                "events": len(result["events"]),
-                "siblings": len(result["markets"]),
+                "events": len(cast(list[object], result["events"])),
+                "siblings": len(cast(list[object], result["markets"])),
                 "final_manifest_sha256": result["final_manifest_sha256"],
             }
         )

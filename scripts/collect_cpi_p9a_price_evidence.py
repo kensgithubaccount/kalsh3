@@ -8,12 +8,16 @@ import hashlib
 import json
 import time
 from collections import Counter, defaultdict
-from datetime import datetime, timedelta
+from datetime import datetime
 from pathlib import Path
-from urllib.parse import quote
 
 from services.historical_replay.archive import stable_hash
-from services.historical_replay.cpi_price_evidence import SCHEMA_VERSION, build_price_evidence
+from services.historical_replay.cpi_price_evidence import (
+    SCHEMA_VERSION,
+    build_price_evidence,
+    canonical_candle_request,
+    validate_candle_payload,
+)
 from services.market_universe import public_read
 
 SERIES = "KXCPI"
@@ -47,27 +51,25 @@ def collect(output: Path) -> dict[str, object]:
     for market in markets:
         event = str(market["event_ticker"])
         ticker = str(market["ticker"])
-        close = int(
-            datetime.fromisoformat(str(market["close_time"]).replace("Z", "+00:00")).timestamp()
-        )
-        opened = int(
-            datetime.fromisoformat(str(market["open_time"]).replace("Z", "+00:00")).timestamp()
-        )
-        start = max(opened, close - int(timedelta(days=90).total_seconds()))
-        path = (
-            f"{public_read.BASE}/historical/markets/{quote(ticker, safe='')}/candlesticks"
-            f"?start_ts={start}&end_ts={close}&period_interval={INTERVAL}"
-        )
+        request = canonical_candle_request(market)
+        path = request.path
         raw, observed = _request(path)
         payload = json.loads(raw)
         candles = payload.get("candlesticks")
         if not isinstance(candles, list) or any(not isinstance(candle, dict) for candle in candles):
             raise RuntimeError(f"malformed candles for {ticker}")
+        candles = validate_candle_payload(
+            payload,
+            market_ticker=ticker,
+            request_start_ts=request.start_ts,
+            request_end_ts=request.end_ts,
+            period_interval_minutes=request.period_interval_minutes,
+        )
         evidence = build_price_evidence(
             market,
             request_path=path,
-            request_start_ts=start,
-            request_end_ts=close,
+            request_start_ts=request.start_ts,
+            request_end_ts=request.end_ts,
             raw_body=raw,
             retrieved_at=observed,
             candles=candles,
@@ -112,6 +114,8 @@ def collect(output: Path) -> dict[str, object]:
         "series_ticker": SERIES,
         "research_only": True,
         "production_influence": "0",
+        "request_url": request.url,
+        "request_identity": request.request_identity,
         "market_target": 474,
         "event_target": 60,
         "persisted_market_count": len(rows),
