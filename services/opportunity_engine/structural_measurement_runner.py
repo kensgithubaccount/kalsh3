@@ -47,7 +47,7 @@ from services.market_universe.collect import (
     OPEN_NON_MVE_V2,
     PublicUniverseTransport,
 )
-from services.market_universe.domain import Event, Market, UniverseValidationError
+from services.market_universe.domain import Event, Market, UniverseValidationError, stable_hash
 from services.market_universe.market_snapshot import acquire_market_snapshot
 from services.market_universe.orderbook_snapshot import (
     acquire_orderbook_snapshot,
@@ -73,6 +73,8 @@ from .structural import (
 )
 from .structural_measurement import (
     LeadObservation,
+    MeasurementState,
+    record_ambiguous,
     record_disappeared,
     record_discovery_only,
     record_exact_confirmation,
@@ -421,6 +423,11 @@ class ScanCycleResult:
     independent_cohorts_observed: int
     discovery_leads: int
     observations: tuple[LeadObservation, ...]
+    refresh_complete: bool = True
+
+
+def _new_persistence_episode(relationship: str, scan_run_id: str) -> str:
+    return stable_hash(("m27b2-persistence-episode-v1", relationship, scan_run_id))
 
 
 def run_scan_cycle(
@@ -449,6 +456,9 @@ def run_scan_cycle(
     """
     scan_run_id = new_scan_run_id()
     refresh = refresh_universe(archive_path, transport=universe_transport, clock=clock)
+    if not refresh.complete:
+        # A successful prefix is not evidence that previously observed relationships disappeared.
+        return ScanCycleResult(scan_run_id, 0, 0, (), refresh_complete=False)
     scan = run_discovery(refresh.repo, source_authority=source_authority)
     now = clock()
 
@@ -457,10 +467,15 @@ def run_scan_cycle(
     }
 
     observations: list[LeadObservation] = []
+    observed_relationships: set[str] = set()
     for rel_id, lead in current_by_relationship.items():
+        previous_rows = store.for_relationship(rel_id)
+        observation_relationship_id = rel_id
+        if previous_rows and previous_rows[-1].state is MeasurementState.DISAPPEARED:
+            observation_relationship_id = _new_persistence_episode(rel_id, scan_run_id)
         observation = attempt_exact_confirmation(
             lead,
-            relationship_id_value=rel_id,
+            relationship_id_value=observation_relationship_id,
             scan_run_id=scan_run_id,
             repo=refresh.repo,
             requested_quantity=requested_quantity,
@@ -471,16 +486,40 @@ def run_scan_cycle(
         )
         store.append(observation)
         observations.append(observation)
+        observed_relationships.add(observation_relationship_id)
 
+    ambiguous_routes = {
+        route
+        for route in scan.routes
+        if any(
+            reason.value in ("DUPLICATE_THRESHOLD", "MIXED_CUSTOM_STRIKE_PRESENCE")
+            for reason in route.reasons
+        )
+    }
     known_relationships = set(store.relationship_ids())
-    for rel_id in known_relationships - set(current_by_relationship):
+    for rel_id in known_relationships - observed_relationships:
         previous_rows = store.for_relationship(rel_id)
         if not previous_rows:
             continue  # pragma: no cover - relationship_ids() only returns rows that exist
         previous = previous_rows[-1]
         if previous.state.value in ("DISAPPEARED",):
             continue  # a closed lifetime is never re-closed
-        observation = record_disappeared(previous, scan_run_id=scan_run_id, observed_at=now)
+        matching_ambiguous_routes = [
+            route
+            for route in ambiguous_routes
+            if route.event_ticker == previous.event_ticker
+            and route.market_ticker
+            in {previous.broad_market_ticker, previous.narrow_market_ticker}
+        ]
+        if len({route.market_ticker for route in matching_ambiguous_routes}) >= 2:
+            observation = record_ambiguous(
+                previous,
+                scan_run_id=scan_run_id,
+                observed_at=now,
+                blocker_reason="canonical structural cohort became ambiguous",
+            )
+        else:
+            observation = record_disappeared(previous, scan_run_id=scan_run_id, observed_at=now)
         store.append(observation)
         observations.append(observation)
 

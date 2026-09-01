@@ -129,7 +129,7 @@ substitute for either.
 | `AFTER_COST_POSITIVE_RESEARCH` | Same confirmation path as `EXACT_CONFIRMED`, with a positive fee-adjusted gap. | `formula_adjusted_structural_gap > 0`. Still never a profitability claim — no guaranteed or final net profit exists anywhere in this pipeline. |
 | `STALE` | The relationship was previously observed with real evidence; this cycle's revisit attempt itself produced evidence that failed an independent freshness check. | Implemented and tested (`record_stale`); the live runner currently folds an orderbook staleness failure into `DISCOVERY_ONLY` with a descriptive blocker rather than this more specific state — see Known scope limits. |
 | `DISAPPEARED` | The canonical scan no longer reproduces any lead for this relationship. | `run_scan_cycle` compares the current scan's relationship set against every previously tracked, not-yet-closed relationship; a closed lifetime is never re-closed. |
-| `AMBIGUOUS` | The cohort backing a previously tracked relationship became structurally ambiguous (e.g. a later `DUPLICATE_THRESHOLD`/`MIXED_CUSTOM_STRIKE_PRESENCE` abstention) rather than cleanly absent. | Implemented and tested (`record_ambiguous`) as a domain-layer constructor; the live runner's reconciliation loop does not yet auto-select it over `DISAPPEARED` — see Known scope limits. |
+| `AMBIGUOUS` | The cohort backing a previously tracked relationship became structurally ambiguous (e.g. a later `DUPLICATE_THRESHOLD`/`MIXED_CUSTOM_STRIKE_PRESENCE` abstention) rather than cleanly absent. | The live runner selects `AMBIGUOUS` when both tracked legs are present in canonical ambiguous routes; it never records `DISAPPEARED` for that case. |
 
 `LeadObservation.__post_init__` enforces the above as invariants (not merely documentation): e.g.
 constructing an `EXACT_CONFIRMED`/`AFTER_COST_POSITIVE_RESEARCH` observation without
@@ -201,11 +201,9 @@ Missing-evidence reasons are aggregated by exact blocker string for direct inspe
   gross gap directly from `normalize_live_orderbook` + `walk_depth` (both fee-independent) before
   fee resolution is attempted, and route a staleness failure specifically rather than through the
   generic acquisition-blocked path.
-- **`AMBIGUOUS` auto-detection is not yet wired into `run_scan_cycle`.** The reconciliation loop
-  currently records every relationship missing from the current scan as `DISAPPEARED`; it does not
-  yet inspect whether the underlying cohort became `DUPLICATE_THRESHOLD`/
-  `MIXED_CUSTOM_STRIKE_PRESENCE`-ambiguous rather than cleanly absent. `record_ambiguous` is ready
-  to receive that signal once that inspection is added.
+- An incomplete universe refresh fails closed: the cycle returns without discovery, observation
+  persistence, or disappearance writes. A relationship returning after `DISAPPEARED` receives a
+  new persistence-episode identity, so lifetimes cannot cross the closed observation gap.
 - **No empirical lead-frequency, lead-lifetime, or after-cost-executability result exists yet.**
   This checkpoint adds only the instrumentation; it has not been run against live data. The
   smallest trustworthy next step is exactly what the M27B.2 objective describes: run the CLI

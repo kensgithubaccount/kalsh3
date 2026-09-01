@@ -502,6 +502,27 @@ def test_compute_lifetime_closes_on_disappearance() -> None:
     assert lifetime.consecutive_observations == 0
 
 
+def test_compute_lifetime_rejects_observations_after_a_closed_gap() -> None:
+    lead, _low, _high = inverted_lead()
+    first = record_discovery_only(
+        lead,
+        relationship_id_value=relationship_id(lead),
+        scan_run_id="scan-1",
+        observed_at=NOW,
+        blocker_reason="initial blocker",
+    )
+    gone = record_disappeared(first, scan_run_id="scan-2", observed_at=NOW + timedelta(minutes=15))
+    returned = record_discovery_only(
+        lead,
+        relationship_id_value=relationship_id(lead),
+        scan_run_id="scan-3",
+        observed_at=NOW + timedelta(minutes=30),
+        blocker_reason="returned",
+    )
+    with pytest.raises(OpportunityError, match="closed observation gap"):
+        compute_lifetime([first, gone, returned])
+
+
 def test_compute_lifetime_rejects_mixed_relationships() -> None:
     lead, _low, _high = inverted_lead()
     other_lead, _l2, _h2 = inverted_lead()

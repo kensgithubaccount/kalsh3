@@ -382,6 +382,100 @@ def test_run_scan_cycle_closes_a_lead_that_disappears_on_a_later_scan(tmp_path: 
     assert history[-1].observed_at == NOW + timedelta(minutes=15)
 
 
+def test_incomplete_refresh_fails_closed_without_observation_or_disappearance_writes(
+    tmp_path: Path,
+) -> None:
+    class IncompleteTransport(FakeUniverseTransport):
+        def get(self, path: str, *, timeout_seconds: float) -> dict[str, Any]:
+            if path.startswith("/trade-api/v2/markets") and "cursor=" in path:
+                raise RuntimeError("refresh interrupted")
+            if path.startswith("/trade-api/v2/markets"):
+                return {"markets": [semantic_market_fields("LOW", "1")], "cursor": "next"}
+            return super().get(path, timeout_seconds=timeout_seconds)
+
+    store = StructuralMeasurementStore(tmp_path / "evidence.sqlite3")
+    result = run_scan_cycle(
+        archive_path=str(tmp_path / "archive.sqlite3"),
+        store=store,
+        source_authority="test",
+        universe_transport=IncompleteTransport([], [raw_event()]),
+        clock=lambda: NOW,
+    )
+    assert not result.refresh_complete
+    assert result.observations == ()
+    assert store.all_observations() == []
+
+
+def test_ambiguous_cohort_is_not_recorded_as_disappeared(tmp_path: Path) -> None:
+    store = StructuralMeasurementStore(tmp_path / "evidence.sqlite3")
+    first_transport = FakeUniverseTransport(
+        [
+            semantic_market_fields("LOW", "1", quote=quote_fields(".20", ".45")),
+            semantic_market_fields("HIGH", "2", quote=quote_fields(".55", ".60")),
+        ],
+        [raw_event()],
+    )
+    run_scan_cycle(
+        archive_path=str(tmp_path / "archive.sqlite3"),
+        store=store,
+        source_authority="test",
+        universe_transport=first_transport,
+        clock=lambda: NOW,
+    )
+    ambiguous_transport = FakeUniverseTransport(
+        [
+            semantic_market_fields("LOW", "1", quote=quote_fields(".20", ".45")),
+            semantic_market_fields("HIGH", "2", quote=quote_fields(".55", ".60")),
+            semantic_market_fields("DUP", "2", quote=quote_fields(".55", ".60")),
+        ],
+        [raw_event()],
+    )
+    run_scan_cycle(
+        archive_path=str(tmp_path / "archive.sqlite3"),
+        store=store,
+        source_authority="test",
+        universe_transport=ambiguous_transport,
+        clock=lambda: NOW + timedelta(minutes=15),
+    )
+    states = [observation.state for observation in store.all_observations()]
+    assert MeasurementState.AMBIGUOUS in states
+    assert MeasurementState.DISAPPEARED not in states
+
+
+def test_recurrence_after_disappearance_starts_a_new_persistence_episode(tmp_path: Path) -> None:
+    store = StructuralMeasurementStore(tmp_path / "evidence.sqlite3")
+    inverted = FakeUniverseTransport(
+        [
+            semantic_market_fields("LOW", "1", quote=quote_fields(".20", ".45")),
+            semantic_market_fields("HIGH", "2", quote=quote_fields(".55", ".60")),
+        ],
+        [raw_event()],
+    )
+    monotonic = FakeUniverseTransport(
+        [
+            semantic_market_fields("LOW", "1", quote=quote_fields(".70", ".80")),
+            semantic_market_fields("HIGH", "2", quote=quote_fields(".50", ".60")),
+        ],
+        [raw_event()],
+    )
+    kwargs = {
+        "archive_path": str(tmp_path / "a.sqlite3"),
+        "store": store,
+        "source_authority": "test",
+    }
+    run_scan_cycle(**kwargs, universe_transport=inverted, clock=lambda: NOW)
+    run_scan_cycle(
+        **kwargs, universe_transport=monotonic, clock=lambda: NOW + timedelta(minutes=15)
+    )
+    run_scan_cycle(
+        **kwargs, universe_transport=inverted, clock=lambda: NOW + timedelta(minutes=30)
+    )
+    histories = [store.for_relationship(rel) for rel in store.relationship_ids()]
+    assert len(histories) == 2
+    assert any(history[-1].state is MeasurementState.DISAPPEARED for history in histories)
+    assert any(history[-1].state is not MeasurementState.DISAPPEARED for history in histories)
+
+
 def test_run_forever_respects_max_iterations_and_never_sleeps_after_the_last_scan(
     tmp_path: Path,
 ) -> None:

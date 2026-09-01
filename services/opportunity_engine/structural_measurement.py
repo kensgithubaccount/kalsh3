@@ -507,6 +507,15 @@ def compute_lifetime(observations: Sequence[LeadObservation]) -> LeadLifetime:
     seen = [observation for observation in ordered if observation.state in _SEEN_STATES]
     if not seen:
         raise OpportunityError("a lifetime requires at least one 'seen' observation")
+    if any(
+        observation.state is MeasurementState.DISAPPEARED
+        and any(
+            later.state in _SEEN_STATES and later.observed_at > observation.observed_at
+            for later in ordered
+        )
+        for observation in ordered
+    ):
+        raise OpportunityError("lifetime cannot span a closed observation gap")
     first_seen_at = seen[0].observed_at
     last_seen_at = seen[-1].observed_at
     disappeared = [
