@@ -1,6 +1,7 @@
 import inspect
 import sqlite3
 from datetime import UTC, datetime, timedelta
+from pathlib import Path
 
 import pytest
 
@@ -79,29 +80,22 @@ def test_definition_is_separate_from_append_only_status_events(tmp_path):
     writer = ledger(path)
     writer.advance(trial.trial_id, TrialStatus.RUNNING)
     writer.advance(trial.trial_id, TrialStatus.COMPLETED)
-    with sqlite3.connect(path) as db:
-        assert db.execute("SELECT COUNT(*) FROM trial_definitions").fetchone()[0] == 1
-        assert db.execute("SELECT COUNT(*) FROM trial_status_events").fetchone()[0] == 3
-        with pytest.raises(sqlite3.IntegrityError):
-            db.execute("UPDATE trial_definitions SET reason='rewritten'")
-        with pytest.raises(sqlite3.IntegrityError):
-            db.execute("DELETE FROM trial_status_events")
+    assert len(TrialLedger(path).status_events(trial.trial_id)) == 3
     assert TrialLedger(path).get(trial.trial_id).status is TrialStatus.COMPLETED
 
 
-@pytest.mark.parametrize(
-    "table,column,value",
-    [
-        ("trial_definitions", "created_at", "1900-01-01T00:00:00.000000Z"),
-        ("trial_status_events", "event_fingerprint", "0" * 64),
-    ],
-)
-def test_corrupted_artifacts_fail_closed(tmp_path, table, column, value):
+@pytest.mark.parametrize("kind", ["definition", "event"])
+def test_corrupted_artifacts_fail_closed(tmp_path, kind):
     path = tmp_path / "ledger.sqlite"
     register(ledger(path))
-    with sqlite3.connect(path) as db:
-        db.execute(f"DROP TRIGGER {table}_no_update")
-        db.execute(f"UPDATE {table} SET {column}=?", (value,))  # noqa: S608
+    artifact = path.with_name(path.name + ".journal")
+    lines = artifact.read_text().splitlines()
+    if kind == "definition":
+        lines[0] = lines[0].replace("DEFINITION", "FORGED")
+        artifact.write_text("\n".join(lines) + "\n")
+    else:
+        lines[1] = lines[1].replace('"issuer_mac":"', '"issuer_mac":"0')
+        artifact.write_text(lines[0] + "\n" + lines[1] + "\n")
     with pytest.raises(LedgerError):
         TrialLedger(path)
 
@@ -152,3 +146,67 @@ def test_status_event_cannot_change_definition_and_safety_is_constant(tmp_path):
     assert current.trial_id == trial.trial_id
     assert current.registration_fingerprint == trial.registration_fingerprint
     assert current.research_only is True and current.production_influence == 0
+
+
+def test_services_cannot_reference_the_test_issuer_seam():
+    source = "\n".join(
+        path.read_text()
+        for path in Path("services").rglob("*.py")
+        if path.name != "trial_ledger.py"
+    )
+    assert "_for_tests" not in source
+    assert "_TrustedIssuer" not in source
+    assert "_load_or_create_key" not in source
+
+
+def test_sqlite_is_not_authority_and_copied_index_cannot_recreate_ledger(tmp_path):
+    path = tmp_path / "ledger.sqlite"
+    trial = register(ledger(path))
+    with sqlite3.connect(path) as db:
+        db.execute("INSERT INTO trial_index VALUES (?, ?)", ("forged", "sha"))
+    assert TrialLedger(path).get(trial.trial_id).trial_id == trial.trial_id
+    copied = tmp_path / "copied.sqlite"
+    copied.write_bytes(path.read_bytes())
+    with pytest.raises(LedgerError):
+        TrialLedger(copied)
+
+
+@pytest.mark.parametrize("mutation", ["delete_failed", "delete_abandoned", "truncate", "reorder"])
+def test_authenticated_completeness_detects_history_loss(tmp_path, mutation):
+    path = tmp_path / "ledger.sqlite"
+    writer = ledger(path)
+    failed = register(writer, model="failed").trial_id
+    writer.advance(failed, TrialStatus.FAILED)
+    abandoned = register(ledger(path), model="abandoned").trial_id
+    ledger(path).advance(abandoned, TrialStatus.ABANDONED)
+    journal = path.with_name(path.name + ".journal")
+    lines = journal.read_text().splitlines()
+    if mutation.startswith("delete"):
+        target = failed if mutation == "delete_failed" else abandoned
+        lines = [line for line in lines if target not in line]
+    elif mutation == "truncate":
+        lines = lines[:-1]
+    else:
+        lines[0], lines[1] = lines[1], lines[0]
+    journal.write_text("\n".join(lines) + "\n")
+    with pytest.raises(LedgerError):
+        TrialLedger(path)
+
+
+def test_checkpoint_and_mac_mutation_fail_closed(tmp_path):
+    path = tmp_path / "ledger.sqlite"
+    register(ledger(path))
+    head = path.with_name(path.name + ".head")
+    value = head.read_text()
+    head.write_text(value.replace('"last_sequence":2', '"last_sequence":1'))
+    with pytest.raises(LedgerError):
+        TrialLedger(path)
+
+
+def test_clock_regression_fails_closed(tmp_path):
+    path = tmp_path / "ledger.sqlite"
+    moments = iter((NOW, NOW - timedelta(seconds=1)))
+    writer = TrialLedger._for_tests(path, lambda: next(moments))
+    trial = register(writer)
+    with pytest.raises(LedgerError, match="backwards"):
+        writer.advance(trial.trial_id, TrialStatus.FAILED)
