@@ -202,7 +202,7 @@ def _expected_schema() -> dict[tuple[str, str], str]:
 
 
 _EXPECTED_SCHEMA = _expected_schema()
-_ACQUISITION_CAPABILITY = object()
+_UNIVERSE_ARCHIVE_CAPABILITY = object()
 
 
 class UniverseObservationArchive:
@@ -335,7 +335,7 @@ class UniverseObservationArchive:
         failure: str | None = None,
     ) -> tuple[str, tuple[str, ...]]:
         """Archive one trusted transport response (internal synchronizer API)."""
-        if capability is not _ACQUISITION_CAPABILITY:
+        if capability is not _UNIVERSE_ARCHIVE_CAPABILITY:
             raise ArchiveError("authoritative archive writes require acquisition capability")
         acquired = _utc(acquired_at, "acquired_at")
         if not provider or not endpoint or not run_id or page_number < 1:
@@ -485,7 +485,7 @@ class UniverseObservationArchive:
         failure: str | None,
         finished_at: datetime,
     ) -> str:
-        if capability is not _ACQUISITION_CAPABILITY:
+        if capability is not _UNIVERSE_ARCHIVE_CAPABILITY:
             raise ArchiveError("authoritative archive writes require acquisition capability")
         finished = _utc(finished_at, "finished_at")
         material = {
@@ -751,7 +751,7 @@ class _ArchiveAcquisitionWriter:
     __slots__ = ("__archive",)
 
     def __init__(self, archive: UniverseObservationArchive, capability: object) -> None:
-        if capability is not _ACQUISITION_CAPABILITY:
+        if capability is not _UNIVERSE_ARCHIVE_CAPABILITY:
             raise ArchiveError("archive writer capability creation rejected")
         self.__archive = archive
 
@@ -772,7 +772,7 @@ class _ArchiveAcquisitionWriter:
         failure: str | None = None,
     ) -> tuple[str, tuple[str, ...]]:
         return self.__archive._archive_acquired_page(
-            _ACQUISITION_CAPABILITY,
+            _UNIVERSE_ARCHIVE_CAPABILITY,
             provider=provider,
             endpoint=endpoint,
             parameters=parameters,
@@ -799,7 +799,7 @@ class _ArchiveAcquisitionWriter:
         finished_at: datetime,
     ) -> str:
         return self.__archive._record_run_result(
-            _ACQUISITION_CAPABILITY,
+            _UNIVERSE_ARCHIVE_CAPABILITY,
             run_id=run_id,
             completeness=completeness,
             pages=pages,
@@ -814,4 +814,4 @@ def _acquisition_writer_for_synchronizer(
     archive: UniverseObservationArchive,
 ) -> _ArchiveAcquisitionWriter:
     """Internal composition hook; not part of the archive's ordinary API."""
-    return _ArchiveAcquisitionWriter(archive, _ACQUISITION_CAPABILITY)
+    return _ArchiveAcquisitionWriter(archive, _UNIVERSE_ARCHIVE_CAPABILITY)
