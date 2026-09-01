@@ -468,10 +468,18 @@ def test_recurrence_after_disappearance_starts_a_new_persistence_episode(tmp_pat
         **kwargs, universe_transport=monotonic, clock=lambda: NOW + timedelta(minutes=15)
     )
     run_scan_cycle(**kwargs, universe_transport=inverted, clock=lambda: NOW + timedelta(minutes=30))
+    run_scan_cycle(**kwargs, universe_transport=inverted, clock=lambda: NOW + timedelta(minutes=45))
+    run_scan_cycle(**kwargs, universe_transport=inverted, clock=lambda: NOW + timedelta(minutes=60))
     histories = [store.for_relationship(rel) for rel in store.relationship_ids()]
     assert len(histories) == 2
-    assert any(history[-1].state is MeasurementState.DISAPPEARED for history in histories)
-    assert any(history[-1].state is not MeasurementState.DISAPPEARED for history in histories)
+    closed, active = sorted(histories, key=lambda history: history[0].observed_at)
+    assert closed[-1].state is MeasurementState.DISAPPEARED
+    assert [row.observed_at for row in active] == [
+        NOW + timedelta(minutes=30),
+        NOW + timedelta(minutes=45),
+        NOW + timedelta(minutes=60),
+    ]
+    assert all(row.state is not MeasurementState.DISAPPEARED for row in active)
 
 
 def test_run_forever_respects_max_iterations_and_never_sleeps_after_the_last_scan(

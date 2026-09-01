@@ -426,8 +426,8 @@ class ScanCycleResult:
     refresh_complete: bool = True
 
 
-def _new_persistence_episode(relationship: str, scan_run_id: str) -> str:
-    return stable_hash(("m27b2-persistence-episode-v1", relationship, scan_run_id))
+def _new_persistence_episode(relationship: str, sequence: int) -> str:
+    return stable_hash(("m27b2-persistence-episode-v2", relationship, sequence))
 
 
 def run_scan_cycle(
@@ -448,11 +448,10 @@ def run_scan_cycle(
     Note on current scope (see ``docs/reviews/M27B2_CONTINUOUS_STRUCTURAL_MEASUREMENT.md``): a
     relationship whose fee regime cannot be resolved, or whose fresh confirmation evidence is
     stale, is currently recorded ``DISCOVERY_ONLY`` with a descriptive blocker rather than the
-    more specific ``FEE_UNKNOWN``/``STALE`` states -- both constructors exist and are fully
-    tested, but auto-triggering them from live acquisition is the smallest next increment, not
-    yet wired here. Likewise, a relationship missing from the current scan is always recorded
-    ``DISAPPEARED``; distinguishing a genuinely ambiguous cohort (``record_ambiguous``) is the
-    same kind of already-built, not-yet-wired next increment.
+    more specific ``FEE_UNKNOWN``/``STALE`` states. Ambiguous cohorts are recorded explicitly as
+    ``AMBIGUOUS`` and censor the current persistence episode; a later unambiguous recurrence opens
+    a new stable episode. Clean absence is recorded ``DISAPPEARED`` only for an episode that was
+    not ambiguity-censored. Incomplete refreshes write no observations or lifecycle events.
     """
     scan_run_id = new_scan_run_id()
     refresh = refresh_universe(archive_path, transport=universe_transport, clock=clock)
@@ -469,10 +468,19 @@ def run_scan_cycle(
     observations: list[LeadObservation] = []
     observed_relationships: set[str] = set()
     for rel_id, lead in current_by_relationship.items():
-        previous_rows = store.for_relationship(rel_id)
-        observation_relationship_id = rel_id
-        if previous_rows and previous_rows[-1].state is MeasurementState.DISAPPEARED:
-            observation_relationship_id = _new_persistence_episode(rel_id, scan_run_id)
+        episodes = store.episodes_for_relationship(rel_id)
+        if not episodes:
+            store.register_episode(rel_id, rel_id, 1)
+            observation_relationship_id = rel_id
+        else:
+            observation_relationship_id = episodes[-1]
+            previous_rows = store.for_relationship(observation_relationship_id)
+            if previous_rows and previous_rows[-1].state in (
+                MeasurementState.DISAPPEARED,
+                MeasurementState.AMBIGUOUS,
+            ):
+                observation_relationship_id = _new_persistence_episode(rel_id, len(episodes) + 1)
+                store.register_episode(rel_id, observation_relationship_id, len(episodes) + 1)
         observation = attempt_exact_confirmation(
             lead,
             relationship_id_value=observation_relationship_id,
@@ -502,7 +510,7 @@ def run_scan_cycle(
         if not previous_rows:
             continue  # pragma: no cover - relationship_ids() only returns rows that exist
         previous = previous_rows[-1]
-        if previous.state.value in ("DISAPPEARED",):
+        if previous.state in (MeasurementState.DISAPPEARED, MeasurementState.AMBIGUOUS):
             continue  # a closed lifetime is never re-closed
         matching_ambiguous_routes = [
             route

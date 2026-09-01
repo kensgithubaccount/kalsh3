@@ -426,6 +426,8 @@ def test_record_stale_disappeared_and_ambiguous_require_a_previous_observation_a
         blocker_reason="cohort became ambiguous",
     )
     assert ambiguous.state is MeasurementState.AMBIGUOUS
+    with pytest.raises(OpportunityError, match="cannot be converted"):
+        record_disappeared(ambiguous, scan_run_id="scan-5", observed_at=NOW)
     with pytest.raises(OpportunityError, match="non-empty"):
         record_ambiguous(previous, scan_run_id="scan-4", observed_at=NOW, blocker_reason="")
 
@@ -521,6 +523,80 @@ def test_compute_lifetime_rejects_observations_after_a_closed_gap() -> None:
     )
     with pytest.raises(OpportunityError, match="closed observation gap"):
         compute_lifetime([first, gone, returned])
+
+
+def test_ambiguous_observation_censors_lifetime_without_extending_lower_bound() -> None:
+    lead, _low, _high = inverted_lead()
+    first = record_discovery_only(
+        lead,
+        relationship_id_value=relationship_id(lead),
+        scan_run_id="scan-1",
+        observed_at=NOW,
+        blocker_reason="initial blocker",
+    )
+    ambiguous = record_ambiguous(
+        first,
+        scan_run_id="scan-2",
+        observed_at=NOW + timedelta(minutes=15),
+        blocker_reason="cohort became ambiguous",
+    )
+    lifetime = compute_lifetime([first, ambiguous])
+    assert lifetime.first_seen_at == NOW
+    assert lifetime.last_seen_at == NOW
+    assert lifetime.observed_lifetime_lower_bound_seconds == Decimal(0)
+    assert lifetime.consecutive_observations == 0
+    assert lifetime.disappeared_at is None
+
+
+def test_ambiguous_interval_cannot_be_bridged_by_later_visible_observation() -> None:
+    lead, _low, _high = inverted_lead()
+    first = record_discovery_only(
+        lead,
+        relationship_id_value=relationship_id(lead),
+        scan_run_id="scan-1",
+        observed_at=NOW,
+        blocker_reason="initial blocker",
+    )
+    ambiguous = record_ambiguous(
+        first,
+        scan_run_id="scan-2",
+        observed_at=NOW + timedelta(minutes=15),
+        blocker_reason="cohort became ambiguous",
+    )
+    returned = record_discovery_only(
+        lead,
+        relationship_id_value=relationship_id(lead),
+        scan_run_id="scan-3",
+        observed_at=NOW + timedelta(minutes=30),
+        blocker_reason="returned after censoring",
+    )
+    with pytest.raises(OpportunityError, match="ambiguous observation gap"):
+        compute_lifetime([first, ambiguous, returned])
+
+
+def test_ambiguous_then_disappeared_preserves_censoring_and_excludes_ambiguity() -> None:
+    lead, _low, _high = inverted_lead()
+    first = record_discovery_only(
+        lead,
+        relationship_id_value=relationship_id(lead),
+        scan_run_id="scan-1",
+        observed_at=NOW,
+        blocker_reason="initial blocker",
+    )
+    ambiguous = record_ambiguous(
+        first,
+        scan_run_id="scan-2",
+        observed_at=NOW + timedelta(minutes=15),
+        blocker_reason="cohort became ambiguous",
+    )
+    disappeared = record_disappeared(
+        first, scan_run_id="scan-3", observed_at=NOW + timedelta(minutes=30)
+    )
+    lifetime = compute_lifetime([first, ambiguous, disappeared])
+    assert ambiguous.state is MeasurementState.AMBIGUOUS
+    assert disappeared.state is MeasurementState.DISAPPEARED
+    assert lifetime.last_seen_at == NOW
+    assert lifetime.observed_lifetime_lower_bound_seconds == Decimal(0)
 
 
 def test_compute_lifetime_rejects_mixed_relationships() -> None:

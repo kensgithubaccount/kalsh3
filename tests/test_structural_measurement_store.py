@@ -114,3 +114,22 @@ def test_store_survives_reopen(tmp_path: Path) -> None:
     reopened = StructuralMeasurementStore(path)
     [restored] = reopened.for_relationship("relationship-1")
     assert restored.observation_id == "obs-1"
+
+
+def test_episode_associations_are_durable_and_append_only(tmp_path: Path) -> None:
+    path = tmp_path / "evidence.sqlite3"
+    store = StructuralMeasurementStore(path)
+    store.register_episode("base", "episode-1", 1)
+    store.register_episode("base", "episode-2", 2)
+    assert StructuralMeasurementStore(path).episodes_for_relationship("base") == [
+        "episode-1",
+        "episode-2",
+    ]
+    with sqlite3.connect(path) as db:
+        with pytest.raises(sqlite3.IntegrityError, match="append only"):
+            db.execute(
+                "UPDATE structural_measurement_episodes SET episode_id='tampered' "
+                "WHERE episode_id='episode-1'"
+            )
+        with pytest.raises(sqlite3.IntegrityError, match="append only"):
+            db.execute("DELETE FROM structural_measurement_episodes WHERE episode_id='episode-1'")

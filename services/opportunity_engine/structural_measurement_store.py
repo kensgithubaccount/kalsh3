@@ -85,6 +85,20 @@ class StructuralMeasurementStore:
                     ON structural_lead_observations(relationship_id, observed_at);
                 CREATE INDEX IF NOT EXISTS structural_lead_observations_scan
                     ON structural_lead_observations(scan_run_id);
+                CREATE TABLE IF NOT EXISTS structural_measurement_episodes (
+                    episode_id TEXT PRIMARY KEY,
+                    base_relationship_id TEXT NOT NULL,
+                    episode_sequence INTEGER NOT NULL,
+                    UNIQUE(base_relationship_id, episode_sequence)
+                );
+                CREATE INDEX IF NOT EXISTS structural_measurement_episodes_base
+                    ON structural_measurement_episodes(base_relationship_id, episode_sequence);
+                CREATE TRIGGER IF NOT EXISTS structural_measurement_episodes_no_update
+                BEFORE UPDATE ON structural_measurement_episodes
+                BEGIN SELECT RAISE(ABORT, 'append only'); END;
+                CREATE TRIGGER IF NOT EXISTS structural_measurement_episodes_no_delete
+                BEFORE DELETE ON structural_measurement_episodes
+                BEGIN SELECT RAISE(ABORT, 'append only'); END;
                 CREATE TRIGGER IF NOT EXISTS structural_lead_observations_no_update
                 BEFORE UPDATE ON structural_lead_observations
                 BEGIN SELECT RAISE(ABORT, 'append only'); END;
@@ -93,6 +107,57 @@ class StructuralMeasurementStore:
                 BEGIN SELECT RAISE(ABORT, 'append only'); END;
                 """
             )
+            db.execute(
+                "INSERT OR IGNORE INTO structural_measurement_episodes "
+                "(episode_id,base_relationship_id,episode_sequence) "
+                "SELECT relationship_id,relationship_id,1 "
+                "FROM structural_lead_observations"
+            )
+
+    def register_episode(self, base_relationship_id: str, episode_id: str, sequence: int) -> None:
+        if (
+            type(base_relationship_id) is not str
+            or not base_relationship_id
+            or type(episode_id) is not str
+            or not episode_id
+            or type(sequence) is not int
+            or sequence < 1
+        ):
+            raise OpportunityError("episode association is invalid")
+        try:
+            with self._connect() as db:
+                db.execute(
+                    "INSERT INTO structural_measurement_episodes "
+                    "(episode_id,base_relationship_id,episode_sequence) VALUES (?,?,?) "
+                    "ON CONFLICT(episode_id) DO NOTHING",
+                    (episode_id, base_relationship_id, sequence),
+                )
+                row = db.execute(
+                    "SELECT base_relationship_id,episode_sequence "
+                    "FROM structural_measurement_episodes WHERE episode_id=?",
+                    (episode_id,),
+                ).fetchone()
+                if row is None or row[0] != base_relationship_id or row[1] != sequence:
+                    raise OpportunityError("episode association collision")
+        except sqlite3.Error as exc:
+            raise OpportunityError("episode association persistence rejected") from exc
+
+    def episodes_for_relationship(self, base_relationship_id: str) -> list[str]:
+        with self._connect() as db:
+            rows = db.execute(
+                "SELECT episode_id FROM structural_measurement_episodes "
+                "WHERE base_relationship_id=? ORDER BY episode_sequence ASC",
+                (base_relationship_id,),
+            ).fetchall()
+        return [row[0] for row in rows]
+
+    def _has_episode(self, episode_id: str) -> bool:
+        with self._connect() as db:
+            row = db.execute(
+                "SELECT 1 FROM structural_measurement_episodes WHERE episode_id=?",
+                (episode_id,),
+            ).fetchone()
+        return row is not None
 
     def _connect(self) -> sqlite3.Connection:
         db = sqlite3.connect(self.path, timeout=30)
@@ -144,6 +209,8 @@ class StructuralMeasurementStore:
         content-addressed ``observation_id`` (a collision, never silently overwritten)."""
         if not isinstance(observation, LeadObservation):
             raise OpportunityError("only LeadObservation may be persisted")
+        if not self._has_episode(observation.relationship_id):
+            self.register_episode(observation.relationship_id, observation.relationship_id, 1)
         values = self._values(observation)
         try:
             with self._connect() as db:

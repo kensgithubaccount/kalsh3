@@ -78,7 +78,6 @@ _SEEN_STATES = frozenset(
         MeasurementState.EXACT_CONFIRMED,
         MeasurementState.AFTER_COST_POSITIVE_RESEARCH,
         MeasurementState.STALE,
-        MeasurementState.AMBIGUOUS,
     }
 )
 
@@ -407,6 +406,8 @@ def record_disappeared(
     """The canonical scan no longer produces any lead for this relationship: the underlying
     ordering is no longer inverted, or one leg is no longer an eligible market. Closes the
     lifetime at the scan that first failed to reproduce it."""
+    if previous.state is MeasurementState.AMBIGUOUS:
+        raise OpportunityError("AMBIGUOUS cannot be converted to DISAPPEARED")
     fields = dict(
         relationship_id=previous.relationship_id,
         scan_run_id=scan_run_id,
@@ -473,11 +474,12 @@ class LeadLifetime:
 
     ``observed_lifetime_lower_bound``/``upper_bound`` are directly-observed bounds, never an
     estimate: the lower bound is the exact span between the first and last scan that actually saw
-    the relationship; the upper bound (when the relationship has disappeared) is the exact span
-    to the scan that first failed to reproduce it. A relationship still active carries no upper
-    bound (right-censored) -- this is the literal answer to "do these survive long enough for a
-    non-colocated system to observe and act": read the lower bound against the configured scan
-    cadence, never a modeled estimate.
+    the relationship; ambiguous observations are censoring records and do not count as seen. The
+    upper bound (when the relationship has disappeared) is the exact span to the scan that first
+    failed to reproduce it. A relationship still active carries no upper bound (right-censored)
+    -- this is the literal answer to "do these survive long enough for a non-colocated system to
+    observe and act": read the lower bound against the configured scan cadence, never a modeled
+    estimate.
     """
 
     relationship_id: str
@@ -516,6 +518,15 @@ def compute_lifetime(observations: Sequence[LeadObservation]) -> LeadLifetime:
         for observation in ordered
     ):
         raise OpportunityError("lifetime cannot span a closed observation gap")
+    if any(
+        observation.state is MeasurementState.AMBIGUOUS
+        and any(
+            later.state in _SEEN_STATES and later.observed_at > observation.observed_at
+            for later in ordered
+        )
+        for observation in ordered
+    ):
+        raise OpportunityError("lifetime cannot span an ambiguous observation gap")
     first_seen_at = seen[0].observed_at
     last_seen_at = seen[-1].observed_at
     disappeared = [
