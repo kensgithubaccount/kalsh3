@@ -146,7 +146,7 @@ def test_duplicate_ticker_fails(tmp_path: Path) -> None:
         target,
         lambda manifest: manifest["markets"].__setitem__(1, dict(manifest["markets"][0])),
     )
-    with pytest.raises(ValueError, match="duplicated|acquisition market identities"):
+    with pytest.raises(ValueError, match=r"duplicated|acquisition market identities"):
         validate_frozen_cohort(target)
 
 
@@ -156,7 +156,7 @@ def test_wrong_event_binding_fails(tmp_path: Path) -> None:
         target,
         lambda manifest: manifest["markets"][0].__setitem__("underlying_event_id", "kalshi:WRONG"),
     )
-    with pytest.raises(ValueError, match="wrong underlying|acquisition market identity"):
+    with pytest.raises(ValueError, match=r"wrong underlying|acquisition market identity"):
         validate_frozen_cohort(target)
 
 
@@ -239,7 +239,7 @@ def test_replay_recomputes_canonical_request_and_raw_identity(
 def test_wrong_payload_ticker_fails_after_raw_rehash(tmp_path: Path) -> None:
     target = _copy(tmp_path)
     _rewrite_raw(target, lambda payload, _row: payload.__setitem__("ticker", "OTHER"))
-    with pytest.raises(ValueError, match="ticker|acquisition raw identity"):
+    with pytest.raises(ValueError, match=r"ticker|acquisition raw identity"):
         validate_frozen_cohort(target)
 
 
@@ -256,8 +256,14 @@ def test_non_kxcpi_inventory_provenance_fails(tmp_path: Path) -> None:
     "mutation,match",
     [
         (lambda m: m.__setitem__("series_ticker", "OTHER"), "approved acquisition manifest digest"),
-        (lambda m: m["market_inventory"].__setitem__("path", "/wrong"), "approved acquisition manifest digest"),
-        (lambda m: m["market_inventory"].__setitem__("sha256", "0" * 64), "approved acquisition manifest digest"),
+        (
+            lambda m: m["market_inventory"].__setitem__("path", "/wrong"),
+            "approved acquisition manifest digest",
+        ),
+        (
+            lambda m: m["market_inventory"].__setitem__("sha256", "0" * 64),
+            "approved acquisition manifest digest",
+        ),
     ],
 )
 def test_acquisition_receipt_mutations_fail_closed(

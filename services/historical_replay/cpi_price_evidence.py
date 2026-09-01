@@ -24,7 +24,9 @@ PROVENANCE_MODE = "RECONSTRUCTED_PUBLIC_HISTORICAL"
 PUBLIC_ORIGIN = "https://external-api.kalshi.com"
 KXCPI_INVENTORY_PATH = "/trade-api/v2/historical/markets?limit=1000&series_ticker=KXCPI"
 KXCPI_INVENTORY_CURSOR = ""
-APPROVED_RUNTIME_MANIFEST_DIGEST = "d671ef2cda78a8e1a720126a73fed4e0228afc69bd72c86878bdcd5acbfc6699"
+APPROVED_RUNTIME_MANIFEST_DIGEST = (
+    "d671ef2cda78a8e1a720126a73fed4e0228afc69bd72c86878bdcd5acbfc6699"
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -323,8 +325,7 @@ def validate_frozen_cohort(root: Path) -> dict[str, int]:
     acquisition_digest = acquisition.copy()
     acquisition_recorded = acquisition_digest.pop("manifest_sha256", None)
     if (
-        manifest.get("approved_acquisition_manifest_sha256")
-        != APPROVED_RUNTIME_MANIFEST_DIGEST
+        manifest.get("approved_acquisition_manifest_sha256") != APPROVED_RUNTIME_MANIFEST_DIGEST
         or acquisition_recorded != APPROVED_RUNTIME_MANIFEST_DIGEST
         or stable_hash(acquisition_digest) != APPROVED_RUNTIME_MANIFEST_DIGEST
     ):
