@@ -10,7 +10,7 @@ PRIVATE_NAMES = frozenset(
         "_PublicHTTPResponse",
         "_issue_reviewed_public_get",
         "_read_complete_response",
-        "_ISSUED_KALSHI_ACQUISITION_EVIDENCE",
+        "_ISSUED_KALSHI_ACQUISITION_FINGERPRINTS",
     }
 )
 
