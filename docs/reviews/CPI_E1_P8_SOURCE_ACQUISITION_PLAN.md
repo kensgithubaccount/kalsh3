@@ -90,8 +90,8 @@ Status meanings:
 | 46 | 2025-03 | 2025-04-10 | 08:30 ET | `cpi_04102025` | HTML `https://www.bls.gov/news.release/archives/cpi_04102025.htm` | HTML candidate; not January | NEEDS_BROWSER_ARTIFACT |
 | 47 | 2025-04 | 2025-05-13 | 08:30 ET | `cpi_05132025` | HTML `https://www.bls.gov/news.release/archives/cpi_05132025.htm` | HTML candidate; not January | NEEDS_BROWSER_ARTIFACT |
 | 48 | 2025-05 | 2025-06-11 | 08:30 ET | `cpi_06112025` | HTML `https://www.bls.gov/news.release/archives/cpi_06112025.htm` | HTML candidate; not January | NEEDS_BROWSER_ARTIFACT |
-| 49 | 2025-06 | 2025-07-15 | 08:30 ET | `cpi_07152025` | HTML `https://www.bls.gov/news.release/archives/cpi_07152025.htm` | Exact P5A/P6 artifact; not January | ALREADY_PROVEN |
-| 50 | 2025-07 | 2025-08-12 | 08:30 ET | `cpi_08122025` | HTML `https://www.bls.gov/news.release/archives/cpi_08122025.htm` | HTML candidate; not January | NEEDS_BROWSER_ARTIFACT |
+| 49 | 2025-06 | 2025-07-15 | 08:30 ET | `cpi_07152025` | HTML `https://www.bls.gov/news.release/archives/cpi_07152025.htm` | HTML candidate; not January | NEEDS_BROWSER_ARTIFACT |
+| 50 | 2025-07 | 2025-08-12 | 08:30 ET | `cpi_08122025` | HTML `https://www.bls.gov/news.release/archives/cpi_08122025.htm` | Exact P5A/P6 artifact; not January | ALREADY_PROVEN |
 | 51 | 2025-08 | 2025-09-11 | 08:30 ET | `cpi_09112025` | HTML `https://www.bls.gov/news.release/archives/cpi_09112025.htm` | HTML candidate; not January | NEEDS_BROWSER_ARTIFACT |
 | 52 | 2025-09 | 2025-10-24 | 08:30 ET | `cpi_10242025` | HTML `https://www.bls.gov/news.release/archives/cpi_10242025.htm` | Delayed official release; not January | NEEDS_BROWSER_ARTIFACT |
 | 53 | 2025-10 | — | — | **No BLS October 2025 CPI release** | No official release artifact; do not substitute November/December or database values | No initial-release truth exists for this reference month | UNKNOWN |
@@ -193,4 +193,3 @@ The plan is ready, but the first test cannot run until the user supplies the
 untouched browser download of `archive-2024.zip`. The repository currently has
 no 60-event Kalshi evidence manifest and no annual ZIP artifact, so this plan
 does not claim P7 settlement coverage beyond the three already proven events.
-

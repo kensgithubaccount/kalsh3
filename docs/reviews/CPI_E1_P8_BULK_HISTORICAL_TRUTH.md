@@ -14,16 +14,17 @@ research_only = true; production_influence = 0. No settlement, model, profitabil
 
 | Year | Raw ZIP SHA-256 | Members | Uncompressed bytes | Table 1 members | Status |
 |---:|---|---:|---:|---:|---|
-| 2021 | ffe44bd007ebefb8babfde6d3ceb42227a4971cec822c984b0f33efb541aaf70 | 133 | 3,850,081 | 12 | PASS |
-| 2022 | 287bc44fe43c05ca3c0ffdfe6dfd7aade1aace7fd13eae701a09b18d43bbe0f | 132 | 3,975,550 | 12 | PASS |
-| 2023 | 858d1df5917982c0593d0423233b89e4592f62fe037d6bdd1c539f8c43190a11 | 132 | 4,519,339 | 12 | PASS |
+| 2021 | ffe44bd007ebefb8babfde6d3ceb42227a4971cec822c984b0f33efb541aaf70 | 3,618,327 | 3,850,081 | 12 | PASS |
+| 2022 | 287bc44fe43ce05ca3c0ffdfe6dfd7aade1aace7fd13eae701a09b18d43bbe0f | 3,730,462 | 3,975,550 | 12 | PASS |
+| 2023 | 858d1df5917982c0593d0423233b89e4592f62fe037d6bdd1c539f8c43190a11 | 4,127,843 | 4,519,339 | 12 | PASS |
+| 2024 | e8eeaccce382d4378b837d38b0c32d86d8efb05d92ab6df0ea04c02e59dffdf7 | 4,081,896 | 4,442,173 | 12 | PASS |
 
 Official locators:
 - https://www.bls.gov/cpi/tables/supplemental-files/archive-2021.zip
 - https://www.bls.gov/cpi/tables/supplemental-files/archive-2022.zip
 - https://www.bls.gov/cpi/tables/supplemental-files/archive-2023.zip
 
-Every ZIP member was read and SHA-256 hashed. Each inventory line is: exact member path, uncompressed bytes, SHA-256.
+Every ZIP member was read and SHA-256 hashed. Each inventory line is: exact member path, uncompressed bytes, SHA-256. Raw ZIP bytes and summed uncompressed member bytes are separate measures.
 
 ## Durable source-artifact freeze
 
@@ -456,7 +457,7 @@ news-release-table7-202312.xlsx	38303	8c41e06a088fa65fe49ef19949ef464eb2b1839aa8
 
 ## Event-level truth manifest
 
-The new receipts cover 36 independent release events, not market counts. Combined with the prior 2024 receipt, the target window June 2021 through December 2024 contains 43 accepted BLS release events. The page locator is the exact archived BLS HTML release used for comparison. ZIP values are the current/reference-month K7 cell only.
+The archive-backed target cohort contains 43 independent release events, not market counts: every reference month from June 2021 through December 2024. January–May 2021 archive rows are validated but classified outside the Kalshi target cohort. The page locator is the exact archived BLS HTML release used for comparison. ZIP values are the current/reference-month K7 cell only.
 
 | Reference month | Release date | BLS release locator | ZIP SA MoM |
 |---|---|---|---:|
@@ -507,7 +508,15 @@ Added:
 
 The importer accepts only the exact reviewed annual locator shape and an exact browser attestation; hashes the raw ZIP and every member; rejects unsafe paths, duplicate names, malformed XLSX, wrong year/month, missing Table 1, wrong row/column, or non-one-decimal values; binds the reviewed release locator and reference month; and exposes an immutable tuple of research-only observations. merge_annual_archive_imports rejects duplicate/conflicting months. It reuses the canonical P6 CPI domain enums and emits no alternative CPI truth semantics. It never reads historical SA columns.
 
-Annual archive authority is granted to the 43 June 2021–December 2024 BLS release events, subject to the existing P7 settlement evidence gate. Existing 3 P7-era events are unchanged and not duplicated. Final covered Kalshi event slots are 46 (43 archive-backed releases + 3 later P7-compatible events). Thirteen additional BLS-published release months remain for the 60-event cohort: January–September 2025 and November–December 2025, plus January 2026. October 2025 is a separate no-release event and is not a BLS release or CPI observation; no value is manufactured for it.
+P8 establishes 43 durable archive-backed BLS initial-release source/value observations. The existing 3 later events (2025-07, 2025-12, 2026-01) retain the full P6 + P7 settlement-compatible chain and are unchanged. Thus 46 Kalshi event slots are covered. The exact 13 remaining published BLS reference months are 2025-01, 2025-02, 2025-03, 2025-04, 2025-05, 2025-06, 2025-08, 2025-09, 2025-11, 2026-02, 2026-03, 2026-04, and 2026-05. October 2025 is a separate NO_RELEASE slot, not a BLS release or CPI observation; no value is manufactured for it. Extending the 43 archive-backed observations into the shared downstream truth and settlement-reconciliation boundary is a subsequent reviewed step; P8 does not claim P6/P7 settlement labels for them.
+
+## Frozen cohort binding
+
+The committed ZIP bytes are loaded mechanically by `load_frozen_target_cohort`. It verifies all four parent ZIP SHA-256 values, reads only the current/reference-month Table 1 cell, binds each row to its exact member path and member SHA-256, rejects duplicate or missing months, and requires exactly 43 rows. The expected content-addressed digest is:
+
+`f3775e888425cbe5e9d0066e4cf6a12816682dec8e0e8a8a50ee828e766888ca`
+
+The semantic validator requires the CPI-U city-average title, expenditure-category/all-items structure, percent-change and seasonally-adjusted headers, preceding/current month header binding, and one-decimal current value. Historical seasonal-adjustment columns are never used as initial-release evidence.
 
 ## Verification
 

@@ -20,6 +20,7 @@ from hashlib import sha256
 from pathlib import Path
 from types import MappingProxyType
 from xml.etree import ElementTree
+from zoneinfo import ZoneInfo
 
 from services.forecasting.cpi_initial_release_value import (
     CPIBasket,
@@ -32,6 +33,7 @@ from services.forecasting.cpi_initial_release_value import (
 
 MAX_ARCHIVE_BYTES = 32_000_000
 MAX_MEMBER_BYTES = 2_000_000
+MAX_TARGET_YEAR = 2024
 ARCHIVE_ORIGIN = "https://www.bls.gov"
 ARCHIVE_LOCATOR_TEMPLATE = ARCHIVE_ORIGIN + "/cpi/tables/supplemental-files/archive-{year}.zip"
 ARCHIVE_ACQUISITION_MODE = "ANNUAL_ARCHIVE_BROWSER_ATTESTED"
@@ -92,10 +94,55 @@ _RELEASE_DATES: dict[tuple[int, int], str] = {
     (2024, 11): "12112024",
     (2024, 12): "01152025",
 }
+FROZEN_ARCHIVE_SHA256: MappingProxyType[str, str] = MappingProxyType(
+    {
+        "2021": "ffe44bd007ebefb8babfde6d3ceb42227a4971cec822c984b0f33efb541aaf70",
+        "2022": "287bc44fe43ce05ca3c0ffdfe6dfd7aade1aace7fd13eae701a09b18d43bbe0f",
+        "2023": "858d1df5917982c0593d0423233b89e4592f62fe037d6bdd1c539f8c43190a11",
+        "2024": "e8eeaccce382d4378b837d38b0c32d86d8efb05d92ab6df0ea04c02e59dffdf7",
+    }
+)
+TARGET_START = (2021, 6)
+TARGET_END = (2024, 12)
+FROZEN_TARGET_COHORT_DIGEST = "f3775e888425cbe5e9d0066e4cf6a12816682dec8e0e8a8a50ee828e766888ca"
+PROVEN_LATER_REFERENCE_MONTHS = ((2025, 7), (2025, 12), (2026, 1))
+PUBLISHED_REMAINING_REFERENCE_MONTHS = (
+    (2025, 1),
+    (2025, 2),
+    (2025, 3),
+    (2025, 4),
+    (2025, 5),
+    (2025, 6),
+    (2025, 8),
+    (2025, 9),
+    (2025, 11),
+    (2026, 2),
+    (2026, 3),
+    (2026, 4),
+    (2026, 5),
+)
+NO_RELEASE_REFERENCE_MONTHS = ((2025, 10),)
 
 
 class CPIAnnualArchiveError(ValueError):
     """An annual archive failed an exact, fail-closed validation."""
+
+
+def frozen_kalshi_cohort_partition() -> MappingProxyType[str, tuple[tuple[int, int], ...]]:
+    archive_months = tuple(
+        (year, month)
+        for year in range(2021, 2025)
+        for month in range(1, 13)
+        if (year, month) >= TARGET_START
+    )
+    return MappingProxyType(
+        {
+            "archive_backed": archive_months,
+            "p6_p7_proven": PROVEN_LATER_REFERENCE_MONTHS,
+            "published_remaining": PUBLISHED_REMAINING_REFERENCE_MONTHS,
+            "no_release": NO_RELEASE_REFERENCE_MONTHS,
+        }
+    )
 
 
 @dataclass(frozen=True, slots=True)
@@ -104,6 +151,7 @@ class CPIAnnualArchiveObservation:
     reference_year: int
     reference_month: int
     release_locator: str
+    release_instant: datetime
     archive_locator: str
     member_path: str
     archive_sha256: str
@@ -193,6 +241,11 @@ def _current_value(payload: bytes, reference_year: int, reference_month: int) ->
     if len(rows) < 7 or not rows[0].get("B1", "").endswith(f"{reference_year}"):
         raise CPIAnnualArchiveError("Table 1 headline does not bind to reference year")
     title = rows[0].get("B1", "")
+    if (
+        "consumer price index for all urban consumers (cpi-u): u.s. city average"
+        not in title.casefold()
+    ):
+        raise CPIAnnualArchiveError("Table 1 title does not prove CPI-U city-average semantics")
     month_name = (
         "January",
         "February",
@@ -209,9 +262,38 @@ def _current_value(payload: bytes, reference_year: int, reference_month: int) ->
     )[reference_month - 1]
     if not re.search(rf"\b{month_name}\b", title):
         raise CPIAnnualArchiveError("Table 1 headline does not bind to reference month")
-    header = rows[4]
-    current_header = header.get("K5", "").replace("\n", " ")
-    if str(reference_year) not in current_header or not current_header.endswith(
+    semantic_header = rows[3]
+    current_header = rows[4]
+    if semantic_header.get("B4", "").strip().casefold() != "expenditure category":
+        raise CPIAnnualArchiveError("Table 1 category header is not canonical")
+    if "seasonally adjusted percent change" not in semantic_header.get("I4", "").casefold():
+        raise CPIAnnualArchiveError("Table 1 SA header is not canonical")
+    if "percent change" not in semantic_header.get("G4", "").casefold():
+        raise CPIAnnualArchiveError("Table 1 percent-change header is missing")
+    current_header_text = current_header.get("K5", "").replace("\n", " ")
+    month_abbreviations = (
+        "Jan.",
+        "Feb.",
+        "Mar.",
+        "Apr.",
+        "May",
+        "Jun.",
+        "Jul.",
+        "Aug.",
+        "Sep.",
+        "Oct.",
+        "Nov.",
+        "Dec.",
+    )
+    preceding = month_abbreviations[(reference_month - 2) % 12]
+    preceding_year = reference_year if reference_month > 1 else reference_year - 1
+    if not current_header_text.startswith(f"{preceding} {preceding_year}"):
+        raise CPIAnnualArchiveError("Table 1 SA header does not prove preceding-month horizon")
+    if month_abbreviations[reference_month - 1] not in current_header_text:
+        raise CPIAnnualArchiveError("Table 1 SA header does not prove current month")
+    if any(key in current_header for key in ("L5", "L7")):
+        raise CPIAnnualArchiveError("Table 1 has an unreviewed SA column after current month")
+    if str(reference_year) not in current_header_text or not current_header_text.endswith(
         str(reference_year)
     ):
         raise CPIAnnualArchiveError("Table 1 current SA column is not reference-bound")
@@ -275,12 +357,16 @@ def import_attested_bls_annual_archive(
             except KeyError as exc:
                 raise CPIAnnualArchiveError("release chronology is not reviewed") from exc
             release_locator = f"{ARCHIVE_ORIGIN}/news.release/archives/cpi_{release_id}.htm"
+            release_instant = datetime.strptime(release_id, "%m%d%Y").replace(
+                hour=8, minute=30, tzinfo=ZoneInfo("America/New_York")
+            )
             observations.append(
                 CPIAnnualArchiveObservation(
                     archive_year=year,
                     reference_year=ref_year,
                     reference_month=month,
                     release_locator=release_locator,
+                    release_instant=release_instant,
                     archive_locator=archive_locator,
                     member_path=member_path,
                     archive_sha256=archive_hash,
@@ -308,6 +394,73 @@ def import_attested_bls_annual_archive(
         observations=tuple(observations),
         imported_at=timestamp.astimezone(UTC),
     )
+
+
+def load_frozen_target_cohort(
+    repository_root: str | Path,
+) -> tuple[CPIAnnualArchiveObservation, ...]:
+    root = Path(repository_root)
+    observations: list[CPIAnnualArchiveObservation] = []
+    for year in range(2021, MAX_TARGET_YEAR + 1):
+        path = root / "docs/reviews/artifacts/bls-annual-zips" / f"archive-{year}.zip"
+        body = _read_regular_file(path)
+        if sha256(body).hexdigest() != FROZEN_ARCHIVE_SHA256[str(year)]:
+            raise CPIAnnualArchiveError("frozen annual archive SHA-256 mismatch")
+        receipt = import_attested_bls_annual_archive(
+            path, year=year, operator_attestation=ARCHIVE_ATTESTATION
+        )
+        observations.extend(
+            item
+            for item in receipt.observations
+            if TARGET_START <= (item.reference_year, item.reference_month) <= TARGET_END
+        )
+    observations.sort(key=lambda item: (item.reference_year, item.reference_month))
+    keys = [(item.reference_year, item.reference_month) for item in observations]
+    expected = [
+        (year, month)
+        for year in range(2021, 2025)
+        for month in range(1, 13)
+        if TARGET_START <= (year, month) <= TARGET_END
+    ]
+    if len(keys) != len(set(keys)):
+        raise CPIAnnualArchiveError("frozen target cohort contains duplicate months")
+    if keys != expected or len(observations) != 43:
+        raise CPIAnnualArchiveError("frozen target cohort is missing or misordered months")
+    frozen = tuple(observations)
+    if frozen_target_cohort_digest(frozen) != FROZEN_TARGET_COHORT_DIGEST:
+        raise CPIAnnualArchiveError("frozen target cohort digest mismatch")
+    return frozen
+
+
+def frozen_target_cohort_digest(observations: tuple[CPIAnnualArchiveObservation, ...]) -> str:
+    if len(observations) != 43:
+        raise CPIAnnualArchiveError("frozen target digest requires exactly 43 observations")
+    rows = (
+        "|".join(
+            (
+                str(item.reference_year),
+                str(item.reference_month),
+                item.release_locator,
+                item.release_instant.isoformat(),
+                item.archive_locator,
+                item.archive_sha256,
+                item.member_path,
+                item.member_sha256,
+                str(item.value),
+                item.unit.value,
+                item.population.value,
+                item.geography.value,
+                item.basket.value,
+                item.seasonal_basis.value,
+                item.horizon.value,
+                str(item.precision),
+                str(item.research_only),
+                str(item.production_influence),
+            )
+        )
+        for item in observations
+    )
+    return sha256("\n".join(rows).encode()).hexdigest()
 
 
 def merge_annual_archive_imports(
