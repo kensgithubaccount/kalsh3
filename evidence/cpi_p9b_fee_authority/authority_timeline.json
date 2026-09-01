@@ -1,11 +1,11 @@
 {
   "schema_version": "cpi-p9b-authority-timeline-v1",
   "taker": [
-    {"start": null, "end": "2022-09-22T00:00:00Z", "status": "unknown", "authority_type": "taker", "authority_identity": "UNKNOWN_PRE_2022_09_22", "formula": null, "rounding": null, "kxcpi_applicability": "unknown"},
-    {"start": "2022-09-22T00:00:00Z", "end": "2025-05-06T00:00:00Z", "status": "exact", "authority_type": "taker", "authority_identity": "b002a5ae260c68f543a9c4630233c9d311c580ad70620e7db37eac14437007b3", "formula": "round_up(0.07 * C * P * (1-P))", "rounding": "next_cent", "kxcpi_applicability": "general"},
-    {"start": "2025-05-06T00:00:00Z", "end": null, "status": "locator_only", "authority_type": "taker", "authority_identity": "OCT_2025_LOCATOR_ONLY", "formula": "round_up(0.07 * C * P * (1-P))", "rounding": "next_cent", "kxcpi_applicability": "general", "notes": "Continuity/discovery only; not exact authority."}
+    {"start_date": null, "end_date": "2022-09-24", "status": "unknown", "authority_type": "taker", "authority_identity": "UNKNOWN_PRE_EFFECTIVE_DATE", "formula": null, "rounding": null, "kxcpi_applicability": "unknown"},
+    {"start_date": "2022-09-24", "end_date": "2025-05-06", "status": "exact", "authority_type": "taker", "authority_identity": "CFTC-49335-FINAL", "formula": "round_up(0.07 * C * P * (1-P))", "rounding": "next_cent", "kxcpi_applicability": "general"},
+    {"start_date": "2025-05-06", "end_date": null, "status": "locator_only", "authority_type": "taker", "authority_identity": "OCT_2025_LOCATOR_ONLY", "formula": "round_up(0.07 * C * P * (1-P))", "rounding": "next_cent", "kxcpi_applicability": "general"}
   ],
   "maker": [
-    {"start": null, "end": null, "status": "unknown", "authority_type": "maker", "authority_identity": "MAKER_UNRESOLVED", "formula": null, "rounding": null, "kxcpi_applicability": "unknown", "notes": "No maker-fill authority is established."}
+    {"start_date": null, "end_date": null, "status": "unknown", "authority_type": "maker", "authority_identity": "MAKER_UNRESOLVED", "formula": null, "rounding": null, "kxcpi_applicability": "unknown"}
   ]
 }

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Fail-closed validator and deterministic builder for CPI-E1-P9B.4."""
+"""Read-only fail-closed P9B.4R validator."""
 
 from __future__ import annotations
 
@@ -10,23 +10,41 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+from services.forecasting.cpi_p9b_authority import (
+    APPROVED_ARTIFACTS,
+    APPROVED_RECEIPT_SHA256,
+    AUTHORITY_METADATA,
+    CANONICAL_BASE,
+    CANONICAL_TREE,
+    P8_AUTHORITY_ARTIFACT_SHA256,
+    P8_REFERENCE_EVENTS,
+    P9A_ACQUISITION_SHA256,
+    P9A_APPROVED_ACQUISITION_DIGEST,
+    P9A_EVENT_COUNT,
+    P9A_FINAL_MANIFEST_SHA256,
+    P9A_MANIFEST_SHA256,
+    P9A_MARKET_COUNT,
+    approved_receipt_digest,
+)
+from services.historical_replay.cpi_price_evidence import validate_frozen_cohort
+
 ROOT = Path(__file__).parents[1]
 PACKAGE = ROOT / "evidence/cpi_p9b_fee_authority"
-P9A = ROOT / "evidence/cpi_p9a_historical_price/manifest.json"
+P9A = ROOT / "evidence/cpi_p9a_historical_price"
 
 
-def strict_load(path: Path) -> Any:
-    def duplicate(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
-        result: dict[str, Any] = {}
-        for key, value in pairs:
-            if key in result:
+def load(path: Path) -> Any:
+    def pairs(items: list[tuple[str, Any]]) -> dict[str, Any]:
+        out: dict[str, Any] = {}
+        for key, value in items:
+            if key in out:
                 raise ValueError(f"duplicate JSON key: {key}")
-            result[key] = value
-        return result
+            out[key] = value
+        return out
 
     return json.loads(
         path.read_bytes(),
-        object_pairs_hook=duplicate,
+        object_pairs_hook=pairs,
         parse_constant=lambda value: (_ for _ in ()).throw(
             ValueError(f"non-standard JSON constant: {value}")
         ),
@@ -37,119 +55,182 @@ def digest(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
-def ts(value: str) -> datetime:
+def instant(value: str) -> datetime:
     return datetime.fromisoformat(value.replace("Z", "+00:00")).astimezone(UTC)
 
 
-def validate(package: Path = PACKAGE) -> dict[str, Any]:
-    manifest = strict_load(package / "manifest.json")
-    if manifest["schema_version"] != "cpi-p9b-fee-authority-v1":
-        raise ValueError("unsupported authority schema")
-    artifacts = manifest["artifacts"]
-    seen: set[str] = set()
-    exact_artifact_ids: set[str] = set()
-    for artifact in artifacts:
-        ident = artifact["authority_identity"]
-        if ident in seen:
-            raise ValueError("duplicate authority identity")
-        seen.add(ident)
-        if artifact.get("path") is not None:
-            path = package / artifact["path"]
-            if not path.is_file():
-                raise ValueError(f"missing retained artifact: {artifact['path']}")
-            actual = digest(path)
-            if actual != artifact["sha256"]:
-                raise ValueError(f"artifact hash mismatch: {artifact['path']}")
-        else:
-            actual = None
-        if artifact["status"] == "exact" and artifact["authority_identity"] != actual:
-            raise ValueError("exact authority identity is not bound to artifact hash")
-        if artifact["status"] == "exact":
-            exact_artifact_ids.add(artifact["authority_identity"])
-        if artifact["status"] == "locator_only" and artifact.get("path") is not None:
-            raise ValueError("locator-only evidence cannot retain an exact artifact path")
+def authority_date(value: str) -> datetime.date:
+    return datetime.strptime(value, "%Y-%m-%d").date()
 
-    excluded = manifest["excluded_authorities"]
-    if any(
-        row["filing"] == "61349" and row["authority_status"] == "general_kxcpi" for row in excluded
+
+def p9a() -> dict[str, Any]:
+    raw = P9A / "manifest.json"
+    manifest = load(raw)
+    if (
+        digest(raw) != P9A_MANIFEST_SHA256
+        or manifest.get("final_manifest_sha256") != P9A_FINAL_MANIFEST_SHA256
     ):
-        raise ValueError("excluded CFTC 61349 was substituted into general authority")
+        raise ValueError("approved P9A manifest identity mismatch")
+    receipt = P9A / "acquisition_manifest.json"
+    if (
+        digest(receipt) != P9A_ACQUISITION_SHA256
+        or manifest.get("approved_acquisition_manifest_sha256") != P9A_APPROVED_ACQUISITION_DIGEST
+    ):
+        raise ValueError("approved P9A acquisition receipt identity mismatch")
+    if (
+        len(manifest.get("markets", [])) != P9A_MARKET_COUNT
+        or len(manifest.get("events", [])) != P9A_EVENT_COUNT
+    ):
+        raise ValueError("P9A multiplicity mismatch")
+    validate_frozen_cohort(P9A)
+    return manifest
 
-    timelines = manifest["timelines"]
+
+def _validate(package: Path = PACKAGE, *, require_frozen_coverage: bool = True) -> dict[str, Any]:
+    if approved_receipt_digest() != APPROVED_RECEIPT_SHA256:
+        raise ValueError("reviewed authority receipt code digest mismatch")
+    manifest = load(package / "manifest.json")
+    if (manifest.get("canonical_base"), manifest.get("canonical_tree")) != (
+        CANONICAL_BASE,
+        CANONICAL_TREE,
+    ):
+        raise ValueError("canonical identity mismatch")
+    if (
+        manifest.get("p9a_manifest_sha256") != P9A_MANIFEST_SHA256
+        or manifest.get("p8_authority_sha256") != P8_AUTHORITY_ARTIFACT_SHA256
+    ):
+        raise ValueError("canonical input identity was changed")
+    if manifest.get("authority_receipt_sha256") != APPROVED_RECEIPT_SHA256:
+        raise ValueError("manifest authority receipt identity mismatch")
+    if manifest.get("schema_version") != "cpi-p9b-fee-authority-v1":
+        raise ValueError("unsupported authority manifest schema")
+    if manifest.get("authority_metadata") != list(AUTHORITY_METADATA):
+        raise ValueError("authority metadata identity mismatch")
+    expected = [dict(row) for row in APPROVED_ARTIFACTS]
+    actual = [{key: row.get(key) for key in expected[0]} for row in manifest.get("artifacts", [])]
+    if actual != expected:
+        raise ValueError("manifest artifact set is not the reviewed approved set")
+    for row in APPROVED_ARTIFACTS:
+        path = package / row["path"]
+        if (
+            not path.is_file()
+            or path.stat().st_size != row["bytes"]
+            or digest(path) != row["sha256"]
+        ):
+            raise ValueError(f"artifact path, byte count, or hash mismatch: {row['path']}")
+    timeline = load(package / "authority_timeline.json")
+    if timeline.get("schema_version") != "cpi-p9b-authority-timeline-v1":
+        raise ValueError("unsupported authority timeline schema")
+    if {kind: timeline[kind] for kind in ("taker", "maker")} != manifest.get("timelines"):
+        raise ValueError("authority timeline content mismatch")
     for kind in ("taker", "maker"):
-        rows = timelines[kind]
-        previous: datetime | None = None
-        for row in rows:
-            start = None if row["start"] is None else ts(row["start"])
-            end = None if row["end"] is None else ts(row["end"])
+        previous = None
+        for row in timeline[kind]:
+            start = None if row["start_date"] is None else authority_date(row["start_date"])
+            end = None if row["end_date"] is None else authority_date(row["end_date"])
+            if start != previous:
+                raise ValueError(f"gap or overlap in {kind} timeline")
             if start is not None and end is not None and start >= end:
                 raise ValueError(f"invalid {kind} interval")
-            if previous != start:
-                raise ValueError(f"gap or overlap in {kind} timeline")
             previous = end
         if previous is not None:
             raise ValueError(f"{kind} timeline does not end open")
-    exact = [r for r in timelines["taker"] if r["status"] == "exact"]
-    for row in exact:
-        if row["formula"] != "round_up(0.07 * C * P * (1-P))" or row["rounding"] != "next_cent":
-            raise ValueError("taker formula or rounding identity mismatch")
-        if row["authority_type"] != "taker" or row["kxcpi_applicability"] != "general":
-            raise ValueError("maker/taker or KXCPI applicability substitution")
-        if row["authority_identity"] not in exact_artifact_ids:
-            raise ValueError("exact authority identity lacks an approved exact artifact")
-
-    p9a = strict_load(P9A)
-    by_event: dict[str, list[dict[str, Any]]] = {}
-    for market in p9a["markets"]:
-        by_event.setdefault(market["event_ticker"], []).append(market)
-    coverage = []
-    for event, markets in sorted(by_event.items()):
-        decision = min(ts(m["market_close"]) for m in markets)
-        applicable = [
-            r
-            for r in timelines["taker"]
-            if (r["start"] is None or decision >= ts(r["start"]))
-            and (r["end"] is None or decision < ts(r["end"]))
+    source = p9a()
+    if set(manifest.get("p8_reference_events", [])) != P8_REFERENCE_EVENTS:
+        raise ValueError("mutable P8 event list does not match reviewed authority")
+    coverage: list[dict[str, Any]] = []
+    event_rows: dict[str, list[dict[str, Any]]] = {}
+    market_ids: set[str] = set()
+    for market in source["markets"]:
+        if market["market_ticker"] in market_ids:
+            raise ValueError("duplicate market coverage")
+        market_ids.add(market["market_ticker"])
+        quote = datetime.fromtimestamp(market["candle_end_period_ts"], UTC)
+        matches = [
+            row
+            for row in timeline["taker"]
+            if (row["start_date"] is None or quote.date() >= authority_date(row["start_date"]))
+            and (row["end_date"] is None or quote.date() < authority_date(row["end_date"]))
         ]
-        if len(applicable) != 1:
-            raise ValueError(f"unmapped or conflicting taker regime for {event}")
-        regime = applicable[0]
-        coverage.append(
+        if len(matches) != 1:
+            raise ValueError("quote timestamp has conflicting or unexplained regime")
+        regime = matches[0]
+        row = {
+            "event_ticker": market["event_ticker"],
+            "market_ticker": market["market_ticker"],
+            "selected_quote_timestamp": quote.isoformat().replace("+00:00", "Z"),
+            "status": regime["status"],
+            "authority_chain_identity": APPROVED_RECEIPT_SHA256,
+            "authority_identity": regime["authority_identity"],
+            "formula": regime["formula"] if regime["status"] == "exact" else None,
+            "rounding": regime["rounding"] if regime["status"] == "exact" else None,
+            "reason": None
+            if regime["status"] == "exact"
+            else regime.get("notes", regime["status"]),
+        }
+        coverage.append(row)
+        event_rows.setdefault(market["event_ticker"], []).append(row)
+    events = []
+    for event, rows in sorted(event_rows.items()):
+        statuses = sorted({row["status"] for row in rows})
+        events.append(
             {
                 "event_ticker": event,
-                "decision_timestamp": decision.isoformat().replace("+00:00", "Z"),
-                "status": regime["status"],
-                "authority_id": regime["authority_identity"],
+                "market_count": len(rows),
+                "status": "exact"
+                if statuses == ["exact"]
+                else "mixed_authority"
+                if len(statuses) > 1
+                else statuses[0],
+                "statuses": statuses,
             }
         )
-
-    p8_events = set(manifest["p8_reference_events"])
     intersection = sorted(
         row["event_ticker"]
-        for row in coverage
-        if row["event_ticker"] in p8_events and row["status"] == "exact"
+        for row in events
+        if row["event_ticker"] in P8_REFERENCE_EVENTS and row["status"] == "exact"
     )
     result = {
-        "p9a_events": coverage,
+        "schema_version": "cpi-p9b-event-coverage-v2",
+        "market_rows": coverage,
+        "events": events,
         "counts": {
-            status: sum(row["status"] == status for row in coverage)
-            for status in ("exact", "locator_only", "unknown")
+            s: sum(row["status"] == s for row in coverage)
+            for s in ("exact", "locator_only", "unknown", "mixed_authority")
         },
+        "event_counts": {
+            s: sum(row["status"] == s for row in events)
+            for s in ("exact", "locator_only", "unknown", "mixed_authority")
+        },
+        "p8_reference_events": sorted(P8_REFERENCE_EVENTS),
         "p8_p9a_exact_taker_intersection": intersection,
         "intersection_count": len(intersection),
+        "exact_taker_p8_usable_quote_rows": sum(
+            row["event_ticker"] in P8_REFERENCE_EVENTS and row["status"] == "exact"
+            for row in coverage
+        ),
+        "boundary_observations": [
+            row
+            for row in coverage
+            if row["selected_quote_timestamp"][:10]
+            in {"2022-09-22", "2022-09-23", "2022-09-24", "2025-05-05", "2025-05-06"}
+        ],
     }
-    (package / "event_coverage.json").write_text(
-        json.dumps(result, indent=2, sort_keys=True) + "\n"
-    )
+    if (
+        require_frozen_coverage
+        and (package / "event_coverage.json").read_bytes()
+        != (json.dumps(result, indent=2, sort_keys=True) + "\n").encode()
+    ):
+        raise ValueError("event coverage content mismatch")
     return result
 
 
-def main() -> None:
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--package", type=Path, default=PACKAGE)
-    args = parser.parse_args()
-    print(json.dumps(validate(args.package), indent=2, sort_keys=True))
+def validate(package: Path = PACKAGE) -> dict[str, Any]:
+    """Validate without writing any tracked evidence."""
+    return _validate(package)
 
 
 if __name__ == "__main__":
-    main()
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--package", type=Path, default=PACKAGE)
+    print(json.dumps(validate(parser.parse_args().package), indent=2, sort_keys=True))

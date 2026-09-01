@@ -3,23 +3,36 @@
   "canonical_base": "e8c6faff5a72db6010fd4ae22713b0a0831b947e",
   "canonical_tree": "353aeba5d99c67c5baa4c72901965b323367ecbf",
   "p9a_manifest": "evidence/cpi_p9a_historical_price/manifest.json",
+  "p9a_manifest_sha256": "6f162314cbeee641a3420a1e56597ef5dee5d9ef4af95f035c96d58c9bf7b01c",
+  "p8_authority_sha256": "f189e95766307bccd7f44e01aa1a7d89950ce3050b657d34b0f9a844bdea6d7d",
+  "authority_receipt_sha256": "6e5b60297615baf8b3e2f1fff25fb8b1b6b673fed0fa29c12de53ecf51314568",
+  "authority_metadata": [
+    {"identity": "CFTC-49335-COVER", "filing": "49335", "receipt_date": "2022-09-09", "effective_date": "2022-09-22", "scope": "taker", "kxcpi_applicability": "general", "status": "exact", "supersession": "amends prior general schedule"},
+    {"identity": "CFTC-49335-REDLINE", "filing": "49335", "receipt_date": "2022-09-09", "effective_date": "2022-09-22", "scope": "taker", "kxcpi_applicability": "general", "status": "exact", "supersession": "amends prior general schedule"},
+    {"identity": "CFTC-49335-FINAL", "filing": "49335", "receipt_date": "2022-09-09", "effective_date": "2022-09-22", "scope": "taker", "formula": "round_up(0.07 * C * P * (1-P))", "rounding": "next_cent", "kxcpi_applicability": "general", "status": "exact", "supersession": "superseded/continued by later snapshot"},
+    {"identity": "CFTC-RULEBOOK-3.6-E", "filing": "rules07012525155", "rule": "3.6(e)", "scope": "continuity", "kxcpi_applicability": "general", "status": "exact", "supersession": "continuity constraint"},
+    {"identity": "MD-1:25-CV-01283-28-1", "case": "KalshiEX LLC v. Martin et al.", "docket": "1:25-cv-01283-ABA", "document": "28-1", "filed_date": "2025-05-12", "last_updated": "2025-05-06", "scope": "taker", "formula": "round_up(0.07 * C * P * (1-P))", "rounding": "next_cent", "kxcpi_applicability": "general", "status": "exact", "supersession": "snapshot confirmation"},
+    {"identity": "CFTC-49335-INDEX", "filing": "49335", "scope": "regulatory_index", "status": "exact", "supersession": "continuity inventory locator"}
+  ],
   "authority_scope": "KXCPI general taker fees only",
   "artifacts": [
-    {"authority_identity": "c13ece879021b9df29c3bac195b2c580f4876e9e77d7cde8fbd1a9c5b95da200", "path": "raw/cftc-49335-cover.pdf", "sha256": "c13ece879021b9df29c3bac195b2c580f4876e9e77d7cde8fbd1a9c5b95da200", "authority_type": "taker", "filing": "49335", "receipt_date": "2022-09-09", "effective_date": "2022-09-22", "status": "exact", "source_url": "https://www.cftc.gov/filings/orgrules/rule091222kexdcm001.pdf"},
-    {"authority_identity": "2823becfd0252406cad15e51a1a4c68ca991a068fc36d2ade4c935116f83a85a", "path": "raw/cftc-49335-redline.pdf", "sha256": "2823becfd0252406cad15e51a1a4c68ca991a068fc36d2ade4c935116f83a85a", "authority_type": "taker", "filing": "49335", "receipt_date": "2022-09-09", "effective_date": "2022-09-22", "status": "exact", "source_url": "https://www.cftc.gov/filings/orgrules/rule091222kexdcm002.pdf"},
-    {"authority_identity": "b002a5ae260c68f543a9c4630233c9d311c580ad70620e7db37eac14437007b3", "path": "raw/cftc-49335-final-schedule.pdf", "sha256": "b002a5ae260c68f543a9c4630233c9d311c580ad70620e7db37eac14437007b3", "authority_type": "taker", "filing": "49335", "receipt_date": "2022-09-09", "effective_date": "2022-09-22", "status": "exact", "source_url": "https://www.cftc.gov/filings/orgrules/rule091222kexdcm003.pdf"},
-    {"authority_identity": "1185c41174304316cd6c68c6bd9eba3170e8082ff31a60b730b89b7da60b58e8", "path": "raw/md-1-25-cv-01283-28-1.pdf", "sha256": "1185c41174304316cd6c68c6bd9eba3170e8082ff31a60b730b89b7da60b58e8", "authority_type": "taker", "case": "KalshiEX LLC v. Martin et al.", "docket": "1:25-cv-01283-ABA", "document": "28-1", "filed_date": "2025-05-12", "last_updated": "2025-05-06", "status": "exact", "source_url": "https://www.ingame.com/wp-content/uploads/2025/05/document.pdf"},
-    {"authority_identity": "OCT_2025_LOCATOR_ONLY", "path": null, "sha256": null, "authority_type": "taker", "status": "locator_only", "source_url": "https://kalshi.com/docs/kalshi-fee-schedule.pdf", "last_updated": "2025-10-01", "notes": "Locator/discovery evidence only; no immutable retained artifact."}
+    {"path": "raw/cftc-49335-cover.pdf", "sha256": "c13ece879021b9df29c3bac195b2c580f4876e9e77d7cde8fbd1a9c5b95da200", "bytes": 93269, "role": "taker", "identity": "CFTC-49335-COVER", "url": "https://www.cftc.gov/filings/orgrules/rule091222kexdcm001.pdf", "status": "exact"},
+    {"path": "raw/cftc-49335-redline.pdf", "sha256": "2823becfd0252406cad15e51a1a4c68ca991a068fc36d2ade4c935116f83a85a", "bytes": 806026, "role": "taker", "identity": "CFTC-49335-REDLINE", "url": "https://www.cftc.gov/filings/orgrules/rule091222kexdcm002.pdf", "status": "exact"},
+    {"path": "raw/cftc-49335-final-schedule.pdf", "sha256": "b002a5ae260c68f543a9c4630233c9d311c580ad70620e7db37eac14437007b3", "bytes": 106530, "role": "taker", "identity": "CFTC-49335-FINAL", "url": "https://www.cftc.gov/filings/orgrules/rule091222kexdcm003.pdf", "status": "exact"},
+    {"path": "raw/cftc-rulebook-rule-3-6.pdf", "sha256": "d8d185862a439a8f1a178d5044bbe9c4ccfd931ae4a54619b9f2602493865c8f", "bytes": 865102, "role": "continuity", "identity": "CFTC-RULEBOOK-3.6-E", "url": "https://www.cftc.gov/filings/orgrules/rules07012525155.pdf", "status": "exact"},
+    {"path": "raw/md-1-25-cv-01283-28-1.pdf", "sha256": "1185c41174304316cd6c68c6bd9eba3170e8082ff31a60b730b89b7da60b58e8", "bytes": 641165, "role": "taker", "identity": "MD-1:25-CV-01283-28-1", "url": "https://www.ingame.com/wp-content/uploads/2025/05/document.pdf", "status": "exact"},
+    {"path": "raw/cftc-49335-index.html", "sha256": "cc813fd4676abbdf781d4fdf7d8429e37f1d7b319fea548a512240721c14eaed", "bytes": 31125, "role": "regulatory_index", "identity": "CFTC-49335-INDEX", "url": "https://www.cftc.gov/IndustryOversight/IndustryFilings/TradingOrganizationRules/49335", "status": "exact"}
   ],
   "timelines": {
     "taker": [
-      {"start": null, "end": "2022-09-22T00:00:00Z", "status": "unknown", "authority_type": "taker", "authority_identity": "UNKNOWN_PRE_2022_09_22", "formula": null, "rounding": null, "kxcpi_applicability": "unknown"},
-      {"start": "2022-09-22T00:00:00Z", "end": "2025-05-06T00:00:00Z", "status": "exact", "authority_type": "taker", "authority_identity": "b002a5ae260c68f543a9c4630233c9d311c580ad70620e7db37eac14437007b3", "formula": "round_up(0.07 * C * P * (1-P))", "rounding": "next_cent", "kxcpi_applicability": "general"},
-      {"start": "2025-05-06T00:00:00Z", "end": null, "status": "locator_only", "authority_type": "taker", "authority_identity": "OCT_2025_LOCATOR_ONLY", "formula": "round_up(0.07 * C * P * (1-P))", "rounding": "next_cent", "kxcpi_applicability": "general"}
+      {"start_date": null, "end_date": "2022-09-24", "status": "unknown", "authority_type": "taker", "authority_identity": "UNKNOWN_PRE_EFFECTIVE_DATE", "formula": null, "rounding": null, "kxcpi_applicability": "unknown"},
+      {"start_date": "2022-09-24", "end_date": "2025-05-06", "status": "exact", "authority_type": "taker", "authority_identity": "CFTC-49335-FINAL", "formula": "round_up(0.07 * C * P * (1-P))", "rounding": "next_cent", "kxcpi_applicability": "general"},
+      {"start_date": "2025-05-06", "end_date": null, "status": "locator_only", "authority_type": "taker", "authority_identity": "OCT_2025_LOCATOR_ONLY", "formula": "round_up(0.07 * C * P * (1-P))", "rounding": "next_cent", "kxcpi_applicability": "general"}
     ],
-    "maker": [{"start": null, "end": null, "status": "unknown", "authority_type": "maker", "authority_identity": "MAKER_UNRESOLVED", "formula": null, "rounding": null, "kxcpi_applicability": "unknown"}]
+    "maker": [{"start_date": null, "end_date": null, "status": "unknown", "authority_type": "maker", "authority_identity": "MAKER_UNRESOLVED", "formula": null, "rounding": null, "kxcpi_applicability": "unknown"}]
   },
   "p8_reference_events": ["CPI-22OCT","CPI-22NOV","CPI-22DEC","CPI-23JAN","CPI-23FEB","CPI-23MAR","CPI-23APR","CPI-23MAY","CPI-23JUN","CPI-23JUL","CPI-23AUG","CPI-23SEP","CPI-23OCT","CPI-23NOV","CPI-23DEC","CPI-24JAN","CPI-24FEB","CPI-24MAR","CPI-24APR","CPI-24MAY","CPI-24JUN","CPI-24JUL","CPI-24AUG","CPI-24SEP","CPI-24OCT","KXCPI-24NOV","KXCPI-24DEC","KXCPI-25JAN"],
+  "boundary_policy": "Date-only authority is not assigned a UTC instant. Quotes on or before 2022-09-23 remain unknown; exact begins on the first UTC date unambiguously after the effective-date uncertainty window (2022-09-24). The 2025-05-06 date-only snapshot is treated as the locator boundary; no quote on that date is promoted.",
   "exceptions": ["CFTC 61349 excluded: perpetual futures/FCM customers.", "Conditional rebates, waivers, and market-maker programs are non-general.", "Maker authority is unresolved and never inferred from taker authority."]
   ,"excluded_authorities": [{"filing": "61349", "authority_status": "excluded", "reason": "perpetual futures/FCM customers"}]
 }
