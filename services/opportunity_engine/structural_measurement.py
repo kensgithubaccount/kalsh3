@@ -515,6 +515,10 @@ class LeadLifetime:
             raise OpportunityError(
                 "lifetime status must be exactly one of active, disappeared, or ambiguity-censored"
             )
+        if active and self.observed_lifetime_upper_bound_seconds is not None:
+            raise OpportunityError("active lifetime cannot have an upper bound")
+        if disappeared and self.observed_lifetime_upper_bound_seconds is None:
+            raise OpportunityError("disappeared lifetime requires an upper bound")
         if ambiguity_censored and self.observed_lifetime_upper_bound_seconds is not None:
             raise OpportunityError("ambiguity-censored lifetime cannot have an upper bound")
 

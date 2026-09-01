@@ -631,6 +631,52 @@ def test_malformed_lifetime_status_is_rejected() -> None:
         LeadLifetime(**fields)
 
 
+def test_active_lifetime_with_upper_bound_is_rejected() -> None:
+    fields = dict(
+        relationship_id="relationship",
+        event_ticker="event",
+        broad_market_ticker="broad",
+        narrow_market_ticker="narrow",
+        first_seen_at=NOW,
+        last_seen_at=NOW,
+        observation_count=1,
+        consecutive_observations=1,
+        still_active=True,
+        disappeared_at=None,
+        ambiguity_censored_at=None,
+        observed_lifetime_lower_bound_seconds=Decimal(0),
+        observed_lifetime_upper_bound_seconds=Decimal(900),
+        maximum_gross_inversion=None,
+        maximum_confirmed_depth=None,
+        maximum_after_cost_gap=None,
+    )
+    with pytest.raises(OpportunityError, match="active lifetime"):
+        LeadLifetime(**fields)
+
+
+def test_disappeared_lifetime_without_upper_bound_is_rejected() -> None:
+    fields = dict(
+        relationship_id="relationship",
+        event_ticker="event",
+        broad_market_ticker="broad",
+        narrow_market_ticker="narrow",
+        first_seen_at=NOW,
+        last_seen_at=NOW,
+        observation_count=1,
+        consecutive_observations=0,
+        still_active=False,
+        disappeared_at=NOW + timedelta(minutes=15),
+        ambiguity_censored_at=None,
+        observed_lifetime_lower_bound_seconds=Decimal(0),
+        observed_lifetime_upper_bound_seconds=None,
+        maximum_gross_inversion=None,
+        maximum_confirmed_depth=None,
+        maximum_after_cost_gap=None,
+    )
+    with pytest.raises(OpportunityError, match="requires an upper bound"):
+        LeadLifetime(**fields)
+
+
 def test_compute_lifetime_rejects_mixed_relationships() -> None:
     lead, _low, _high = inverted_lead()
     other_lead, _l2, _h2 = inverted_lead()
