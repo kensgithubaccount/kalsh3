@@ -1,5 +1,16 @@
 """Research-only forward-reality evidence primitives."""
 
+from .outcome_scoring import (
+    AuthoritativeOutcome,
+    OutcomeScoringStore,
+    OutcomeStatus,
+    ScoringError,
+    ScoringRecord,
+    calibration_buckets,
+    confidence_interval,
+    event_equal_aggregation,
+    score_trial,
+)
 from .prospective_receipts import (
     ProspectiveOutcomeBoundary,
     ProspectivePredictionReceipt,
@@ -9,9 +20,18 @@ from .prospective_receipts import (
 )
 
 __all__ = (
+    "AuthoritativeOutcome",
+    "OutcomeScoringStore",
+    "OutcomeStatus",
     "ProspectiveOutcomeBoundary",
     "ProspectivePredictionReceipt",
     "ProspectiveReceiptError",
     "ProspectiveReceiptPublication",
     "ProspectiveReceiptStore",
+    "ScoringError",
+    "ScoringRecord",
+    "calibration_buckets",
+    "confidence_interval",
+    "event_equal_aggregation",
+    "score_trial",
 )
