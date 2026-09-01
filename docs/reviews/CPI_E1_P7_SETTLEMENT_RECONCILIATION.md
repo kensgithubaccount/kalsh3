@@ -162,6 +162,16 @@ authoritative fields fail closed. These repairs address the two Codex Security
 medium findings from the preceding exact head; this receipt records the repair
 but does not itself constitute the independent security re-review.
 
+Issued acquisition evidence also carries a stored issuance fingerprint and
+evidence identity over the complete authority-bearing field set, including
+fixture identity, URL, transport, raw hash/byte count, timestamp, role and
+selectors, and safety flags. A private process-local registry records the
+fingerprint at reviewed issuance. Revalidation recomputes the fingerprint and
+requires both the stored identity and registry entry to match, so coordinated
+mutation of frozen-fixture or live evidence cannot become a new authority.
+Reconstructed evidence objects after process restart fail closed; frozen
+fixtures must be reloaded through `load_frozen_kalshi_acquisition()`.
+
 ## Tests and G3 implication
 
 The focused suite covers exact matching, first-class mismatch, identity/rules

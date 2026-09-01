@@ -57,10 +57,12 @@ KALSHI_BASE = f"https://{KALSHI_HOST}/trade-api/v2"
 HTTP_METHOD = "GET"
 SUCCESS_STATUS = 200
 MAX_RESPONSE_BYTES = 2_000_000
+KALSHI_ACQUISITION_SCHEMA_VERSION = "cpi-e1-p7-kalshi-acquisition-v1"
 CONTRACT_TERMS_SHA256 = "2317b1d8e823082b409f6ff3415fb135804d9682681f9f92f640b3681b29a872"
 CONTRACT_TERMS_URL = "https://assets.kalshi.com/contract_terms/CPI.pdf"
 HISTORICAL_RULES_VERSION_PREFIX = "historical-market-rules-v1:"
 _ACQUISITION_CAPABILITY = object()
+_ISSUED_KALSHI_ACQUISITION_FINGERPRINTS: dict[int, str] = {}
 
 
 class CPISettlementReconciliationError(ValueError):
@@ -446,6 +448,7 @@ class KalshiHistoricalAcquisitionEvidence:
     http_status: int
     raw_response: bytes
     raw_artifact_hash: str
+    byte_count: int
     acquired_at: datetime
     endpoint_role: KalshiEndpointRole
     expected_ticker: str | None
@@ -453,6 +456,8 @@ class KalshiHistoricalAcquisitionEvidence:
     expected_series_ticker: str
     research_only: bool
     production_influence: Decimal
+    issuance_fingerprint: str
+    evidence_id: str
 
     def __init__(
         self,
@@ -484,6 +489,7 @@ class KalshiHistoricalAcquisitionEvidence:
             "http_status": response.status,
             "raw_response": response.raw_body,
             "raw_artifact_hash": digest,
+            "byte_count": len(response.raw_body),
             "acquired_at": response.acquired_at.astimezone(UTC),
             "endpoint_role": role,
             "expected_ticker": expected_ticker,
@@ -493,25 +499,33 @@ class KalshiHistoricalAcquisitionEvidence:
             "production_influence": ZERO,
         }.items():
             object.__setattr__(self, name, value)
+        fingerprint = _kalshi_acquisition_fingerprint(self)
+        object.__setattr__(self, "issuance_fingerprint", fingerprint)
+        object.__setattr__(self, "evidence_id", fingerprint)
+        _ISSUED_KALSHI_ACQUISITION_FINGERPRINTS[id(self)] = fingerprint
 
-    @property
-    def evidence_id(self) -> str:
-        return stable_hash(
-            (
-                POLICY_VERSION,
-                self.request_url,
-                self.method,
-                self.http_status,
-                self.raw_artifact_hash,
-                self.acquired_at.isoformat(),
-                self.endpoint_role.value,
-                self.expected_ticker,
-                self.expected_event_ticker,
-                self.expected_series_ticker,
-                self.research_only,
-                str(self.production_influence),
-            )
+
+def _kalshi_acquisition_fingerprint(
+    evidence: KalshiHistoricalAcquisitionEvidence,
+) -> str:
+    return stable_hash(
+        (
+            KALSHI_ACQUISITION_SCHEMA_VERSION,
+            evidence.fixture_id,
+            evidence.request_url,
+            evidence.method,
+            evidence.http_status,
+            evidence.raw_artifact_hash,
+            evidence.byte_count,
+            evidence.acquired_at.astimezone(UTC).isoformat(),
+            evidence.endpoint_role.value,
+            evidence.expected_ticker,
+            evidence.expected_event_ticker,
+            evidence.expected_series_ticker,
+            evidence.research_only,
+            str(evidence.production_influence),
         )
+    )
 
 
 def _issue_reviewed_public_get(
@@ -634,6 +648,20 @@ def validate_kalshi_acquisition(evidence: KalshiHistoricalAcquisitionEvidence) -
         raise CPISettlementReconciliationError(
             "Kalshi acquisition type or safety flags are invalid"
         )
+    try:
+        expected_fingerprint = _kalshi_acquisition_fingerprint(evidence)
+    except (AttributeError, TypeError, ValueError) as exc:
+        raise CPISettlementReconciliationError(
+            "Kalshi acquisition fingerprint cannot be recomputed"
+        ) from exc
+    if (
+        evidence.issuance_fingerprint != expected_fingerprint
+        or evidence.evidence_id != expected_fingerprint
+        or _ISSUED_KALSHI_ACQUISITION_FINGERPRINTS.get(id(evidence)) != expected_fingerprint
+    ):
+        raise CPISettlementReconciliationError(
+            "unissued, reconstructed, or mutated Kalshi acquisition evidence"
+        )
     _validate_response(
         _PublicHTTPResponse(
             evidence.request_url,
@@ -649,6 +677,8 @@ def validate_kalshi_acquisition(evidence: KalshiHistoricalAcquisitionEvidence) -
     )
     if hashlib.sha256(evidence.raw_response).hexdigest() != evidence.raw_artifact_hash:
         raise CPISettlementReconciliationError("Kalshi raw artifact hash changed")
+    if type(evidence.byte_count) is not int or evidence.byte_count != len(evidence.raw_response):
+        raise CPISettlementReconciliationError("Kalshi raw artifact byte count changed")
     if evidence.fixture_id is not None:
         entry = _FIXTURES.get(evidence.fixture_id)
         if entry is None or (

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import copy
 import hashlib
 import http.client
 from dataclasses import replace
@@ -111,6 +112,9 @@ def test_arbitrary_raw_json_has_no_acquisition_constructor() -> None:
         ("http_status", 201),
         ("endpoint_role", object()),
         ("expected_ticker", "FORGED"),
+        ("issuance_fingerprint", "forged"),
+        ("evidence_id", "forged"),
+        ("byte_count", 1),
     ],
 )
 def test_acquisition_mutations_fail(
@@ -191,6 +195,63 @@ def test_frozen_artifact_hash_is_recomputed() -> None:
     acquisition = load_frozen_kalshi_acquisition("market-jul")
     forged = acquisition
     object.__setattr__(forged, "raw_artifact_hash", "0" * 64)
+    with pytest.raises(CPISettlementReconciliationError):
+        validate_kalshi_acquisition(forged)
+
+
+def test_reconstructed_public_fields_do_not_inherit_issuance() -> None:
+    acquisition = load_frozen_kalshi_acquisition("market-jul")
+    reconstructed = copy.copy(acquisition)
+    with pytest.raises(CPISettlementReconciliationError):
+        validate_kalshi_acquisition(reconstructed)
+
+
+def test_fixture_identity_mutation_fails_even_with_matching_raw_hash() -> None:
+    acquisition = load_frozen_kalshi_acquisition("market-jul")
+    object.__setattr__(acquisition, "fixture_id", None)
+    with pytest.raises(CPISettlementReconciliationError):
+        validate_kalshi_acquisition(acquisition)
+
+
+def test_reviewed_mocked_live_issuance_fails_after_body_hash_mutation(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    original = load_frozen_kalshi_acquisition("market-jul")
+
+    class Connection:
+        def __init__(self, *args: object, **kwargs: object) -> None:
+            del args, kwargs
+
+        def request(self, *args: object, **kwargs: object) -> None:
+            del args, kwargs
+
+        def getresponse(self) -> object:
+            return type(
+                "Response",
+                (),
+                {
+                    "status": 200,
+                    "length": len(original.raw_response),
+                    "read": lambda _self, _limit: original.raw_response,
+                },
+            )()
+
+        def close(self) -> None:
+            pass
+
+    monkeypatch.setattr(http.client, "HTTPSConnection", Connection)
+    live = reconciliation.acquire_kalshi_historical_get(
+        original.request_url,
+        reconciliation.KalshiEndpointRole.HISTORICAL_MARKET,
+        expected_ticker=original.expected_ticker,
+        expected_event_ticker=original.expected_event_ticker,
+    )
+    validate_kalshi_acquisition(live)
+    forged = live
+    raw = live.raw_response + b" "
+    object.__setattr__(forged, "raw_response", raw)
+    object.__setattr__(forged, "raw_artifact_hash", hashlib.sha256(raw).hexdigest())
+    object.__setattr__(forged, "byte_count", len(raw))
     with pytest.raises(CPISettlementReconciliationError):
         validate_kalshi_acquisition(forged)
 
