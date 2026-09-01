@@ -508,9 +508,13 @@
   now passes the non-secret hostname explicitly. NATS's destructive `--signal ldm` check was LIVE
   DIAGNOSED and replaced by private monitoring `/healthz`; repeated lifecycle/client smoke coverage is
   checked in, with GitHub CI execution PENDING for this commit.
-- Persistent host `vm.overcommit_memory=1`, AWS firewall/hardening, reboot persistence, DNS/TLS, full app
-  startup, PostgreSQL, signer isolation at runtime, backup/restore, alerts, production reads/reconciliation,
-  Oracle behavior, and long-duration operations remain NOT VERIFIED / PENDING as applicable.
+- The corrected AWS stack was LIVE VERIFIED with all seven services started together: PostgreSQL, Redis,
+  NATS, web, and production-signer healthy; account-worker and Caddy up. The production-signer remained
+  DISARMED, and the active host value `vm.overcommit_memory=1` was verified.
+- Sysctl persistence across an actual reboot, public HTTPS/TLS validation, AWS security-group/NACL/host-
+  firewall inspection, signer runtime network-isolation verification, production-read credentials and
+  account reconciliation, backup/restore, alerts, long-duration behavior, and Oracle deployment remain
+  NOT VERIFIED / PENDING as applicable.
 - Production remains DISARMED. Bounded autonomy remains OFF. Production-write credential remains NONE.
   Live production mutation and real-money orders remain NONE. No strategy, model behavior, authorization,
   credential, risk limit, or signer-network boundary changed. Full production readiness is not claimed.
