@@ -58,6 +58,7 @@ from services.market_universe.pricing import PriceLadder
 from services.market_universe.sync import (
     Completeness,
     MemoryUniverseRepository,
+    PublicTransport,
     SyncProgress,
     UniverseSynchronizer,
 )
@@ -115,7 +116,7 @@ class UniverseRefreshResult:
 def refresh_universe(
     archive_path: str,
     *,
-    transport: object | None = None,
+    transport: PublicTransport | None = None,
     clock: Callable[[], datetime] = lambda: datetime.now(UTC),
     progress: Callable[[SyncProgress], None] | None = None,
 ) -> UniverseRefreshResult:
@@ -137,7 +138,7 @@ def refresh_universe(
         clock=clock,
         max_pages=DEFAULT_MAX_PAGES,
         progress=progress,
-    )  # type: ignore[arg-type]
+    )
     market_run = synchronizer.sync("markets", parameters=dict(OPEN_NON_MVE_V2.markets_parameters))
     event_run = synchronizer.sync("events", parameters=dict(OPEN_NON_MVE_V2.events_parameters))
     market_events = {item.event_ticker for item in repo.markets.values()}
@@ -445,7 +446,7 @@ def run_scan_cycle(
     archive_path: str,
     store: StructuralMeasurementStore,
     source_authority: str,
-    universe_transport: object | None = None,
+    universe_transport: PublicTransport | None = None,
     requested_quantity: Decimal = Decimal(1),
     market_read: MarketReader = public_read.get_market_with_body,
     series_read: SeriesReader = _default_series_read,
@@ -474,7 +475,7 @@ def _run_scan_cycle_unlocked(
     archive_path: str,
     store: StructuralMeasurementStore,
     source_authority: str,
-    universe_transport: object | None = None,
+    universe_transport: PublicTransport | None = None,
     requested_quantity: Decimal = Decimal(1),
     market_read: MarketReader = public_read.get_market_with_body,
     series_read: SeriesReader = _default_series_read,
