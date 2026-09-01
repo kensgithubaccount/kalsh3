@@ -394,6 +394,54 @@ def test_record_exact_confirmation_rejects_a_mismatched_confirmation() -> None:
         )
 
 
+def test_measurement_boundary_rejects_forged_leads_and_confirmations() -> None:
+    lead, low, high = inverted_lead()
+    with pytest.raises(OpportunityError, match="research-only"):
+        record_discovery_only(
+            replace(lead, production_influence=Decimal("1")),
+            relationship_id_value=relationship_id(lead),
+            scan_run_id="scan-1",
+            observed_at=NOW,
+            blocker_reason="forged",
+        )
+    with pytest.raises(OpportunityError, match="identity formula"):
+        record_discovery_only(
+            replace(lead, lead_id="forged"),
+            relationship_id_value=relationship_id(lead),
+            scan_run_id="scan-1",
+            observed_at=NOW,
+            blocker_reason="forged",
+        )
+    confirmation = confirm(lead, evidence("LOW", low), evidence("HIGH", high))
+    with pytest.raises(OpportunityError, match="research-only"):
+        record_exact_confirmation(
+            lead,
+            replace(confirmation, production_influence=Decimal("1")),
+            relationship_id_value=relationship_id(lead),
+            scan_run_id="scan-1",
+            observed_at=NOW,
+        )
+    with pytest.raises(OpportunityError, match="identity formula"):
+        record_exact_confirmation(
+            lead,
+            replace(confirmation, confirmation_id="forged"),
+            relationship_id_value=relationship_id(lead),
+            scan_run_id="scan-1",
+            observed_at=NOW,
+        )
+    with pytest.raises(OpportunityError, match="economics"):
+        record_exact_confirmation(
+            lead,
+            replace(
+                confirmation,
+                exact_gross_package_cost=Decimal("0"),
+            ),
+            relationship_id_value=relationship_id(lead),
+            scan_run_id="scan-1",
+            observed_at=NOW,
+        )
+
+
 def test_record_stale_disappeared_and_ambiguous_require_a_previous_observation_and_reason() -> None:
     lead, _low, _high = inverted_lead()
     previous = record_discovery_only(
@@ -698,6 +746,92 @@ def test_compute_lifetime_rejects_mixed_relationships() -> None:
         compute_lifetime([a, b])
     with pytest.raises(OpportunityError, match="zero observations"):
         compute_lifetime([])
+
+
+def test_compute_lifetime_rejects_duplicate_scans_and_mixed_market_identities() -> None:
+    lead, _low, _high = inverted_lead()
+    first = record_discovery_only(
+        lead,
+        relationship_id_value=relationship_id(lead),
+        scan_run_id="scan-1",
+        observed_at=NOW,
+        blocker_reason="r",
+    )
+    duplicate = record_discovery_only(
+        lead,
+        relationship_id_value=relationship_id(lead),
+        scan_run_id="scan-1",
+        observed_at=NOW + timedelta(minutes=1),
+        blocker_reason="different content",
+    )
+    with pytest.raises(OpportunityError, match="duplicate scan_run_id"):
+        compute_lifetime([first, duplicate])
+    mixed = replace(first, scan_run_id="scan-2", narrow_market_ticker="OTHER")
+    with pytest.raises(OpportunityError, match="event and market identities"):
+        compute_lifetime([first, mixed])
+
+
+def test_lifetime_rejects_every_malformed_integrity_field() -> None:
+    lead, _low, _high = inverted_lead()
+    first = record_discovery_only(
+        lead,
+        relationship_id_value=relationship_id(lead),
+        scan_run_id="scan-1",
+        observed_at=NOW,
+        blocker_reason="r",
+    )
+    valid_active = compute_lifetime([first])
+    bad_active = (
+        {"relationship_id": ""},
+        {"first_seen_at": datetime(2026, 1, 1)},
+        {"first_seen_at": NOW + timedelta(minutes=1)},
+        {"observation_count": 0},
+        {"consecutive_observations": 2},
+        {"consecutive_observations": 0},
+        {"observed_lifetime_lower_bound_seconds": Decimal("-1")},
+        {"observed_lifetime_lower_bound_seconds": Decimal("1")},
+    )
+    for changes in bad_active:
+        with pytest.raises(OpportunityError):
+            replace(valid_active, **changes)
+
+    gone = record_disappeared(first, scan_run_id="scan-2", observed_at=NOW)
+    valid_disappeared = compute_lifetime([first, gone])
+    bad_disappeared = (
+        {"consecutive_observations": 1},
+        {"disappeared_at": NOW - timedelta(minutes=1)},
+        {"observed_lifetime_upper_bound_seconds": Decimal("-1")},
+        {"observed_lifetime_upper_bound_seconds": Decimal("1")},
+    )
+    for changes in bad_disappeared:
+        with pytest.raises(OpportunityError):
+            replace(valid_disappeared, **changes)
+
+    ambiguous = record_ambiguous(
+        first,
+        scan_run_id="scan-3",
+        observed_at=NOW,
+        blocker_reason="ambiguous",
+    )
+    valid_ambiguous = compute_lifetime([first, ambiguous])
+    with pytest.raises(OpportunityError):
+        replace(valid_ambiguous, ambiguity_censored_at=NOW - timedelta(minutes=1))
+
+
+def test_summary_rejects_duplicate_lifetime_identities() -> None:
+    lead, _low, _high = inverted_lead()
+    observation = record_discovery_only(
+        lead,
+        relationship_id_value=relationship_id(lead),
+        scan_run_id="scan-1",
+        observed_at=NOW,
+        blocker_reason="r",
+    )
+    lifetime = compute_lifetime([observation])
+    with pytest.raises(OpportunityError, match="unique relationship identities"):
+        summarize_run(
+            [observation], [lifetime, lifetime], scans_completed=1, independent_cohorts_observed=1
+        )
 
 
 # -- summary ---------------------------------------------------------------------------------

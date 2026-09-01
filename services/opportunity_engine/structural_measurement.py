@@ -26,7 +26,7 @@ executability claim.
 from __future__ import annotations
 
 from collections.abc import Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, fields
 from datetime import datetime
 from decimal import Decimal
 from enum import StrEnum
@@ -34,7 +34,13 @@ from enum import StrEnum
 from services.market_universe.domain import stable_hash
 
 from .domain import OpportunityError
-from .structural import ConfirmationState, RelationshipType, StructuralConfirmation, StructuralLead
+from .structural import (
+    POLICY_VERSION,
+    ConfirmationState,
+    RelationshipType,
+    StructuralConfirmation,
+    StructuralLead,
+)
 
 ZERO = Decimal("0")
 MEASUREMENT_POLICY_VERSION = "m27b2-structural-measurement-v1"
@@ -109,6 +115,164 @@ def relationship_id(lead: StructuralLead) -> str:
             lead.source_authority,
         )
     )
+
+
+def _validate_lead(lead: StructuralLead) -> StructuralLead:
+    if type(lead) is not StructuralLead:
+        raise OpportunityError("measurement requires an exact StructuralLead")
+    if not lead.research_only or lead.production_influence != ZERO:
+        raise OpportunityError("structural lead must remain research-only")
+    if not lead.exact_confirmation_required:
+        raise OpportunityError("structural lead must require exact confirmation")
+    required = (
+        lead.lead_id,
+        lead.cohort_identity,
+        lead.event_ticker,
+        lead.broad_market_ticker,
+        lead.narrow_market_ticker,
+        lead.broad_quote_source_hash,
+        lead.narrow_quote_source_hash,
+        lead.broad_rules_hash,
+        lead.broad_metadata_hash,
+        lead.narrow_rules_hash,
+        lead.narrow_metadata_hash,
+        lead.source_authority,
+    )
+    if any(type(value) is not str or not value for value in required):
+        raise OpportunityError("structural lead identities and source authority are required")
+    expected = stable_hash(
+        (
+            POLICY_VERSION,
+            lead.cohort_identity,
+            lead.broad_market_ticker,
+            lead.narrow_market_ticker,
+            str(lead.broad_threshold),
+            str(lead.narrow_threshold),
+            lead.broad_quote_source_hash,
+            lead.narrow_quote_source_hash,
+            lead.broad_rules_hash,
+            lead.broad_metadata_hash,
+            lead.narrow_rules_hash,
+            lead.narrow_metadata_hash,
+            lead.source_authority,
+        )
+    )
+    if lead.lead_id != expected:
+        raise OpportunityError("structural lead identity formula mismatch")
+    return lead
+
+
+def _expected_confirmation_id(lead: StructuralLead, confirmation: StructuralConfirmation) -> str:
+    return stable_hash(
+        (
+            POLICY_VERSION,
+            lead.lead_id,
+            confirmation.broad_evidence_id,
+            confirmation.narrow_evidence_id,
+            confirmation.state,
+            str(confirmation.requested_quantity),
+        )
+    )
+
+
+def _finite_decimal(value: Decimal, field_name: str) -> None:
+    if not isinstance(value, Decimal) or not value.is_finite():
+        raise OpportunityError(f"{field_name} must be finite")
+
+
+def _validate_confirmation(
+    lead: StructuralLead, confirmation: StructuralConfirmation
+) -> StructuralConfirmation:
+    if type(confirmation) is not StructuralConfirmation:
+        raise OpportunityError("measurement requires an exact StructuralConfirmation")
+    if confirmation.lead_id != lead.lead_id:
+        raise OpportunityError("confirmation does not belong to this exact lead")
+    if not confirmation.research_only or confirmation.production_influence != ZERO:
+        raise OpportunityError("structural confirmation must remain research-only")
+    if confirmation.final_net_profit is not None or confirmation.guaranteed_net_profit is not None:
+        raise OpportunityError("structural confirmation must not contain profit authority")
+    if (
+        not confirmation.confirmation_id
+        or not confirmation.broad_evidence_id
+        or not confirmation.narrow_evidence_id
+    ):
+        raise OpportunityError("confirmation identities are required")
+    if confirmation.confirmation_id != _expected_confirmation_id(lead, confirmation):
+        raise OpportunityError("confirmation identity formula mismatch")
+    _finite_decimal(confirmation.requested_quantity, "requested quantity")
+    if confirmation.requested_quantity <= ZERO:
+        raise OpportunityError("requested quantity must be positive")
+    if confirmation.broad_side.value != "YES" or confirmation.narrow_side.value != "NO":
+        raise OpportunityError("confirmation outcome sides are incoherent")
+
+    economic_values = (
+        confirmation.minimum_guaranteed_settlement_payout,
+        confirmation.exact_gross_package_cost,
+        confirmation.gross_structural_gap,
+        confirmation.broad_centicent_formula_fee,
+        confirmation.narrow_centicent_formula_fee,
+        confirmation.centicent_formula_fees,
+        confirmation.formula_adjusted_structural_gap,
+    )
+    for name, value in zip(
+        (
+            "minimum payout",
+            "gross package cost",
+            "gross structural gap",
+            "broad formula fee",
+            "narrow formula fee",
+            "formula fees",
+            "formula-adjusted structural gap",
+        ),
+        economic_values,
+        strict=True,
+    ):
+        if value is not None:
+            _finite_decimal(value, name)
+
+    if confirmation.state in (
+        ConfirmationState.INSUFFICIENT_BROAD_YES_DEPTH,
+        ConfirmationState.INSUFFICIENT_NARROW_NO_DEPTH,
+    ):
+        if any(value is not None for value in economic_values):
+            raise OpportunityError("insufficient-depth confirmation cannot contain economics")
+        return confirmation
+
+    if confirmation.state is not ConfirmationState.FINAL_FEE_UNKNOWN_PREFILL:
+        raise OpportunityError("unknown confirmation state")
+    required = (
+        confirmation.minimum_guaranteed_settlement_payout,
+        confirmation.exact_gross_package_cost,
+        confirmation.gross_structural_gap,
+        confirmation.broad_centicent_formula_fee,
+        confirmation.narrow_centicent_formula_fee,
+        confirmation.centicent_formula_fees,
+        confirmation.formula_adjusted_structural_gap,
+    )
+    if any(value is None for value in required):
+        raise OpportunityError("final confirmation economics are incomplete")
+    payout = confirmation.minimum_guaranteed_settlement_payout
+    cost = confirmation.exact_gross_package_cost
+    gross = confirmation.gross_structural_gap
+    broad_fee = confirmation.broad_centicent_formula_fee
+    narrow_fee = confirmation.narrow_centicent_formula_fee
+    fees = confirmation.centicent_formula_fees
+    adjusted = confirmation.formula_adjusted_structural_gap
+    if (
+        payout is None
+        or cost is None
+        or gross is None
+        or broad_fee is None
+        or narrow_fee is None
+        or fees is None
+        or adjusted is None
+    ):
+        raise OpportunityError("final confirmation economics are incomplete")
+    if payout != confirmation.requested_quantity or cost is None or cost < ZERO:
+        raise OpportunityError("confirmation payout or cost is incoherent")
+    if gross != payout - cost or fees != broad_fee + narrow_fee or adjusted != gross - fees:
+        raise OpportunityError("confirmation fee-adjusted economics are incoherent")
+    return confirmation
 
 
 @dataclass(frozen=True, slots=True)
@@ -204,6 +368,7 @@ def _observation_id(fields: dict[str, object]) -> str:
 def _base_fields(
     lead: StructuralLead, *, relationship_id_value: str, scan_run_id: str, observed_at: datetime
 ) -> dict[str, object]:
+    _validate_lead(lead)
     return dict(
         relationship_id=relationship_id_value,
         scan_run_id=scan_run_id,
@@ -219,6 +384,40 @@ def _base_fields(
         narrow_quote_source_hash=lead.narrow_quote_source_hash,
         source_authority=lead.source_authority,
     )
+
+
+def observation_content_identity(observation: LeadObservation) -> str:
+    if type(observation) is not LeadObservation:
+        raise OpportunityError("only exact LeadObservation may be validated")
+    values = {
+        field.name: getattr(observation, field.name)
+        for field in fields(observation)
+        if field.name not in {"observation_id", "research_only", "production_influence"}
+    }
+    return _observation_id(values)
+
+
+def _validate_previous(previous: LeadObservation) -> LeadObservation:
+    if type(previous) is not LeadObservation:
+        raise OpportunityError("lifecycle transition requires an exact LeadObservation")
+    if previous.research_only is not True or previous.production_influence != ZERO:
+        raise OpportunityError("previous observation must remain research-only")
+    if not all(
+        type(value) is str and bool(value)
+        for value in (
+            previous.observation_id,
+            previous.relationship_id,
+            previous.scan_run_id,
+            previous.event_ticker,
+            previous.broad_market_ticker,
+            previous.narrow_market_ticker,
+            previous.source_authority,
+        )
+    ):
+        raise OpportunityError("previous observation identities are required")
+    if observation_content_identity(previous) != previous.observation_id:
+        raise OpportunityError("previous observation identity formula mismatch")
+    return previous
 
 
 def record_discovery_only(
@@ -310,8 +509,8 @@ def record_exact_confirmation(
     value here is read directly from ``confirmation``. Fails closed if the confirmation does not
     belong to this exact lead.
     """
-    if confirmation.lead_id != lead.lead_id:
-        raise OpportunityError("confirmation does not belong to this exact lead")
+    _validate_lead(lead)
+    _validate_confirmation(lead, confirmation)
     base = _base_fields(
         lead,
         relationship_id_value=relationship_id_value,
@@ -372,6 +571,7 @@ def record_stale(
     """The scan still finds this relationship, but a fresh confirmation attempt's own acquired
     evidence failed its independent freshness check. Distinct from ``DISCOVERY_ONLY``: this
     relationship has previously produced real evidence; only this cycle's revisit is stale."""
+    _validate_previous(previous)
     if not blocker_reason:
         raise OpportunityError("STALE requires a non-empty blocker reason")
     fields = dict(
@@ -406,6 +606,7 @@ def record_disappeared(
     """The canonical scan no longer produces any lead for this relationship: the underlying
     ordering is no longer inverted, or one leg is no longer an eligible market. Closes the
     lifetime at the scan that first failed to reproduce it."""
+    _validate_previous(previous)
     if previous.state is MeasurementState.AMBIGUOUS:
         raise OpportunityError("AMBIGUOUS cannot be converted to DISAPPEARED")
     fields = dict(
@@ -440,6 +641,7 @@ def record_ambiguous(
     """The cohort backing this relationship became structurally ambiguous on a later scan (for
     example canonical ``DUPLICATE_THRESHOLD``/``MIXED_CUSTOM_STRIKE_PRESENCE`` abstention) rather
     than cleanly absent -- recorded distinctly so it is never conflated with ``DISAPPEARED``."""
+    _validate_previous(previous)
     if not blocker_reason:
         raise OpportunityError("AMBIGUOUS requires a non-empty blocker reason")
     fields = dict(
@@ -498,6 +700,39 @@ class LeadLifetime:
     maximum_after_cost_gap: Decimal | None
 
     def __post_init__(self) -> None:
+        identities = (
+            self.relationship_id,
+            self.event_ticker,
+            self.broad_market_ticker,
+            self.narrow_market_ticker,
+        )
+        if any(type(value) is not str or not value for value in identities):
+            raise OpportunityError("lifetime identities are required")
+        for name, value in (
+            ("first_seen_at", self.first_seen_at),
+            ("last_seen_at", self.last_seen_at),
+            ("disappeared_at", self.disappeared_at),
+            ("ambiguity_censored_at", self.ambiguity_censored_at),
+        ):
+            if value is not None and (value.tzinfo is None or value.utcoffset() is None):
+                raise OpportunityError(f"{name} must be timezone-aware")
+        if self.first_seen_at > self.last_seen_at:
+            raise OpportunityError("first_seen_at must be no later than last_seen_at")
+        if type(self.observation_count) is not int or self.observation_count < 1:
+            raise OpportunityError("observation_count must be at least one")
+        if (
+            type(self.consecutive_observations) is not int
+            or not 0 <= self.consecutive_observations <= self.observation_count
+        ):
+            raise OpportunityError("consecutive_observations must be within observation_count")
+        expected_lower = Decimal(str((self.last_seen_at - self.first_seen_at).total_seconds()))
+        if (
+            not isinstance(self.observed_lifetime_lower_bound_seconds, Decimal)
+            or not self.observed_lifetime_lower_bound_seconds.is_finite()
+            or self.observed_lifetime_lower_bound_seconds < ZERO
+            or self.observed_lifetime_lower_bound_seconds != expected_lower
+        ):
+            raise OpportunityError("lifetime lower bound is inconsistent")
         active = (
             self.still_active and self.disappeared_at is None and self.ambiguity_censored_at is None
         )
@@ -517,10 +752,35 @@ class LeadLifetime:
             )
         if active and self.observed_lifetime_upper_bound_seconds is not None:
             raise OpportunityError("active lifetime cannot have an upper bound")
+        if active and self.consecutive_observations < 1:
+            raise OpportunityError("active lifetime requires a positive consecutive count")
         if disappeared and self.observed_lifetime_upper_bound_seconds is None:
             raise OpportunityError("disappeared lifetime requires an upper bound")
+        if disappeared and self.consecutive_observations != 0:
+            raise OpportunityError("disappeared lifetime requires zero consecutive observations")
         if ambiguity_censored and self.observed_lifetime_upper_bound_seconds is not None:
             raise OpportunityError("ambiguity-censored lifetime cannot have an upper bound")
+        if ambiguity_censored and self.consecutive_observations != 0:
+            raise OpportunityError(
+                "ambiguity-censored lifetime requires zero consecutive observations"
+            )
+        terminal_at = self.disappeared_at or self.ambiguity_censored_at
+        if terminal_at is not None and terminal_at < self.last_seen_at:
+            raise OpportunityError("terminal timestamp must be no earlier than last_seen_at")
+        if disappeared:
+            disappeared_at = self.disappeared_at
+            if disappeared_at is None:  # pragma: no cover - status invariant above
+                raise OpportunityError("disappeared lifetime requires a timestamp")
+            expected_upper = Decimal(str((disappeared_at - self.first_seen_at).total_seconds()))
+            upper = self.observed_lifetime_upper_bound_seconds
+            if (
+                not isinstance(upper, Decimal)
+                or not upper.is_finite()
+                or upper < ZERO
+                or upper != expected_upper
+                or upper < self.observed_lifetime_lower_bound_seconds
+            ):
+                raise OpportunityError("lifetime upper bound is inconsistent")
 
 
 def compute_lifetime(observations: Sequence[LeadObservation]) -> LeadLifetime:
@@ -529,6 +789,19 @@ def compute_lifetime(observations: Sequence[LeadObservation]) -> LeadLifetime:
     relationship = observations[0].relationship_id
     if any(observation.relationship_id != relationship for observation in observations):
         raise OpportunityError("all observations must share one relationship_id")
+    scan_ids = [observation.scan_run_id for observation in observations]
+    if len(set(scan_ids)) != len(scan_ids):
+        raise OpportunityError("an episode cannot contain duplicate scan_run_id values")
+    identities = {
+        (
+            observation.event_ticker,
+            observation.broad_market_ticker,
+            observation.narrow_market_ticker,
+        )
+        for observation in observations
+    }
+    if len(identities) != 1:
+        raise OpportunityError("all observations must share event and market identities")
     ordered = sorted(observations, key=lambda observation: observation.observed_at)
     seen = [observation for observation in ordered if observation.state in _SEEN_STATES]
     if not seen:
@@ -654,6 +927,9 @@ def summarize_run(
 ) -> MeasurementRunSummary:
     if scans_completed < 0:
         raise OpportunityError("scans_completed must be non-negative")
+    lifetime_ids = [lifetime.relationship_id for lifetime in lifetimes]
+    if len(set(lifetime_ids)) != len(lifetime_ids):
+        raise OpportunityError("summary lifetimes must have unique relationship identities")
     discovery_lead_count = len({o.relationship_id for o in observations if o.lead_id is not None})
     leads_per_event = None
     events = {o.event_ticker for o in observations}

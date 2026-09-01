@@ -9,14 +9,22 @@ append keyed by a content-addressed primary key. Every row is permanently
 
 from __future__ import annotations
 
+import fcntl
 import sqlite3
+from collections.abc import Iterator
+from contextlib import contextmanager
 from datetime import UTC, datetime
 from decimal import Decimal
 from pathlib import Path
 
 from .domain import OpportunityError
 from .structural import RelationshipType
-from .structural_measurement import FeeTreatment, LeadObservation, MeasurementState
+from .structural_measurement import (
+    FeeTreatment,
+    LeadObservation,
+    MeasurementState,
+    observation_content_identity,
+)
 
 _COLUMNS = (
     "observation_id",
@@ -79,7 +87,8 @@ class StructuralMeasurementStore:
                     blocker_reason TEXT,
                     source_authority TEXT NOT NULL,
                     production_influence TEXT NOT NULL DEFAULT '0'
-                        CHECK(production_influence = '0')
+                        CHECK(production_influence = '0'),
+                    UNIQUE (relationship_id, scan_run_id)
                 );
                 CREATE INDEX IF NOT EXISTS structural_lead_observations_relationship
                     ON structural_lead_observations(relationship_id, observed_at);
@@ -107,12 +116,46 @@ class StructuralMeasurementStore:
                 BEGIN SELECT RAISE(ABORT, 'append only'); END;
                 """
             )
+            conflicts = db.execute(
+                "SELECT relationship_id, scan_run_id FROM structural_lead_observations "
+                "GROUP BY relationship_id, scan_run_id HAVING COUNT(*) > 1 LIMIT 1"
+            ).fetchone()
+            if conflicts is not None:
+                raise OpportunityError(
+                    "database contains conflicting observations for one relationship and scan"
+                )
+            try:
+                db.execute(
+                    "CREATE UNIQUE INDEX IF NOT EXISTS "
+                    "structural_lead_observations_relationship_scan "
+                    "ON structural_lead_observations(relationship_id, scan_run_id)"
+                )
+            except sqlite3.IntegrityError as exc:
+                raise OpportunityError(
+                    "database contains conflicting observations for one relationship and scan"
+                ) from exc
             db.execute(
                 "INSERT OR IGNORE INTO structural_measurement_episodes "
                 "(episode_id,base_relationship_id,episode_sequence) "
                 "SELECT relationship_id,relationship_id,1 "
                 "FROM structural_lead_observations"
             )
+
+    @contextmanager
+    def cycle_lock(self) -> Iterator[None]:
+        """Acquire the store-associated cross-process scan lock without holding SQLite open."""
+        lock_path = self.path.with_name(self.path.name + ".cycle.lock")
+        with lock_path.open("a+") as lock_file:
+            try:
+                fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+            except BlockingIOError as exc:
+                raise OpportunityError(
+                    "another scan cycle is already running for this store"
+                ) from exc
+            try:
+                yield
+            finally:
+                fcntl.flock(lock_file.fileno(), fcntl.LOCK_UN)
 
     def register_episode(self, base_relationship_id: str, episode_id: str, sequence: int) -> None:
         if (
@@ -207,8 +250,14 @@ class StructuralMeasurementStore:
         """Insert one observation. Returns ``False`` (no-op) if an identical row already exists
         (idempotent replay of the same scan), raises if a different row claims the same
         content-addressed ``observation_id`` (a collision, never silently overwritten)."""
-        if not isinstance(observation, LeadObservation):
-            raise OpportunityError("only LeadObservation may be persisted")
+        if type(observation) is not LeadObservation:
+            raise OpportunityError("only exact LeadObservation may be persisted")
+        if observation.research_only is not True or observation.production_influence != Decimal(
+            "0"
+        ):
+            raise OpportunityError("persisted observation must remain research-only")
+        if observation_content_identity(observation) != observation.observation_id:
+            raise OpportunityError("observation identity formula mismatch")
         if not self._has_episode(observation.relationship_id):
             self.register_episode(observation.relationship_id, observation.relationship_id, 1)
         values = self._values(observation)
@@ -223,12 +272,26 @@ class StructuralMeasurementStore:
                     if tuple(existing[column] for column in _COLUMNS) == values:
                         return False
                     raise OpportunityError("observation_id collision with differing content")
+                pair_existing = db.execute(
+                    "SELECT observation_id FROM structural_lead_observations "
+                    "WHERE relationship_id=? AND scan_run_id=?",
+                    (observation.relationship_id, observation.scan_run_id),
+                ).fetchone()
+                if pair_existing is not None:
+                    raise OpportunityError(
+                        "relationship and scan already contain different observation content"
+                    )
                 placeholders = ",".join("?" for _ in _COLUMNS)
                 insert = (
                     f"INSERT INTO structural_lead_observations ({','.join(_COLUMNS)}) "  # noqa: S608
                     f"VALUES ({placeholders})"
                 )
-                db.execute(insert, values)
+                try:
+                    db.execute(insert, values)
+                except sqlite3.IntegrityError as exc:
+                    raise OpportunityError(
+                        "relationship and scan already contain different observation content"
+                    ) from exc
         except sqlite3.Error as exc:
             raise OpportunityError("structural measurement persistence rejected") from exc
         return True

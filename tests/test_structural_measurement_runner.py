@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import multiprocessing
 from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
@@ -9,9 +10,12 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import urlencode
 
+import pytest
+
 from services.market_universe import public_read
 from services.market_universe.market_snapshot import FRESHNESS
 from services.market_universe.orderbook_snapshot import acquire_orderbook_snapshot
+from services.opportunity_engine.domain import OpportunityError
 from services.opportunity_engine.structural_measurement import (
     MeasurementState,
     compute_lifetime,
@@ -30,6 +34,13 @@ from services.opportunity_engine.structural_measurement_store import StructuralM
 NOW = datetime(2026, 8, 15, 13, tzinfo=UTC)
 SERIES_TICKER = "S"
 EVENT_TICKER = "E"
+
+
+def _hold_cycle_lock(path: str, ready: Any, release: Any) -> None:
+    store = StructuralMeasurementStore(path)
+    with store.cycle_lock():
+        ready.send(True)
+        release.recv()
 
 
 def semantic_market_fields(
@@ -385,6 +396,30 @@ def test_run_scan_cycle_closes_a_lead_that_disappears_on_a_later_scan(tmp_path: 
     history = store.for_relationship(rel_id)
     assert history[-1].state is MeasurementState.DISAPPEARED
     assert history[-1].observed_at == NOW + timedelta(minutes=15)
+
+
+def test_overlapping_run_scan_cycle_fails_before_refresh_and_releases_cross_process(
+    tmp_path: Path,
+) -> None:
+    path = str(tmp_path / "evidence.sqlite3")
+    context = multiprocessing.get_context("spawn")
+    ready_parent, ready_child = context.Pipe(duplex=False)
+    release_parent, release_child = context.Pipe(duplex=False)
+    process = context.Process(target=_hold_cycle_lock, args=(path, ready_child, release_parent))
+    process.start()
+    assert ready_parent.recv() is True
+    store = StructuralMeasurementStore(path)
+    with pytest.raises(OpportunityError, match="already running"):
+        run_scan_cycle(
+            archive_path=str(tmp_path / "archive.sqlite3"),
+            store=store,
+            source_authority="test",
+        )
+    release_child.send(True)
+    process.join(timeout=10)
+    assert process.exitcode == 0
+    with store.cycle_lock():
+        pass
 
 
 def test_incomplete_refresh_fails_closed_without_observation_or_disappearance_writes(

@@ -442,6 +442,33 @@ def run_scan_cycle(
     orderbook_acquirer: Callable[..., Any] = acquire_orderbook_snapshot,
     clock: Callable[[], datetime] = lambda: datetime.now(UTC),
 ) -> ScanCycleResult:
+    """Run one cycle exclusively for this store across all processes."""
+    with store.cycle_lock():
+        return _run_scan_cycle_unlocked(
+            archive_path=archive_path,
+            store=store,
+            source_authority=source_authority,
+            universe_transport=universe_transport,
+            requested_quantity=requested_quantity,
+            market_read=market_read,
+            series_read=series_read,
+            orderbook_acquirer=orderbook_acquirer,
+            clock=clock,
+        )
+
+
+def _run_scan_cycle_unlocked(
+    *,
+    archive_path: str,
+    store: StructuralMeasurementStore,
+    source_authority: str,
+    universe_transport: object | None = None,
+    requested_quantity: Decimal = Decimal(1),
+    market_read: MarketReader = public_read.get_market_with_body,
+    series_read: SeriesReader = _default_series_read,
+    orderbook_acquirer: Callable[..., Any] = acquire_orderbook_snapshot,
+    clock: Callable[[], datetime] = lambda: datetime.now(UTC),
+) -> ScanCycleResult:
     """One full read-only scan/measure/persist cycle. Never places an order, never authenticates,
     never mutates the canonical M27B discovery/confirmation implementation.
 
