@@ -25,6 +25,8 @@ module -- see ``tests/test_m27b2_architecture.py``.
 from __future__ import annotations
 
 import argparse
+import os
+import threading
 import time
 from collections.abc import Callable, Iterator, Mapping
 from dataclasses import dataclass
@@ -89,6 +91,8 @@ from .structural_measurement_store import StructuralMeasurementStore
 # implied statement that leads persist (or fail to persist) on any particular timescale -- the
 # lifetime measurements in structural_measurement.py answer that question empirically.
 DEFAULT_CADENCE_SECONDS = 900
+_SUPERVISOR_PID_ENV = "M27B3_SUPERVISOR_PID"
+_WATCHDOG_INTERVAL_SECONDS = 0.25
 
 _QUOTE_FIELDS = (
     "yes_bid_dollars",
@@ -628,12 +632,35 @@ def _parser() -> argparse.ArgumentParser:
     return parser
 
 
+def _start_parent_watchdog() -> threading.Event | None:
+    """Stop this child if the fixed receipt wrapper is no longer its parent."""
+    expected_text = os.environ.get(_SUPERVISOR_PID_ENV)
+    if expected_text is None:
+        return None
+    try:
+        expected_pid = int(expected_text)
+    except ValueError:
+        return None
+    if expected_pid <= 0:
+        return None
+    stopped = threading.Event()
+
+    def watch() -> None:
+        while not stopped.wait(_WATCHDOG_INTERVAL_SECONDS):
+            if os.getppid() != expected_pid:
+                os._exit(1)
+
+    threading.Thread(target=watch, name="m27b3-parent-watchdog", daemon=True).start()
+    return stopped
+
+
 def main(argv: list[str] | None = None) -> int:
     args = _parser().parse_args(argv)
     if not args.live_public_read:
         print("Structural measurement: NOT STARTED", flush=True)
         print("Reason: explicit --live-public-read permission is required", flush=True)
         return 2
+    watchdog_stop = _start_parent_watchdog()
     store = StructuralMeasurementStore(args.evidence_db)
     print(
         "Starting M27B.2 structural-lead measurement (research only, production_influence=0)",
@@ -648,26 +675,31 @@ def main(argv: list[str] | None = None) -> int:
             flush=True,
         )
 
-    for result in run_forever(
-        archive_path=str(args.archive),
-        store=store,
-        source_authority=args.source_authority,
-        cadence_seconds=args.cadence_seconds,
-        max_iterations=args.max_iterations,
-        progress=_cli_progress,
-    ):
-        incomplete = incomplete or not result.refresh_complete
+    try:
+        for result in run_forever(
+            archive_path=str(args.archive),
+            store=store,
+            source_authority=args.source_authority,
+            cadence_seconds=args.cadence_seconds,
+            max_iterations=args.max_iterations,
+            progress=_cli_progress,
+        ):
+            incomplete = incomplete or not result.refresh_complete
+            print(
+                f"scan {result.scan_run_id}: {result.independent_cohorts_observed} cohorts, "
+                f"{result.discovery_leads} leads, "
+                f"{len(result.observations)} observations recorded, "
+                f"refresh_complete={result.refresh_complete}",
+                flush=True,
+            )
         print(
-            f"scan {result.scan_run_id}: {result.independent_cohorts_observed} cohorts, "
-            f"{result.discovery_leads} leads, {len(result.observations)} observations recorded, "
-            f"refresh_complete={result.refresh_complete}",
+            f"measurement complete: refresh_complete={not incomplete}, production_influence=0",
             flush=True,
         )
-    print(
-        f"measurement complete: refresh_complete={not incomplete}, production_influence=0",
-        flush=True,
-    )
-    return 1 if incomplete else 0
+        return 1 if incomplete else 0
+    finally:
+        if watchdog_stop is not None:
+            watchdog_stop.set()
 
 
 if __name__ == "__main__":

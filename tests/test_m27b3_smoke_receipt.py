@@ -1,7 +1,11 @@
 from __future__ import annotations
 
 import json
+import os
 import signal
+import subprocess
+import sys
+import time
 from pathlib import Path
 
 import pytest
@@ -41,6 +45,15 @@ def test_run_directory_requires_new_child_inside_existing_parent(tmp_path: Path)
     link.symlink_to(tmp_path / "missing", target_is_directory=True)
     with pytest.raises(receipt.ReceiptValidationError, match="already exists"):
         receipt.validate_run_directory(parent, link)
+    nested = parent / "nested" / "child"
+    with pytest.raises(receipt.ReceiptValidationError, match="direct child"):
+        receipt.validate_run_directory(parent, nested)
+    with pytest.raises(receipt.ReceiptValidationError, match="already exists"):
+        receipt.validate_run_directory(parent, parent)
+    file_parent = tmp_path / "file-parent"
+    file_parent.write_text("not a directory")
+    with pytest.raises(receipt.ReceiptValidationError, match="not a directory"):
+        receipt.validate_run_directory(file_parent, file_parent / "run")
 
 
 def test_command_is_exact_and_database_paths_are_contained(tmp_path: Path) -> None:
@@ -204,6 +217,194 @@ def test_nonzero_child_has_failed_terminal_receipt(
     payload = json.loads((parent / "two" / "process-receipt.json").read_text())
     assert payload["status"] == "FAILED"
     assert payload["exit_code"] == 7
+
+
+def test_running_receipt_failure_terminates_and_reaps_child(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    parent = tmp_path / "runs"
+    parent.mkdir()
+    monkeypatch.setattr(receipt, "repository_identity", lambda: identity())
+    events: list[str] = []
+
+    class Child:
+        pid = 111
+        returncode: int | None = None
+
+        def poll(self) -> int | None:
+            return self.returncode
+
+        def wait(self, timeout: float | None = None) -> int:
+            del timeout
+            events.append("wait")
+            self.returncode = -signal.SIGTERM
+            return self.returncode
+
+        def send_signal(self, value: int) -> None:
+            assert value == signal.SIGTERM
+            events.append("term")
+
+        def kill(self) -> None:
+            events.append("kill")
+            self.returncode = -signal.SIGKILL
+
+    monkeypatch.setattr(receipt.subprocess, "Popen", lambda *a, **k: Child())
+    original_write = receipt._atomic_write
+
+    def fail_running(path: Path, payload: dict[str, object]) -> None:
+        if payload.get("status") == "RUNNING":
+            raise OSError("simulated receipt storage failure")
+        original_write(path, payload)
+
+    monkeypatch.setattr(receipt, "_atomic_write", fail_running)
+    result = receipt.main(
+        [
+            "--parent-dir",
+            str(parent),
+            "--run-dir",
+            str(parent / "run"),
+            "--expected-code-sha",
+            SHA,
+            "--expected-tree",
+            TREE,
+            "--python",
+            "/bin/echo",
+        ]
+    )
+    assert result == 1
+    assert events == ["term", "wait"]
+
+
+def test_popen_failure_creates_no_child_and_nonzero_receipt(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    parent = tmp_path / "runs"
+    parent.mkdir()
+    monkeypatch.setattr(receipt, "repository_identity", lambda: identity())
+    monkeypatch.setattr(
+        receipt.subprocess, "Popen", lambda *a, **k: (_ for _ in ()).throw(OSError())
+    )
+    result = receipt.main(
+        [
+            "--parent-dir",
+            str(parent),
+            "--run-dir",
+            str(parent / "run"),
+            "--expected-code-sha",
+            SHA,
+            "--expected-tree",
+            TREE,
+            "--python",
+            "/bin/echo",
+        ]
+    )
+    assert result == 1
+    assert json.loads((parent / "run" / "process-receipt.json").read_text())["status"] == "FAILED"
+
+
+def test_terminal_receipt_failure_never_returns_success(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    parent = tmp_path / "runs"
+    parent.mkdir()
+    monkeypatch.setattr(receipt, "repository_identity", lambda: identity())
+
+    class Child:
+        pid = 222
+        returncode = 0
+
+        def poll(self) -> int:
+            return 0
+
+        def wait(self, timeout: float | None = None) -> int:
+            del timeout
+            return 0
+
+    monkeypatch.setattr(receipt.subprocess, "Popen", lambda *a, **k: Child())
+    # Keep STARTING/RUNNING durable while making only the terminal replacement fail.
+    original_write = receipt._atomic_write
+
+    def selective_failure(path: Path, payload: dict[str, object]) -> None:
+        if payload.get("status") == "COMPLETED":
+            raise OSError("simulated terminal storage failure")
+        original_write(path, payload)
+
+    monkeypatch.setattr(receipt, "_atomic_write", selective_failure)
+    assert (
+        receipt.main(
+            [
+                "--parent-dir",
+                str(parent),
+                "--run-dir",
+                str(parent / "run"),
+                "--expected-code-sha",
+                SHA,
+                "--expected-tree",
+                TREE,
+                "--python",
+                "/bin/echo",
+            ]
+        )
+        == 1
+    )
+
+
+def test_stale_running_receipt_is_only_interrupted_and_never_completed(tmp_path: Path) -> None:
+    path = tmp_path / "process-receipt.json"
+    payload = {
+        "status": "RUNNING",
+        "wrapper_pid": 999999,
+        "child_pid": 999998,
+    }
+    path.write_text(json.dumps(payload))
+    (tmp_path / "universe.sqlite").write_bytes(b"database")
+    before = path.read_bytes()
+    assert receipt.inspect_receipt(path) == "INTERRUPTED"
+    assert path.read_bytes() == before
+
+
+def test_parent_watchdog_kills_orphaned_child(tmp_path: Path) -> None:
+    marker = tmp_path / "marker"
+    child_pid = tmp_path / "child.pid"
+    child_code = (
+        "import os,time\n"
+        "from services.opportunity_engine.structural_measurement_runner "
+        "import _start_parent_watchdog\n"
+        f"open({str(child_pid)!r}, 'w').write(str(os.getpid()))\n"
+        "_start_parent_watchdog()\n"
+        f"\nwhile True:\n  open({str(marker)!r}, 'a').write('x')\n  time.sleep(.05)\n"
+    )
+    supervisor_code = (
+        "import os,subprocess,sys,time\n"
+        f"env=os.environ.copy(); env['M27B3_SUPERVISOR_PID']=str(os.getpid())\n"
+        f"subprocess.Popen([sys.executable,'-c',{child_code!r}], env=env)\n"
+        "time.sleep(60)\n"
+    )
+    supervisor = subprocess.Popen([sys.executable, "-c", supervisor_code], cwd=Path.cwd())
+    try:
+        deadline = time.monotonic() + 5
+        while not child_pid.exists() and time.monotonic() < deadline:
+            time.sleep(0.02)
+        assert child_pid.exists()
+        pid = int(child_pid.read_text())
+        os.kill(supervisor.pid, signal.SIGKILL)
+        supervisor.wait(timeout=5)
+        deadline = time.monotonic() + 5
+        while time.monotonic() < deadline:
+            try:
+                os.kill(pid, 0)
+            except ProcessLookupError:
+                break
+            time.sleep(0.05)
+        else:
+            pytest.fail("watchdog child survived supervisor death")
+        size = marker.stat().st_size
+        time.sleep(0.2)
+        assert marker.stat().st_size == size
+    finally:
+        if supervisor.poll() is None:
+            supervisor.kill()
+            supervisor.wait()
 
 
 def test_operator_document_uses_only_the_fixed_wrapper_interface() -> None:

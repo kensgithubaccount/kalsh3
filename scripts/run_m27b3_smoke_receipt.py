@@ -3,12 +3,14 @@
 from __future__ import annotations
 
 import argparse
+import contextlib
 import hashlib
 import json
 import os
 import resource
 import signal
 import subprocess
+import sys
 import tempfile
 from collections.abc import Mapping
 from dataclasses import dataclass
@@ -86,18 +88,32 @@ def _under(parent: Path, child: Path) -> bool:
 
 
 def validate_run_directory(parent_arg: Path, run_arg: Path) -> tuple[Path, Path]:
-    parent = parent_arg.expanduser().resolve(strict=True)
+    parent_candidate = parent_arg.expanduser()
+    if any(component.is_symlink() for component in _path_components(parent_candidate)):
+        raise ReceiptValidationError("parent directory must not be a symlink")
+    parent = parent_candidate.resolve(strict=True)
+    if not parent.is_dir():
+        raise ReceiptValidationError("parent path is not a directory")
     run = run_arg.expanduser()
     if run.exists() or run.is_symlink():
         raise ReceiptValidationError("run directory already exists")
+    if any(component.is_symlink() for component in _path_components(run)):
+        raise ReceiptValidationError("run directory path contains a symlink")
     run = run.resolve(strict=False)
-    if not _under(parent, run):
-        raise ReceiptValidationError("run directory is outside the supplied parent")
+    if run.parent != parent:
+        if not _under(parent, run):
+            raise ReceiptValidationError("run directory is outside the supplied parent")
+        raise ReceiptValidationError("run directory must be a direct child of the supplied parent")
     try:
         run.mkdir(parents=False, exist_ok=False)
     except FileExistsError:
         raise ReceiptValidationError("run directory already exists") from None
     return parent, run
+
+
+def _path_components(path: Path) -> list[Path]:
+    absolute = path.absolute()
+    return [Path(*absolute.parts[:index]) for index in range(1, len(absolute.parts) + 1)]
 
 
 def _validate_identity(expected_sha: str, expected_tree: str, identity: RepositoryIdentity) -> None:
@@ -143,6 +159,77 @@ def build_environment(source: dict[str, str] | None = None) -> dict[str, str]:
     environment = {key: source_values[key] for key in ENVIRONMENT_ALLOWLIST if key in source_values}
     environment["PYTHONUNBUFFERED"] = "1"
     return environment
+
+
+def _child_is_alive(process: subprocess.Popen[bytes]) -> bool:
+    return process.poll() is None
+
+
+def _terminate_and_reap(process: subprocess.Popen[bytes]) -> None:
+    if _child_is_alive(process):
+        with contextlib.suppress(OSError):
+            process.send_signal(signal.SIGTERM)
+        try:
+            process.wait(timeout=GRACE_SECONDS)
+        except subprocess.TimeoutExpired:
+            with contextlib.suppress(OSError):
+                process.kill()
+            process.wait()
+        except OSError:
+            with contextlib.suppress(OSError):
+                process.kill()
+            process.wait()
+    else:
+        process.wait()
+
+
+def _signal_name(value: int | None) -> str | None:
+    if value is None:
+        return None
+    try:
+        return signal.Signals(value).name
+    except ValueError:
+        return f"SIG{value}"
+
+
+def _failure_receipt(
+    base: dict[str, Any],
+    *,
+    reason: str,
+    child_pid: int | None = None,
+    wrapper_signal: int | None = None,
+) -> dict[str, Any]:
+    return {
+        **base,
+        "status": "FAILED",
+        "finished_at": _now(),
+        "child_pid": child_pid,
+        "exit_code": None,
+        "child_terminating_signal": None,
+        "wrapper_signal": _signal_name(wrapper_signal),
+        "failure_classification": reason,
+    }
+
+
+def inspect_receipt(path: Path) -> str:
+    """Classify a receipt without changing it or inferring completion from files."""
+    payload = json.loads(path.read_text())
+    status = payload.get("status")
+    if status != "RUNNING":
+        return str(status)
+    pids = [payload.get("wrapper_pid"), payload.get("child_pid")]
+    for value in pids:
+        if not isinstance(value, int):
+            continue
+        try:
+            os.kill(value, 0)
+        except ProcessLookupError:
+            continue
+        except PermissionError:
+            return "RUNNING"
+        else:
+            return "RUNNING"
+    return "INTERRUPTED"
 
 
 def _hash_file(path: Path) -> tuple[str | None, bool]:
@@ -219,8 +306,12 @@ def main(argv: list[str] | None = None) -> int:
         "parent_directory": str(parent),
         "source_authority": HOST,
         "production_influence": 0,
-        "environment_allowlist": sorted((*ENVIRONMENT_ALLOWLIST, "PYTHONUNBUFFERED")),
+        "environment_allowlist": sorted(
+            (*ENVIRONMENT_ALLOWLIST, "PYTHONUNBUFFERED", "M27B3_SUPERVISOR_PID")
+        ),
         "started_at": _now(),
+        "wrapper_pid": os.getpid(),
+        "supervisor_pid": os.getpid(),
         "child_pid": None,
         "wrapper_signal": None,
     }
@@ -238,41 +329,96 @@ def main(argv: list[str] | None = None) -> int:
 
     signal.signal(signal.SIGINT, forward)
     signal.signal(signal.SIGTERM, forward)
-    with stdout_path.open("wb") as stdout, stderr_path.open("wb") as stderr:
+    stdout = stderr = None
+    try:
+        stdout = stdout_path.open("wb")
+        stderr = stderr_path.open("wb")
+        child_environment = build_environment()
+        child_environment["M27B3_SUPERVISOR_PID"] = str(os.getpid())
         process = subprocess.Popen(  # noqa: S603 -- command is constructed above
             command,
             cwd=identity.root,
             stdin=subprocess.DEVNULL,
             stdout=stdout,
             stderr=stderr,
-            env=build_environment(),
+            env=child_environment,
             shell=False,
         )
-        _atomic_write(receipt_path, {**base, "status": "RUNNING", "child_pid": process.pid})
-        while process.poll() is None:
+        try:
+            _atomic_write(receipt_path, {**base, "status": "RUNNING", "child_pid": process.pid})
+        except BaseException:
+            _terminate_and_reap(process)
             try:
-                process.wait(timeout=0.5)
-            except subprocess.TimeoutExpired:
-                if wrapper_signal is not None:
-                    try:
-                        process.wait(timeout=GRACE_SECONDS)
-                    except subprocess.TimeoutExpired:
-                        process.kill()
-                        process.wait()
-                    break
+                _atomic_write(
+                    receipt_path,
+                    _failure_receipt(
+                        base,
+                        reason="running_receipt_write_failed",
+                        child_pid=process.pid,
+                    ),
+                )
+            except Exception:
+                print(
+                    "M27B3 receipt failure after spawn; child terminated and reaped",
+                    file=sys.stderr,
+                )
+            return 1
+        try:
+            while process.poll() is None:
+                try:
+                    process.wait(timeout=0.5)
+                except subprocess.TimeoutExpired:
+                    if wrapper_signal is not None:
+                        _terminate_and_reap(process)
+                        break
+        except BaseException:
+            _terminate_and_reap(process)
+            try:
+                _atomic_write(
+                    receipt_path,
+                    _failure_receipt(base, reason="child_wait_failed", child_pid=process.pid),
+                )
+            except BaseException:
+                print(
+                    "M27B3 receipt failure after wait error; child terminated and reaped",
+                    file=sys.stderr,
+                )
+            return 1
+    except (OSError, subprocess.SubprocessError):
+        if process is not None:
+            _terminate_and_reap(process)
+        try:
+            _atomic_write(receipt_path, _failure_receipt(base, reason="child_start_failed"))
+        except Exception:
+            print("M27B3 receipt failure before child start", file=sys.stderr)
+        return 1
+    finally:
+        if stderr is not None:
+            stderr.close()
+        if stdout is not None:
+            stdout.close()
+
     return_code = process.returncode
     usage_after = resource.getrusage(resource.RUSAGE_CHILDREN)
-    child_signal = None
-    if return_code is not None and return_code < 0:
-        try:
-            child_signal = signal.Signals(-return_code).name
-        except ValueError:
-            child_signal = f"SIG{-return_code}"
+    child_signal = (
+        _signal_name(-return_code) if return_code is not None and return_code < 0 else None
+    )
     status = (
         "SIGNALED"
         if return_code is not None and return_code < 0
         else ("COMPLETED" if return_code == 0 and wrapper_signal is None else "FAILED")
     )
+    try:
+        hashes = _hashes(run_dir)
+    except BaseException:
+        hashes = {
+            key: value
+            for label in ("stdout", "stderr", "universe", "observations")
+            for key, value in (
+                (f"{label}_sha256", None),
+                (f"{label}_hash_complete", False),
+            )
+        }
     terminal = {
         **base,
         "status": status,
@@ -280,7 +426,7 @@ def main(argv: list[str] | None = None) -> int:
         "child_pid": process.pid,
         "exit_code": return_code if return_code is not None and return_code >= 0 else None,
         "child_terminating_signal": child_signal,
-        "wrapper_signal": None if wrapper_signal is None else signal.Signals(wrapper_signal).name,
+        "wrapper_signal": _signal_name(wrapper_signal),
         "resource_use": {
             "user_cpu_seconds": usage_after.ru_utime - usage_before.ru_utime,
             "system_cpu_seconds": usage_after.ru_stime - usage_before.ru_stime,
@@ -288,9 +434,13 @@ def main(argv: list[str] | None = None) -> int:
         },
         "stdout_path": str(stdout_path),
         "stderr_path": str(stderr_path),
-        **_hashes(run_dir),
+        **hashes,
     }
-    _atomic_write(receipt_path, terminal)
+    try:
+        _atomic_write(receipt_path, terminal)
+    except BaseException:
+        print("M27B3 terminal receipt write failed", file=sys.stderr)
+        return 1
     return 0 if status == "COMPLETED" else 1
 
 

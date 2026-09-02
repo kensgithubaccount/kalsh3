@@ -6,13 +6,23 @@ with `-u` and `PYTHONUNBUFFERED=1`, and writes separate `stdout.log` and
 `stderr.log` files plus `process-receipt.json` in the supplied unique run
 directory.
 
-The receipt records the child PID, the internally constructed reviewed command,
-expected and observed code/tree identities, clean-state result, UTC start/end,
-exit code or terminating signal, child resource usage, output hashes, and
-hashes for `universe.sqlite` and `observations.sqlite` when those files exist.
-It records the names of its minimal environment allowlist, never environment
-values. The wrapper does not select a host, add headers, inspect response
-bodies, or change application authority.
+The receipt is written atomically as `STARTING` before the child is spawned and
+as `RUNNING` immediately after spawn. It records the wrapper and child PIDs,
+the internally constructed reviewed command, expected and observed code/tree
+identities, clean-state result, UTC start/end, exit code or terminating signal,
+child resource usage, output hashes, and hashes for `universe.sqlite` and
+`observations.sqlite` when those files exist. It records only the names of its
+minimal environment allowlist, including the internal parent-watchdog binding,
+never environment values. The wrapper does not select a host, add headers,
+inspect response bodies, or change application authority.
+
+The child watchdog checks that the recorded wrapper PID remains its parent on a
+portable polling interval. If the wrapper is forcibly killed and cannot write a
+terminal receipt, the stale `RUNNING` receipt remains visibly incomplete. The
+read-only `inspect_receipt` helper may classify it as `INTERRUPTED` only after
+both recorded processes are absent; it never rewrites the receipt and never
+infers `COMPLETED` from database presence. Ordinary wrapper signals are
+forwarded and reaped, and all post-spawn cleanup is bounded and fail-closed.
 
 The target `run-dir` must not exist before invocation and must be a direct child
 contained by the existing `parent-dir`. The expected SHA and tree are the
