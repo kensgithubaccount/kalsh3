@@ -1,4 +1,5 @@
 {
+  "schema_version": "cpi-e1-p7-release-timing-receipt-v1",
   "authority": "CPI_E1_P6_P7_REVIEW_RECEIPT",
   "events": [
     {
