@@ -29,8 +29,10 @@ parser and router. It returns structured state:
 
 The frozen P9A placeholder inventory is explicit: the empty primary value,
 the exact historical CPI `|| percent ||%` sentence, and its exact
-`0.50 percent%` sentence. This is not generic fallback: unknown nonempty
-primary text is refused. Title provenance remains `title`, never primary.
+`0.50 percent%` sentence. Those two strings occur across three frozen rows
+(`CPI-21OCT-T0.4`, `CPI-21OCT-T0.3`, and `CPI-21OCT-T0.5`). This is not generic
+fallback: unknown nonempty primary text is refused. Title provenance remains
+`title`, never primary.
 When primary and title independently parse, comparator, threshold/bounds and
 inclusivity must agree.
 
@@ -45,7 +47,7 @@ the specification.
 
 Unchanged P9A replay remains 60 independent events and 474 sibling markets,
 with 267 two-sided usable rows and 148 fresh rows. Raw, semantic, and evidence
-identities are not recollected or rewritten. The two historical placeholder
+identities are not recollected or rewritten. The three historical placeholder
 rows are governed only by the explicit frozen policy; arbitrary malformed
 primary text cannot be rescued by a title.
 
