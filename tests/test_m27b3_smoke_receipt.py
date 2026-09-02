@@ -206,6 +206,20 @@ def test_nonzero_child_has_failed_terminal_receipt(
     assert payload["exit_code"] == 7
 
 
+def test_operator_document_uses_only_the_fixed_wrapper_interface() -> None:
+    document = Path("docs/M27B3R2_OPERATOR_RECEIPT.md").read_text()
+    for flag in (
+        "--parent-dir",
+        "--run-dir",
+        "--expected-code-sha",
+        "--expected-tree",
+        "--python",
+    ):
+        assert flag in document
+    assert "--code-sha" not in document
+    assert "-- /Users/" not in document
+
+
 def test_sigterm_is_forwarded_and_recorded(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     parent = tmp_path / "runs"
     parent.mkdir()
