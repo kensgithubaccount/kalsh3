@@ -86,9 +86,9 @@ class OutcomeEvidenceReceipt:
 class OutcomeEvidenceAuthority:
     """Reviewed source/predicate boundary issuing receipts from frozen artifacts."""
 
-    def __init__(self, root: str | Path, *, adapter_id: str) -> None:
+    def __init__(self, root: str | Path, *, _capability: object) -> None:
         self.root = Path(root)
-        if adapter_id != "fr-a3-test-json-binary-adapter-v1":
+        if _capability is not _CAPABILITY:
             raise ScoringError("unreviewed outcome adapter")
         self.source_authority = "fr-a3-test-source-v1"
         self.predicate_identity = "binary-rule-v1"

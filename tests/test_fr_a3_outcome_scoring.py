@@ -5,6 +5,7 @@ import pytest
 import services.forward_reality.prospective_receipts as receipts
 import services.forward_reality.trial_ledger as ledger_module
 from services.forward_reality.outcome_scoring import (
+    _CAPABILITY,
     OutcomeEvidenceAuthority,
     OutcomeScoringStore,
     ScoringError,
@@ -45,7 +46,7 @@ def test_authenticated_score_restarts_and_rejects_duplicate(tmp_path, monkeypatc
         '"revision_policy":"initial"}'
     )
     outcome = OutcomeEvidenceAuthority(
-        tmp_path / "outcome-authority", adapter_id="fr-a3-test-json-binary-adapter-v1"
+        tmp_path / "outcome-authority", _capability=_CAPABILITY
     ).issue(artifact=artifact)
     store = OutcomeScoringStore(tmp_path / "scores")
     record = score_trial(
@@ -54,7 +55,7 @@ def test_authenticated_score_restarts_and_rejects_duplicate(tmp_path, monkeypatc
         scoring_store=store,
         outcome_authority=OutcomeEvidenceAuthority(
             tmp_path / "outcome-authority",
-            adapter_id="fr-a3-test-json-binary-adapter-v1",
+            _capability=_CAPABILITY,
         ),
         trial_id=trial.trial_id,
         receipt=receipt,
@@ -68,7 +69,7 @@ def test_authenticated_score_restarts_and_rejects_duplicate(tmp_path, monkeypatc
             scoring_store=OutcomeScoringStore(tmp_path / "scores"),
             outcome_authority=OutcomeEvidenceAuthority(
                 tmp_path / "outcome-authority",
-                adapter_id="fr-a3-test-json-binary-adapter-v1",
+                _capability=_CAPABILITY,
             ),
             trial_id=trial.trial_id,
             receipt=receipt,
@@ -109,7 +110,7 @@ def test_tampered_score_journal_and_prepublication_outcome_fail_closed(tmp_path,
         '"revision_policy":"initial"}'
     )
     outcome = OutcomeEvidenceAuthority(
-        tmp_path / "outcome-authority", adapter_id="fr-a3-test-json-binary-adapter-v1"
+        tmp_path / "outcome-authority", _capability=_CAPABILITY
     ).issue(artifact=artifact)
     with pytest.raises(ScoringError, match="published after registration"):
         score_trial(
@@ -117,7 +118,7 @@ def test_tampered_score_journal_and_prepublication_outcome_fail_closed(tmp_path,
             receipt_store=receipt_store,
             scoring_store=OutcomeScoringStore(tmp_path / "scores"),
             outcome_authority=OutcomeEvidenceAuthority(
-                tmp_path / "outcome-authority", adapter_id="fr-a3-test-json-binary-adapter-v1"
+                tmp_path / "outcome-authority", _capability=_CAPABILITY
             ),
             trial_id=trial.trial_id,
             receipt=receipt,
