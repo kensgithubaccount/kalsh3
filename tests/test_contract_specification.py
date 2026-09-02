@@ -264,6 +264,28 @@ def test_formal_templates_reject_residual_or_multiple_prose(text: str) -> None:
     assert parse_comparison(text)[0] == Comparator.NONE
 
 
+@pytest.mark.parametrize(
+    "text",
+    [
+        "YES if the measured value is more than 0.2% maybe.",
+        "YES if the measured value is more than 0.2% according to an unreviewed source.",
+        "YES if despite the official value being more than 0.2% the market resolves Yes.",
+        "YES if the measured value is more than 0.2% unless the source is revised.",
+        "YES if the measured value is more than 0.2% and the market pays NO.",
+        "YES if the measured value is more than 0.2% in a future reference month.",
+    ],
+)
+def test_allowlisted_templates_consume_all_semantically_material_tokens(text: str) -> None:
+    assert parse_comparison(text)[0] == Comparator.NONE
+
+
+def test_formal_template_has_no_distance_window() -> None:
+    distant_denial = " ".join(
+        ("YES if the measured value is more than 0.2%",) + ("documented",) * 80 + ("not",)
+    )
+    assert parse_comparison(distant_denial)[0] == Comparator.NONE
+
+
 def test_missing_timezone_station_source_and_conflicts_fail_closed() -> None:
     parser = ContractSpecificationParser()
     base = bundle(timezone=None)

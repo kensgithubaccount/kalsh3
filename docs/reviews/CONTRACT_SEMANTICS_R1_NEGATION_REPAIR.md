@@ -9,14 +9,23 @@ execution, risk, credentials, or production authority.
 ## R1.3 grammar boundary
 
 Comparison acceptance is versioned by the parser's reviewed complete-template
-family, rather than by searching a bounded character window. The family is
-limited to: a comparison phrase alone; an explicit `YES if`/official-value or
-measured-value clause with a lexical subject and unit slot; and the canonical
-CPI sentence `If the Consumer Price Index (CPI) increases by ... (single-decimal)
-in <month> <year>, then the market resolves to Yes.` Every token in the
-accepted clause must be consumed by one of these templates. Payout orientation,
-denial, modality, uncertainty, exception, conditional inversion, extra
-clauses, and unknown wording therefore abstain as `Comparator.NONE`.
+family, rather than by searching a bounded character window. Each production
+consumes the complete clause and binds polarity (affirmative only), comparator,
+numeric threshold or bounds, any reference month/year, and the `YES` payout
+orientation. The family is limited to: a comparison phrase alone; an explicit
+`YES if` clause whose subject and unit are allowlisted; official/measured-value
+clauses with the same allowlists; and the canonical CPI sentence `If the
+Consumer Price Index (CPI) increases by ... (single-decimal) in <month> <year>,
+then the market resolves to Yes.` Every token in the applicable clause must be
+consumed by one of these productions. Payout orientation, denial, modality,
+uncertainty, exception, conditional inversion, extra clauses, and unknown
+wording therefore abstain as `Comparator.NONE`.
+
+The subject and unit productions are intentionally finite reviewed vocabularies;
+they are not a general natural-language or substring parser. A future exchange
+wording requires a separately reviewed grammar production. Numeric parsing is
+finite and deterministic, including signed negative thresholds; non-finite,
+malformed, contradictory, or multiply interpreted clauses are rejected.
 
 This is not a general natural-language parser. New exchange wording requires a
 separately reviewed template before it can be accepted.

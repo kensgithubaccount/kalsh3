@@ -341,20 +341,33 @@ _COMPARISON_PHRASE = (
     rf"exactly\s+{_NUMBER})"
 )
 
-# Versioned, complete clause templates.  The subject and unit slots are
-# intentionally lexical slots, while payout, denial, modality, and
-# conditional words are excluded by the grammar.  There is no substring
-# fallback: callers must match one whole reviewed template.
-_TEMPLATE_SUBJECT = (
-    r"(?:(?!\b(?:no|yes|unless|except|false|untrue|uncertain|may|might|not)\b)"
-    r"[a-z][a-z0-9()%./-]*\s+){0,14}"
+# Versioned, complete clause templates.  Subject and unit productions are
+# deliberately allowlisted.  They are not arbitrary lexical slots: every
+# token in an accepted clause is part of a reviewed production, while payout,
+# denial, modality, and conditional language has no production at all.
+_REVIEWED_SUBJECT = (
+    r"(?:the\s+final\s+nws\s+report\s+at\s+station\s+[a-z0-9()-]+|"
+    r"final\s+nws\s+[a-z0-9()-]+\s+report|"
+    r"(?:the\s+)?final\s+noaa\s+daily\s+high|"
+    r"(?:the\s+)?(?:final\s+)?temperature|"
+    r"(?:the\s+)?measured\s+value|"
+    r"(?:the\s+)?official\s+value|"
+    r"(?:the\s+)?(?:consumer\s+price\s+index|cpi))\s+is\s+"
+)
+_REVIEWED_UNIT = (
+    r"(?:%|percent|f|c|k|units|points|fahrenheit|celsius|"
+    r"degrees(?:\s+(?:f|c|fahrenheit|celsius))?|"
+    r"°\s*(?:f|c|fahrenheit|celsius))"
 )
 _COMPARISON_TEMPLATES = (
     re.compile(rf"(?:{_COMPARISON_PHRASE})[.!?]?"),
     re.compile(
-        rf"(?:yes\s+if\s+|the\s+market\s+resolves\s+yes\s+if\s+|"
-        rf"the\s+official\s+value\s+is\s+|the\s+measured\s+value\s+is\s+)"
-        rf"{_TEMPLATE_SUBJECT}(?:{_COMPARISON_PHRASE})(?:\s+[a-z%°./-]+){{0,4}}[.!?]?"
+        rf"(?:yes\s+if\s+|the\s+market\s+resolves\s+yes\s+if\s+)"
+        rf"{_REVIEWED_SUBJECT}(?:{_COMPARISON_PHRASE})(?:\s+{_REVIEWED_UNIT})?[.!?]?"
+    ),
+    re.compile(
+        rf"(?:the\s+official\s+value\s+is|the\s+measured\s+value\s+is)\s+"
+        rf"(?:{_COMPARISON_PHRASE})(?:\s+{_REVIEWED_UNIT})?[.!?]?"
     ),
     re.compile(
         rf"if\s+the\s+consumer\s+price\s+index\s+\(cpi\)\s+increases\s+by\s+"
