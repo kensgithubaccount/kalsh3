@@ -10,10 +10,11 @@ import resource
 import signal
 import subprocess
 import tempfile
+from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, Mapping
+from typing import Any
 
 SCHEMA_VERSION = "kalsh3.m27b3.process-receipt.v2"
 MODULE = "services.opportunity_engine.structural_measurement_runner"
