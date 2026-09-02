@@ -483,6 +483,26 @@ class ProspectiveReceiptStore:
             raise ProspectiveReceiptError("outcome cannot bind an invalid publication") from exc
         return ProspectiveReceiptPublication._from_payload(payload, issuer_key=issuer_key)
 
+    def read_publication(
+        self, receipt: ProspectivePredictionReceipt
+    ) -> ProspectiveReceiptPublication:
+        """Return the authenticated FR-A1 publication for an unchanged receipt."""
+        path = self.root / f"{receipt.receipt_id}.json"
+        publication_path = self.root / f"{receipt.receipt_id}.publication.json"
+        if not path.is_file() or path.is_symlink() or path.read_bytes() != receipt.to_bytes():
+            raise ProspectiveReceiptError("receipt bytes are not frozen")
+        if not publication_path.is_file() or publication_path.is_symlink():
+            raise ProspectiveReceiptError("receipt publication is unavailable")
+        publication = self._read_publication(publication_path, self._issuer_key())
+        if (
+            publication.receipt_id != receipt.receipt_id
+            or publication.receipt_content_hash != receipt.content_hash
+        ):
+            raise ProspectiveReceiptError("publication receipt identity mismatch")
+        if publication_path.read_bytes() != publication.to_bytes():
+            raise ProspectiveReceiptError("publication bytes are not frozen")
+        return publication
+
     def require_frozen(
         self, receipt: ProspectivePredictionReceipt, outcome_available_at: datetime
     ) -> None:

@@ -48,7 +48,7 @@ def test_authenticated_score_restarts_and_rejects_duplicate(tmp_path, monkeypatc
     outcome = OutcomeEvidenceAuthority(
         tmp_path / "outcome-authority", _capability=_CAPABILITY
     ).issue(artifact=artifact)
-    store = OutcomeScoringStore(tmp_path / "scores")
+    store = OutcomeScoringStore.create(tmp_path / "scores")
     record = score_trial(
         ledger=ledger,
         receipt_store=receipt_store,
@@ -66,7 +66,7 @@ def test_authenticated_score_restarts_and_rejects_duplicate(tmp_path, monkeypatc
         score_trial(
             ledger=ledger,
             receipt_store=receipt_store,
-            scoring_store=OutcomeScoringStore(tmp_path / "scores"),
+            scoring_store=OutcomeScoringStore.open(tmp_path / "scores"),
             outcome_authority=OutcomeEvidenceAuthority(
                 tmp_path / "outcome-authority",
                 _capability=_CAPABILITY,
@@ -75,11 +75,11 @@ def test_authenticated_score_restarts_and_rejects_duplicate(tmp_path, monkeypatc
             receipt=receipt,
             outcome=outcome,
         )
-    assert len(OutcomeScoringStore(tmp_path / "scores").records) == 1
+    assert len(OutcomeScoringStore.open(tmp_path / "scores").records) == 1
     journal = (tmp_path / "scores").with_name("scores.journal")
     journal.write_bytes(journal.read_bytes().replace(b'"SCORED"', b'"FORGED"'))
     with pytest.raises(ScoringError, match="corrupt"):
-        OutcomeScoringStore(tmp_path / "scores")
+        OutcomeScoringStore.open(tmp_path / "scores")
 
 
 def test_tampered_score_journal_and_prepublication_outcome_fail_closed(tmp_path, monkeypatch):
@@ -116,7 +116,7 @@ def test_tampered_score_journal_and_prepublication_outcome_fail_closed(tmp_path,
         score_trial(
             ledger=ledger,
             receipt_store=receipt_store,
-            scoring_store=OutcomeScoringStore(tmp_path / "scores"),
+            scoring_store=OutcomeScoringStore.create(tmp_path / "scores"),
             outcome_authority=OutcomeEvidenceAuthority(
                 tmp_path / "outcome-authority", _capability=_CAPABILITY
             ),

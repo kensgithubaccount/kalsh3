@@ -31,6 +31,10 @@ LOG_LOSS_CLIP = 1e-6
 _CAPABILITY = object()
 
 
+def _scoring_now() -> datetime:
+    return datetime.now(UTC)
+
+
 class ScoringError(ValueError):
     """A fail-closed authority, chronology, identity, or journal error."""
 
@@ -65,6 +69,10 @@ class OutcomeEvidenceReceipt:
     production_influence: int
     receipt_id: str
     issuer_mac: str
+
+    @property
+    def identity(self) -> str:
+        return self.receipt_id
 
     def __init__(self, *, _capability: object, issuer_key: bytes | None, **values: object) -> None:
         if _capability is not _CAPABILITY:
@@ -194,6 +202,7 @@ class ScoringRecord:
     model_identity: str
     calibrator_identity: str
     decision_cutoff: datetime
+    scored_at: datetime
     forecast_probability: float | None
     outcome_receipt: OutcomeEvidenceReceipt
     score_status: str
@@ -294,12 +303,14 @@ def _load_key(path: Path) -> bytes:
 class OutcomeScoringStore:
     """FR-A2-style journal/checkpoint authority; no SQLite recovery path."""
 
-    def __init__(self, path: str | Path) -> None:
+    def __init__(self, path: str | Path, *, _create: bool = False) -> None:
         self.path = Path(path)
         self.journal = self.path.with_name(self.path.name + ".journal")
         self.head = self.path.with_name(self.path.name + ".head")
         key_path = self.path.with_name(self.path.name + ".issuer-key")
         existed = key_path.exists()
+        if not existed and not _create:
+            raise ScoringError("scoring store must be explicitly created or opened")
         if existed and (not self.journal.exists() or not self.head.exists()):
             raise ScoringError("scoring genesis or journal is missing")
         self.key = _load_key(key_path)
@@ -315,6 +326,18 @@ class OutcomeScoringStore:
                 stream.flush()
                 os.fsync(stream.fileno())
         self._entries()
+
+    @classmethod
+    def create(cls, path: str | Path) -> OutcomeScoringStore:
+        target = Path(path)
+        for suffix in ("", ".journal", ".head", ".issuer-key", ".lock"):
+            if Path(str(target) + suffix).exists():
+                raise ScoringError("scoring store already exists")
+        return cls(target, _create=True)
+
+    @classmethod
+    def open(cls, path: str | Path) -> OutcomeScoringStore:
+        return cls(path)
 
     def _lock(self) -> Any:
         store = self
@@ -333,6 +356,7 @@ class OutcomeScoringStore:
 
     def append(self, record: ScoringRecord) -> None:
         with self._lock():
+            _validate_record(record)
             entries = self._entries()
             if any(e["record"]["trial_id"] == record.trial_id for e in entries):
                 raise ScoringError("trial has already been scored")
@@ -427,12 +451,16 @@ def _decode(value: Mapping[str, Any], key: bytes) -> ScoringRecord:
     for name in ("published_at", "available_at", "acquired_at"):
         raw[name] = datetime.fromisoformat(raw[name])
     raw["status"] = OutcomeStatus(raw["status"])
+    value = dict(value)
+    value["decision_cutoff"] = datetime.fromisoformat(cast(str, value["decision_cutoff"]))
+    value["scored_at"] = datetime.fromisoformat(cast(str, value["scored_at"]))
     result = ScoringRecord(
         **{
             **value,
             "outcome_receipt": OutcomeEvidenceReceipt(
                 _capability=_CAPABILITY, issuer_key=None, **raw
             ),
+            "scored_at": value["scored_at"],
         }
     )
     payload = cast(Mapping[str, object], _jsonable(result))
@@ -441,7 +469,76 @@ def _decode(value: Mapping[str, Any], key: bytes) -> ScoringRecord:
         != result.record_identity
     ):
         raise ScoringError("replayed record identity mismatch")
+    _validate_record(result)
     return result
+
+
+def _validate_record(record: ScoringRecord) -> None:
+    if type(record) is not ScoringRecord:
+        raise ScoringError("record type is not recognized")
+    if any(
+        type(getattr(record, name)) is not str or not getattr(record, name)
+        for name in (
+            "trial_id",
+            "forecast_receipt_id",
+            "forecast_receipt_hash",
+            "registration_history_identity",
+            "market_ticker",
+            "event_ticker",
+            "underlying_event_id",
+            "candidate_family",
+            "model_identity",
+            "calibrator_identity",
+            "scoring_policy_version",
+            "record_identity",
+        )
+    ):
+        raise ScoringError("record identity fields are invalid")
+    _utc(record.decision_cutoff, "decision cutoff")
+    _utc(record.scored_at, "scored at")
+    if record.scoring_policy_version != SCORING_POLICY_VERSION:
+        raise ScoringError("scoring policy version is not recognized")
+    if record.outcome_receipt.receipt_id != record.outcome_receipt.identity:
+        raise ScoringError("outcome receipt identity is invalid")
+    if record.score_status not in {
+        "SCORED",
+        "ABSTAINED",
+        "PENDING",
+        "UNKNOWN",
+        "NO_RELEASE",
+        "CANCELLED",
+        "INVALID",
+        "TERMINAL_UNSCORED",
+    }:
+        raise ScoringError("score status is not recognized")
+    if record.forecast_probability is not None:
+        _probability(record.forecast_probability)
+    resolved = record.outcome_receipt.status is OutcomeStatus.RESOLVED
+    should_score = (
+        resolved and record.score_status == "SCORED" and record.forecast_probability is not None
+    )
+    if record.score_status == "SCORED" and not should_score:
+        raise ScoringError("SCORED record is not resolved and non-abstained")
+    if record.score_status == "ABSTAINED" and (
+        record.forecast_probability is not None
+        or record.brier_score is not None
+        or record.log_loss is not None
+    ):
+        raise ScoringError("abstained record contains scores")
+    if not should_score and (record.brier_score is not None or record.log_loss is not None):
+        raise ScoringError("unscored record contains scores")
+    if should_score:
+        brier, log_loss = _scores(
+            record.forecast_probability, cast(int, record.outcome_receipt.value)
+        )
+        if record.brier_score != brier or record.log_loss != log_loss:
+            raise ScoringError("scores do not recompute from frozen inputs")
+    payload = cast(Mapping[str, object], _jsonable(record))
+    if (
+        _digest({k: v for k, v in payload.items() if k != "record_identity"})
+        != record.record_identity
+    ):
+        raise ScoringError("record identity does not match content")
 
 
 def score_trial(
@@ -494,6 +591,7 @@ def score_trial(
     if outcome.published_at <= definition.created_at:
         raise ScoringError("outcome not published after registration")
     try:
+        publication = receipt_store.read_publication(receipt)
         receipt_store.require_frozen(receipt, outcome.available_at)
     except ProspectiveReceiptError as exc:
         raise ScoringError(str(exc)) from exc
@@ -507,6 +605,13 @@ def score_trial(
             "events": [e.content_hash for e in ledger.status_events(trial_id)],
         }
     )
+    scored_at = _utc(_scoring_now(), "scored_at")
+    if receipt.decision_at > publication.published_at:
+        raise ScoringError("forecast decision is after authenticated publication")
+    if outcome.acquired_at > scored_at:
+        raise ScoringError("outcome was acquired after scoring time")
+    if publication.published_at >= outcome.published_at:
+        raise ScoringError("forecast publication is not before outcome publication")
     values = {
         "trial_id": trial_id,
         "forecast_receipt_id": receipt.receipt_id,
@@ -519,6 +624,7 @@ def score_trial(
         "model_identity": definition.model_identity,
         "calibrator_identity": receipt.calibrator_id,
         "decision_cutoff": receipt.decision_at,
+        "scored_at": scored_at,
         "forecast_probability": p,
         "outcome_receipt": outcome,
         "score_status": status,
