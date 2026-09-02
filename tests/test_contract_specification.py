@@ -219,6 +219,28 @@ def test_residual_negation_and_no_direction_fail_closed(text: str) -> None:
     assert parse_comparison(text)[0] == Comparator.NONE
 
 
+@pytest.mark.parametrize(
+    "text",
+    [
+        "The outcome is NO if CPI is more than 0.2% in June 2022",
+        "The result is NO when CPI is more than 0.2% in June 2022",
+        "More than 0.2% means a NO outcome",
+        "YES loses if CPI is more than 0.2% in June 2022",
+        "The YES side does not win if CPI is more than 0.2%",
+        "It is false that CPI is more than 0.2%",
+        "It is not true that CPI is more than 0.2%",
+        "CPI is not necessarily more than 0.2%",
+        "Unless CPI is more than 0.2%, YES wins",
+        "Except when CPI is more than 0.2%, YES wins",
+        "THE OUTCOME IS NO IF CPI IS MORE THAN 0.2%.",
+        "unless-CPI-is-more-than-0.2%, the YES side wins",
+        "The result is NO if CPI isn\u2019t less than 0.2%",
+    ],
+)
+def test_clause_level_polarity_cannot_escape_affirmative_candidate(text: str) -> None:
+    assert parse_comparison(text)[0] == Comparator.NONE
+
+
 def test_missing_timezone_station_source_and_conflicts_fail_closed() -> None:
     parser = ContractSpecificationParser()
     base = bundle(timezone=None)

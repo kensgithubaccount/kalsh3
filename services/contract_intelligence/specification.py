@@ -354,6 +354,17 @@ _NO_RESOLUTION = re.compile(
     r"\bpays?(?:\s+out)?(?:\s+to)?\s+no\b|"
     r"\bis\s+determined\s+no\b|\bresults?\s+in\s+no\b"
 )
+_CLAUSE_NEGATION = re.compile(
+    r"\b(?:outcome|result)\s+is\s+no\b|"
+    r"\bmeans\s+(?:a\s+)?no\s+outcome\b|"
+    r"\byes(?:\s+side)?\s+loses?\b|"
+    r"\byes\s+side\s+does\s+not\s+win\b|"
+    r"\b(?:it\s+is\s+)?false\s+that\b|"
+    r"\bnot\s+true\s+that\b|"
+    r"\bnot\s+necessarily\b"
+)
+_INVERTED_CONDITIONAL = re.compile(r"\b(?:unless|except(?:\s+when)?)\b")
+_YES_WIN = re.compile(r"\byes(?:\s+side)?\s+wins?\b")
 
 
 def parse_comparison(
@@ -414,6 +425,12 @@ def parse_comparison(
         suffix = lowered[candidate[1] :]
         month_match = re.search(r"\bin\s+([A-Za-z]+)", suffix)
         if month_match and month_match.group(1) not in supported_months:
+            return Comparator.NONE, None, None, None, None
+        window = lowered[max(0, candidate[0] - 120) : min(len(lowered), candidate[1] + 120)]
+        if _CLAUSE_NEGATION.search(window):
+            return Comparator.NONE, None, None, None, None
+        conditional = _INVERTED_CONDITIONAL.search(window[:120])
+        if conditional and _YES_WIN.search(window[conditional.end() :]):
             return Comparator.NONE, None, None, None, None
     if candidates and _NO_RESOLUTION.search(lowered):
         return Comparator.NONE, None, None, None, None
