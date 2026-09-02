@@ -22,8 +22,16 @@ P9A_APPROVED_ACQUISITION_DIGEST: Final = (
 )
 P9A_MARKET_COUNT: Final = 474
 P9A_EVENT_COUNT: Final = 60
-FILING_INVENTORY_SHA256: Final = "3ae3383b7cf5dd089a76357a8557cc2d67adb597284c0b141780ca58134af16f"
-FILING_INVENTORY_BYTES: Final = 9533
+FILING_INVENTORY_SHA256: Final = "a979dc5e4a19c187e7d40efc384cc9737c33cd03d9478788326bd3d0f4b689a2"
+FILING_INVENTORY_BYTES: Final = 9671
+OFFICIAL_INVENTORY_RESPONSE_SHA256: Final = (
+    "44062965f754657a4d06a7c20371205b580edc7b2baa9b3d380ba90b3f27ee8f"
+)
+OFFICIAL_INVENTORY_RESPONSE_BYTES: Final = 52768
+CFR_2022_SHA256: Final = "f6b63052591c0735b650e6fd96a211b8d2e4823bab6d3d366a5067e5a6622757"
+CFR_2022_BYTES: Final = 231501
+CFR_2025_SHA256: Final = "f10d901fcc847b2635782fe62f212724f876fcbd7df314c221505b957b8484ed"
+CFR_2025_BYTES: Final = 250079
 
 APPROVED_ARTIFACTS: Final = (
     {
@@ -54,13 +62,13 @@ APPROVED_ARTIFACTS: Final = (
         "status": "exact",
     },
     {
-        "path": "raw/cftc-rulebook-rule-3-6.pdf",
+        "path": "raw/cftc-rulebook-july-2025.pdf",
         "sha256": "d8d185862a439a8f1a178d5044bbe9c4ccfd931ae4a54619b9f2602493865c8f",
         "bytes": 865102,
-        "role": "continuity",
-        "identity": "CFTC-RULEBOOK-3.10-E",
+        "role": "rulebook_snapshot",
+        "identity": "CFTC-RULEBOOK-JULY-2025-RULE-3.10",
         "url": "https://www.cftc.gov/filings/orgrules/rules07012525155.pdf",
-        "status": "exact",
+        "status": "snapshot",
     },
     {
         "path": "raw/md-1-25-cv-01283-28-1.pdf",
@@ -82,12 +90,39 @@ APPROVED_ARTIFACTS: Final = (
     },
     {
         "path": "raw/cftc-kex-fee-filing-inventory.json",
-        "sha256": "3ae3383b7cf5dd089a76357a8557cc2d67adb597284c0b141780ca58134af16f",
-        "bytes": 9533,
+        "sha256": "a979dc5e4a19c187e7d40efc384cc9737c33cd03d9478788326bd3d0f4b689a2",
+        "bytes": 9671,
         "role": "continuity_inventory",
         "identity": "CFTC-KEX-FEE-INVENTORY-2022-09-22-2025-05-06",
         "url": "https://www.cftc.gov/IndustryOversight/IndustryFilings/TradingOrganizationRules?Organization=KEX&Receipt_Date_From=2022-09-22&Receipt_Date_To=2025-05-06&Show_All=1",
-        "status": "continuity_supported",
+        "status": "research_locator",
+    },
+    {
+        "path": "raw/cftc-kex-fee-index-response.html",
+        "sha256": "44062965f754657a4d06a7c20371205b580edc7b2baa9b3d380ba90b3f27ee8f",
+        "bytes": 52768,
+        "role": "official_inventory_response",
+        "identity": "CFTC-KEX-FEE-INDEX-RESPONSE-2022-09-22-2025-05-06",
+        "url": "https://www.cftc.gov/IndustryOversight/IndustryFilings/TradingOrganizationRules?Organization=KEX&Receipt_Date_From=2022-09-22&Receipt_Date_To=2025-05-06&Show_All=1",
+        "status": "locator",
+    },
+    {
+        "path": "raw/cfr-2022-title17-part40.pdf",
+        "sha256": "f6b63052591c0735b650e6fd96a211b8d2e4823bab6d3d366a5067e5a6622757",
+        "bytes": 231501,
+        "role": "historical_regulatory_authority",
+        "identity": "CFR-2022-T17-P40",
+        "url": "https://www.govinfo.gov/content/pkg/CFR-2022-title17-vol1/pdf/CFR-2022-title17-vol1-part40.pdf",
+        "status": "snapshot",
+    },
+    {
+        "path": "raw/cfr-2025-title17-part40.pdf",
+        "sha256": "f10d901fcc847b2635782fe62f212724f876fcbd7df314c221505b957b8484ed",
+        "bytes": 250079,
+        "role": "historical_regulatory_authority",
+        "identity": "CFR-2025-T17-P40",
+        "url": "https://www.govinfo.gov/content/pkg/CFR-2025-title17-vol1/pdf/CFR-2025-title17-vol1-part40.pdf",
+        "status": "snapshot",
     },
 )
 
@@ -125,19 +160,17 @@ AUTHORITY_METADATA: Final = (
         "supersession": "superseded/continued by later snapshot",
     },
     {
-        "identity": "CFTC-RULEBOOK-3.10-E",
+        "identity": "CFTC-RULEBOOK-JULY-2025-RULE-3.10",
         "filing": "rules07012525155",
-        "rule": "3.10(e)",
-        "effective_interval": "2025-07-16 onward only; historical interval not proven",
-        "relevant_text": (
-            "The Exchange may establish dues, fees, and expenses payable by Members "
-            "and must file applicable rule changes before implementation under the "
-            "governing filing regime."
+        "rule": "3.10",
+        "effective_interval": (
+            "2025-07-16 onward only; Rule 3.10 contains subsections (a)-(d), "
+            "with (b) addressing trading fees published on the website"
         ),
-        "scope": "continuity",
+        "scope": "snapshot",
         "kxcpi_applicability": "general",
-        "status": "continuity_supported",
-        "supersession": "continuity constraint",
+        "status": "snapshot",
+        "supersession": "snapshot only",
     },
     {
         "identity": "MD-1:25-CV-01283-28-1",
@@ -165,8 +198,38 @@ AUTHORITY_METADATA: Final = (
         "effective_interval": "2022-09-22 through 2025-05-06 search window",
         "scope": "continuity_inventory",
         "kxcpi_applicability": "general inventory; individual programs conditional or excluded",
-        "status": "continuity_supported",
+        "status": "research_locator",
         "supersession": "replaces single-filing non-exhaustive locator",
+    },
+    {
+        "identity": "CFR-2022-T17-P40",
+        "effective_interval": "2022-07-01 through 2023-06-30 annual CFR snapshot",
+        "operative_subsections": ["40.5", "40.6"],
+        "scope": "registered_entity_rule_changes",
+        "fee_exceptions": (
+            "Fee provisions include exceptions and thresholds; applicability to "
+            "every KXCPI website revision is not established here."
+        ),
+        "kxcpi_applicability": (
+            "potentially general DCM framework; historical application unresolved"
+        ),
+        "status": "snapshot",
+        "supersession": "superseded by later annual CFR snapshot",
+    },
+    {
+        "identity": "CFR-2025-T17-P40",
+        "effective_interval": "2025-04-01 through 2026-03-31 annual CFR snapshot",
+        "operative_subsections": ["40.5", "40.6"],
+        "scope": "registered_entity_rule_changes",
+        "fee_exceptions": (
+            "Fee provisions include exceptions and thresholds; applicability to "
+            "every KXCPI website revision is not established here."
+        ),
+        "kxcpi_applicability": (
+            "potentially general DCM framework; historical application unresolved"
+        ),
+        "status": "snapshot",
+        "supersession": "current comparison snapshot",
     },
 )
 
@@ -182,4 +245,4 @@ def approved_receipt_digest() -> str:
     return hashlib.sha256(raw).hexdigest()
 
 
-APPROVED_RECEIPT_SHA256: Final = "8328bf6a417fdc042e1e0852f34896c205b306facb443b0dde0cbe6a657951b5"
+APPROVED_RECEIPT_SHA256: Final = "a06569f70c5cc99c92851f39fddb3d05b75b84adcf08a93f469730d7e08ac490"

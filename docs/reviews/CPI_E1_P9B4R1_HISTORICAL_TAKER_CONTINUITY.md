@@ -16,19 +16,22 @@ runtime constants.
 
 ## Regulatory continuity authority
 
-The July 2025 retained rulebook contains the relevant provision at Rule 3.10(e),
-“Dues, Fees, and Expenses Payable by Members.” It is not Rule 3.6(e). The
-provision is retained as a continuity constraint, but its July 2025 version does
-not prove that the same text governed the complete 2022-09-22 through 2025-05-06
-interval. Accordingly, that interval is labeled `continuity_supported`, not
-`exact`.
+The July 2025 retained rulebook contains Rule 3.10, “Dues, Fees, and Expenses
+Payable by Members,” with subsections (a) through (d). Subsection (b) states,
+in substance, that traders may be charged trading fees in amounts revised from
+time to time and reflected on the company website. The rule contains no
+subsection (e) and does not itself state a universal pre-implementation filing
+obligation. That snapshot therefore cannot prove the governing rulebook text or
+filing obligation throughout 2022-09-22 through 2025-05-06.
 
 The official CFTC date-bounded KEX inventory includes filing 49335 and intervening
 fee-related filings: the 2024 fee-waiver program and series notifications,
 volume-incentive programs, the January 2025 rebate, and market-maker programs.
-Those are excluded from general KXCPI taker authority because they are
-conditional, series-specific, maker-only, withdrawn, or unrelated to the general
-schedule. The inventory is retained as a deterministic artifact and its rows
+Those are not silently excluded from actual fee history: their conditional KXCPI
+applicability, listing intervals, eligibility, and effect on ordinary crossing
+trades remain unresolved. They are excluded only from general taker formula
+authority because they are conditional, series-specific, maker-only, withdrawn,
+or unrelated to the general schedule. The inventory is retained as a deterministic artifact and its rows
 record filing IDs, dates, descriptions, official filing URLs, applicability, and
 exclusion rationale. This establishes what was searched and prevents the single
 49335 page from masquerading as an exhaustive inventory; it does not assert that
@@ -42,8 +45,8 @@ exhibit’s 2025-05-06 “Last Updated” date is a locator boundary, not an exa
 instant. Quote mapping uses each P9A row’s `candle_end_period_ts`.
 
 The current mechanically derived fee-only coverage is 474 market rows and 60
-events: 272 continuity-supported rows / 31 events, 110 locator-only rows / 14
-events, 92 unknown rows / 15 events, and no mixed-authority rows. P8/P9A/fee
+events: 272 same-formula endpoint-snapshot rows / 31 events, 110 locator-only
+rows / 14 events, 92 unknown rows / 15 events, and no mixed-authority rows. P8/P9A/fee
 intersection is intentionally deferred to the downstream P10 authority binder;
 no P8 event list or quote-usability claim is made here.
 

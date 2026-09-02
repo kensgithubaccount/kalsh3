@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import re
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -28,6 +29,36 @@ from services.forecasting.cpi_p9b_authority import (
 )
 from services.historical_replay.cpi_price_evidence import validate_frozen_cohort
 
+INVENTORY_IDS = frozenset(
+    {
+        "49335",
+        "50274",
+        "50281",
+        "50843",
+        "51126",
+        "51666",
+        "51851",
+        "52348",
+        "52391",
+        "52522",
+        "53143",
+        "53233",
+        "53267",
+        "53270",
+        "53307",
+        "53341",
+        "53396",
+        "53555",
+        "53771",
+        "53782",
+        "54071",
+        "54895",
+        "55231",
+        "55366",
+        "55868",
+        "56066",
+    }
+)
 ROOT = Path(__file__).parents[1]
 PACKAGE = ROOT / "evidence/cpi_p9b_fee_authority"
 P9A = ROOT / "evidence/cpi_p9a_historical_price"
@@ -124,6 +155,14 @@ def _validate(package: Path = PACKAGE, *, require_frozen_coverage: bool = True) 
         or digest(inventory) != FILING_INVENTORY_SHA256
     ):
         raise ValueError("fee-filing inventory identity mismatch")
+    inventory_data = load(inventory)
+    if set(row.get("id") for row in inventory_data.get("filings", [])) != INVENTORY_IDS:
+        raise ValueError("fee-filing inventory row set mismatch")
+    response = package / "raw/cftc-kex-fee-index-response.html"
+    response_text = response.read_text()
+    response_ids = set(re.findall(r"TradingOrganizationRules/(\d+)", response_text))
+    if response_ids != INVENTORY_IDS - {"49335"} or "Organization=KEX" not in response_text:
+        raise ValueError("official filing inventory response is incomplete or mismatched")
     timeline = load(package / "authority_timeline.json")
     if timeline.get("schema_version") != "cpi-p9b-authority-timeline-v1":
         raise ValueError("unsupported authority timeline schema")
@@ -195,11 +234,25 @@ def _validate(package: Path = PACKAGE, *, require_frozen_coverage: bool = True) 
         "events": events,
         "counts": {
             s: sum(row["status"] == s for row in coverage)
-            for s in ("exact", "continuity_supported", "locator_only", "unknown", "mixed_authority")
+            for s in (
+                "exact",
+                "continuity_supported",
+                "same_formula_endpoint_snapshots",
+                "locator_only",
+                "unknown",
+                "mixed_authority",
+            )
         },
         "event_counts": {
             s: sum(row["status"] == s for row in events)
-            for s in ("exact", "continuity_supported", "locator_only", "unknown", "mixed_authority")
+            for s in (
+                "exact",
+                "continuity_supported",
+                "same_formula_endpoint_snapshots",
+                "locator_only",
+                "unknown",
+                "mixed_authority",
+            )
         },
         "p8_join": "deferred_to_downstream_p10_authority_binder",
         "boundary_observations": [

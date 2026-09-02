@@ -1,7 +1,9 @@
 {
   "schema_version": "cpi-kex-fee-filing-inventory-v1",
   "source": "https://www.cftc.gov/IndustryOversight/IndustryFilings/TradingOrganizationRules?Organization=KEX&Receipt_Date_From=2022-09-22&Receipt_Date_To=2025-05-06&Show_All=1",
+  "acquired_at": "2026-09-02T00:51:28Z",
   "search_window": {"receipt_from": "2022-09-22", "receipt_to": "2025-05-06", "organization": "KEX"},
+  "pagination": {"show_all": true, "cursor": null, "official_row_count": 25, "exhausted": true},
   "coverage": "All 25 KEX rows returned by the official date-bounded index, plus filing 49335 because its receipt predates the window and its effective date starts the window.",
   "filings": [
     {"id":"49335","received":"2022-09-09","effective":"2022-09-22","description":"Update to Kalshi's fee schedule.","url":"https://www.cftc.gov/IndustryOversight/IndustryFilings/TradingOrganizationRules/49335","kxcpi":"general","included":"direct_schedule","rationale":"Direct general KXCPI taker schedule; retained cover, redline and final attachments."},

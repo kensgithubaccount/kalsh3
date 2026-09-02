@@ -26,14 +26,16 @@ def test_freeze_derives_expected_disposition() -> None:
     result = validate(PACKAGE)
     assert result["counts"] == {
         "exact": 0,
-        "continuity_supported": 272,
+        "continuity_supported": 0,
+        "same_formula_endpoint_snapshots": 272,
         "locator_only": 110,
         "unknown": 92,
         "mixed_authority": 0,
     }
     assert result["event_counts"] == {
         "exact": 0,
-        "continuity_supported": 31,
+        "continuity_supported": 0,
+        "same_formula_endpoint_snapshots": 31,
         "locator_only": 14,
         "unknown": 15,
         "mixed_authority": 0,
@@ -66,6 +68,24 @@ def test_inventory_interval_mutation_fails(tmp_path: Path) -> None:
     inventory = target / "raw/cftc-kex-fee-filing-inventory.json"
     inventory.write_text(inventory.read_text().replace("2025-05-06", "2025-05-07", 1))
     with pytest.raises(ValueError, match="inventory"):
+        validate(target)
+
+
+def test_official_inventory_response_mutation_fails(tmp_path: Path) -> None:
+    target = clone(tmp_path)
+    response = target / "raw/cftc-kex-fee-index-response.html"
+    response.write_text(response.read_text().replace("Show_All=1", "Show_All=0", 1))
+    with pytest.raises(ValueError, match=r"approved set|hash mismatch|response"):
+        validate(target)
+
+
+def test_endpoint_snapshot_cannot_be_promoted_to_continuity(tmp_path: Path) -> None:
+    target = clone(tmp_path)
+    rewrite(
+        target,
+        lambda m: m["timelines"]["taker"][1].update({"status": "continuity_supported"}),
+    )
+    with pytest.raises(ValueError, match="timeline"):
         validate(target)
 
 
@@ -133,7 +153,7 @@ def test_timeline_and_coverage_files_are_read_only_inputs(tmp_path: Path) -> Non
     timeline = target / "authority_timeline.json"
     timeline.write_text(
         timeline.read_text().replace(
-            '"status": "continuity_supported"', '"status": "locator_only"', 1
+            '"status": "same_formula_endpoint_snapshots"', '"status": "locator_only"', 1
         )
     )
     with pytest.raises(ValueError, match="timeline"):
@@ -142,7 +162,9 @@ def test_timeline_and_coverage_files_are_read_only_inputs(tmp_path: Path) -> Non
     coverage = target / "event_coverage.json"
     coverage.write_text(
         coverage.read_text().replace(
-            '"continuity_supported": 272', '"continuity_supported": 271', 1
+            '"same_formula_endpoint_snapshots": 272',
+            '"same_formula_endpoint_snapshots": 271',
+            1,
         )
     )
     with pytest.raises(ValueError, match="coverage"):
