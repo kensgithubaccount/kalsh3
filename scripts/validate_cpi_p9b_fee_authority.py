@@ -16,8 +16,8 @@ from services.forecasting.cpi_p9b_authority import (
     AUTHORITY_METADATA,
     CANONICAL_BASE,
     CANONICAL_TREE,
-    P8_AUTHORITY_ARTIFACT_SHA256,
-    P8_REFERENCE_EVENTS,
+    FILING_INVENTORY_BYTES,
+    FILING_INVENTORY_SHA256,
     P9A_ACQUISITION_SHA256,
     P9A_APPROVED_ACQUISITION_DIGEST,
     P9A_EVENT_COUNT,
@@ -97,7 +97,7 @@ def _validate(package: Path = PACKAGE, *, require_frozen_coverage: bool = True) 
         raise ValueError("canonical identity mismatch")
     if (
         manifest.get("p9a_manifest_sha256") != P9A_MANIFEST_SHA256
-        or manifest.get("p8_authority_sha256") != P8_AUTHORITY_ARTIFACT_SHA256
+        or manifest.get("filing_inventory_sha256") != FILING_INVENTORY_SHA256
     ):
         raise ValueError("canonical input identity was changed")
     if manifest.get("authority_receipt_sha256") != APPROVED_RECEIPT_SHA256:
@@ -118,6 +118,12 @@ def _validate(package: Path = PACKAGE, *, require_frozen_coverage: bool = True) 
             or digest(path) != row["sha256"]
         ):
             raise ValueError(f"artifact path, byte count, or hash mismatch: {row['path']}")
+    inventory = package / "raw/cftc-kex-fee-filing-inventory.json"
+    if (
+        inventory.stat().st_size != FILING_INVENTORY_BYTES
+        or digest(inventory) != FILING_INVENTORY_SHA256
+    ):
+        raise ValueError("fee-filing inventory identity mismatch")
     timeline = load(package / "authority_timeline.json")
     if timeline.get("schema_version") != "cpi-p9b-authority-timeline-v1":
         raise ValueError("unsupported authority timeline schema")
@@ -136,8 +142,6 @@ def _validate(package: Path = PACKAGE, *, require_frozen_coverage: bool = True) 
         if previous is not None:
             raise ValueError(f"{kind} timeline does not end open")
     source = p9a()
-    if set(manifest.get("p8_reference_events", [])) != P8_REFERENCE_EVENTS:
-        raise ValueError("mutable P8 event list does not match reviewed authority")
     coverage: list[dict[str, Any]] = []
     event_rows: dict[str, list[dict[str, Any]]] = {}
     market_ids: set[str] = set()
@@ -185,30 +189,19 @@ def _validate(package: Path = PACKAGE, *, require_frozen_coverage: bool = True) 
                 "statuses": statuses,
             }
         )
-    intersection = sorted(
-        row["event_ticker"]
-        for row in events
-        if row["event_ticker"] in P8_REFERENCE_EVENTS and row["status"] == "exact"
-    )
     result = {
         "schema_version": "cpi-p9b-event-coverage-v2",
         "market_rows": coverage,
         "events": events,
         "counts": {
             s: sum(row["status"] == s for row in coverage)
-            for s in ("exact", "locator_only", "unknown", "mixed_authority")
+            for s in ("exact", "continuity_supported", "locator_only", "unknown", "mixed_authority")
         },
         "event_counts": {
             s: sum(row["status"] == s for row in events)
-            for s in ("exact", "locator_only", "unknown", "mixed_authority")
+            for s in ("exact", "continuity_supported", "locator_only", "unknown", "mixed_authority")
         },
-        "p8_reference_events": sorted(P8_REFERENCE_EVENTS),
-        "p8_p9a_exact_taker_intersection": intersection,
-        "intersection_count": len(intersection),
-        "exact_taker_p8_usable_quote_rows": sum(
-            row["event_ticker"] in P8_REFERENCE_EVENTS and row["status"] == "exact"
-            for row in coverage
-        ),
+        "p8_join": "deferred_to_downstream_p10_authority_binder",
         "boundary_observations": [
             row
             for row in coverage

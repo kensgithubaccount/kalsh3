@@ -2,7 +2,7 @@
   "schema_version": "cpi-p9b-authority-timeline-v1",
   "taker": [
     {"start_date": null, "end_date": "2022-09-24", "status": "unknown", "authority_type": "taker", "authority_identity": "UNKNOWN_PRE_EFFECTIVE_DATE", "formula": null, "rounding": null, "kxcpi_applicability": "unknown"},
-    {"start_date": "2022-09-24", "end_date": "2025-05-06", "status": "exact", "authority_type": "taker", "authority_identity": "CFTC-49335-FINAL", "formula": "round_up(0.07 * C * P * (1-P))", "rounding": "next_cent", "kxcpi_applicability": "general"},
+    {"start_date": "2022-09-24", "end_date": "2025-05-06", "status": "continuity_supported", "authority_type": "taker", "authority_identity": "CFTC-49335-FINAL", "formula": "round_up(0.07 * C * P * (1-P))", "rounding": "next_cent", "kxcpi_applicability": "general", "notes": "Direct schedule plus later snapshot, but historical filing-obligation applicability is not proven across the full interval."},
     {"start_date": "2025-05-06", "end_date": null, "status": "locator_only", "authority_type": "taker", "authority_identity": "OCT_2025_LOCATOR_ONLY", "formula": "round_up(0.07 * C * P * (1-P))", "rounding": "next_cent", "kxcpi_applicability": "general"}
   ],
   "maker": [

@@ -22,9 +22,8 @@ P9A_APPROVED_ACQUISITION_DIGEST: Final = (
 )
 P9A_MARKET_COUNT: Final = 474
 P9A_EVENT_COUNT: Final = 60
-P8_AUTHORITY_ARTIFACT_SHA256: Final = (
-    "f189e95766307bccd7f44e01aa1a7d89950ce3050b657d34b0f9a844bdea6d7d"
-)
+FILING_INVENTORY_SHA256: Final = "3ae3383b7cf5dd089a76357a8557cc2d67adb597284c0b141780ca58134af16f"
+FILING_INVENTORY_BYTES: Final = 9533
 
 APPROVED_ARTIFACTS: Final = (
     {
@@ -59,7 +58,7 @@ APPROVED_ARTIFACTS: Final = (
         "sha256": "d8d185862a439a8f1a178d5044bbe9c4ccfd931ae4a54619b9f2602493865c8f",
         "bytes": 865102,
         "role": "continuity",
-        "identity": "CFTC-RULEBOOK-3.6-E",
+        "identity": "CFTC-RULEBOOK-3.10-E",
         "url": "https://www.cftc.gov/filings/orgrules/rules07012525155.pdf",
         "status": "exact",
     },
@@ -80,6 +79,15 @@ APPROVED_ARTIFACTS: Final = (
         "identity": "CFTC-49335-INDEX",
         "url": "https://www.cftc.gov/IndustryOversight/IndustryFilings/TradingOrganizationRules/49335",
         "status": "exact",
+    },
+    {
+        "path": "raw/cftc-kex-fee-filing-inventory.json",
+        "sha256": "3ae3383b7cf5dd089a76357a8557cc2d67adb597284c0b141780ca58134af16f",
+        "bytes": 9533,
+        "role": "continuity_inventory",
+        "identity": "CFTC-KEX-FEE-INVENTORY-2022-09-22-2025-05-06",
+        "url": "https://www.cftc.gov/IndustryOversight/IndustryFilings/TradingOrganizationRules?Organization=KEX&Receipt_Date_From=2022-09-22&Receipt_Date_To=2025-05-06&Show_All=1",
+        "status": "continuity_supported",
     },
 )
 
@@ -117,12 +125,18 @@ AUTHORITY_METADATA: Final = (
         "supersession": "superseded/continued by later snapshot",
     },
     {
-        "identity": "CFTC-RULEBOOK-3.6-E",
+        "identity": "CFTC-RULEBOOK-3.10-E",
         "filing": "rules07012525155",
-        "rule": "3.6(e)",
+        "rule": "3.10(e)",
+        "effective_interval": "2025-07-16 onward only; historical interval not proven",
+        "relevant_text": (
+            "The Exchange may establish dues, fees, and expenses payable by Members "
+            "and must file applicable rule changes before implementation under the "
+            "governing filing regime."
+        ),
         "scope": "continuity",
         "kxcpi_applicability": "general",
-        "status": "exact",
+        "status": "continuity_supported",
         "supersession": "continuity constraint",
     },
     {
@@ -146,39 +160,14 @@ AUTHORITY_METADATA: Final = (
         "status": "exact",
         "supersession": "continuity inventory locator",
     },
-)
-
-P8_REFERENCE_EVENTS: Final = frozenset(
     {
-        "CPI-22OCT",
-        "CPI-22NOV",
-        "CPI-22DEC",
-        "CPI-23JAN",
-        "CPI-23FEB",
-        "CPI-23MAR",
-        "CPI-23APR",
-        "CPI-23MAY",
-        "CPI-23JUN",
-        "CPI-23JUL",
-        "CPI-23AUG",
-        "CPI-23SEP",
-        "CPI-23OCT",
-        "CPI-23NOV",
-        "CPI-23DEC",
-        "CPI-24JAN",
-        "CPI-24FEB",
-        "CPI-24MAR",
-        "CPI-24APR",
-        "CPI-24MAY",
-        "CPI-24JUN",
-        "CPI-24JUL",
-        "CPI-24AUG",
-        "CPI-24SEP",
-        "CPI-24OCT",
-        "KXCPI-24NOV",
-        "KXCPI-24DEC",
-        "KXCPI-25JAN",
-    }
+        "identity": "CFTC-KEX-FEE-INVENTORY-2022-09-22-2025-05-06",
+        "effective_interval": "2022-09-22 through 2025-05-06 search window",
+        "scope": "continuity_inventory",
+        "kxcpi_applicability": "general inventory; individual programs conditional or excluded",
+        "status": "continuity_supported",
+        "supersession": "replaces single-filing non-exhaustive locator",
+    },
 )
 
 
@@ -193,4 +182,4 @@ def approved_receipt_digest() -> str:
     return hashlib.sha256(raw).hexdigest()
 
 
-APPROVED_RECEIPT_SHA256: Final = "6e5b60297615baf8b3e2f1fff25fb8b1b6b673fed0fa29c12de53ecf51314568"
+APPROVED_RECEIPT_SHA256: Final = "8328bf6a417fdc042e1e0852f34896c205b306facb443b0dde0cbe6a657951b5"

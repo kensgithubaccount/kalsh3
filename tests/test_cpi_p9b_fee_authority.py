@@ -25,18 +25,20 @@ def rewrite(target: Path, change) -> None:
 def test_freeze_derives_expected_disposition() -> None:
     result = validate(PACKAGE)
     assert result["counts"] == {
-        "exact": 272,
+        "exact": 0,
+        "continuity_supported": 272,
         "locator_only": 110,
         "unknown": 92,
         "mixed_authority": 0,
     }
     assert result["event_counts"] == {
-        "exact": 31,
+        "exact": 0,
+        "continuity_supported": 31,
         "locator_only": 14,
         "unknown": 15,
         "mixed_authority": 0,
     }
-    assert result["intersection_count"] == 28
+    assert result["p8_join"] == "deferred_to_downstream_p10_authority_binder"
 
 
 def test_artifact_mutation_fails(tmp_path: Path) -> None:
@@ -44,6 +46,26 @@ def test_artifact_mutation_fails(tmp_path: Path) -> None:
     raw = target / "raw/cftc-49335-final-schedule.pdf"
     raw.write_bytes(raw.read_bytes() + b"mutation")
     with pytest.raises(ValueError, match=r"approved set|hash mismatch"):
+        validate(target)
+
+
+def test_rule_3_6_identity_and_wrong_historical_version_fail(tmp_path: Path) -> None:
+    target = clone(tmp_path)
+    rewrite(
+        target,
+        lambda m: m["authority_metadata"][3].update(
+            {"identity": "CFTC-RULEBOOK-3.6-E", "rule": "3.6(e)"}
+        ),
+    )
+    with pytest.raises(ValueError, match="metadata"):
+        validate(target)
+
+
+def test_inventory_interval_mutation_fails(tmp_path: Path) -> None:
+    target = clone(tmp_path)
+    inventory = target / "raw/cftc-kex-fee-filing-inventory.json"
+    inventory.write_text(inventory.read_text().replace("2025-05-06", "2025-05-07", 1))
+    with pytest.raises(ValueError, match="inventory"):
         validate(target)
 
 
@@ -110,21 +132,40 @@ def test_timeline_and_coverage_files_are_read_only_inputs(tmp_path: Path) -> Non
     target = clone(tmp_path)
     timeline = target / "authority_timeline.json"
     timeline.write_text(
-        timeline.read_text().replace('"status": "exact"', '"status": "locator_only"', 1)
+        timeline.read_text().replace(
+            '"status": "continuity_supported"', '"status": "locator_only"', 1
+        )
     )
     with pytest.raises(ValueError, match="timeline"):
         validate(target)
     target = clone(tmp_path / "coverage")
     coverage = target / "event_coverage.json"
-    coverage.write_text(coverage.read_text().replace('"exact": 272', '"exact": 271', 1))
+    coverage.write_text(
+        coverage.read_text().replace(
+            '"continuity_supported": 272', '"continuity_supported": 271', 1
+        )
+    )
     with pytest.raises(ValueError, match="coverage"):
         validate(target)
 
 
-def test_p8_event_list_is_not_a_mutable_authority_source(tmp_path: Path) -> None:
+def test_p8_join_is_deferred_and_cannot_claim_intersection() -> None:
+    result = validate(PACKAGE)
+    assert result["p8_join"] == "deferred_to_downstream_p10_authority_binder"
+    assert "intersection_count" not in result
+
+
+def test_fee_covered_row_is_not_quote_usable() -> None:
+    result = validate(PACKAGE)
+    assert "exact_taker_p8_usable_quote_rows" not in result
+    assert all("usable" not in row for row in result["market_rows"])
+
+
+def test_inventory_is_fixed_and_not_an_individual_filing_page(tmp_path: Path) -> None:
     target = clone(tmp_path)
-    rewrite(target, lambda m: m["p8_reference_events"].pop())
-    with pytest.raises(ValueError, match="P8 event list"):
+    inventory = target / "raw/cftc-kex-fee-filing-inventory.json"
+    inventory.write_text(inventory.read_text().replace('"filings": [', '"filings": [],'))
+    with pytest.raises(ValueError, match="inventory"):
         validate(target)
 
 
