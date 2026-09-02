@@ -6,6 +6,21 @@ This offline, read-only repair makes the canonical contract comparison parser
 polarity-aware. It does not modify P10A, P9A evidence, prices, outcomes, fees,
 execution, risk, credentials, or production authority.
 
+## R1.3 grammar boundary
+
+Comparison acceptance is versioned by the parser's reviewed complete-template
+family, rather than by searching a bounded character window. The family is
+limited to: a comparison phrase alone; an explicit `YES if`/official-value or
+measured-value clause with a lexical subject and unit slot; and the canonical
+CPI sentence `If the Consumer Price Index (CPI) increases by ... (single-decimal)
+in <month> <year>, then the market resolves to Yes.` Every token in the
+accepted clause must be consumed by one of these templates. Payout orientation,
+denial, modality, uncertainty, exception, conditional inversion, extra
+clauses, and unknown wording therefore abstain as `Comparator.NONE`.
+
+This is not a general natural-language parser. New exchange wording requires a
+separately reviewed template before it can be accepted.
+
 Supported complete phrases include affirmative `more than`/`greater than`
 (`GT`), `less than` (`LT`), and the exact inclusive forms. The parser also
 supports the logically exact negations `not/no more than` (`LTE`) and `not

@@ -232,12 +232,35 @@ def test_residual_negation_and_no_direction_fail_closed(text: str) -> None:
         "CPI is not necessarily more than 0.2%",
         "Unless CPI is more than 0.2%, YES wins",
         "Except when CPI is more than 0.2%, YES wins",
+        "The NO side prevails if CPI is more than 0.2%",
+        "A NO outcome occurs when CPI is more than 0.2%",
+        "YES is unsuccessful when CPI is more than 0.2%",
+        "It is untrue that CPI is more than 0.2%",
+        "CPI may not actually be more than 0.2%",
+        "Barring CPI being more than 0.2%, YES wins",
+        "Other than when CPI is more than 0.2%, YES wins",
+        "Unless CPI is more than 0.2%, this explanatory clause is deliberately "
+        "long enough to exceed the former bounded search window before YES wins",
         "THE OUTCOME IS NO IF CPI IS MORE THAN 0.2%.",
         "unless-CPI-is-more-than-0.2%, the YES side wins",
         "The result is NO if CPI isn\u2019t less than 0.2%",
     ],
 )
 def test_clause_level_polarity_cannot_escape_affirmative_candidate(text: str) -> None:
+    assert parse_comparison(text)[0] == Comparator.NONE
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "More than 0.2% means a NO outcome",
+        "MORE THAN 0.2% MEANS A NO OUTCOME!",
+        "The result is NO when CPI is more than 0.2%.",
+        "CPI is more than 0.2%, but this is unsupported explanatory prose.",
+        "more than 0.2% and more than 0.2%",
+    ],
+)
+def test_formal_templates_reject_residual_or_multiple_prose(text: str) -> None:
     assert parse_comparison(text)[0] == Comparator.NONE
 
 

@@ -329,42 +329,87 @@ def _issue(
 
 
 _NUMBER = r"(-?\d+(?:\.\d+)?)"
-_COMPARISON_CANDIDATES = (
-    (rf"\bnot\s+exactly\s+{_NUMBER}", Comparator.NONE, True),
-    (
-        rf"\b(?:not\s+(?:more|greater)\s+than|no\s+more\s+than|at\s+most)\s+{_NUMBER}",
-        Comparator.LTE,
-        True,
+_COMPARISON_PHRASE = (
+    rf"(?:not\s+exactly\s+{_NUMBER}|"
+    rf"(?:no\s+more\s+than|not\s+(?:more|greater)\s+than|at\s+most)\s+{_NUMBER}|"
+    rf"not\s+(?:less\s+than|below)\s+{_NUMBER}|"
+    rf"between\s+{_NUMBER}\s+(?:and|to)\s+{_NUMBER}|"
+    rf"at\s+least\s+{_NUMBER}|"
+    rf"{_NUMBER}\s+or\s+less|"
+    rf"(?:greater\s+than|more\s+than|above|over)\s+{_NUMBER}|"
+    rf"(?:less\s+than|under|below|fewer\s+than)\s+{_NUMBER}|"
+    rf"exactly\s+{_NUMBER})"
+)
+
+# Versioned, complete clause templates.  The subject and unit slots are
+# intentionally lexical slots, while payout, denial, modality, and
+# conditional words are excluded by the grammar.  There is no substring
+# fallback: callers must match one whole reviewed template.
+_TEMPLATE_SUBJECT = (
+    r"(?:(?!\b(?:no|yes|unless|except|false|untrue|uncertain|may|might|not)\b)"
+    r"[a-z][a-z0-9()%./-]*\s+){0,14}"
+)
+_COMPARISON_TEMPLATES = (
+    re.compile(rf"(?:{_COMPARISON_PHRASE})[.!?]?"),
+    re.compile(
+        rf"(?:yes\s+if\s+|the\s+market\s+resolves\s+yes\s+if\s+|"
+        rf"the\s+official\s+value\s+is\s+|the\s+measured\s+value\s+is\s+)"
+        rf"{_TEMPLATE_SUBJECT}(?:{_COMPARISON_PHRASE})(?:\s+[a-z%°./-]+){{0,4}}[.!?]?"
     ),
-    (rf"\bnot\s+(?:less\s+than|below)\s+{_NUMBER}", Comparator.GTE, True),
-    (rf"\bbetween\s+{_NUMBER}\s+(?:and|to)\s+{_NUMBER}", Comparator.BETWEEN, True),
-    (rf"\bat\s+least\s+{_NUMBER}", Comparator.GTE, True),
-    (rf"\b{_NUMBER}\s+or\s+less", Comparator.LTE, True),
-    (rf"\b(?:greater\s+than|more\s+than|above|over)\s+{_NUMBER}", Comparator.GT, False),
-    (rf"\b(?:less\s+than|under|below|fewer\s+than)\s+{_NUMBER}", Comparator.LT, False),
-    (rf"\bexactly\s+{_NUMBER}", Comparator.EQ, True),
+    re.compile(
+        rf"if\s+the\s+consumer\s+price\s+index\s+\(cpi\)\s+increases\s+by\s+"
+        rf"{_COMPARISON_PHRASE}%?(?:\s+\(single\s+decimal\))?\s+in\s+"
+        rf"(?:january|february|march|april|may|june|july|august|september|october|november|december)\s+\d{{4}},\s+"
+        rf"then\s+the\s+market\s+resolves\s+to\s+yes[.!?]?"
+    ),
+    re.compile(
+        rf"if\s+the\s+cpi\s+increases\s+by\s+{_COMPARISON_PHRASE}%?\s+in\s+"
+        rf"(?:january|february|march|april|may|june|july|august|september|october|november|december)"
+        rf"(?:\s*,?\s*\d{{4}})?\s*,\s+then\s+the\s+market\s+resolves\s+to\s+yes[.!?]?"
+    ),
+    re.compile(
+        rf"if\s+the\s+consumer\s+price\s+index\s+\(cpi\)\s+as\s+reported\s+by\s+the\s+bls's\s+"
+        rf"monthly\s+single\s+digit\s+consumer\s+price\s+index\s+summary\s+report\s+increases\s+by\s+"
+        rf"{_COMPARISON_PHRASE}%?\s+in\s+"
+        rf"(?:january|february|march|april|may|june|july|august|september|october|november|december)\s+\d{{4}},\s+"
+        rf"then\s+the\s+market\s+resolves\s+to\s+yes[.!?]?"
+    ),
+    re.compile(
+        rf"will\s+(?:the\s+)?(?:\*\*)?(?:consumer\s+price\s+index|cpi|inflation)(?:\*\*)?\s+rise\s+"
+        rf"{_COMPARISON_PHRASE}%?\s+in\s+"
+        rf"(?:january|february|march|april|may|june|july|august|september|october|november|december)"
+        rf"(?:\s+\d{{4}})?\?"
+    ),
 )
-_UNHANDLED_NEGATION = re.compile(
-    r"\b(?:is|was|does|can|will)\s+not\s+(?:be\s+)?(?:at\s+least|at\s+most|more\s+than|greater\s+than|less\s+than|below|above|over|under|exactly|between)\b|"
-    r"\b(?:isn't|wasn't|doesn't|can't|cannot|won't|neither|nor)\s+(?:be\s+)?(?:at\s+least|at\s+most|more\s+than|greater\s+than|less\s+than|below|above|over|under|exactly|between)\b"
-)
-_NO_RESOLUTION = re.compile(
-    r"\b(?:resolves?|settles?)\s+(?:to\s+)?no\b|"
-    r"\b(?:no\s+side|the\s+no\s+side|no)\s+wins\b|"
-    r"\bpays?(?:\s+out)?(?:\s+to)?\s+no\b|"
-    r"\bis\s+determined\s+no\b|\bresults?\s+in\s+no\b"
-)
-_CLAUSE_NEGATION = re.compile(
-    r"\b(?:outcome|result)\s+is\s+no\b|"
-    r"\bmeans\s+(?:a\s+)?no\s+outcome\b|"
-    r"\byes(?:\s+side)?\s+loses?\b|"
-    r"\byes\s+side\s+does\s+not\s+win\b|"
-    r"\b(?:it\s+is\s+)?false\s+that\b|"
-    r"\bnot\s+true\s+that\b|"
-    r"\bnot\s+necessarily\b"
-)
-_INVERTED_CONDITIONAL = re.compile(r"\b(?:unless|except(?:\s+when)?)\b")
-_YES_WIN = re.compile(r"\byes(?:\s+side)?\s+wins?\b")
+
+
+def _comparison_from_phrase(
+    phrase: str,
+) -> tuple[Comparator, tuple[Decimal, ...], bool] | None:
+    match = re.fullmatch(_COMPARISON_PHRASE, phrase)
+    if match is None:
+        return None
+    values = tuple(Decimal(value) for value in re.findall(_NUMBER, phrase))
+    if not all(value.is_finite() for value in values):
+        return None
+    lowered = phrase
+    if lowered.startswith("not exactly"):
+        return Comparator.NONE, values, True
+    if re.match(r"(?:no more than|not (?:more|greater) than|at most)", lowered):
+        return Comparator.LTE, values, True
+    if re.match(r"not (?:less than|below)", lowered):
+        return Comparator.GTE, values, True
+    if lowered.startswith("between"):
+        return Comparator.BETWEEN, values, True
+    if lowered.startswith("at least"):
+        return Comparator.GTE, values, True
+    if re.search(r"\sor less$", lowered):
+        return Comparator.LTE, values, True
+    if re.match(r"(?:greater than|more than|above|over)", lowered):
+        return Comparator.GT, values, False
+    if re.match(r"(?:less than|under|below|fewer than)", lowered):
+        return Comparator.LT, values, False
+    return Comparator.EQ, values, True
 
 
 def parse_comparison(
@@ -373,73 +418,22 @@ def parse_comparison(
     normalized = text.lower().replace("\u2019", "'")
     normalized = re.sub(r"(?<=[a-z])-(?=[a-z])", " ", normalized)
     lowered = " ".join(normalized.split())
-    candidates: list[tuple[int, int, Comparator, tuple[Decimal, ...], bool]] = []
-    for pattern, comparator, inclusive in _COMPARISON_CANDIDATES:
-        for match in re.finditer(pattern, lowered):
-            try:
-                values = tuple(Decimal(value) for value in match.groups() if value is not None)
-            except (ValueError, ArithmeticError):
-                return Comparator.NONE, None, None, None, None
-            if not all(value.is_finite() for value in values):
-                return Comparator.NONE, None, None, None, None
-            candidates.append((match.start(), match.end(), comparator, values, inclusive))
+    interpretations: set[tuple[Comparator, tuple[Decimal, ...], bool]] = set()
+    for template in _COMPARISON_TEMPLATES:
+        match = template.fullmatch(lowered)
+        if match is None:
+            continue
+        phrase_match = re.search(_COMPARISON_PHRASE, match.group(0))
+        if phrase_match is None:
+            return Comparator.NONE, None, None, None, None
+        try:
+            interpretation = _comparison_from_phrase(phrase_match.group(0))
+        except (ValueError, ArithmeticError):
+            return Comparator.NONE, None, None, None, None
+        if interpretation is None:
+            return Comparator.NONE, None, None, None, None
+        interpretations.add(interpretation)
 
-    # A supported negative candidate owns any generic affirmative match nested
-    # inside its span.  This is span resolution, not a negative look-behind.
-    candidates = [
-        candidate
-        for candidate in candidates
-        if not any(
-            other[0] <= candidate[0]
-            and candidate[1] <= other[1]
-            and other[1] - other[0] > candidate[1] - candidate[0]
-            and other[2] in {Comparator.LTE, Comparator.GTE, Comparator.NONE}
-            for other in candidates
-        )
-    ]
-    if re.search(r"\bnot\s+not\b", lowered) or any(
-        not any(
-            candidate[0] <= negation.start() <= negation.end() <= candidate[1]
-            for candidate in candidates
-        )
-        for negation in _UNHANDLED_NEGATION.finditer(lowered)
-    ):
-        return Comparator.NONE, None, None, None, None
-    if any(comparator == Comparator.NONE for _, _, comparator, _, _ in candidates):
-        return Comparator.NONE, None, None, None, None
-    supported_months = {
-        "january",
-        "february",
-        "march",
-        "april",
-        "may",
-        "june",
-        "july",
-        "august",
-        "september",
-        "october",
-        "november",
-        "december",
-    }
-    for candidate in candidates:
-        suffix = lowered[candidate[1] :]
-        month_match = re.search(r"\bin\s+([A-Za-z]+)", suffix)
-        if month_match and month_match.group(1) not in supported_months:
-            return Comparator.NONE, None, None, None, None
-        window = lowered[max(0, candidate[0] - 120) : min(len(lowered), candidate[1] + 120)]
-        if _CLAUSE_NEGATION.search(window):
-            return Comparator.NONE, None, None, None, None
-        conditional = _INVERTED_CONDITIONAL.search(window[:120])
-        if conditional and _YES_WIN.search(window[conditional.end() :]):
-            return Comparator.NONE, None, None, None, None
-    if candidates and _NO_RESOLUTION.search(lowered):
-        return Comparator.NONE, None, None, None, None
-    if not candidates:
-        return Comparator.NONE, None, None, None, None
-
-    interpretations = {
-        (comparator, values, inclusive) for _, _, comparator, values, inclusive in candidates
-    }
     if len(interpretations) != 1:
         return Comparator.NONE, None, None, None, None
     comparator, values, inclusive = next(iter(interpretations))
@@ -503,9 +497,13 @@ class ContractSpecificationParser:
             or market.get("no_proposition")
             or (f"Not: {yes}" if yes else "")
         )
-        comparator, threshold, lower, upper, inclusivity = parse_comparison(
-            " ".join((title, rules, secondary))
-        )
+        comparator, threshold, lower, upper, inclusivity = parse_comparison(rules or title)
+        # A few frozen historical records contain placeholder rules but a
+        # complete authoritative title clause.  Preserve their prior semantic
+        # identity without allowing a valid title to override a valid,
+        # conflicting rules clause.
+        if comparator == Comparator.NONE and rules and title:
+            comparator, threshold, lower, upper, inclusivity = parse_comparison(title)
         if comparator == Comparator.NONE:
             issues.append(
                 _issue(
