@@ -29,6 +29,7 @@ SCHEMA_VERSION = "fr-a3-authoritative-outcome-scoring-v2"
 SCORING_POLICY_VERSION = "fr-a3-binary-v2"
 LOG_LOSS_CLIP = 1e-6
 _CAPABILITY = object()
+_APPEND_CAPABILITY = object()
 
 
 def _scoring_now() -> datetime:
@@ -104,29 +105,17 @@ class OutcomeEvidenceAuthority:
 
     def issue(self, *, artifact: str | Path) -> OutcomeEvidenceReceipt:
         path = Path(artifact)
+        if path.is_symlink() or not path.is_file():
+            raise ScoringError("outcome artifact must be a regular file")
         try:
             content = path.read_bytes()
-            source = json.loads(content)
+            source = _parse_outcome_artifact(content)
         except OSError as exc:
             raise ScoringError("outcome artifact unavailable") from exc
         except (TypeError, ValueError, json.JSONDecodeError) as exc:
             raise ScoringError("outcome artifact does not match reviewed schema") from exc
-        if type(source) is not dict or set(source) != {
-            "market_ticker",
-            "event_ticker",
-            "underlying_event_id",
-            "observation_date",
-            "status",
-            "value",
-            "published_at",
-            "revision_policy",
-        }:
-            raise ScoringError("outcome artifact schema mismatch")
-        try:
-            status = OutcomeStatus(source["status"])
-            published_at = datetime.fromisoformat(source["published_at"])
-        except (TypeError, ValueError) as exc:
-            raise ScoringError("outcome artifact fields are invalid") from exc
+        status = OutcomeStatus(cast(str, source["status"]))
+        published_at = _utc(source["published_at"], "publication")
         available_at = datetime.now(UTC)
         acquired_at = available_at
         archive = self.root / "artifacts" / hashlib.sha256(content).hexdigest()
@@ -173,8 +162,12 @@ class OutcomeEvidenceAuthority:
             or receipt.predicate_identity != self.predicate_identity
         ):
             raise ScoringError("outcome issuer or predicate authority mismatch")
+        archive = self.root / "artifacts" / receipt.artifact_sha256
+        locator = Path(receipt.artifact_locator)
         try:
-            content = Path(receipt.artifact_locator).read_bytes()
+            if locator != archive.resolve() or locator.is_symlink() or not locator.is_file():
+                raise ScoringError("frozen outcome locator is not canonical")
+            content = locator.read_bytes()
         except OSError as exc:
             raise ScoringError("frozen outcome artifact unavailable") from exc
         if (
@@ -182,11 +175,85 @@ class OutcomeEvidenceAuthority:
             or hashlib.sha256(content).hexdigest() != receipt.artifact_sha256
         ):
             raise ScoringError("frozen outcome artifact changed")
+        source = _parse_outcome_artifact(content)
+        expected = {
+            "market_ticker": receipt.market_ticker,
+            "event_ticker": receipt.event_ticker,
+            "underlying_event_id": receipt.underlying_event_id,
+            "observation_date": receipt.observation_date,
+            "status": receipt.status.value,
+            "value": receipt.value,
+            "published_at": receipt.published_at,
+            "revision_policy": receipt.revision_policy,
+        }
+        if source != expected:
+            raise ScoringError("outcome receipt does not rederive from frozen artifact")
         OutcomeEvidenceReceipt(
             _capability=_CAPABILITY,
             issuer_key=self.key,
             **{f.name: getattr(receipt, f.name) for f in fields(receipt)},
         )
+
+
+def _parse_outcome_artifact(content: bytes) -> dict[str, object]:
+    def reject_constant(value: str) -> object:
+        raise ScoringError(f"non-finite JSON constant: {value}")
+
+    def reject_duplicate(pairs: list[tuple[str, object]]) -> dict[str, object]:
+        result: dict[str, object] = {}
+        for key, value in pairs:
+            if key in result:
+                raise ScoringError("duplicate outcome artifact key")
+            result[key] = value
+        return result
+
+    try:
+        source = json.loads(
+            content, object_pairs_hook=reject_duplicate, parse_constant=reject_constant
+        )
+    except (TypeError, ValueError, json.JSONDecodeError) as exc:
+        raise ScoringError("outcome artifact does not match reviewed schema") from exc
+    expected_keys = {
+        "market_ticker",
+        "event_ticker",
+        "underlying_event_id",
+        "observation_date",
+        "status",
+        "value",
+        "published_at",
+        "revision_policy",
+    }
+    if type(source) is not dict or set(source) != expected_keys:
+        raise ScoringError("outcome artifact schema mismatch")
+    if type(source["status"]) is not str or type(source["value"]) not in (int, type(None)):
+        raise ScoringError("outcome artifact outcome types are invalid")
+    for key in (
+        "market_ticker",
+        "event_ticker",
+        "underlying_event_id",
+        "observation_date",
+        "published_at",
+        "revision_policy",
+    ):
+        if type(source[key]) is not str or not source[key]:
+            raise ScoringError("outcome artifact text field is invalid")
+    source["status"] = OutcomeStatus(source["status"])
+    source["published_at"] = _utc(
+        datetime.fromisoformat(cast(str, source["published_at"])), "publication"
+    )
+    _validate_values(
+        {
+            "status": source["status"],
+            "value": source["value"],
+            "published_at": source["published_at"],
+            "available_at": source["published_at"],
+            "acquired_at": source["published_at"],
+            "research_only": True,
+            "production_influence": 0,
+        }
+    )
+    source["status"] = cast(OutcomeStatus, source["status"]).value
+    return source
 
 
 @dataclass(frozen=True, slots=True)
@@ -210,6 +277,13 @@ class ScoringRecord:
     log_loss: float | None
     scoring_policy_version: str
     record_identity: str
+
+
+@dataclass(frozen=True, slots=True)
+class ReplayContext:
+    outcome_authority: OutcomeEvidenceAuthority
+    receipt_store: ProspectiveReceiptStore
+    ledger: TrialLedger
 
 
 def _jsonable(value: object) -> object:
@@ -303,7 +377,9 @@ def _load_key(path: Path) -> bytes:
 class OutcomeScoringStore:
     """FR-A2-style journal/checkpoint authority; no SQLite recovery path."""
 
-    def __init__(self, path: str | Path, *, _create: bool = False) -> None:
+    def __init__(
+        self, path: str | Path, *, _create: bool = False, context: ReplayContext | None = None
+    ) -> None:
         self.path = Path(path)
         self.journal = self.path.with_name(self.path.name + ".journal")
         self.head = self.path.with_name(self.path.name + ".head")
@@ -316,6 +392,7 @@ class OutcomeScoringStore:
         self.key = _load_key(key_path)
         self.lock_path = self.path.with_name(self.path.name + ".lock")
         self.lock_path.touch(exist_ok=True)
+        self.context = context
         if not existed:
             self.journal.parent.mkdir(parents=True, exist_ok=True)
             self.journal.touch()
@@ -336,8 +413,10 @@ class OutcomeScoringStore:
         return cls(target, _create=True)
 
     @classmethod
-    def open(cls, path: str | Path) -> OutcomeScoringStore:
-        return cls(path)
+    def open(cls, path: str | Path, *, context: ReplayContext) -> OutcomeScoringStore:
+        if type(context) is not ReplayContext:
+            raise ScoringError("replay requires an explicit authority context")
+        return cls(path, context=context)
 
     def _lock(self) -> Any:
         store = self
@@ -355,8 +434,13 @@ class OutcomeScoringStore:
         return Lock()
 
     def append(self, record: ScoringRecord) -> None:
+        raise ScoringError("public scoring append is not an authority boundary")
+
+    def _append(self, record: ScoringRecord, *, _capability: object) -> None:
+        if _capability is not _APPEND_CAPABILITY:
+            raise ScoringError("scoring append requires reviewed issuance capability")
         with self._lock():
-            _validate_record(record)
+            _validate_record(record, self.context)
             entries = self._entries()
             if any(e["record"]["trial_id"] == record.trial_id for e in entries):
                 raise ScoringError("trial has already been scored")
@@ -400,7 +484,12 @@ class OutcomeScoringStore:
 
     @property
     def records(self) -> tuple[ScoringRecord, ...]:
-        return tuple(_decode(e["record"], self.key) for e in self._entries())
+        if self._entries() and self.context is None:
+            raise ScoringError("non-empty replay requires full authority context")
+        return tuple(
+            _decode(e["record"], self.key, cast(ReplayContext, self.context))
+            for e in self._entries()
+        )
 
     def _entries(self) -> list[dict[str, Any]]:
         if not self.journal.exists() and not self.head.exists():
@@ -446,7 +535,7 @@ class OutcomeScoringStore:
         return result
 
 
-def _decode(value: Mapping[str, Any], key: bytes) -> ScoringRecord:
+def _decode(value: Mapping[str, Any], key: bytes, context: ReplayContext) -> ScoringRecord:
     raw = dict(cast(Mapping[str, Any], value["outcome_receipt"]))
     for name in ("published_at", "available_at", "acquired_at"):
         raw[name] = datetime.fromisoformat(raw[name])
@@ -458,7 +547,7 @@ def _decode(value: Mapping[str, Any], key: bytes) -> ScoringRecord:
         **{
             **value,
             "outcome_receipt": OutcomeEvidenceReceipt(
-                _capability=_CAPABILITY, issuer_key=None, **raw
+                _capability=_CAPABILITY, issuer_key=context.outcome_authority.key, **raw
             ),
             "scored_at": value["scored_at"],
         }
@@ -469,11 +558,11 @@ def _decode(value: Mapping[str, Any], key: bytes) -> ScoringRecord:
         != result.record_identity
     ):
         raise ScoringError("replayed record identity mismatch")
-    _validate_record(result)
+    _validate_record(result, context)
     return result
 
 
-def _validate_record(record: ScoringRecord) -> None:
+def _validate_record(record: ScoringRecord, context: ReplayContext | None) -> None:
     if type(record) is not ScoringRecord:
         raise ScoringError("record type is not recognized")
     if any(
@@ -500,6 +589,13 @@ def _validate_record(record: ScoringRecord) -> None:
         raise ScoringError("scoring policy version is not recognized")
     if record.outcome_receipt.receipt_id != record.outcome_receipt.identity:
         raise ScoringError("outcome receipt identity is invalid")
+    receipt_payload = {
+        f.name: getattr(record.outcome_receipt, f.name)
+        for f in fields(record.outcome_receipt)
+        if f.name not in {"receipt_id", "issuer_mac"}
+    }
+    if _digest(receipt_payload) != record.outcome_receipt.receipt_id:
+        raise ScoringError("outcome receipt content identity is invalid")
     if record.score_status not in {
         "SCORED",
         "ABSTAINED",
@@ -511,6 +607,18 @@ def _validate_record(record: ScoringRecord) -> None:
         "TERMINAL_UNSCORED",
     }:
         raise ScoringError("score status is not recognized")
+    if record.outcome_receipt.status is OutcomeStatus.RESOLVED and record.score_status not in {
+        "SCORED",
+        "ABSTAINED",
+        "TERMINAL_UNSCORED",
+    }:
+        raise ScoringError("resolved outcome has an invalid score status")
+    if record.outcome_receipt.status is not OutcomeStatus.RESOLVED and record.score_status not in {
+        record.outcome_receipt.status.value,
+        "ABSTAINED",
+        "TERMINAL_UNSCORED",
+    }:
+        raise ScoringError("unresolved outcome has an invalid score status")
     if record.forecast_probability is not None:
         _probability(record.forecast_probability)
     resolved = record.outcome_receipt.status is OutcomeStatus.RESOLVED
@@ -539,6 +647,62 @@ def _validate_record(record: ScoringRecord) -> None:
         != record.record_identity
     ):
         raise ScoringError("record identity does not match content")
+    if context is not None:
+        context.outcome_authority.validate(record.outcome_receipt)
+        trial = context.ledger.get(record.trial_id)
+        history = _digest(
+            {
+                "definition": trial.definition.content_hash,
+                "events": [e.content_hash for e in context.ledger.status_events(record.trial_id)],
+            }
+        )
+        if history != record.registration_history_identity:
+            raise ScoringError("registration history mismatch")
+        forecast = context.receipt_store.read_receipt(record.forecast_receipt_id)
+        if forecast.content_hash != record.forecast_receipt_hash:
+            raise ScoringError("forecast receipt identity mismatch")
+        if (
+            forecast.market_ticker != record.market_ticker
+            or forecast.event_ticker != record.event_ticker
+            or forecast.underlying_event_id != record.underlying_event_id
+            or forecast.decision_at != record.decision_cutoff
+            or forecast.calibrator_id != record.calibrator_identity
+        ):
+            raise ScoringError("replayed forecast identity mismatch")
+        if trial.definition.underlying_event_id != record.underlying_event_id:
+            raise ScoringError("replayed trial identity mismatch")
+        if record.market_ticker not in trial.definition.sibling_market_ids:
+            raise ScoringError("replayed market identity mismatch")
+        plan = trial.definition.evaluation_plan.value
+        if plan.get("event_ticker") not in (None, record.event_ticker):
+            raise ScoringError("replayed event identity mismatch")
+        if plan.get("predicate_identity") != record.outcome_receipt.predicate_identity:
+            raise ScoringError("replayed predicate identity mismatch")
+        if (
+            trial.status in (TrialStatus.FAILED, TrialStatus.ABANDONED)
+            and record.score_status != "TERMINAL_UNSCORED"
+        ):
+            raise ScoringError("terminal trial status mismatch")
+        if record.score_status == "TERMINAL_UNSCORED" and trial.status not in (
+            TrialStatus.FAILED,
+            TrialStatus.ABANDONED,
+        ):
+            raise ScoringError("terminal score lacks terminal trial state")
+        if trial.definition.created_at > record.decision_cutoff:
+            raise ScoringError("replayed registration chronology is invalid")
+        publication = context.receipt_store.read_publication(forecast)
+        outcome = record.outcome_receipt
+        if not (
+            record.decision_cutoff
+            <= publication.published_at
+            < outcome.published_at
+            <= outcome.available_at
+            <= outcome.acquired_at
+            <= record.scored_at
+        ):
+            raise ScoringError("replayed outcome chronology is invalid")
+        if publication.published_at >= record.outcome_receipt.published_at:
+            raise ScoringError("replayed forecast publication chronology is invalid")
 
 
 def score_trial(
@@ -591,8 +755,7 @@ def score_trial(
     if outcome.published_at <= definition.created_at:
         raise ScoringError("outcome not published after registration")
     try:
-        publication = receipt_store.read_publication(receipt)
-        receipt_store.require_frozen(receipt, outcome.available_at)
+        publication = receipt_store.require_frozen(receipt, outcome.available_at)
     except ProspectiveReceiptError as exc:
         raise ScoringError(str(exc)) from exc
     p = None if receipt.abstained else _probability(receipt.calibrated_probability)
@@ -633,7 +796,7 @@ def score_trial(
         "scoring_policy_version": SCORING_POLICY_VERSION,
     }
     record = ScoringRecord(**values, record_identity=_digest(values))  # type: ignore[arg-type]
-    scoring_store.append(record)
+    scoring_store._append(record, _capability=_APPEND_CAPABILITY)
     return record
 
 
@@ -657,6 +820,14 @@ def _scores(probability: float | None, outcome: int) -> tuple[float, float]:
 def confidence_interval(
     values: list[float] | tuple[float, ...], confidence: float = 0.95
 ) -> tuple[float, float] | None:
+    if (
+        type(confidence) not in (int, float)
+        or not math.isfinite(float(confidence))
+        or not 0 < confidence < 1
+    ):
+        raise ScoringError("confidence must be between zero and one")
+    if any(type(value) not in (int, float) or not math.isfinite(float(value)) for value in values):
+        raise ScoringError("confidence values must be finite")
     if not values:
         return None
     mean = sum(values) / len(values)
@@ -674,14 +845,27 @@ def event_equal_aggregation(
     records: list[ScoringRecord] | tuple[ScoringRecord, ...],
 ) -> dict[str, object]:
     if not records:
-        return {"event_count": 0, "scored_trial_count": 0, "abstention_count": 0}
+        return {
+            "event_count": 0,
+            "scored_trial_count": 0,
+            "abstained_trial_count": 0,
+            "abstained_event_count": 0,
+            "scored_event_count": 0,
+        }
     population = (
         records[0].candidate_family,
         records[0].model_identity,
         records[0].calibrator_identity,
     )
     groups: dict[str, list[ScoringRecord]] = {}
+    seen_records: set[str] = set()
+    seen_trials: set[str] = set()
     for record in records:
+        _validate_record(record, None)
+        if record.record_identity in seen_records or record.trial_id in seen_trials:
+            raise ScoringError("duplicate scoring identity")
+        seen_records.add(record.record_identity)
+        seen_trials.add(record.trial_id)
         if (
             record.candidate_family,
             record.model_identity,
@@ -697,10 +881,15 @@ def event_equal_aggregation(
     logs = [
         sum(float(cast(float, r.log_loss)) for r in group) / len(group) for group in groups.values()
     ]
+    abstained_trials = [r for r in records if r.score_status == "ABSTAINED"]
+    abstained_events = {r.underlying_event_id for r in abstained_trials}
     return {
         "event_count": len(groups),
+        "scored_event_count": len(groups),
         "scored_trial_count": sum(map(len, groups.values())),
-        "abstention_count": sum(r.score_status == "ABSTAINED" for r in records),
+        "abstained_trial_count": len(abstained_trials),
+        "abstained_event_count": len(abstained_events),
+        "abstention_count": len(abstained_trials),
         "brier_mean": None if not brier else sum(brier) / len(brier),
         "log_loss_mean": None if not logs else sum(logs) / len(logs),
         "brier_confidence_interval": confidence_interval(brier),
@@ -718,4 +907,20 @@ def calibration_buckets(
         if record.score_status == "SCORED" and record.forecast_probability is not None:
             index = min(bucket_count - 1, int(record.forecast_probability * bucket_count))
             buckets[index].append(record)
-    return tuple({"bucket": index, "count": len(group)} for index, group in enumerate(buckets))
+    result: list[dict[str, object]] = []
+    for index, group in enumerate(buckets):
+        event_ids = {record.underlying_event_id for record in group}
+        result.append(
+            {
+                "bucket": index,
+                "count": len(group),
+                "event_count": len(event_ids),
+                "mean_forecast": None
+                if not group
+                else sum(cast(float, r.forecast_probability) for r in group) / len(group),
+                "observed_rate": None
+                if not group
+                else sum(cast(int, r.outcome_receipt.value) for r in group) / len(group),
+            }
+        )
+    return tuple(result)

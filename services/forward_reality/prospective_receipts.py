@@ -490,7 +490,7 @@ class ProspectiveReceiptStore:
         path = self.root / f"{receipt.receipt_id}.json"
         publication_path = self.root / f"{receipt.receipt_id}.publication.json"
         if not path.is_file() or path.is_symlink() or path.read_bytes() != receipt.to_bytes():
-            raise ProspectiveReceiptError("receipt bytes are not frozen")
+            raise ProspectiveReceiptError("receipt bytes are not frozen or unpublished")
         if not publication_path.is_file() or publication_path.is_symlink():
             raise ProspectiveReceiptError("receipt publication is unavailable")
         publication = self._read_publication(publication_path, self._issuer_key())
@@ -503,20 +503,40 @@ class ProspectiveReceiptStore:
             raise ProspectiveReceiptError("publication bytes are not frozen")
         return publication
 
+    def read_receipt(self, receipt_id: str) -> ProspectivePredictionReceipt:
+        """Load and revalidate one immutable FR-A1 receipt from the archive."""
+        path = self.root / f"{receipt_id}.json"
+        try:
+            payload = json.loads(path.read_bytes())
+            if type(payload) is not dict:
+                raise ProspectiveReceiptError("receipt payload is invalid")
+            for name in ("decision_at", "forecast_created_at"):
+                payload[name] = datetime.fromisoformat(payload[name])
+            for name in (
+                "raw_probability",
+                "calibrated_probability",
+                "lower_probability",
+                "upper_probability",
+                "production_influence",
+            ):
+                if payload[name] is not None:
+                    payload[name] = Decimal(payload[name])
+            payload["evidence_ids"] = tuple(payload["evidence_ids"])
+            payload["source_ids"] = tuple(payload["source_ids"])
+            receipt = ProspectivePredictionReceipt(**payload)
+        except (OSError, TypeError, ValueError, KeyError, json.JSONDecodeError) as exc:
+            raise ProspectiveReceiptError("receipt archive is invalid") from exc
+        if receipt.receipt_id != receipt_id or path.read_bytes() != receipt.to_bytes():
+            raise ProspectiveReceiptError("receipt archive identity mismatch")
+        return receipt
+
     def require_frozen(
         self, receipt: ProspectivePredictionReceipt, outcome_available_at: datetime
-    ) -> None:
+    ) -> ProspectiveReceiptPublication:
         """Permit a later outcome binder to proceed only after this receipt exists."""
         if type(outcome_available_at) is not datetime or outcome_available_at.tzinfo is None:
             raise ProspectiveReceiptError("outcome availability must be a timezone-aware datetime")
-        path = self.root / f"{receipt.receipt_id}.json"
-        if not path.is_file() or path.read_bytes() != receipt.to_bytes():
-            raise ProspectiveReceiptError("outcome cannot bind an unpublished or changed receipt")
-        publication_path = self.root / f"{receipt.receipt_id}.publication.json"
-        if not publication_path.is_file():
-            raise ProspectiveReceiptError("outcome cannot bind an unpublished receipt")
-        issuer_key = self._issuer_key()
-        publication = self._read_publication(publication_path, issuer_key)
+        publication = self.read_publication(receipt)
         if publication.receipt_id != receipt.receipt_id:
             raise ProspectiveReceiptError("publication is bound to a different receipt")
         if publication.receipt_content_hash != receipt.content_hash:
@@ -528,10 +548,9 @@ class ProspectiveReceiptStore:
             raise ProspectiveReceiptError(
                 "trusted publication must precede the forecast target resolution"
             )
-        if publication_path.read_bytes() != publication.to_bytes():
-            raise ProspectiveReceiptError("outcome cannot bind a changed publication")
         if outcome_available_at <= publication.published_at:
             raise ProspectiveReceiptError("outcome is not later than trusted publication")
+        return publication
 
 
 class ProspectiveOutcomeBoundary:

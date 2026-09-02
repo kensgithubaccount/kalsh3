@@ -1,4 +1,5 @@
 from datetime import UTC, datetime, timedelta
+from pathlib import Path
 
 import pytest
 
@@ -8,7 +9,9 @@ from services.forward_reality.outcome_scoring import (
     _CAPABILITY,
     OutcomeEvidenceAuthority,
     OutcomeScoringStore,
+    ReplayContext,
     ScoringError,
+    ScoringRecord,
     score_trial,
 )
 from services.forward_reality.prospective_receipts import ProspectiveReceiptStore
@@ -63,10 +66,17 @@ def test_authenticated_score_restarts_and_rejects_duplicate(tmp_path, monkeypatc
     )
     assert record.brier_score == pytest.approx((0.58 - 1) ** 2)
     with pytest.raises(ScoringError, match="already been scored"):
+        context = ReplayContext(
+            outcome_authority=OutcomeEvidenceAuthority(
+                tmp_path / "outcome-authority", _capability=_CAPABILITY
+            ),
+            receipt_store=receipt_store,
+            ledger=ledger,
+        )
         score_trial(
             ledger=ledger,
             receipt_store=receipt_store,
-            scoring_store=OutcomeScoringStore.open(tmp_path / "scores"),
+            scoring_store=OutcomeScoringStore.open(tmp_path / "scores", context=context),
             outcome_authority=OutcomeEvidenceAuthority(
                 tmp_path / "outcome-authority",
                 _capability=_CAPABILITY,
@@ -75,11 +85,18 @@ def test_authenticated_score_restarts_and_rejects_duplicate(tmp_path, monkeypatc
             receipt=receipt,
             outcome=outcome,
         )
-    assert len(OutcomeScoringStore.open(tmp_path / "scores").records) == 1
+    context = ReplayContext(
+        outcome_authority=OutcomeEvidenceAuthority(
+            tmp_path / "outcome-authority", _capability=_CAPABILITY
+        ),
+        receipt_store=receipt_store,
+        ledger=ledger,
+    )
+    assert len(OutcomeScoringStore.open(tmp_path / "scores", context=context).records) == 1
     journal = (tmp_path / "scores").with_name("scores.journal")
     journal.write_bytes(journal.read_bytes().replace(b'"SCORED"', b'"FORGED"'))
-    with pytest.raises(ScoringError, match="corrupt"):
-        OutcomeScoringStore.open(tmp_path / "scores")
+    with pytest.raises(ScoringError, match=r"journal corrupt|journal authentication mismatch"):
+        OutcomeScoringStore.open(tmp_path / "scores", context=context)
 
 
 def test_tampered_score_journal_and_prepublication_outcome_fail_closed(tmp_path, monkeypatch):
@@ -124,3 +141,58 @@ def test_tampered_score_journal_and_prepublication_outcome_fail_closed(tmp_path,
             receipt=receipt,
             outcome=outcome,
         )
+
+
+def test_public_append_and_frozen_artifact_mutation_fail_closed(tmp_path):
+    artifact = tmp_path / "outcome.json"
+    artifact.write_text(
+        '{"market_ticker":"M","event_ticker":"E","underlying_event_id":"U",'
+        '"observation_date":"2026-09-01","status":"RESOLVED","value":1,'
+        '"published_at":"2026-08-30T12:00:00+00:00","revision_policy":"initial"}'
+    )
+    authority = OutcomeEvidenceAuthority(tmp_path / "authority", _capability=_CAPABILITY)
+    receipt = authority.issue(artifact=artifact)
+    archive = Path(receipt.artifact_locator)
+    archive.write_bytes(archive.read_bytes().replace(b'"value":1', b'"value":0'))
+    with pytest.raises(ScoringError, match="artifact changed"):
+        authority.validate(receipt)
+    with pytest.raises(ScoringError, match="public scoring append"):
+        OutcomeScoringStore.create(tmp_path / "scores").append(
+            ScoringRecord(
+                trial_id="trial",
+                forecast_receipt_id="receipt",
+                forecast_receipt_hash="hash",
+                registration_history_identity="history",
+                market_ticker="M",
+                event_ticker="E",
+                underlying_event_id="U",
+                candidate_family="candidate",
+                model_identity="model",
+                calibrator_identity="calibrator",
+                decision_cutoff=NOW,
+                scored_at=NOW,
+                forecast_probability=None,
+                outcome_receipt=receipt,
+                score_status="UNKNOWN",
+                brier_score=None,
+                log_loss=None,
+                scoring_policy_version="policy",
+                record_identity="record",
+            )
+        )
+
+
+def test_fixture_capability_is_not_a_public_production_boundary():
+    exported = Path("services/forward_reality/__init__.py").read_text()
+    assert "_CAPABILITY" not in exported
+    production = list(Path("services").rglob("*.py"))
+    assert all(
+        "fr-a3-test-source-v1" not in path.read_text()
+        for path in production
+        if path.name != "outcome_scoring.py"
+    )
+    assert all(
+        "outcome_scoring import _CAPABILITY" not in path.read_text()
+        for path in production
+        if path.name != "outcome_scoring.py"
+    )
