@@ -269,6 +269,40 @@ def test_structured_secondary_agreement_and_unsupported_assertions() -> None:
 
 
 @pytest.mark.parametrize(
+    "secondary",
+    [
+        "NO WINS IF THE TEMPERATURE IS AT LEAST 90 F.",
+        "The NO Side Prevails If CPI Is More Than 0.3%.",
+        "The market pays NO when the official value is ≥ 10.",
+        "The NO side is credited if the measured value exceeds the stated ceiling.",
+        "NO wins if the temperature surpasses 90 F.",
+    ],
+)
+def test_secondary_material_assertions_are_case_invariant(secondary: str) -> None:
+    primary = "The official value is at least 10 units."
+    outcomes = {
+        select_authoritative_comparison(
+            rules_primary=primary, title="Test threshold", rules_secondary=variant
+        ).state
+        for variant in (secondary.lower(), secondary, secondary.title(), secondary.upper())
+    }
+    assert outcomes == {ComparisonSelectionState.REFUSED_OR_AMBIGUOUS}
+
+
+@pytest.mark.parametrize(
+    "secondary",
+    ["The report was credited to the agency.", "The agency exceeds its publication target."],
+)
+def test_secondary_bare_vocabulary_remains_inert(secondary: str) -> None:
+    result = select_authoritative_comparison(
+        rules_primary="The official value is at least 10 units.",
+        title="Test threshold",
+        rules_secondary=secondary,
+    )
+    assert result.state is ComparisonSelectionState.MATCHED_RULES_PRIMARY
+
+
+@pytest.mark.parametrize(
     "text",
     [
         "not exactly 0.2",

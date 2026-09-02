@@ -42,7 +42,11 @@ classified as one of: inert text; a complete reviewed comparison; or an
 apparent but unsupported assertion. Bare `yes`, `no`, `resolves`, `settles`,
 `pays`, `wins`, and `loses` words are inert. A complete reviewed comparison
 must agree with the selected primary interpretation; malformed, negated,
-payout-inverted, or contradictory threshold material fails closed. Router
+payout-inverted, or contradictory threshold material fails closed. Classification
+is case-invariant and uses bounded structured markers: comparator phrases with
+numeric or conditional context, `exceeds`/`surpasses`, comparison symbols
+(`>`, `<`, `≥`, `≤`), and structured payout forms such as `NO wins` or `pays
+NO`. Bare `credited`, `exceeds`, or `surpasses` remains inert. Router
 blockers consume this same selection result and then compare its comparator to
 the specification.
 

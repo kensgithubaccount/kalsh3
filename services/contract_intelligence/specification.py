@@ -508,7 +508,8 @@ class SecondaryAssertionState(StrEnum):
 
 _SECONDARY_COMPARISON_MARKER = re.compile(
     r"\b(?:more\s+than|greater\s+than|less\s+than|below|above|under|between|"
-    r"at\s+least|at\s+most|exactly|no\s+more\s+than|not\s+(?:more|less|below|greater))\b"
+    r"at\s+least|at\s+most|exactly|no\s+more\s+than|not\s+(?:more|less|below|greater)|"
+    r"exceeds?|surpasses?)\b|[<>]=?|[≤≥]"
 )
 _SECONDARY_NUMERIC_MARKER = re.compile(r"\b-?\d+(?:\.\d+)?\b")
 _SECONDARY_SUBJECT_MARKER = re.compile(
@@ -516,7 +517,8 @@ _SECONDARY_SUBJECT_MARKER = re.compile(
     re.IGNORECASE,
 )
 _SECONDARY_PAYOUT_MARKER = re.compile(
-    r"\b(?:yes|no)\s+(?:wins?|loses?)\b|\b(?:pays?|resolves?|settles?)\s+(?:yes|no)\b"
+    r"\b(?:yes|no)\s+(?:side\s+)?(?:wins?|loses?|is\s+credited)\b|"
+    r"\b(?:pays?|resolves?|settles?|credited)\s+(?:to\s+)?(?:yes|no)\b"
 )
 _MONTHS = "january|february|march|april|may|june|july|august|september|october|november|december"
 
@@ -536,15 +538,17 @@ def _classify_secondary_assertion(
     SecondaryAssertionState,
     tuple[Comparator, Decimal | None, Decimal | None, Decimal | None, str | None],
 ]:
-    parsed = parse_comparison(text)
+    normalized = " ".join(text.lower().split())
+    parsed = parse_comparison(normalized)
     if parsed[0] is not Comparator.NONE:
         return SecondaryAssertionState.REVIEWED_COMPARISON, parsed
-    has_comparison = _SECONDARY_COMPARISON_MARKER.search(text) is not None
-    has_number = _SECONDARY_NUMERIC_MARKER.search(text) is not None
-    has_conditional = re.search(r"\b(?:if|when|unless)\b", text, re.IGNORECASE) is not None
-    has_payout = _SECONDARY_PAYOUT_MARKER.search(text) is not None
+    has_comparison = _SECONDARY_COMPARISON_MARKER.search(normalized) is not None
+    has_number = _SECONDARY_NUMERIC_MARKER.search(normalized) is not None
+    has_conditional = re.search(r"\b(?:if|when|unless)\b", normalized) is not None
+    has_payout = _SECONDARY_PAYOUT_MARKER.search(normalized) is not None
     if (
-        has_comparison and (has_number or has_conditional or _SECONDARY_SUBJECT_MARKER.search(text))
+        has_comparison
+        and (has_number or has_conditional or _SECONDARY_SUBJECT_MARKER.search(normalized))
     ) or has_payout:
         return SecondaryAssertionState.UNSUPPORTED_ASSERTION, parsed
     return SecondaryAssertionState.INERT, parsed
