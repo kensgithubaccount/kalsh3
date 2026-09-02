@@ -684,6 +684,7 @@ def _validate_record(record: ScoringRecord, context: ReplayContext | None) -> No
         ):
             raise ScoringError("terminal trial status mismatch")
         if record.score_status == "TERMINAL_UNSCORED" and trial.status not in (
+            TrialStatus.COMPLETED,
             TrialStatus.FAILED,
             TrialStatus.ABANDONED,
         ):
@@ -721,12 +722,12 @@ def score_trial(
     trial = ledger.get(trial_id)
     definition = trial.definition
     plan = definition.evaluation_plan.value
+    if outcome.status in (OutcomeStatus.PENDING, OutcomeStatus.UNKNOWN):
+        raise ScoringError("outcome is not final")
     if trial.status in (TrialStatus.PLANNED, TrialStatus.RUNNING):
         raise ScoringError("trial is not terminal")
     if trial.status in (TrialStatus.FAILED, TrialStatus.ABANDONED):
         status = "TERMINAL_UNSCORED"
-    elif outcome.status in (OutcomeStatus.PENDING, OutcomeStatus.UNKNOWN):
-        raise ScoringError("outcome is not final")
     elif outcome.status is OutcomeStatus.RESOLVED:
         status = "ABSTAINED" if receipt.abstained else "SCORED"
     else:

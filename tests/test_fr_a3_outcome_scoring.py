@@ -9,6 +9,7 @@ from services.forward_reality.outcome_scoring import (
     _CAPABILITY,
     OutcomeEvidenceAuthority,
     OutcomeScoringStore,
+    OutcomeStatus,
     ReplayContext,
     ScoringError,
     ScoringRecord,
@@ -21,8 +22,20 @@ from tests.test_fr_a1_prospective_receipts import make_receipt
 NOW = datetime(2026, 8, 28, 12, tzinfo=UTC)
 
 
-def _scenario(tmp_path, status=ledger_module.TrialStatus.PLANNED, outcome_status="RESOLVED"):
-    receipt = make_receipt()
+def _scenario(
+    tmp_path,
+    status=ledger_module.TrialStatus.PLANNED,
+    outcome_status="RESOLVED",
+    abstained=False,
+):
+    receipt_changes: dict[str, object] = {
+        "abstention_reason": "explicit research abstention" if abstained else None
+    }
+    if abstained:
+        receipt_changes.update(
+            calibrated_probability=None, lower_probability=None, upper_probability=None
+        )
+    receipt = make_receipt(**receipt_changes)
     (tmp_path / "receipts").mkdir(parents=True)
     receipt_store = ProspectiveReceiptStore(tmp_path / "receipts")
     receipt_store.publish(receipt)
@@ -42,6 +55,8 @@ def _scenario(tmp_path, status=ledger_module.TrialStatus.PLANNED, outcome_status
         trial = ledger.advance(trial.trial_id, status)
     elif status is ledger_module.TrialStatus.COMPLETED:
         ledger.advance(trial.trial_id, ledger_module.TrialStatus.RUNNING)
+        trial = ledger.advance(trial.trial_id, status)
+    elif status in (ledger_module.TrialStatus.FAILED, ledger_module.TrialStatus.ABANDONED):
         trial = ledger.advance(trial.trial_id, status)
     artifact = tmp_path / "outcome.json"
     value = "1" if outcome_status == "RESOLVED" else "null"
@@ -96,6 +111,61 @@ def test_pending_outcome_does_not_consume_trial_identity(tmp_path, monkeypatch):
             outcome=outcome,
         )
     assert store.records == ()
+
+
+@pytest.mark.parametrize("trial_status", list(ledger_module.TrialStatus))
+@pytest.mark.parametrize("outcome_status", [status.value for status in OutcomeStatus])
+@pytest.mark.parametrize("abstained", [False, True])
+def test_exhaustive_terminal_outcome_matrix_is_append_only(
+    tmp_path, monkeypatch, trial_status, outcome_status, abstained
+):
+    monkeypatch.setattr(receipts, "_utc_now", lambda: NOW + timedelta(hours=1))
+    monkeypatch.setattr(ledger_module, "_fr_a2_utc_now", lambda: NOW)
+    trial, receipt, receipt_store, ledger, authority, outcome = _scenario(
+        tmp_path, trial_status, outcome_status, abstained
+    )
+    store = OutcomeScoringStore.create(tmp_path / "scores")
+    journal = (tmp_path / "scores.journal").read_bytes()
+    checkpoint = (tmp_path / "scores.head").read_bytes()
+    final = trial_status in (
+        ledger_module.TrialStatus.COMPLETED,
+        ledger_module.TrialStatus.FAILED,
+        ledger_module.TrialStatus.ABANDONED,
+    )
+    pending = outcome_status in {"PENDING", "UNKNOWN"}
+    valid = final and not pending
+    if valid:
+        record = score_trial(
+            ledger=ledger,
+            receipt_store=receipt_store,
+            scoring_store=store,
+            outcome_authority=authority,
+            trial_id=trial.trial_id,
+            receipt=receipt,
+            outcome=outcome,
+        )
+        if trial_status is ledger_module.TrialStatus.COMPLETED and outcome_status == "RESOLVED":
+            assert record.score_status == ("ABSTAINED" if abstained else "SCORED")
+        else:
+            assert record.score_status == "TERMINAL_UNSCORED"
+        context = ReplayContext(
+            outcome_authority=authority, receipt_store=receipt_store, ledger=ledger
+        )
+        assert len(OutcomeScoringStore.open(tmp_path / "scores", context=context).records) == 1
+    else:
+        with pytest.raises(ScoringError):
+            score_trial(
+                ledger=ledger,
+                receipt_store=receipt_store,
+                scoring_store=store,
+                outcome_authority=authority,
+                trial_id=trial.trial_id,
+                receipt=receipt,
+                outcome=outcome,
+            )
+        assert (tmp_path / "scores.journal").read_bytes() == journal
+        assert (tmp_path / "scores.head").read_bytes() == checkpoint
+        assert store.records == ()
 
 
 def test_authenticated_score_restarts_and_rejects_duplicate(tmp_path, monkeypatch):
