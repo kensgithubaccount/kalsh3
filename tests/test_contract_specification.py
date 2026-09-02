@@ -144,6 +144,58 @@ def test_comparison_language_corpus() -> None:
     assert parse_comparison("roughly five")[0] == Comparator.NONE
 
 
+@pytest.mark.parametrize(
+    ("text", "expected", "value"),
+    [
+        ("more than 0.2", Comparator.GT, "0.2"),
+        ("greater than 0.2", Comparator.GT, "0.2"),
+        ("no more than 0.2", Comparator.LTE, "0.2"),
+        ("not more than 0.2", Comparator.LTE, "0.2"),
+        ("not greater than 0.2", Comparator.LTE, "0.2"),
+        ("less than 0.2", Comparator.LT, "0.2"),
+        ("not less than 0.2", Comparator.GTE, "0.2"),
+        ("not below 0.2", Comparator.GTE, "0.2"),
+    ],
+)
+def test_polarity_aware_comparison_phrases(text: str, expected: Comparator, value: str) -> None:
+    comparator, threshold, _, _, _ = parse_comparison(text)
+    assert comparator == expected and threshold == Decimal(value)
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "not exactly 0.2",
+        "not not more than 0.2",
+        "more than 0.2 and less than 0.1",
+        "more than 0.2 and no more than 0.2",
+        "exactly 0.2 or more than 0.3",
+        "between 0.1 and 0.3 but below 0.2",
+        "If not more than 0.2, the market resolves to No",
+        "more than 0.2, but not more than 0.3",
+        "not more than 0.2 in Junebug",
+        "more than ||",
+        "more than NaN",
+    ],
+)
+def test_negated_contradictory_and_malformed_comparisons_are_unsupported(text: str) -> None:
+    assert parse_comparison(text)[0] == Comparator.NONE
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "  NOT   MORE   THAN  0.2  ",
+        "not-more-than 0.2",
+        "not\tless\tthan 0.2",
+    ],
+)
+def test_punctuation_and_whitespace_do_not_hide_polarity(text: str) -> None:
+    comparator = parse_comparison(text)[0]
+    assert comparator in {Comparator.NONE, Comparator.LTE, Comparator.GTE}
+    assert comparator != Comparator.GT and comparator != Comparator.LT
+
+
 def test_missing_timezone_station_source_and_conflicts_fail_closed() -> None:
     parser = ContractSpecificationParser()
     base = bundle(timezone=None)

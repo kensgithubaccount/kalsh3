@@ -328,35 +328,99 @@ def _issue(
     return SemanticIssue(kind, Severity.BLOCKING, fields, description, fields, True, now)
 
 
-PHRASES = (
-    (r"\bat least\s+(-?\d+(?:\.\d+)?)", Comparator.GTE, True),
-    (r"\b(?:at most|no more than)\s+(-?\d+(?:\.\d+)?)", Comparator.LTE, True),
-    (r"\b(-?\d+(?:\.\d+)?)\s+or less", Comparator.LTE, True),
-    (r"\b(?:greater than|more than|above|over)\s+(-?\d+(?:\.\d+)?)", Comparator.GT, False),
-    (r"\b(?:under|below|fewer than)\s+(-?\d+(?:\.\d+)?)", Comparator.LT, False),
-    (r"\bexactly\s+(-?\d+(?:\.\d+)?)", Comparator.EQ, True),
-    (r"\bbetween\s+(-?\d+(?:\.\d+)?)\s+(?:and|to)\s+(-?\d+(?:\.\d+)?)", Comparator.BETWEEN, True),
+_NUMBER = r"(-?\d+(?:\.\d+)?)"
+_COMPARISON_CANDIDATES = (
+    (rf"\bnot\s+exactly\s+{_NUMBER}", Comparator.NONE, True),
+    (
+        rf"\b(?:not\s+(?:more|greater)\s+than|no\s+more\s+than|at\s+most)\s+{_NUMBER}",
+        Comparator.LTE,
+        True,
+    ),
+    (rf"\bnot\s+(?:less\s+than|below)\s+{_NUMBER}", Comparator.GTE, True),
+    (rf"\bbetween\s+{_NUMBER}\s+(?:and|to)\s+{_NUMBER}", Comparator.BETWEEN, True),
+    (rf"\bat\s+least\s+{_NUMBER}", Comparator.GTE, True),
+    (rf"\b{_NUMBER}\s+or\s+less", Comparator.LTE, True),
+    (rf"\b(?:greater\s+than|more\s+than|above|over)\s+{_NUMBER}", Comparator.GT, False),
+    (rf"\b(?:less\s+than|under|below|fewer\s+than)\s+{_NUMBER}", Comparator.LT, False),
+    (rf"\bexactly\s+{_NUMBER}", Comparator.EQ, True),
 )
+_UNHANDLED_NEGATION = re.compile(
+    r"\b(?:not|never)\s+(?:not\s+)?(?:at\s+least|at\s+most|more\s+than|greater\s+than|less\s+than|below|above|over|under|exactly|between)\b"
+)
+_NO_RESOLUTION = re.compile(r"\b(?:resolves?|settles?)\s+(?:to\s+)?no\b")
 
 
 def parse_comparison(
     text: str,
 ) -> tuple[Comparator, Decimal | None, Decimal | None, Decimal | None, str | None]:
     lowered = " ".join(text.lower().split())
-    for pattern, comparator, inclusive in PHRASES:
-        match = re.search(pattern, lowered)
-        if match:
-            values = [Decimal(x) for x in match.groups() if x is not None]
-            if comparator == Comparator.BETWEEN:
-                return (
-                    comparator,
-                    None,
-                    values[0],
-                    values[1],
-                    "inclusive" if inclusive else "exclusive",
-                )
-            return comparator, values[0], None, None, "inclusive" if inclusive else "exclusive"
-    return Comparator.NONE, None, None, None, None
+    candidates: list[tuple[int, int, Comparator, tuple[Decimal, ...], bool]] = []
+    for pattern, comparator, inclusive in _COMPARISON_CANDIDATES:
+        for match in re.finditer(pattern, lowered):
+            try:
+                values = tuple(Decimal(value) for value in match.groups() if value is not None)
+            except (ValueError, ArithmeticError):
+                return Comparator.NONE, None, None, None, None
+            if not all(value.is_finite() for value in values):
+                return Comparator.NONE, None, None, None, None
+            candidates.append((match.start(), match.end(), comparator, values, inclusive))
+
+    # A supported negative candidate owns any generic affirmative match nested
+    # inside its span.  This is span resolution, not a negative look-behind.
+    candidates = [
+        candidate
+        for candidate in candidates
+        if not any(
+            other[0] <= candidate[0]
+            and candidate[1] <= other[1]
+            and other[1] - other[0] > candidate[1] - candidate[0]
+            and other[2] in {Comparator.LTE, Comparator.GTE, Comparator.NONE}
+            for other in candidates
+        )
+    ]
+    if re.search(r"\bnot\s+not\b", lowered) or any(
+        not any(
+            candidate[0] <= negation.start() <= negation.end() <= candidate[1]
+            for candidate in candidates
+        )
+        for negation in _UNHANDLED_NEGATION.finditer(lowered)
+    ):
+        return Comparator.NONE, None, None, None, None
+    if any(comparator == Comparator.NONE for _, _, comparator, _, _ in candidates):
+        return Comparator.NONE, None, None, None, None
+    supported_months = {
+        "january",
+        "february",
+        "march",
+        "april",
+        "may",
+        "june",
+        "july",
+        "august",
+        "september",
+        "october",
+        "november",
+        "december",
+    }
+    for candidate in candidates:
+        suffix = lowered[candidate[1] :]
+        month_match = re.search(r"\bin\s+([A-Za-z]+)", suffix)
+        if month_match and month_match.group(1) not in supported_months:
+            return Comparator.NONE, None, None, None, None
+    if candidates and _NO_RESOLUTION.search(lowered):
+        return Comparator.NONE, None, None, None, None
+    if not candidates:
+        return Comparator.NONE, None, None, None, None
+
+    interpretations = {
+        (comparator, values, inclusive) for _, _, comparator, values, inclusive in candidates
+    }
+    if len(interpretations) != 1:
+        return Comparator.NONE, None, None, None, None
+    comparator, values, inclusive = next(iter(interpretations))
+    if comparator == Comparator.BETWEEN:
+        return comparator, None, values[0], values[1], "inclusive" if inclusive else "exclusive"
+    return comparator, values[0], None, None, "inclusive" if inclusive else "exclusive"
 
 
 TZ_MAP = {
