@@ -38,18 +38,52 @@ MONTHS = {
     )
 }
 EVENT_RE = re.compile(r"^(?:CPI|KXCPI)-(\d{2})([A-Z]{3})$")
-PREDICATE_RE = re.compile(r"more than\s+(-?\d+(?:\.\d+)?)%.*?in\s+([A-Za-z]+)\s+(\d{4})", re.I)
+PREDICATE_RE = re.compile(
+    r"more than\s+(-?\d+(?:\.\d+)?)%.*?\bin\s+([A-Za-z]+)\s+(\d{4})",
+    re.I,
+)
+PREDICATE_MONTHS = {
+    name.lower(): number
+    for number, name in enumerate(
+        (
+            "January",
+            "February",
+            "March",
+            "April",
+            "May",
+            "June",
+            "July",
+            "August",
+            "September",
+            "October",
+            "November",
+            "December",
+        ),
+        1,
+    )
+}
 P7_TIMING_ARTIFACT = Path("docs/reviews/artifacts/cpi-p7-release-timing.json")
 P7_TIMING_SCHEMA = "cpi-e1-p7-release-timing-receipt-v1"
-P7_TIMING_RAW_SHA256 = "01b9b8a77a7222ad55fab2a82c96fbbb68198b2c141352128f5c2b08b7150347"
-P7_TIMING_SEMANTIC_DIGEST = "e7fdf82fe74d3f5fe5917f049db1e3be5bd24c33f4777bc8df470a2d23fac198"
-P7_TIMING_APPROVED: dict[str, tuple[str, str, str, str, str]] = {
+P5A_RECEIPT = Path("docs/reviews/CPI_E1_P5A_EMPIRICAL_SMOKE_RECEIPT.md")
+P6_RECEIPT = Path("docs/reviews/CPI_E1_P6_INITIAL_RELEASE_VALUE_EVIDENCE.md")
+P7_RECEIPT = Path("docs/reviews/CPI_E1_P7_SETTLEMENT_RECONCILIATION.md")
+P5A_RECEIPT_SHA256 = "097434bb64de7750a7793255841db38a00d6e8be3c22aff2517f03989ecfc836"
+P6_RECEIPT_SHA256 = "4eaf6492ea85a8042b4447a9c0abc66e6e3746af20c0f1f9c4be6ffaab2384b4"
+P7_RECEIPT_SHA256 = "cec4c1bd323a7ce142db6ca53507a70afccc2ebbec917934d6bbc26861c36f20"
+P7_TIMING_RAW_SHA256 = "d11687c9ba0f3abab5e62d8431041e7160d38925f602f1f522b638c60c2b8a20"
+P7_TIMING_SEMANTIC_DIGEST = "bcf450b5a735b022ee5b62342979907d824f89bfea8e9440be4d64e6d9cb512a"
+P7_TIMING_APPROVED: dict[str, tuple[str, str, str, str, str, str, str, str, str, str]] = {
     "2025-07": (
         "2025-08-12T08:30:00-04:00",
         "2025-08-12T12:30:00Z",
         "https://www.bls.gov/news.release/archives/cpi_08122025.htm",
         "5b869d4365bc0f58db9814e3da09105f0fd944e4bbf16c39b5511f774a03dc4b",
         "74b5c6f504d448ac475a5598e50a0602b249368acd26b90642c066ecd96f4c65",
+        "5dc15e24b8196c2bb3718997a5cc00ff57ad777f7e4442c212f60d19c84017be",
+        "fd8a4fdafe7ea67fd8197174f7fe463592ac81026ece3d2f888a67631dd25eb5",
+        "3314c1d5b3ac34c83b62263edbc141548c8585e0c1b345bc2ce599f99fa74a66",
+        "00da4834ba953288337a042a2d61133a19f4508fec95e24e4ccb93213bb410a1",
+        "0.2",
     ),
     "2025-12": (
         "2026-01-13T08:30:00-05:00",
@@ -57,6 +91,11 @@ P7_TIMING_APPROVED: dict[str, tuple[str, str, str, str, str]] = {
         "https://www.bls.gov/news.release/archives/cpi_01132026.htm",
         "8351af0db99f8b1e338abe1b33cb062a70e61d2b154c0ec26aaed964f52b489e",
         "9cbc587c2fe7a8664e9a9546ad6a672e7914719cadc62a9cf03025affc4be0af",
+        "2f8f7300b553fdb6364aedd858d1672b92fdb05f1865916eee8904a325016846",
+        "911db8be1386eacaebf1138a32351cbe8d4dfbcda942cbae8e09c5f8ad9dad19",
+        "5bf66ffaa9067432317899fb6a90cde8013ca9ad09b97594b5bacda39e296ccb",
+        "0d6032aa22b623af5b8178ee8e0b90d6d354f8ecffeef086037e2458acb97433e",
+        "0.3",
     ),
     "2026-01": (
         "2026-02-13T08:30:00-05:00",
@@ -64,6 +103,11 @@ P7_TIMING_APPROVED: dict[str, tuple[str, str, str, str, str]] = {
         "https://www.bls.gov/news.release/archives/cpi_02132026.htm",
         "3b46aebecd5aa2d66f6f8abc38e47381e180a73db6cf87313ecc8eeddebd69f8",
         "6b566274e63c5c6d65f11ab193c0275b30264cdeae428bb24a442dde0bfdbbda",
+        "cd5684a7d61533b39fb05fbb1e6fbac024093438de4b00e824469b0ef51dc4f3",
+        "058b88e52d330e12e00b07fa9278763a448fc185efbb2672c422ec60e184ed0e",
+        "4df1cbd4637e37c2de453cb57239e2cce653b15fd9c4ef648b7f51a27d419721",
+        "49cd36d6cc68f57b3e155e568339411a2f878df0b61516e9af57261d1a50a33e",
+        "0.2",
     ),
 }
 
@@ -126,6 +170,7 @@ def _load_p7_timing(root: Path) -> dict[tuple[int, int], tuple[str, datetime]]:
         "schema_version",
         "authority",
         "events",
+        "provenance_documents",
         "provenance",
         "research_only",
         "production_influence",
@@ -138,6 +183,23 @@ def _load_p7_timing(root: Path) -> dict[tuple[int, int], tuple[str, datetime]]:
         raise P10ABindingError("P7 timing receipt schema or authority is invalid")
     if timing["research_only"] is not True or timing["production_influence"] != "0":
         raise P10ABindingError("P7 timing receipt safety fields are invalid")
+    documents = timing["provenance_documents"]
+    expected_documents = {
+        "p5a_publication_timing": (P5A_RECEIPT, P5A_RECEIPT_SHA256),
+        "p6_initial_release_values": (P6_RECEIPT, P6_RECEIPT_SHA256),
+        "p7_settlement_reconciliation": (P7_RECEIPT, P7_RECEIPT_SHA256),
+    }
+    if not isinstance(documents, dict) or set(documents) != set(expected_documents):
+        raise P10ABindingError("P7 timing provenance document set is not exact")
+    for name, (path, expected_hash) in expected_documents.items():
+        item = documents[name]
+        if not isinstance(item, dict) or set(item) != {"path", "sha256"}:
+            raise P10ABindingError("P7 timing provenance document schema is invalid")
+        if item["path"] != str(path) or item["sha256"] != expected_hash:
+            raise P10ABindingError("P7 timing provenance document mapping is invalid")
+        actual_hash = sha256((root / path).read_bytes()).hexdigest()
+        if actual_hash != expected_hash:
+            raise P10ABindingError(f"{name} receipt SHA-256 mismatch")
     events = timing["events"]
     if not isinstance(events, list) or len(events) != 3:
         raise P10ABindingError("P7 timing receipt must contain exactly three events")
@@ -152,6 +214,11 @@ def _load_p7_timing(root: Path) -> dict[tuple[int, int], tuple[str, datetime]]:
             "source_url",
             "artifact_sha256",
             "observation_id",
+            "p5a_acquisition_evidence_id",
+            "p5a_artifact_id",
+            "p5a_timing_evidence_id",
+            "p5a_publication_evidence_id",
+            "initial_release_value",
         }:
             raise P10ABindingError("P7 timing event schema is invalid")
         reference = str(item["reference_month"])
@@ -169,14 +236,26 @@ def _load_p7_timing(root: Path) -> dict[tuple[int, int], tuple[str, datetime]]:
                 "observation_id",
             )
         )
-        if actual != approved:
+        p5a_actual = tuple(
+            str(item[key])
+            for key in (
+                "p5a_acquisition_evidence_id",
+                "p5a_artifact_id",
+                "p5a_timing_evidence_id",
+                "p5a_publication_evidence_id",
+                "initial_release_value",
+            )
+        )
+        if actual != approved[:5] or p5a_actual != approved[5:]:
             raise P10ABindingError("P7 timing receipt differs from approved semantic mapping")
+        year, month = (int(part) for part in reference.split("-"))
+        if Decimal(p5a_actual[4]) != P7_VALUES[(year, month)]:
+            raise P10ABindingError("timing receipt value does not match P6/P7 authority")
         local = datetime.fromisoformat(actual[0])
         published = _time(actual[1])
         if local.astimezone(UTC) != published:
             raise P10ABindingError("P7 timing local and UTC instants disagree")
-        material.extend((reference, *actual))
-        year, month = (int(part) for part in reference.split("-"))
+        material.extend((reference, *actual, *p5a_actual))
         result[(year, month)] = (actual[4], published)
     if seen != set(P7_TIMING_APPROVED):
         raise P10ABindingError("P7 timing receipt event set is incomplete")
@@ -185,6 +264,10 @@ def _load_p7_timing(root: Path) -> dict[tuple[int, int], tuple[str, datetime]]:
             str(timing["provenance"]),
             str(timing["research_only"]),
             str(timing["production_influence"]),
+            *(
+                f"{name}:{documents[name]['path']}:{documents[name]['sha256']}"
+                for name in sorted(documents)
+            ),
         )
     )
     if sha256("|".join(material).encode()).hexdigest() != P7_TIMING_SEMANTIC_DIGEST:
@@ -200,10 +283,14 @@ def _event_month(event_ticker: str) -> tuple[int, int]:
 
 
 def _predicate(row: dict[str, Any]) -> tuple[Decimal, tuple[int, int]]:
-    match = PREDICATE_RE.search(str(row.get("rules_primary", "")))
-    if match is None:
+    matches = list(PREDICATE_RE.finditer(str(row.get("rules_primary", ""))))
+    if len(matches) != 1:
         raise P10ABindingError("contract predicate is absent or ambiguous")
-    return Decimal(match.group(1)), (int(match.group(3)), MONTHS[match.group(2)[:3].upper()])
+    match = matches[0]
+    month_name = match.group(2).lower()
+    if month_name not in PREDICATE_MONTHS:
+        raise P10ABindingError("contract predicate is absent or ambiguous")
+    return Decimal(match.group(1)), (int(match.group(3)), PREDICATE_MONTHS[month_name])
 
 
 def _logloss(probability: Decimal, outcome: int) -> float:

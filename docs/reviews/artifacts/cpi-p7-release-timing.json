@@ -8,7 +8,12 @@
       "publication_utc": "2025-08-12T12:30:00Z",
       "source_url": "https://www.bls.gov/news.release/archives/cpi_08122025.htm",
       "artifact_sha256": "5b869d4365bc0f58db9814e3da09105f0fd944e4bbf16c39b5511f774a03dc4b",
-      "observation_id": "74b5c6f504d448ac475a5598e50a0602b249368acd26b90642c066ecd96f4c65"
+      "observation_id": "74b5c6f504d448ac475a5598e50a0602b249368acd26b90642c066ecd96f4c65",
+      "p5a_acquisition_evidence_id": "5dc15e24b8196c2bb3718997a5cc00ff57ad777f7e4442c212f60d19c84017be",
+      "p5a_artifact_id": "fd8a4fdafe7ea67fd8197174f7fe463592ac81026ece3d2f888a67631dd25eb5",
+      "p5a_timing_evidence_id": "3314c1d5b3ac34c83b62263edbc141548c8585e0c1b345bc2ce599f99fa74a66",
+      "p5a_publication_evidence_id": "00da4834ba953288337a042a2d61133a19f4508fec95e24e4ccb93213bb410a1",
+      "initial_release_value": "0.2"
     },
     {
       "reference_month": "2025-12",
@@ -16,7 +21,12 @@
       "publication_utc": "2026-01-13T13:30:00Z",
       "source_url": "https://www.bls.gov/news.release/archives/cpi_01132026.htm",
       "artifact_sha256": "8351af0db99f8b1e338abe1b33cb062a70e61d2b154c0ec26aaed964f52b489e",
-      "observation_id": "9cbc587c2fe7a8664e9a9546ad6a672e7914719cadc62a9cf03025affc4be0af"
+      "observation_id": "9cbc587c2fe7a8664e9a9546ad6a672e7914719cadc62a9cf03025affc4be0af",
+      "p5a_acquisition_evidence_id": "2f8f7300b553fdb6364aedd858d1672b92fdb05f1865916eee8904a325016846",
+      "p5a_artifact_id": "911db8be1386eacaebf1138a32351cbe8d4dfbcda942cbae8e09c5f8ad9dad19",
+      "p5a_timing_evidence_id": "5bf66ffaa9067432317899fb6a90cde8013ca9ad09b97594b5bacda39e296ccb",
+      "p5a_publication_evidence_id": "0d6032aa22b623af5b8178ee8e0b90d6d354f8ecffeef086037e2458acb97433e",
+      "initial_release_value": "0.3"
     },
     {
       "reference_month": "2026-01",
@@ -24,10 +34,29 @@
       "publication_utc": "2026-02-13T13:30:00Z",
       "source_url": "https://www.bls.gov/news.release/archives/cpi_02132026.htm",
       "artifact_sha256": "3b46aebecd5aa2d66f6f8abc38e47381e180a73db6cf87313ecc8eeddebd69f8",
-      "observation_id": "6b566274e63c5c6d65f11ab193c0275b30264cdeae428bb24a442dde0bfdbbda"
+      "observation_id": "6b566274e63c5c6d65f11ab193c0275b30264cdeae428bb24a442dde0bfdbbda",
+      "p5a_acquisition_evidence_id": "cd5684a7d61533b39fb05fbb1e6fbac024093438de4b00e824469b0ef51dc4f3",
+      "p5a_artifact_id": "058b88e52d330e12e00b07fa9278763a448fc185efbb2672c422ec60e184ed0e",
+      "p5a_timing_evidence_id": "4df1cbd4637e37c2de453cb57239e2cce653b15fd9c4ef648b7f51a27d419721",
+      "p5a_publication_evidence_id": "49cd36d6cc68f57b3e155e568339411a2f878df0b61516e9af57261d1a50a33e",
+      "initial_release_value": "0.2"
     }
   ],
-  "provenance": "P6/P7 reviewed receipt; exact source URLs, P6 artifact hashes, and observation identities are recorded in docs/reviews/CPI_E1_P7_SETTLEMENT_RECONCILIATION.md",
+  "provenance_documents": {
+    "p5a_publication_timing": {
+      "path": "docs/reviews/CPI_E1_P5A_EMPIRICAL_SMOKE_RECEIPT.md",
+      "sha256": "097434bb64de7750a7793255841db38a00d6e8be3c22aff2517f03989ecfc836"
+    },
+    "p6_initial_release_values": {
+      "path": "docs/reviews/CPI_E1_P6_INITIAL_RELEASE_VALUE_EVIDENCE.md",
+      "sha256": "4eaf6492ea85a8042b4447a9c0abc66e6e3746af20c0f1f9c4be6ffaab2384b4"
+    },
+    "p7_settlement_reconciliation": {
+      "path": "docs/reviews/CPI_E1_P7_SETTLEMENT_RECONCILIATION.md",
+      "sha256": "cec4c1bd323a7ce142db6ca53507a70afccc2ebbec917934d6bbc26861c36f20"
+    }
+  },
+  "provenance": "P5A publication timing, P6 initial-release values, and P7 settlement reconciliation are separately bound canonical receipts",
   "research_only": true,
   "production_influence": "0"
 }

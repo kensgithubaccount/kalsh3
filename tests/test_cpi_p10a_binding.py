@@ -42,6 +42,27 @@ def test_placeholder_rule_has_no_ticker_fallback() -> None:
         _predicate({"rules_primary": "If the CPI increases by more than || percent ||%"})
 
 
+@pytest.mark.parametrize(
+    "rules",
+    [
+        "CPI increases by more than 0.2% in June 2022 and more than 0.3% in June 2022",
+        "CPI increases by more than 0.2% in June 2022 and more than 0.2% in June 2022",
+        "CPI increases by more than 0.2% in Junebug 2022",
+        "",
+    ],
+)
+def test_predicate_requires_exactly_one_supported_match(rules: str) -> None:
+    with pytest.raises(ValueError, match="absent or ambiguous"):
+        _predicate({"rules_primary": rules})
+
+
+def test_predicate_accepts_supported_month_without_prefix_normalization() -> None:
+    assert _predicate({"rules_primary": "more than 0.2% in June 2022"}) == (
+        Decimal("0.2"),
+        (2022, 6),
+    )
+
+
 def test_coherent_timing_receipt_mutation_fails_fixed_raw_digest(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

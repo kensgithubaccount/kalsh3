@@ -34,11 +34,15 @@ initial-release truth remain rejected.
   checked against the four frozen SHA-256 values by
   `load_frozen_target_cohort`; only CPI-U, U.S. city average, all-items, SA,
   MoM current/reference-month cells are accepted.
-- P6/P7: `docs/reviews/artifacts/cpi-p7-release-timing.json`, a strict,
-  raw-SHA-256-bound receipt with a fixed semantic digest and exact three-event
-  set. It binds reference month, initial-release value, P6 artifact SHA-256,
-  P7 observation identity, official BLS URL, and local/UTC publication instant;
-  the reviewed P6/P7 reconciliation document supplies the provenance record.
+- P5A publication-time authority: `CPI_E1_P5A_EMPIRICAL_SMOKE_RECEIPT.md`,
+  SHA-256 `097434bb64de7750a7793255841db38a00d6e8be3c22aff2517f03989ecfc836`.
+- P6 initial-release value authority: `CPI_E1_P6_INITIAL_RELEASE_VALUE_EVIDENCE.md`,
+  SHA-256 `4eaf6492ea85a8042b4447a9c0abc66e6e3746af20c0f1f9c4be6ffaab2384b4`.
+- P7 settlement reconciliation authority: `CPI_E1_P7_SETTLEMENT_RECONCILIATION.md`,
+  SHA-256 `cec4c1bd323a7ce142db6ca53507a70afccc2ebbec917934d6bbc26861c36f20`.
+  The machine-readable receipt identifies and verifies all three document
+  bytes. Its fixed semantic digest additionally binds every reviewed P5A
+  acquisition, artifact, timing, publication, and initial-value identity.
 - P9A: `evidence/cpi_p9a_historical_price/manifest.json`,
   `acquisition_manifest.json`, `market_inventory.json`, and the 474 raw
   responses. `validate_frozen_cohort` checks all content hashes, request
@@ -49,13 +53,14 @@ initial-release truth remain rejected.
 
 ## Binding and rejection policy
 
-The join requires exact event grammar, event-to-market identity, predicate
-month, P9A semantic comparator/threshold, initial-release month/value, finalized
-settlement result, and P9A evidence/request identities. A candle is eligible
-only when `end_period_ts < market_close`. A usable executable quote is a
-strictly pre-cutoff YES ask with neither YES entry boundary (`yes_ask != 1.00`
-and `yes_bid != 0.00`). No midpoint, last trade, retrospective volume, or
-post-cutoff candle is used.
+The join requires exact event grammar, event-to-market identity, exactly one
+supported rules predicate, P9A semantic comparator/threshold, initial-release
+month/value, finalized settlement result, and P9A evidence/request identities.
+A candle is eligible only when `end_period_ts < market_close`. The 291-row
+ask/crossing layer requires a valid non-boundary YES ask; the bid may be absent
+or at its NO-entry boundary. The 200-row two-sided layer requires both valid
+non-boundary bid and ask. Midpoint exists only for that two-sided subset. No
+last trade, retrospective volume, or post-cutoff candle is used.
 
 The rejected rows are: 111 `missing authoritative initial-release truth` rows,
 21 `contract predicate is absent or ambiguous` rows, and one
@@ -96,10 +101,10 @@ after-cost economics.
 ## P10A.1 temporal and quote repair
 
 P7 release times are now read only from the durable
-`docs/reviews/artifacts/cpi-p7-release-timing.json` receipt, which binds each
-reference month to the official BLS URL, recorded artifact SHA-256, exact P6
-observation identity, and timezone-aware publication instant. Calendar
-arithmetic is not used. The repaired values are 2025-08-12 12:30 UTC,
+`docs/reviews/artifacts/cpi-p7-release-timing.json` receipt. P5A is the
+publication-time authority; P6 is the initial-release value authority; and P7
+is the settlement-reconciliation authority. Calendar arithmetic is not used.
+The repaired values are 2025-08-12 12:30 UTC,
 2026-01-13 13:30 UTC, and 2026-02-13 13:30 UTC.
 
 Contract reference months now require the rules predicate. The ticker is only a
