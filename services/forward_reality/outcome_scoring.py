@@ -86,48 +86,69 @@ class OutcomeEvidenceReceipt:
 class OutcomeEvidenceAuthority:
     """Reviewed source/predicate boundary issuing receipts from frozen artifacts."""
 
-    def __init__(self, root: str | Path, *, source_authority: str, predicate_identity: str) -> None:
+    def __init__(self, root: str | Path, *, adapter_id: str) -> None:
         self.root = Path(root)
-        self.source_authority = _text(source_authority, "source authority")
-        self.predicate_identity = _text(predicate_identity, "predicate identity")
+        if adapter_id != "fr-a3-test-json-binary-adapter-v1":
+            raise ScoringError("unreviewed outcome adapter")
+        self.source_authority = "fr-a3-test-source-v1"
+        self.predicate_identity = "binary-rule-v1"
         self.key = _load_key(self.root.with_name(self.root.name + ".issuer-key"))
 
-    def issue(
-        self,
-        *,
-        artifact: str | Path,
-        market_ticker: str,
-        event_ticker: str,
-        underlying_event_id: str,
-        observation_date: str,
-        status: OutcomeStatus,
-        value: int | None,
-        published_at: datetime,
-        available_at: datetime,
-        acquired_at: datetime,
-        revision_policy: str,
-    ) -> OutcomeEvidenceReceipt:
+    def issue(self, *, artifact: str | Path) -> OutcomeEvidenceReceipt:
         path = Path(artifact)
         try:
             content = path.read_bytes()
+            source = json.loads(content)
         except OSError as exc:
             raise ScoringError("outcome artifact unavailable") from exc
+        except (TypeError, ValueError, json.JSONDecodeError) as exc:
+            raise ScoringError("outcome artifact does not match reviewed schema") from exc
+        if type(source) is not dict or set(source) != {
+            "market_ticker",
+            "event_ticker",
+            "underlying_event_id",
+            "observation_date",
+            "status",
+            "value",
+            "published_at",
+            "revision_policy",
+        }:
+            raise ScoringError("outcome artifact schema mismatch")
+        try:
+            status = OutcomeStatus(source["status"])
+            published_at = datetime.fromisoformat(source["published_at"])
+        except (TypeError, ValueError) as exc:
+            raise ScoringError("outcome artifact fields are invalid") from exc
+        available_at = datetime.now(UTC)
+        acquired_at = available_at
+        archive = self.root / "artifacts" / hashlib.sha256(content).hexdigest()
+        archive.parent.mkdir(parents=True, exist_ok=True)
+        if archive.exists() and archive.read_bytes() != content:
+            raise ScoringError("conflicting frozen artifact")
+        if not archive.exists():
+            with archive.open("xb") as stream:
+                stream.write(content)
+                stream.flush()
+                os.fsync(stream.fileno())
+            fd = os.open(archive.parent, os.O_RDONLY)
+            os.fsync(fd)
+            os.close(fd)
         values: dict[str, object] = {
             "source_authority": self.source_authority,
             "artifact_sha256": hashlib.sha256(content).hexdigest(),
             "artifact_size": len(content),
-            "artifact_locator": str(path.resolve()),
-            "market_ticker": _text(market_ticker, "market ticker"),
-            "event_ticker": _text(event_ticker, "event ticker"),
-            "underlying_event_id": _text(underlying_event_id, "underlying event"),
-            "observation_date": _text(observation_date, "observation date"),
+            "artifact_locator": str(archive.resolve()),
+            "market_ticker": _text(source["market_ticker"], "market ticker"),
+            "event_ticker": _text(source["event_ticker"], "event ticker"),
+            "underlying_event_id": _text(source["underlying_event_id"], "underlying event"),
+            "observation_date": _text(source["observation_date"], "observation date"),
             "predicate_identity": self.predicate_identity,
             "status": status,
-            "value": value,
+            "value": source["value"],
             "published_at": published_at,
             "available_at": available_at,
             "acquired_at": acquired_at,
-            "revision_policy": _text(revision_policy, "revision policy"),
+            "revision_policy": _text(source["revision_policy"], "revision policy"),
             "research_only": True,
             "production_influence": 0,
         }
@@ -277,9 +298,22 @@ class OutcomeScoringStore:
         self.path = Path(path)
         self.journal = self.path.with_name(self.path.name + ".journal")
         self.head = self.path.with_name(self.path.name + ".head")
-        self.key = _load_key(self.path.with_name(self.path.name + ".issuer-key"))
+        key_path = self.path.with_name(self.path.name + ".issuer-key")
+        existed = key_path.exists()
+        if existed and (not self.journal.exists() or not self.head.exists()):
+            raise ScoringError("scoring genesis or journal is missing")
+        self.key = _load_key(key_path)
         self.lock_path = self.path.with_name(self.path.name + ".lock")
         self.lock_path.touch(exist_ok=True)
+        if not existed:
+            self.journal.parent.mkdir(parents=True, exist_ok=True)
+            self.journal.touch()
+            head = {"schema_version": SCHEMA_VERSION, "last_sequence": 0, "last_entry_hash": ""}
+            head["issuer_mac"] = hmac.new(self.key, _canonical(head), hashlib.sha256).hexdigest()
+            with self.head.open("xb") as stream:
+                stream.write(_canonical(head))
+                stream.flush()
+                os.fsync(stream.fileno())
         self._entries()
 
     def _lock(self) -> Any:

@@ -7,7 +7,6 @@ import services.forward_reality.trial_ledger as ledger_module
 from services.forward_reality.outcome_scoring import (
     OutcomeEvidenceAuthority,
     OutcomeScoringStore,
-    OutcomeStatus,
     ScoringError,
     score_trial,
 )
@@ -39,24 +38,15 @@ def test_authenticated_score_restarts_and_rejects_duplicate(tmp_path, monkeypatc
         sibling_market_ids=(receipt.market_ticker,),
     )
     artifact = tmp_path / "outcome.json"
-    artifact.write_bytes(b'{"value":1}')
-    outcome = OutcomeEvidenceAuthority(
-        tmp_path / "outcome-authority",
-        source_authority="official-source",
-        predicate_identity="binary-rule-v1",
-    ).issue(
-        artifact=artifact,
-        market_ticker=receipt.market_ticker,
-        event_ticker=receipt.event_ticker,
-        underlying_event_id=receipt.underlying_event_id,
-        observation_date="2026-09-01",
-        status=OutcomeStatus.RESOLVED,
-        value=1,
-        published_at=NOW + timedelta(days=2),
-        acquired_at=NOW + timedelta(days=2, hours=1),
-        available_at=NOW + timedelta(days=2),
-        revision_policy="initial-release-only",
+    artifact.write_text(
+        f'{{"market_ticker":"{receipt.market_ticker}","event_ticker":"{receipt.event_ticker}",'
+        f'"underlying_event_id":"{receipt.underlying_event_id}","observation_date":"2026-09-01",'
+        '"status":"RESOLVED","value":1,"published_at":"2026-08-30T12:00:00+00:00",'
+        '"revision_policy":"initial"}'
     )
+    outcome = OutcomeEvidenceAuthority(
+        tmp_path / "outcome-authority", adapter_id="fr-a3-test-json-binary-adapter-v1"
+    ).issue(artifact=artifact)
     store = OutcomeScoringStore(tmp_path / "scores")
     record = score_trial(
         ledger=ledger,
@@ -64,8 +54,7 @@ def test_authenticated_score_restarts_and_rejects_duplicate(tmp_path, monkeypatc
         scoring_store=store,
         outcome_authority=OutcomeEvidenceAuthority(
             tmp_path / "outcome-authority",
-            source_authority="official-source",
-            predicate_identity="binary-rule-v1",
+            adapter_id="fr-a3-test-json-binary-adapter-v1",
         ),
         trial_id=trial.trial_id,
         receipt=receipt,
@@ -79,8 +68,7 @@ def test_authenticated_score_restarts_and_rejects_duplicate(tmp_path, monkeypatc
             scoring_store=OutcomeScoringStore(tmp_path / "scores"),
             outcome_authority=OutcomeEvidenceAuthority(
                 tmp_path / "outcome-authority",
-                source_authority="official-source",
-                predicate_identity="binary-rule-v1",
+                adapter_id="fr-a3-test-json-binary-adapter-v1",
             ),
             trial_id=trial.trial_id,
             receipt=receipt,
@@ -107,36 +95,29 @@ def test_tampered_score_journal_and_prepublication_outcome_fail_closed(tmp_path,
         model_identity="model",
         feature_specification_identity="features",
         evaluation_plan=EvaluationPlan(
-            {"event_ticker": receipt.event_ticker, "predicate_identity": "rule"}
+            {"event_ticker": receipt.event_ticker, "predicate_identity": "binary-rule-v1"}
         ),
         underlying_event_id=receipt.underlying_event_id,
         reason="research",
         sibling_market_ids=(receipt.market_ticker,),
     )
     artifact = tmp_path / "outcome.json"
-    artifact.write_bytes(b'{"value":0}')
-    outcome = OutcomeEvidenceAuthority(
-        tmp_path / "outcome-authority", source_authority="source", predicate_identity="rule"
-    ).issue(
-        artifact=artifact,
-        market_ticker=receipt.market_ticker,
-        event_ticker=receipt.event_ticker,
-        underlying_event_id=receipt.underlying_event_id,
-        observation_date="2026-09-01",
-        status=OutcomeStatus.RESOLVED,
-        value=0,
-        published_at=NOW,
-        acquired_at=NOW,
-        available_at=NOW,
-        revision_policy="initial",
+    artifact.write_text(
+        f'{{"market_ticker":"{receipt.market_ticker}","event_ticker":"{receipt.event_ticker}",'
+        f'"underlying_event_id":"{receipt.underlying_event_id}","observation_date":"2026-09-01",'
+        '"status":"RESOLVED","value":0,"published_at":"2026-08-28T12:00:00+00:00",'
+        '"revision_policy":"initial"}'
     )
+    outcome = OutcomeEvidenceAuthority(
+        tmp_path / "outcome-authority", adapter_id="fr-a3-test-json-binary-adapter-v1"
+    ).issue(artifact=artifact)
     with pytest.raises(ScoringError, match="published after registration"):
         score_trial(
             ledger=ledger,
             receipt_store=receipt_store,
             scoring_store=OutcomeScoringStore(tmp_path / "scores"),
             outcome_authority=OutcomeEvidenceAuthority(
-                tmp_path / "outcome-authority", source_authority="source", predicate_identity="rule"
+                tmp_path / "outcome-authority", adapter_id="fr-a3-test-json-binary-adapter-v1"
             ),
             trial_id=trial.trial_id,
             receipt=receipt,
