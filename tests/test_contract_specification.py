@@ -228,6 +228,47 @@ def test_secondary_and_primary_authority_policy(
 
 
 @pytest.mark.parametrize(
+    "secondary",
+    [
+        "The market resolves according to the final agency report.",
+        "YES and NO contracts settle after publication.",
+        "If no report is published, settlement may be delayed.",
+        "The source resolves revisions according to its published policy.",
+        "Payment occurs after the official result is released.",
+    ],
+)
+def test_bare_secondary_settlement_language_is_inert(secondary: str) -> None:
+    result = select_authoritative_comparison(
+        rules_primary="The official value is at least 10 units.",
+        title="Test threshold",
+        rules_secondary=secondary,
+    )
+    assert result.state is ComparisonSelectionState.MATCHED_RULES_PRIMARY
+
+
+def test_structured_secondary_agreement_and_unsupported_assertions() -> None:
+    agreeing = select_authoritative_comparison(
+        rules_primary="The official value is at least 10 units.",
+        title="Test threshold",
+        rules_secondary="The official value is at least 10 units.",
+    )
+    assert agreeing.state is ComparisonSelectionState.MATCHED_RULES_PRIMARY
+
+    for secondary in (
+        "The official value is not more than 10 units.",
+        "The official value is at least ten units.",
+        "NO wins if the official value is at least 10 units.",
+        "The official value is at least 10 units and less than 5 units.",
+    ):
+        refused = select_authoritative_comparison(
+            rules_primary="The official value is at least 10 units.",
+            title="Test threshold",
+            rules_secondary=secondary,
+        )
+        assert refused.state is ComparisonSelectionState.REFUSED_OR_AMBIGUOUS
+
+
+@pytest.mark.parametrize(
     "text",
     [
         "not exactly 0.2",

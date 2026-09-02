@@ -37,11 +37,19 @@ When primary and title independently parse, comparator, threshold/bounds and
 inclusivity must agree.
 
 `rules_secondary` is never concatenated into primary parsing. It remains
-available for family classification. If it contains an independently reviewed
-comparison or payout assertion, it must agree with the selected comparison;
-inert explanatory boilerplate does not invalidate primary authority. Router
+available for family classification. A structured secondary clause is first
+classified as one of: inert text; a complete reviewed comparison; or an
+apparent but unsupported assertion. Bare `yes`, `no`, `resolves`, `settles`,
+`pays`, `wins`, and `loses` words are inert. A complete reviewed comparison
+must agree with the selected primary interpretation; malformed, negated,
+payout-inverted, or contradictory threshold material fails closed. Router
 blockers consume this same selection result and then compare its comparator to
 the specification.
+
+The frozen P9A replay has 473 nonempty secondary fields and zero secondary
+classification changes: all are inert relative to the selected primary or
+approved title fallback. This is an observed corpus result, not a claim that
+all explanatory text is universally inert.
 
 ## Frozen replay and boundary
 

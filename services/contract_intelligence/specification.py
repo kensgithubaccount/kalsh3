@@ -498,9 +498,25 @@ APPROVED_TITLE_FALLBACK_PLACEHOLDERS = frozenset(
         "then the market resolves to Yes.",
     }
 )
-_SECONDARY_SEMANTIC_TOKENS = re.compile(
+
+
+class SecondaryAssertionState(StrEnum):
+    INERT = "INERT"
+    REVIEWED_COMPARISON = "REVIEWED_COMPARISON"
+    UNSUPPORTED_ASSERTION = "UNSUPPORTED_ASSERTION"
+
+
+_SECONDARY_COMPARISON_MARKER = re.compile(
     r"\b(?:more\s+than|greater\s+than|less\s+than|below|above|under|between|"
-    r"at\s+least|at\s+most|exactly|yes|no|resolves?|settles?|pays?|wins?|loses?)\b"
+    r"at\s+least|at\s+most|exactly|no\s+more\s+than|not\s+(?:more|less|below|greater))\b"
+)
+_SECONDARY_NUMERIC_MARKER = re.compile(r"\b-?\d+(?:\.\d+)?\b")
+_SECONDARY_SUBJECT_MARKER = re.compile(
+    r"\b(?:official\s+value|measured\s+value|consumer\s+price\s+index|cpi|temperature)\b",
+    re.IGNORECASE,
+)
+_SECONDARY_PAYOUT_MARKER = re.compile(
+    r"\b(?:yes|no)\s+(?:wins?|loses?)\b|\b(?:pays?|resolves?|settles?)\s+(?:yes|no)\b"
 )
 _MONTHS = "january|february|march|april|may|june|july|august|september|october|november|december"
 
@@ -512,6 +528,26 @@ def _comparison_authority_key(text: str) -> tuple[object, object]:
     period = period_match.groups() if period_match else None
     payout = "YES" if re.search(r"\b(?:resolves?|settles?)\s+to\s+yes\b", lowered) else None
     return period, payout
+
+
+def _classify_secondary_assertion(
+    text: str,
+) -> tuple[
+    SecondaryAssertionState,
+    tuple[Comparator, Decimal | None, Decimal | None, Decimal | None, str | None],
+]:
+    parsed = parse_comparison(text)
+    if parsed[0] is not Comparator.NONE:
+        return SecondaryAssertionState.REVIEWED_COMPARISON, parsed
+    has_comparison = _SECONDARY_COMPARISON_MARKER.search(text) is not None
+    has_number = _SECONDARY_NUMERIC_MARKER.search(text) is not None
+    has_conditional = re.search(r"\b(?:if|when|unless)\b", text, re.IGNORECASE) is not None
+    has_payout = _SECONDARY_PAYOUT_MARKER.search(text) is not None
+    if (
+        has_comparison and (has_number or has_conditional or _SECONDARY_SUBJECT_MARKER.search(text))
+    ) or has_payout:
+        return SecondaryAssertionState.UNSUPPORTED_ASSERTION, parsed
+    return SecondaryAssertionState.INERT, parsed
 
 
 def _comparison_result(
@@ -586,9 +622,12 @@ def select_authoritative_comparison(
             ComparisonSelectionState.MATCHED_RULES_PRIMARY, primary_parsed, "rules_primary"
         )
 
-    if secondary and _SECONDARY_SEMANTIC_TOKENS.search(secondary):
-        secondary_parsed = parse_comparison(secondary)
-        if secondary_parsed[0] is Comparator.NONE or secondary_parsed != selected.interpretation:
+    if secondary:
+        secondary_state, secondary_parsed = _classify_secondary_assertion(secondary)
+        if secondary_state is SecondaryAssertionState.UNSUPPORTED_ASSERTION or (
+            secondary_state is SecondaryAssertionState.REVIEWED_COMPARISON
+            and secondary_parsed != selected.interpretation
+        ):
             return _comparison_result(
                 ComparisonSelectionState.REFUSED_OR_AMBIGUOUS,
                 selected.interpretation,
