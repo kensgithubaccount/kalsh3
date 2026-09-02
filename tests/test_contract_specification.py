@@ -196,6 +196,29 @@ def test_punctuation_and_whitespace_do_not_hide_polarity(text: str) -> None:
     assert comparator != Comparator.GT and comparator != Comparator.LT
 
 
+@pytest.mark.parametrize(
+    "text",
+    [
+        "isn't more than 0.2",
+        "isn\u2019t more than 0.2",
+        "wasn't more than 0.2",
+        "cannot be more than 0.2",
+        "can't be more than 0.2",
+        "won't be more than 0.2",
+        "neither more than 0.2 nor less than 0.1",
+        "isn't less than 0.2",
+        "NO wins if more than 0.2",
+        "pays NO if more than 0.2",
+        "pays out to NO if more than 0.2",
+        "the NO side wins if more than 0.2",
+        "is determined NO if more than 0.2",
+        "results in NO if more than 0.2",
+    ],
+)
+def test_residual_negation_and_no_direction_fail_closed(text: str) -> None:
+    assert parse_comparison(text)[0] == Comparator.NONE
+
+
 def test_missing_timezone_station_source_and_conflicts_fail_closed() -> None:
     parser = ContractSpecificationParser()
     base = bundle(timezone=None)

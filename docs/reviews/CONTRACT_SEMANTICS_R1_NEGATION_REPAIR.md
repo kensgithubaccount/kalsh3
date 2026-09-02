@@ -22,6 +22,13 @@ Multiple candidates are accepted only when their comparator, bounds, and
 inclusivity are exactly equivalent; incompatible candidates fail closed.
 Malformed month tokens attached to a comparison are rejected.
 
+The residual guard also rejects contractions and auxiliary negation such as
+`isn't`, `wasn't`, `cannot`, `can't`, and `won't`, as well as `neither`/`nor`
+constructions. Straight and curly apostrophes are normalized, while numeric
+hyphens remain intact so negative thresholds retain their sign. Bounded payout
+direction phrases such as `NO wins`, `pays NO`, `the NO side wins`, `is
+determined NO`, and `results in NO` make the comparison unsupported.
+
 ## Frozen-inventory impact
 
 The canonical parser was replayed across the frozen P9A CPI inventory through

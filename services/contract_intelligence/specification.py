@@ -345,15 +345,23 @@ _COMPARISON_CANDIDATES = (
     (rf"\bexactly\s+{_NUMBER}", Comparator.EQ, True),
 )
 _UNHANDLED_NEGATION = re.compile(
-    r"\b(?:not|never)\s+(?:not\s+)?(?:at\s+least|at\s+most|more\s+than|greater\s+than|less\s+than|below|above|over|under|exactly|between)\b"
+    r"\b(?:is|was|does|can|will)\s+not\s+(?:be\s+)?(?:at\s+least|at\s+most|more\s+than|greater\s+than|less\s+than|below|above|over|under|exactly|between)\b|"
+    r"\b(?:isn't|wasn't|doesn't|can't|cannot|won't|neither|nor)\s+(?:be\s+)?(?:at\s+least|at\s+most|more\s+than|greater\s+than|less\s+than|below|above|over|under|exactly|between)\b"
 )
-_NO_RESOLUTION = re.compile(r"\b(?:resolves?|settles?)\s+(?:to\s+)?no\b")
+_NO_RESOLUTION = re.compile(
+    r"\b(?:resolves?|settles?)\s+(?:to\s+)?no\b|"
+    r"\b(?:no\s+side|the\s+no\s+side|no)\s+wins\b|"
+    r"\bpays?(?:\s+out)?(?:\s+to)?\s+no\b|"
+    r"\bis\s+determined\s+no\b|\bresults?\s+in\s+no\b"
+)
 
 
 def parse_comparison(
     text: str,
 ) -> tuple[Comparator, Decimal | None, Decimal | None, Decimal | None, str | None]:
-    lowered = " ".join(text.lower().split())
+    normalized = text.lower().replace("\u2019", "'")
+    normalized = re.sub(r"(?<=[a-z])-(?=[a-z])", " ", normalized)
+    lowered = " ".join(normalized.split())
     candidates: list[tuple[int, int, Comparator, tuple[Decimal, ...], bool]] = []
     for pattern, comparator, inclusive in _COMPARISON_CANDIDATES:
         for match in re.finditer(pattern, lowered):
