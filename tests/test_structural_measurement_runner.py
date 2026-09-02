@@ -13,8 +13,10 @@ from urllib.parse import urlencode
 import pytest
 
 from services.market_universe import public_read
+from services.market_universe.collect import DEFAULT_MAX_PAGES
 from services.market_universe.market_snapshot import FRESHNESS
 from services.market_universe.orderbook_snapshot import acquire_orderbook_snapshot
+from services.opportunity_engine import structural_measurement_runner as runner_module
 from services.opportunity_engine.domain import OpportunityError
 from services.opportunity_engine.structural_measurement import (
     MeasurementState,
@@ -150,6 +152,77 @@ def test_refresh_universe_populates_markets_and_events(tmp_path: Path) -> None:
     assert result.complete
     assert set(result.repo.markets) == {"LOW", "HIGH"}
     assert set(result.repo.events) == {EVENT_TICKER}
+
+
+def test_refresh_universe_enforces_reviewed_max_page_bound(tmp_path: Path) -> None:
+    class NeverEndingTransport(FakeUniverseTransport):
+        def __init__(self) -> None:
+            super().__init__([], [])
+            self.market_calls = 0
+
+        def get(self, path: str, *, timeout_seconds: float) -> dict[str, Any]:
+            del timeout_seconds
+            if path.startswith("/trade-api/v2/markets"):
+                self.market_calls += 1
+                return {"markets": [], "cursor": f"cursor-{self.market_calls}"}
+            return {"events": [], "cursor": ""}
+
+    transport = NeverEndingTransport()
+    result = refresh_universe(str(tmp_path / "archive.sqlite3"), transport=transport)
+    assert not result.complete
+    assert transport.market_calls == DEFAULT_MAX_PAGES
+
+
+def test_refresh_universe_rejects_repeated_cursor(tmp_path: Path) -> None:
+    class RepeatingTransport(FakeUniverseTransport):
+        def get(self, path: str, *, timeout_seconds: float) -> dict[str, Any]:
+            del timeout_seconds
+            if path.startswith("/trade-api/v2/markets"):
+                return {"markets": [], "cursor": "same-cursor"}
+            raise AssertionError("events must not be reached after cursor failure")
+
+    result = refresh_universe(
+        str(tmp_path / "archive.sqlite3"), transport=RepeatingTransport([], [])
+    )
+    assert not result.complete
+
+
+def test_refresh_progress_is_cursor_free_and_flushable(tmp_path: Path) -> None:
+    progress: list[tuple[str, int, int]] = []
+    result = refresh_universe(
+        str(tmp_path / "archive.sqlite3"),
+        transport=FakeUniverseTransport([], []),
+        progress=lambda item: progress.append((item.resource, item.pages, item.records_received)),
+    )
+    assert result.complete
+    assert progress == [("markets", 1, 0), ("events", 1, 0)]
+    assert "cursor" not in repr(progress)
+
+
+def test_finite_cli_returns_nonzero_and_reports_incomplete_refresh(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    monkeypatch.setattr(
+        runner_module,
+        "run_forever",
+        lambda **kwargs: iter([runner_module.ScanCycleResult("scan", 0, 0, (), False)]),
+    )
+    result = runner_module.main(
+        [
+            "--archive",
+            str(tmp_path / "archive.sqlite3"),
+            "--evidence-db",
+            str(tmp_path / "evidence.sqlite3"),
+            "--live-public-read",
+            "--max-iterations",
+            "1",
+        ]
+    )
+    assert result == 1
+    output = capsys.readouterr().out
+    assert "refresh_complete=False" in output
+    assert "measurement complete: refresh_complete=False" in output
+    assert "cursor" not in output
 
 
 def test_run_discovery_finds_no_lead_on_a_monotonic_ladder_and_one_lead_when_inverted(
