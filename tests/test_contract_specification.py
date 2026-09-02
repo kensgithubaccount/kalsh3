@@ -23,6 +23,7 @@ from services.contract_intelligence.settlement import (
 )
 from services.contract_intelligence.specification import (
     Comparator,
+    ComparisonSelectionState,
     ContractSpecificationParser,
     IssueType,
     PayoutModel,
@@ -30,6 +31,7 @@ from services.contract_intelligence.specification import (
     SemanticStatus,
     normalize_timezone,
     parse_comparison,
+    select_authoritative_comparison,
     validate_llm_proposal,
 )
 from services.market_universe.domain import material_hashes
@@ -160,6 +162,69 @@ def test_comparison_language_corpus() -> None:
 def test_polarity_aware_comparison_phrases(text: str, expected: Comparator, value: str) -> None:
     comparator, threshold, _, _, _ = parse_comparison(text)
     assert comparator == expected and threshold == Decimal(value)
+
+
+def test_shared_comparison_selection_distinguishes_absence_and_refusal() -> None:
+    matched = select_authoritative_comparison(
+        rules_primary="YES if the final NWS report at station KNYC is at least 90 F.",
+        title="Will the final temperature be at least 90 F?",
+        rules_secondary="The official report is published after observation.",
+    )
+    assert matched.state is ComparisonSelectionState.MATCHED_RULES_PRIMARY
+    assert matched.source_field == "rules_primary"
+
+    fallback = select_authoritative_comparison(
+        rules_primary="", title="Will CPI rise more than 0.2% in May 2026?"
+    )
+    assert fallback.state is ComparisonSelectionState.MATCHED_REVIEWED_TITLE_FALLBACK
+    assert fallback.source_field == "title"
+
+    refused = select_authoritative_comparison(
+        rules_primary="The NO side prevails if CPI is more than 0.2%.",
+        title="Will CPI rise more than 0.2%?",
+    )
+    assert refused.state is ComparisonSelectionState.REFUSED_OR_AMBIGUOUS
+
+    period_conflict = select_authoritative_comparison(
+        rules_primary=(
+            "If the Consumer Price Index (CPI) increases by more than 0.2% "
+            "in May 2026, then the market resolves to Yes."
+        ),
+        title="Will CPI rise more than 0.2% in June 2026?",
+    )
+    assert period_conflict.state is ComparisonSelectionState.REFUSED_OR_AMBIGUOUS
+
+
+@pytest.mark.parametrize(
+    ("primary", "secondary", "title", "expected"),
+    [
+        (
+            "YES if the official value is greater than 10 units.",
+            "The official value is reported after publication.",
+            "Test threshold",
+            ComparisonSelectionState.MATCHED_RULES_PRIMARY,
+        ),
+        (
+            "YES if the official value is greater than 10 units.",
+            "The official value is less than 10 units.",
+            "Test threshold",
+            ComparisonSelectionState.REFUSED_OR_AMBIGUOUS,
+        ),
+        (
+            "unknown nonempty primary",
+            "",
+            "Will the value be greater than 10?",
+            ComparisonSelectionState.REFUSED_OR_AMBIGUOUS,
+        ),
+    ],
+)
+def test_secondary_and_primary_authority_policy(
+    primary: str, secondary: str, title: str, expected: ComparisonSelectionState
+) -> None:
+    result = select_authoritative_comparison(
+        rules_primary=primary, rules_secondary=secondary, title=title
+    )
+    assert result.state is expected
 
 
 @pytest.mark.parametrize(

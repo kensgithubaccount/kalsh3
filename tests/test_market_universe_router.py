@@ -411,6 +411,47 @@ def test_title_keywords_alone_cannot_promote_unsupported_rules() -> None:
     assert "RULES_COMPARATOR_UNPROVEN" in second.records[0].semantic_blockers
 
 
+def test_primary_comparison_is_not_invalidated_by_secondary_boilerplate() -> None:
+    result = census(
+        [
+            market(
+                title="Will the official value be at least 10?",
+                rules_secondary=(
+                    "The market closes after the scheduled release. "
+                    "The official agency publishes the final value."
+                ),
+            )
+        ]
+    )
+    assert result.records[0].state is LifecycleState.SEMANTICALLY_UNDERSTOOD
+    assert "RULES_COMPARATOR_UNPROVEN" not in result.records[0].semantic_blockers
+
+
+def test_refused_primary_cannot_fall_back_to_title() -> None:
+    result = census(
+        [
+            market(
+                title="Will the official value be at least 10?",
+                rules_primary="The NO side prevails if the official value is greater than 10.",
+            )
+        ]
+    )
+    assert result.records[0].state is LifecycleState.DISCOVERED
+    assert "RULES_COMPARATOR_UNPROVEN" in result.records[0].semantic_blockers
+
+
+def test_secondary_conflicting_comparison_fails_closed() -> None:
+    result = census(
+        [
+            market(
+                rules_secondary="The official value is less than 10 units.",
+            )
+        ]
+    )
+    assert result.records[0].state is LifecycleState.DISCOVERED
+    assert "RULES_COMPARATOR_UNPROVEN" in result.records[0].semantic_blockers
+
+
 def test_exchange_category_alone_cannot_promote_weather_without_station() -> None:
     rules = "The temperature is at least 10."
     first = census(

@@ -88,6 +88,36 @@ class Comparator(StrEnum):
     NONE = "none"
 
 
+class ComparisonSelectionState(StrEnum):
+    MATCHED_RULES_PRIMARY = "MATCHED_RULES_PRIMARY"
+    MATCHED_REVIEWED_TITLE_FALLBACK = "MATCHED_REVIEWED_TITLE_FALLBACK"
+    ABSENT_OR_APPROVED_PLACEHOLDER = "ABSENT_OR_APPROVED_PLACEHOLDER"
+    REFUSED_OR_AMBIGUOUS = "REFUSED_OR_AMBIGUOUS"
+
+
+@dataclass(frozen=True, slots=True)
+class ComparisonSelection:
+    state: ComparisonSelectionState
+    comparator: Comparator
+    threshold: Decimal | None
+    lower_bound: Decimal | None
+    upper_bound: Decimal | None
+    inclusivity: str | None
+    source_field: str | None
+
+    @property
+    def interpretation(
+        self,
+    ) -> tuple[Comparator, Decimal | None, Decimal | None, Decimal | None, str | None]:
+        return (
+            self.comparator,
+            self.threshold,
+            self.lower_bound,
+            self.upper_bound,
+            self.inclusivity,
+        )
+
+
 @dataclass(frozen=True, slots=True)
 class InputLayer:
     layer: SourceLayer
@@ -372,7 +402,8 @@ _COMPARISON_TEMPLATES = (
     re.compile(
         rf"if\s+the\s+consumer\s+price\s+index\s+\(cpi\)\s+increases\s+by\s+"
         rf"{_COMPARISON_PHRASE}%?(?:\s+\(single\s+decimal\))?\s+in\s+"
-        rf"(?:january|february|march|april|may|june|july|august|september|october|november|december)\s+\d{{4}},\s+"
+        rf"(?:january|february|march|april|may|june|july|august|september|october|november|december)"
+        rf"(?:\s+\d{{4}})?,\s+"
         rf"then\s+the\s+market\s+resolves\s+to\s+yes[.!?]?"
     ),
     re.compile(
@@ -455,6 +486,117 @@ def parse_comparison(
     return comparator, values[0], None, None, "inclusive" if inclusive else "exclusive"
 
 
+# Frozen P9A's title fallback is limited to absent input and the two exact
+# historical placeholder strings below.  Other malformed nonempty rules are
+# refused and never consult the title.
+APPROVED_TITLE_FALLBACK_PLACEHOLDERS = frozenset(
+    {
+        "",
+        "If the CPI increases by more than || percent ||% in October 2021, "
+        "then the market resolves to Yes.",
+        "If the CPI increases by more than 0.50 percent% in October 2021, "
+        "then the market resolves to Yes.",
+    }
+)
+_SECONDARY_SEMANTIC_TOKENS = re.compile(
+    r"\b(?:more\s+than|greater\s+than|less\s+than|below|above|under|between|"
+    r"at\s+least|at\s+most|exactly|yes|no|resolves?|settles?|pays?|wins?|loses?)\b"
+)
+_MONTHS = "january|february|march|april|may|june|july|august|september|october|november|december"
+
+
+def _comparison_authority_key(text: str) -> tuple[object, object]:
+    """Return the material period and payout bindings of a reviewed clause."""
+    lowered = " ".join(text.lower().split())
+    period_match = re.search(rf"\b({_MONTHS})\s+(\d{{4}})\b", lowered)
+    period = period_match.groups() if period_match else None
+    payout = "YES" if re.search(r"\b(?:resolves?|settles?)\s+to\s+yes\b", lowered) else None
+    return period, payout
+
+
+def _comparison_result(
+    state: ComparisonSelectionState,
+    parsed: tuple[Comparator, Decimal | None, Decimal | None, Decimal | None, str | None],
+    source_field: str | None,
+) -> ComparisonSelection:
+    return ComparisonSelection(state, *parsed, source_field)
+
+
+def select_authoritative_comparison(
+    *, rules_primary: str | None, title: str | None, rules_secondary: str | None = None
+) -> ComparisonSelection:
+    primary = "" if rules_primary is None else rules_primary.strip()
+    title_text = "" if title is None else title.strip()
+    secondary = "" if rules_secondary is None else rules_secondary.strip()
+    primary_is_placeholder = primary in APPROVED_TITLE_FALLBACK_PLACEHOLDERS
+    primary_parsed = (
+        parse_comparison(primary)
+        if primary
+        else (
+            Comparator.NONE,
+            None,
+            None,
+            None,
+            None,
+        )
+    )
+    title_parsed = (
+        parse_comparison(title_text)
+        if title_text
+        else (
+            Comparator.NONE,
+            None,
+            None,
+            None,
+            None,
+        )
+    )
+
+    if not primary_is_placeholder and primary_parsed[0] is Comparator.NONE:
+        return _comparison_result(
+            ComparisonSelectionState.REFUSED_OR_AMBIGUOUS, primary_parsed, "rules_primary"
+        )
+    if primary_is_placeholder:
+        if title_parsed[0] is Comparator.NONE:
+            return _comparison_result(
+                ComparisonSelectionState.ABSENT_OR_APPROVED_PLACEHOLDER,
+                primary_parsed,
+                None,
+            )
+        selected = _comparison_result(
+            ComparisonSelectionState.MATCHED_REVIEWED_TITLE_FALLBACK,
+            title_parsed,
+            "title",
+        )
+    else:
+        title_key = _comparison_authority_key(title_text)
+        primary_key = _comparison_authority_key(primary)
+        same_interpretation = title_parsed == primary_parsed
+        same_explicit_period = title_key[0] is None or primary_key[0] == title_key[0]
+        same_payout = title_key[1] is None or primary_key[1] == title_key[1]
+        if title_parsed[0] is not Comparator.NONE and (
+            not same_interpretation or not same_explicit_period or not same_payout
+        ):
+            return _comparison_result(
+                ComparisonSelectionState.REFUSED_OR_AMBIGUOUS,
+                primary_parsed,
+                "rules_primary",
+            )
+        selected = _comparison_result(
+            ComparisonSelectionState.MATCHED_RULES_PRIMARY, primary_parsed, "rules_primary"
+        )
+
+    if secondary and _SECONDARY_SEMANTIC_TOKENS.search(secondary):
+        secondary_parsed = parse_comparison(secondary)
+        if secondary_parsed[0] is Comparator.NONE or secondary_parsed != selected.interpretation:
+            return _comparison_result(
+                ComparisonSelectionState.REFUSED_OR_AMBIGUOUS,
+                selected.interpretation,
+                selected.source_field,
+            )
+    return selected
+
+
 TZ_MAP = {
     "ET": "America/New_York",
     "UTC": "UTC",
@@ -510,14 +652,14 @@ class ContractSpecificationParser:
             or market.get("no_proposition")
             or (f"Not: {yes}" if yes else "")
         )
-        comparator, threshold, lower, upper, inclusivity = parse_comparison(rules or title)
-        # A few frozen historical records contain placeholder rules but a
-        # complete authoritative title clause.  Preserve their prior semantic
-        # identity without allowing a valid title to override a valid,
-        # conflicting rules clause.
-        if comparator == Comparator.NONE and rules and title:
-            comparator, threshold, lower, upper, inclusivity = parse_comparison(title)
-        if comparator == Comparator.NONE:
+        selection = select_authoritative_comparison(
+            rules_primary=rules, title=title, rules_secondary=secondary
+        )
+        comparator, threshold, lower, upper, inclusivity = selection.interpretation
+        if (
+            comparator == Comparator.NONE
+            or selection.state is ComparisonSelectionState.REFUSED_OR_AMBIGUOUS
+        ):
             issues.append(
                 _issue(
                     IssueType.UNKNOWN_LANGUAGE,
@@ -622,7 +764,12 @@ class ContractSpecificationParser:
         for field_name, layer, source_field, value in (
             ("yes_proposition", SourceLayer.MARKET, "rules_primary", yes),
             ("no_proposition", SourceLayer.MARKET, "rules_primary", no),
-            ("comparator", SourceLayer.MARKET, "rules_primary", comparator.value),
+            (
+                "comparator",
+                SourceLayer.MARKET,
+                selection.source_field or "rules_primary",
+                comparator.value,
+            ),
             (
                 "settlement_authority",
                 sources[0].origin if sources else SourceLayer.SERIES,

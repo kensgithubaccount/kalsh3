@@ -1,77 +1,56 @@
-# Contract Semantics R1 — Negated Comparator Repair
+# Contract Semantics R1.3 — reviewed comparison authority
 
-## Scope
+This checkpoint is an offline, deterministic comparison repair. It does not
+modify P9A/P9B evidence or P10A, and creates no execution, trading, capital,
+credential, network, or production authority.
 
-This offline, read-only repair makes the canonical contract comparison parser
-polarity-aware. It does not modify P10A, P9A evidence, prices, outcomes, fees,
-execution, risk, credentials, or production authority.
+## Finite grammar and shared selection
 
-## R1.3 grammar boundary
+`parse_comparison` accepts only complete, versioned full-match productions for
+reviewed affirmative YES clauses, official/measured values, CPI settlement
+sentences, reviewed titles, standalone comparison phrases, and exact inclusive
+and signed-threshold variants. Each production consumes its complete clause
+and binds polarity, comparator, threshold or bounds, inclusivity, reference
+period where present, and affirmative YES payout orientation. Unsupported
+residual prose, denial, modality, uncertainty, payout inversion,
+contradiction, exceptions, malformed numbers, and non-finite numbers return
+`Comparator.NONE`; there is no substring extraction, distance window, or
+synonym blacklist.
 
-Comparison acceptance is versioned by the parser's reviewed complete-template
-family, rather than by searching a bounded character window. Each production
-consumes the complete clause and binds polarity (affirmative only), comparator,
-numeric threshold or bounds, any reference month/year, and the `YES` payout
-orientation. The family is limited to: a comparison phrase alone; an explicit
-`YES if` clause whose subject and unit are allowlisted; official/measured-value
-clauses with the same allowlists; and the canonical CPI sentence `If the
-Consumer Price Index (CPI) increases by ... (single-decimal) in <month> <year>,
-then the market resolves to Yes.` Every token in the applicable clause must be
-consumed by one of these productions. Payout orientation, denial, modality,
-uncertainty, exception, conditional inversion, extra clauses, and unknown
-wording therefore abstain as `Comparator.NONE`.
+`select_authoritative_comparison` is the shared path used by the specification
+parser and router. It returns structured state:
 
-The subject and unit productions are intentionally finite reviewed vocabularies;
-they are not a general natural-language or substring parser. A future exchange
-wording requires a separately reviewed grammar production. Numeric parsing is
-finite and deterministic, including signed negative thresholds; non-finite,
-malformed, contradictory, or multiply interpreted clauses are rejected.
+* `MATCHED_RULES_PRIMARY` — a complete primary production is authoritative.
+* `MATCHED_REVIEWED_TITLE_FALLBACK` — a reviewed title supplied the comparison
+  because primary was absent or an approved frozen placeholder.
+* `ABSENT_OR_APPROVED_PLACEHOLDER` — neither source supplied a comparison.
+* `REFUSED_OR_AMBIGUOUS` — unsupported, contradictory, inverted, or
+  conflicting material was refused.
 
-This is not a general natural-language parser. New exchange wording requires a
-separately reviewed template before it can be accepted.
+The frozen P9A placeholder inventory is explicit: the empty primary value,
+the exact historical CPI `|| percent ||%` sentence, and its exact
+`0.50 percent%` sentence. This is not generic fallback: unknown nonempty
+primary text is refused. Title provenance remains `title`, never primary.
+When primary and title independently parse, comparator, threshold/bounds and
+inclusivity must agree.
 
-Supported complete phrases include affirmative `more than`/`greater than`
-(`GT`), `less than` (`LT`), and the exact inclusive forms. The parser also
-supports the logically exact negations `not/no more than` (`LTE`) and `not
-greater than` (`LTE`), plus `not less than` and `not below` (`GTE`). `not
-exactly`, double negation, unresolved negation, resolution-No clauses, and
-contradictory or ambiguous candidate sets return `Comparator.NONE`. The
-`ContractSpecificationParser` consequently emits its existing blocking
-`UNKNOWN_LANGUAGE` issue and cannot mark such a specification strategy
-supported.
+`rules_secondary` is never concatenated into primary parsing. It remains
+available for family classification. If it contains an independently reviewed
+comparison or payout assertion, it must agree with the selected comparison;
+inert explanatory boilerplate does not invalidate primary authority. Router
+blockers consume this same selection result and then compare its comparator to
+the specification.
 
-Whitespace is normalized. Candidate spans and polarity are retained so an
-inner generic phrase cannot override an enclosing supported negative phrase.
-Multiple candidates are accepted only when their comparator, bounds, and
-inclusivity are exactly equivalent; incompatible candidates fail closed.
-Malformed month tokens attached to a comparison are rejected.
+## Frozen replay and boundary
 
-The residual guard also rejects contractions and auxiliary negation such as
-`isn't`, `wasn't`, `cannot`, `can't`, and `won't`, as well as `neither`/`nor`
-constructions. Straight and curly apostrophes are normalized, while numeric
-hyphens remain intact so negative thresholds retain their sign. Bounded payout
-direction phrases such as `NO wins`, `pays NO`, `the NO side wins`, `is
-determined NO`, and `results in NO` make the comparison unsupported.
+Unchanged P9A replay remains 60 independent events and 474 sibling markets,
+with 267 two-sided usable rows and 148 fresh rows. Raw, semantic, and evidence
+identities are not recollected or rewritten. The two historical placeholder
+rows are governed only by the explicit frozen policy; arbitrary malformed
+primary text cannot be rescued by a title.
 
-## Frozen-inventory impact
-
-The canonical parser was replayed across the frozen P9A CPI inventory through
-`validate_frozen_cohort`. Results remain exact:
-
-- 60 events;
-- 474 sibling markets;
-- 267 two-sided usable quote rows;
-- 148 fresh rows.
-
-All stored comparator values, comparator symbols, thresholds, payout models, and
-semantic hashes remain unchanged. No P9A frozen artifact hash was updated. No
-non-CPI repository fixture was affected; the canonical contract-intelligence
-and P9A replay tests pass against the unchanged fixtures.
-
-## Verification boundary
-
-This checkpoint establishes only polarity-aware deterministic comparison
-parsing and preservation of the existing frozen evidence boundary. It does not
-establish modelability, predictive signal, statistical significance, fills,
-fees, after-cost edge, profitability, capacity, sizing, or production
-readiness.
+This establishes only deterministic semantic parsing and router selection for
+research/replay inputs. It does not establish external source authenticity,
+outcome authority, predictive validity, profitability, fills, fees, after-cost
+edge, model quality, or production readiness. Any live or prospective use
+requires a separate reviewed authority.
