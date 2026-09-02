@@ -1,7 +1,8 @@
 """Research-only forward-reality evidence primitives."""
 
 from .outcome_scoring import (
-    AuthoritativeOutcome,
+    OutcomeEvidenceAuthority,
+    OutcomeEvidenceReceipt,
     OutcomeScoringStore,
     OutcomeStatus,
     ScoringError,
@@ -20,7 +21,8 @@ from .prospective_receipts import (
 )
 
 __all__ = (
-    "AuthoritativeOutcome",
+    "OutcomeEvidenceAuthority",
+    "OutcomeEvidenceReceipt",
     "OutcomeScoringStore",
     "OutcomeStatus",
     "ProspectiveOutcomeBoundary",

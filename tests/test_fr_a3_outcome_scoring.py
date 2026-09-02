@@ -5,7 +5,7 @@ import pytest
 import services.forward_reality.prospective_receipts as receipts
 import services.forward_reality.trial_ledger as ledger_module
 from services.forward_reality.outcome_scoring import (
-    AuthoritativeOutcome,
+    OutcomeEvidenceAuthority,
     OutcomeScoringStore,
     OutcomeStatus,
     ScoringError,
@@ -31,28 +31,42 @@ def test_authenticated_score_restarts_and_rejects_duplicate(tmp_path, monkeypatc
         candidate_family="candidate",
         model_identity="model:v1",
         feature_specification_identity="features:v1",
-        evaluation_plan=EvaluationPlan({"event_ticker": receipt.event_ticker}),
+        evaluation_plan=EvaluationPlan(
+            {"event_ticker": receipt.event_ticker, "predicate_identity": "binary-rule-v1"}
+        ),
         underlying_event_id=receipt.underlying_event_id,
         reason="research",
         sibling_market_ids=(receipt.market_ticker,),
     )
-    outcome = AuthoritativeOutcome.create(
+    artifact = tmp_path / "outcome.json"
+    artifact.write_bytes(b'{"value":1}')
+    outcome = OutcomeEvidenceAuthority(
+        tmp_path / "outcome-authority",
+        source_authority="official-source",
+        predicate_identity="binary-rule-v1",
+    ).issue(
+        artifact=artifact,
+        market_ticker=receipt.market_ticker,
+        event_ticker=receipt.event_ticker,
+        underlying_event_id=receipt.underlying_event_id,
+        observation_date="2026-09-01",
         status=OutcomeStatus.RESOLVED,
         value=1,
-        source="official-source",
-        source_artifact_id="artifact-sha256",
-        observation_date="2026-09-01",
         published_at=NOW + timedelta(days=2),
         acquired_at=NOW + timedelta(days=2, hours=1),
-        settlement_rule="binary-rule-v1",
-        revision_policy="initial-release-only",
         available_at=NOW + timedelta(days=2),
+        revision_policy="initial-release-only",
     )
     store = OutcomeScoringStore(tmp_path / "scores")
     record = score_trial(
         ledger=ledger,
         receipt_store=receipt_store,
         scoring_store=store,
+        outcome_authority=OutcomeEvidenceAuthority(
+            tmp_path / "outcome-authority",
+            source_authority="official-source",
+            predicate_identity="binary-rule-v1",
+        ),
         trial_id=trial.trial_id,
         receipt=receipt,
         outcome=outcome,
@@ -63,6 +77,11 @@ def test_authenticated_score_restarts_and_rejects_duplicate(tmp_path, monkeypatc
             ledger=ledger,
             receipt_store=receipt_store,
             scoring_store=OutcomeScoringStore(tmp_path / "scores"),
+            outcome_authority=OutcomeEvidenceAuthority(
+                tmp_path / "outcome-authority",
+                source_authority="official-source",
+                predicate_identity="binary-rule-v1",
+            ),
             trial_id=trial.trial_id,
             receipt=receipt,
             outcome=outcome,
@@ -87,28 +106,38 @@ def test_tampered_score_journal_and_prepublication_outcome_fail_closed(tmp_path,
         candidate_family="candidate",
         model_identity="model",
         feature_specification_identity="features",
-        evaluation_plan=EvaluationPlan({"event_ticker": receipt.event_ticker}),
+        evaluation_plan=EvaluationPlan(
+            {"event_ticker": receipt.event_ticker, "predicate_identity": "rule"}
+        ),
         underlying_event_id=receipt.underlying_event_id,
         reason="research",
         sibling_market_ids=(receipt.market_ticker,),
     )
-    outcome = AuthoritativeOutcome.create(
+    artifact = tmp_path / "outcome.json"
+    artifact.write_bytes(b'{"value":0}')
+    outcome = OutcomeEvidenceAuthority(
+        tmp_path / "outcome-authority", source_authority="source", predicate_identity="rule"
+    ).issue(
+        artifact=artifact,
+        market_ticker=receipt.market_ticker,
+        event_ticker=receipt.event_ticker,
+        underlying_event_id=receipt.underlying_event_id,
+        observation_date="2026-09-01",
         status=OutcomeStatus.RESOLVED,
         value=0,
-        source="source",
-        source_artifact_id="artifact",
-        observation_date="2026-09-01",
         published_at=NOW,
         acquired_at=NOW,
-        settlement_rule="rule",
-        revision_policy="initial",
         available_at=NOW,
+        revision_policy="initial",
     )
     with pytest.raises(ScoringError, match="published after registration"):
         score_trial(
             ledger=ledger,
             receipt_store=receipt_store,
             scoring_store=OutcomeScoringStore(tmp_path / "scores"),
+            outcome_authority=OutcomeEvidenceAuthority(
+                tmp_path / "outcome-authority", source_authority="source", predicate_identity="rule"
+            ),
             trial_id=trial.trial_id,
             receipt=receipt,
             outcome=outcome,
