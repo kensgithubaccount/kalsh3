@@ -13,7 +13,7 @@ import tempfile
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, Mapping
 
 SCHEMA_VERSION = "kalsh3.m27b3.process-receipt.v2"
 MODULE = "services.opportunity_engine.structural_measurement_runner"
@@ -138,8 +138,8 @@ def _validate_child_paths(command: list[str], run_dir: Path) -> None:
 
 
 def build_environment(source: dict[str, str] | None = None) -> dict[str, str]:
-    source = os.environ if source is None else source
-    environment = {key: source[key] for key in ENVIRONMENT_ALLOWLIST if key in source}
+    source_values: Mapping[str, str] = os.environ if source is None else source
+    environment = {key: source_values[key] for key in ENVIRONMENT_ALLOWLIST if key in source_values}
     environment["PYTHONUNBUFFERED"] = "1"
     return environment
 

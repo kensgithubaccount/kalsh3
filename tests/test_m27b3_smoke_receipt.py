@@ -8,7 +8,6 @@ import pytest
 
 from scripts import run_m27b3_smoke_receipt as receipt
 
-
 SHA = "e8c6faff5a72db6010fd4ae22713b0a0831b947e"
 TREE = "353aeba5d99c67c5baa4c72901965b323367ecbf"
 
