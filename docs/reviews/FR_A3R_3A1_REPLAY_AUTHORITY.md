@@ -22,6 +22,12 @@ The scoring journal MAC is an integrity layer, not a replacement for the
 registered authorities. Secret keys are kept in authority-side files and are
 never embedded in scoring records.
 
+The only reviewed append call site is `score_trial()` in
+`outcome_scoring.py`; the public `append()` method is intentionally rejected.
+Aggregation and calibration are pure diagnostic functions and do not establish
+authority for caller-constructed records; authoritative callers must supply
+records obtained from replay with a complete `ReplayContext`.
+
 ## Lifecycle and chronology
 
 Store creation is explicit and create-only. Opening requires the key, journal,
@@ -52,3 +58,28 @@ The JSON artifact adapter remains a test fixture and does not prove an
 authoritative external source. No cohort has been registered or scored, and no
 network, credentials, account mutation, orders, risk authorization, sizing,
 capital allocation, PnL, or production authority exists.
+
+## Terminal lifecycle matrix
+
+| FR-A2 trial state | Outcome | Result |
+| --- | --- | --- |
+| PLANNED/RUNNING | any | rejected without scoring-journal mutation; retryable |
+| COMPLETED | RESOLVED + forecast | `SCORED` |
+| COMPLETED | RESOLVED + abstention | `ABSTAINED`, no scores |
+| COMPLETED | PENDING/UNKNOWN | rejected; no trial identity consumed |
+| COMPLETED | NO_RELEASE/CANCELLED/INVALID | `TERMINAL_UNSCORED` |
+| FAILED/ABANDONED | any validated terminal evidence | `TERMINAL_UNSCORED` under the explicit research-only policy |
+
+Terminal FR-A2 histories cannot transition, so replay can require the exact
+registration-history identity recorded at issuance.
+
+## Test inventory
+
+The Forward Reality-related inventory is the eight files matching
+`rg --files tests | rg -i 'forward|fr_a[123]|prospective|trial_ledger'`:
+
+`test_fr_a1_prospective_receipts.py`, `test_fr_a2_trial_ledger.py`,
+`test_fr_a3_outcome_scoring.py`, `test_m27c_prospective_blind_weather.py`,
+`test_m27l_prospective_capture.py`, `test_m27l_prospective_capture_cli.py`,
+`test_m27m_prospective_operations.py`, and
+`test_m27m_prospective_operations_cli.py`.

@@ -721,19 +721,20 @@ def score_trial(
     trial = ledger.get(trial_id)
     definition = trial.definition
     plan = definition.evaluation_plan.value
+    if trial.status in (TrialStatus.PLANNED, TrialStatus.RUNNING):
+        raise ScoringError("trial is not terminal")
+    if trial.status in (TrialStatus.FAILED, TrialStatus.ABANDONED):
+        status = "TERMINAL_UNSCORED"
+    elif outcome.status in (OutcomeStatus.PENDING, OutcomeStatus.UNKNOWN):
+        raise ScoringError("outcome is not final")
+    elif outcome.status is OutcomeStatus.RESOLVED:
+        status = "ABSTAINED" if receipt.abstained else "SCORED"
+    else:
+        status = "TERMINAL_UNSCORED"
     if not definition.research_only or definition.production_influence != 0:
         raise ScoringError("trial safety invalid")
     if receipt.decision_at < definition.created_at:
         raise ScoringError("forecast precedes registration")
-    status = (
-        "TERMINAL_UNSCORED"
-        if trial.status in (TrialStatus.FAILED, TrialStatus.ABANDONED)
-        else (
-            "ABSTAINED"
-            if receipt.abstained
-            else ("SCORED" if outcome.status is OutcomeStatus.RESOLVED else outcome.status.value)
-        )
-    )
     if (
         outcome.market_ticker != receipt.market_ticker
         or outcome.market_ticker not in definition.sibling_market_ids

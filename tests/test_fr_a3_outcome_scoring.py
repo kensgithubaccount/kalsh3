@@ -21,6 +21,83 @@ from tests.test_fr_a1_prospective_receipts import make_receipt
 NOW = datetime(2026, 8, 28, 12, tzinfo=UTC)
 
 
+def _scenario(tmp_path, status=ledger_module.TrialStatus.PLANNED, outcome_status="RESOLVED"):
+    receipt = make_receipt()
+    (tmp_path / "receipts").mkdir(parents=True)
+    receipt_store = ProspectiveReceiptStore(tmp_path / "receipts")
+    receipt_store.publish(receipt)
+    ledger = TrialLedger(tmp_path / "ledger")
+    trial = ledger.register(
+        candidate_family="candidate",
+        model_identity="model",
+        feature_specification_identity="features",
+        evaluation_plan=EvaluationPlan(
+            {"event_ticker": receipt.event_ticker, "predicate_identity": "binary-rule-v1"}
+        ),
+        underlying_event_id=receipt.underlying_event_id,
+        reason="research",
+        sibling_market_ids=(receipt.market_ticker,),
+    )
+    if status is ledger_module.TrialStatus.RUNNING:
+        trial = ledger.advance(trial.trial_id, status)
+    elif status is ledger_module.TrialStatus.COMPLETED:
+        ledger.advance(trial.trial_id, ledger_module.TrialStatus.RUNNING)
+        trial = ledger.advance(trial.trial_id, status)
+    artifact = tmp_path / "outcome.json"
+    value = "1" if outcome_status == "RESOLVED" else "null"
+    artifact.write_text(
+        f'{{"market_ticker":"{receipt.market_ticker}","event_ticker":"{receipt.event_ticker}",'
+        f'"underlying_event_id":"{receipt.underlying_event_id}","observation_date":"2026-09-01",'
+        f'"status":"{outcome_status}","value":{value},'
+        '"published_at":"2026-08-30T12:00:00+00:00","revision_policy":"initial"}'
+    )
+    authority = OutcomeEvidenceAuthority(tmp_path / "authority", _capability=_CAPABILITY)
+    outcome = authority.issue(artifact=artifact)
+    return trial, receipt, receipt_store, ledger, authority, outcome
+
+
+def test_nonterminal_lifecycle_is_retryable_without_journal_mutation(tmp_path, monkeypatch):
+    monkeypatch.setattr(receipts, "_utc_now", lambda: NOW + timedelta(hours=1))
+    monkeypatch.setattr(ledger_module, "_fr_a2_utc_now", lambda: NOW)
+    for status in (ledger_module.TrialStatus.PLANNED, ledger_module.TrialStatus.RUNNING):
+        trial, receipt, receipt_store, ledger, authority, outcome = _scenario(
+            tmp_path / status.value, status
+        )
+        store = OutcomeScoringStore.create(tmp_path / status.value / "scores")
+        before = (tmp_path / status.value / "scores.journal").read_bytes()
+        with pytest.raises(ScoringError, match="not terminal"):
+            score_trial(
+                ledger=ledger,
+                receipt_store=receipt_store,
+                scoring_store=store,
+                outcome_authority=authority,
+                trial_id=trial.trial_id,
+                receipt=receipt,
+                outcome=outcome,
+            )
+        assert (tmp_path / status.value / "scores.journal").read_bytes() == before
+
+
+def test_pending_outcome_does_not_consume_trial_identity(tmp_path, monkeypatch):
+    monkeypatch.setattr(receipts, "_utc_now", lambda: NOW + timedelta(hours=1))
+    monkeypatch.setattr(ledger_module, "_fr_a2_utc_now", lambda: NOW)
+    trial, receipt, receipt_store, ledger, authority, outcome = _scenario(
+        tmp_path, ledger_module.TrialStatus.COMPLETED, "PENDING"
+    )
+    store = OutcomeScoringStore.create(tmp_path / "scores")
+    with pytest.raises(ScoringError, match="not final"):
+        score_trial(
+            ledger=ledger,
+            receipt_store=receipt_store,
+            scoring_store=store,
+            outcome_authority=authority,
+            trial_id=trial.trial_id,
+            receipt=receipt,
+            outcome=outcome,
+        )
+    assert store.records == ()
+
+
 def test_authenticated_score_restarts_and_rejects_duplicate(tmp_path, monkeypatch):
     monkeypatch.setattr(receipts, "_utc_now", lambda: NOW + timedelta(hours=1))
     monkeypatch.setattr(ledger_module, "_fr_a2_utc_now", lambda: NOW)
@@ -41,6 +118,8 @@ def test_authenticated_score_restarts_and_rejects_duplicate(tmp_path, monkeypatc
         reason="research",
         sibling_market_ids=(receipt.market_ticker,),
     )
+    ledger.advance(trial.trial_id, ledger_module.TrialStatus.RUNNING)
+    trial = ledger.advance(trial.trial_id, ledger_module.TrialStatus.COMPLETED)
     artifact = tmp_path / "outcome.json"
     artifact.write_text(
         f'{{"market_ticker":"{receipt.market_ticker}","event_ticker":"{receipt.event_ticker}",'
@@ -119,6 +198,8 @@ def test_tampered_score_journal_and_prepublication_outcome_fail_closed(tmp_path,
         reason="research",
         sibling_market_ids=(receipt.market_ticker,),
     )
+    ledger.advance(trial.trial_id, ledger_module.TrialStatus.RUNNING)
+    trial = ledger.advance(trial.trial_id, ledger_module.TrialStatus.COMPLETED)
     artifact = tmp_path / "outcome.json"
     artifact.write_text(
         f'{{"market_ticker":"{receipt.market_ticker}","event_ticker":"{receipt.event_ticker}",'
@@ -196,3 +277,12 @@ def test_fixture_capability_is_not_a_public_production_boundary():
         for path in production
         if path.name != "outcome_scoring.py"
     )
+
+
+def test_append_capability_has_one_repository_call_boundary():
+    references = [
+        path for path in Path("services").rglob("*.py") if "_APPEND_CAPABILITY" in path.read_text()
+    ]
+    assert references == [Path("services/forward_reality/outcome_scoring.py")]
+    source = Path("services/forward_reality/outcome_scoring.py").read_text()
+    assert source.count("_append(record, _capability=_APPEND_CAPABILITY)") == 1
