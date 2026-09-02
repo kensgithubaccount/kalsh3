@@ -11,6 +11,7 @@ from pathlib import Path
 import pytest
 
 from scripts import run_m27b3_smoke_receipt as receipt
+from services.opportunity_engine import structural_measurement_runner as runner
 
 SHA = "e8c6faff5a72db6010fd4ae22713b0a0831b947e"
 TREE = "353aeba5d99c67c5baa4c72901965b323367ecbf"
@@ -377,7 +378,9 @@ def test_parent_watchdog_kills_orphaned_child(tmp_path: Path) -> None:
     supervisor_code = (
         "import os,subprocess,sys,time\n"
         f"env=os.environ.copy(); env['M27B3_SUPERVISOR_PID']=str(os.getpid())\n"
-        f"subprocess.Popen([sys.executable,'-c',{child_code!r}], env=env)\n"
+        f"read_fd,write_fd=os.pipe(); env['M27B3_PARENT_WATCHDOG_FD']=str(read_fd)\n"
+        f"subprocess.Popen([sys.executable,'-c',{child_code!r}], env=env, pass_fds=(read_fd,))\n"
+        "os.close(read_fd)\n"
         "time.sleep(60)\n"
     )
     supervisor = subprocess.Popen([sys.executable, "-c", supervisor_code], cwd=Path.cwd())
@@ -405,6 +408,18 @@ def test_parent_watchdog_kills_orphaned_child(tmp_path: Path) -> None:
         if supervisor.poll() is None:
             supervisor.kill()
             supervisor.wait()
+
+
+def test_watchdog_rejects_missing_or_invalid_internal_fd(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("M27B3_SUPERVISOR_PID", "123")
+    monkeypatch.delenv("M27B3_PARENT_WATCHDOG_FD", raising=False)
+    with pytest.raises(runner.ParentWatchdogError, match="missing"):
+        runner._start_parent_watchdog()
+    monkeypatch.setenv("M27B3_PARENT_WATCHDOG_FD", "-1")
+    with pytest.raises(runner.ParentWatchdogError, match="invalid"):
+        runner._start_parent_watchdog()
 
 
 def test_operator_document_uses_only_the_fixed_wrapper_interface() -> None:

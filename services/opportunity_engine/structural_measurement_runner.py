@@ -25,7 +25,10 @@ module -- see ``tests/test_m27b2_architecture.py``.
 from __future__ import annotations
 
 import argparse
+import contextlib
 import os
+import select
+import stat
 import threading
 import time
 from collections.abc import Callable, Iterator, Mapping
@@ -92,6 +95,7 @@ from .structural_measurement_store import StructuralMeasurementStore
 # lifetime measurements in structural_measurement.py answer that question empirically.
 DEFAULT_CADENCE_SECONDS = 900
 _SUPERVISOR_PID_ENV = "M27B3_SUPERVISOR_PID"
+_SUPERVISOR_FD_ENV = "M27B3_PARENT_WATCHDOG_FD"
 _WATCHDOG_INTERVAL_SECONDS = 0.25
 
 _QUOTE_FIELDS = (
@@ -632,7 +636,18 @@ def _parser() -> argparse.ArgumentParser:
     return parser
 
 
-def _start_parent_watchdog() -> threading.Event | None:
+class ParentWatchdogError(RuntimeError):
+    """The wrapper's internal parent-liveness binding is invalid."""
+
+
+@dataclass(frozen=True, slots=True)
+class _ParentWatchdog:
+    stopped: threading.Event
+    thread: threading.Thread
+    read_fd: int
+
+
+def _start_parent_watchdog() -> _ParentWatchdog | None:
     """Stop this child if the fixed receipt wrapper is no longer its parent."""
     expected_text = os.environ.get(_SUPERVISOR_PID_ENV)
     if expected_text is None:
@@ -640,18 +655,49 @@ def _start_parent_watchdog() -> threading.Event | None:
     try:
         expected_pid = int(expected_text)
     except ValueError:
-        return None
+        raise ParentWatchdogError("invalid internal supervisor PID") from None
     if expected_pid <= 0:
-        return None
+        raise ParentWatchdogError("invalid internal supervisor PID")
+    fd_text = os.environ.get(_SUPERVISOR_FD_ENV)
+    if fd_text is None:
+        raise ParentWatchdogError("missing internal parent watchdog FD")
+    try:
+        read_fd = int(fd_text)
+        descriptor_mode = os.fstat(read_fd).st_mode
+    except (OSError, ValueError):
+        raise ParentWatchdogError("invalid internal parent watchdog FD") from None
+    if not stat.S_ISFIFO(descriptor_mode):
+        raise ParentWatchdogError("internal parent watchdog FD is not a pipe")
     stopped = threading.Event()
 
     def watch() -> None:
-        while not stopped.wait(_WATCHDOG_INTERVAL_SECONDS):
-            if os.getppid() != expected_pid:
-                os._exit(1)
+        try:
+            while not stopped.wait(_WATCHDOG_INTERVAL_SECONDS):
+                if os.getppid() != expected_pid:
+                    os._exit(1)
+                try:
+                    readable, _, _ = select.select([read_fd], [], [], _WATCHDOG_INTERVAL_SECONDS)
+                    if readable and os.read(read_fd, 1) == b"":
+                        os._exit(1)
+                except (OSError, ValueError):
+                    os._exit(1)
+        finally:
+            with contextlib.suppress(OSError):
+                os.close(read_fd)
 
-    threading.Thread(target=watch, name="m27b3-parent-watchdog", daemon=True).start()
-    return stopped
+    thread = threading.Thread(target=watch, name="m27b3-parent-watchdog", daemon=True)
+    thread.start()
+    return _ParentWatchdog(stopped, thread, read_fd)
+
+
+def _stop_parent_watchdog(watchdog: _ParentWatchdog | None) -> None:
+    if watchdog is None:
+        return
+    watchdog.stopped.set()
+    watchdog.thread.join(timeout=(_WATCHDOG_INTERVAL_SECONDS * 3))
+    if watchdog.thread.is_alive():
+        with contextlib.suppress(OSError):
+            os.close(watchdog.read_fd)
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -660,7 +706,11 @@ def main(argv: list[str] | None = None) -> int:
         print("Structural measurement: NOT STARTED", flush=True)
         print("Reason: explicit --live-public-read permission is required", flush=True)
         return 2
-    watchdog_stop = _start_parent_watchdog()
+    try:
+        watchdog = _start_parent_watchdog()
+    except ParentWatchdogError as exc:
+        print(f"Structural measurement: NOT STARTED ({exc})", flush=True)
+        return 2
     store = StructuralMeasurementStore(args.evidence_db)
     print(
         "Starting M27B.2 structural-lead measurement (research only, production_influence=0)",
@@ -698,8 +748,7 @@ def main(argv: list[str] | None = None) -> int:
         )
         return 1 if incomplete else 0
     finally:
-        if watchdog_stop is not None:
-            watchdog_stop.set()
+        _stop_parent_watchdog(watchdog)
 
 
 if __name__ == "__main__":

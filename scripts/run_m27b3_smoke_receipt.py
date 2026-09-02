@@ -307,7 +307,12 @@ def main(argv: list[str] | None = None) -> int:
         "source_authority": HOST,
         "production_influence": 0,
         "environment_allowlist": sorted(
-            (*ENVIRONMENT_ALLOWLIST, "PYTHONUNBUFFERED", "M27B3_SUPERVISOR_PID")
+            (
+                *ENVIRONMENT_ALLOWLIST,
+                "PYTHONUNBUFFERED",
+                "M27B3_SUPERVISOR_PID",
+                "M27B3_PARENT_WATCHDOG_FD",
+            )
         ),
         "started_at": _now(),
         "wrapper_pid": os.getpid(),
@@ -330,11 +335,15 @@ def main(argv: list[str] | None = None) -> int:
     signal.signal(signal.SIGINT, forward)
     signal.signal(signal.SIGTERM, forward)
     stdout = stderr = None
+    watchdog_read_fd: int | None = None
+    watchdog_write_fd: int | None = None
     try:
         stdout = stdout_path.open("wb")
         stderr = stderr_path.open("wb")
         child_environment = build_environment()
         child_environment["M27B3_SUPERVISOR_PID"] = str(os.getpid())
+        watchdog_read_fd, watchdog_write_fd = os.pipe()
+        child_environment["M27B3_PARENT_WATCHDOG_FD"] = str(watchdog_read_fd)
         process = subprocess.Popen(  # noqa: S603 -- command is constructed above
             command,
             cwd=identity.root,
@@ -342,8 +351,12 @@ def main(argv: list[str] | None = None) -> int:
             stdout=stdout,
             stderr=stderr,
             env=child_environment,
+            close_fds=True,
+            pass_fds=(watchdog_read_fd,),
             shell=False,
         )
+        os.close(watchdog_read_fd)
+        watchdog_read_fd = None
         try:
             _atomic_write(receipt_path, {**base, "status": "RUNNING", "child_pid": process.pid})
         except BaseException:
@@ -393,6 +406,10 @@ def main(argv: list[str] | None = None) -> int:
             print("M27B3 receipt failure before child start", file=sys.stderr)
         return 1
     finally:
+        if watchdog_read_fd is not None:
+            os.close(watchdog_read_fd)
+        if watchdog_write_fd is not None:
+            os.close(watchdog_write_fd)
         if stderr is not None:
             stderr.close()
         if stdout is not None:
