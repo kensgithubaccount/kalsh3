@@ -8,7 +8,8 @@ from __future__ import annotations
 
 import hashlib
 import json
-from typing import Final
+from dataclasses import dataclass
+from typing import Any, Final
 
 CANONICAL_BASE: Final = "e8c6faff5a72db6010fd4ae22713b0a0831b947e"
 CANONICAL_TREE: Final = "353aeba5d99c67c5baa4c72901965b323367ecbf"
@@ -32,6 +33,31 @@ CFR_2022_SHA256: Final = "f6b63052591c0735b650e6fd96a211b8d2e4823bab6d3d366a5067
 CFR_2022_BYTES: Final = 231501
 CFR_2025_SHA256: Final = "f10d901fcc847b2635782fe62f212724f876fcbd7df314c221505b957b8484ed"
 CFR_2025_BYTES: Final = 250079
+
+
+class FeeAuthorityUnavailable(ValueError):
+    """Raised when a fee formula is requested from non-exact evidence."""
+
+
+@dataclass(frozen=True)
+class ConsumableTakerFee:
+    authority_identity: str
+    formula: str
+    rounding: str
+
+
+def consume_taker_fee_authority(row: dict[str, Any]) -> ConsumableTakerFee:
+    """Return a fee regime only for an explicitly exact authority row."""
+    if row.get("status") != "exact" or not row.get("exact_fee_authority"):
+        raise FeeAuthorityUnavailable(
+            f"fee authority is not consumable for status={row.get('status')!r}"
+        )
+    formula = row.get("formula")
+    rounding = row.get("rounding")
+    if not isinstance(formula, str) or not isinstance(rounding, str):
+        raise FeeAuthorityUnavailable("exact fee row lacks formula or rounding")
+    return ConsumableTakerFee(row["authority_identity"], formula, rounding)
+
 
 APPROVED_ARTIFACTS: Final = (
     {
@@ -233,6 +259,84 @@ AUTHORITY_METADATA: Final = (
     },
 )
 
+APPROVED_TIMELINES: Final = {
+    "endpoint_observations": [
+        {
+            "observed_date": "2022-09-22",
+            "status": "exact",
+            "authority_type": "taker",
+            "authority_identity": "CFTC-49335-FINAL",
+            "formula": "round_up(0.07 * C * P * (1-P))",
+            "rounding": "next_cent",
+            "exact_fee_authority": True,
+            "economics_usable": True,
+        },
+        {
+            "observed_date": "2025-05-06",
+            "status": "exact",
+            "authority_type": "taker",
+            "authority_identity": "MD-1:25-CV-01283-28-1",
+            "formula": "round_up(0.07 * C * P * (1-P))",
+            "rounding": "next_cent",
+            "exact_fee_authority": True,
+            "economics_usable": True,
+        },
+    ],
+    "taker": [
+        {
+            "start_date": None,
+            "end_date": "2022-09-24",
+            "status": "unknown",
+            "authority_type": "taker",
+            "authority_identity": "UNKNOWN_PRE_EFFECTIVE_DATE",
+            "formula": None,
+            "rounding": None,
+            "exact_fee_authority": False,
+            "economics_usable": False,
+            "kxcpi_applicability": "unknown",
+        },
+        {
+            "start_date": "2022-09-24",
+            "end_date": "2025-05-06",
+            "status": "interval_unproven_between_matching_endpoints",
+            "authority_type": "taker",
+            "authority_identity": "UNPROVEN_BETWEEN_CFTC_49335_AND_MD_28_1",
+            "formula": None,
+            "rounding": None,
+            "exact_fee_authority": False,
+            "economics_usable": False,
+            "kxcpi_applicability": "unknown",
+            "notes": "Matching endpoint formulas are informational only; no continuity claim.",
+        },
+        {
+            "start_date": "2025-05-06",
+            "end_date": None,
+            "status": "locator_only",
+            "authority_type": "taker",
+            "authority_identity": "OCT_2025_LOCATOR_ONLY",
+            "formula": None,
+            "rounding": None,
+            "exact_fee_authority": False,
+            "economics_usable": False,
+            "kxcpi_applicability": "unknown",
+        },
+    ],
+    "maker": [
+        {
+            "start_date": None,
+            "end_date": None,
+            "status": "unknown",
+            "authority_type": "maker",
+            "authority_identity": "MAKER_UNRESOLVED",
+            "formula": None,
+            "rounding": None,
+            "exact_fee_authority": False,
+            "economics_usable": False,
+            "kxcpi_applicability": "unknown",
+        }
+    ],
+}
+
 
 def approved_receipt_digest() -> str:
     payload = {
@@ -240,9 +344,10 @@ def approved_receipt_digest() -> str:
         "authority_metadata": AUTHORITY_METADATA,
         "base": CANONICAL_BASE,
         "tree": CANONICAL_TREE,
+        "timelines": APPROVED_TIMELINES,
     }
     raw = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode()
     return hashlib.sha256(raw).hexdigest()
 
 
-APPROVED_RECEIPT_SHA256: Final = "a06569f70c5cc99c92851f39fddb3d05b75b84adcf08a93f469730d7e08ac490"
+APPROVED_RECEIPT_SHA256: Final = "b8f6005d07bbd595a9e84bdc367415ce22d9404f8c472bcefe34f256ce089859"

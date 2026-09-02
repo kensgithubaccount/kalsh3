@@ -1,10 +1,16 @@
 import json
 import shutil
+from collections.abc import Callable
 from pathlib import Path
+from typing import Any
 
 import pytest
 
 from scripts.validate_cpi_p9b_fee_authority import load, validate
+from services.forecasting.cpi_p9b_authority import (
+    FeeAuthorityUnavailable,
+    consume_taker_fee_authority,
+)
 
 PACKAGE = Path("evidence/cpi_p9b_fee_authority")
 
@@ -15,7 +21,7 @@ def clone(tmp_path: Path) -> Path:
     return target
 
 
-def rewrite(target: Path, change) -> None:
+def rewrite(target: Path, change: Callable[[dict[str, Any]], Any]) -> None:
     path = target / "manifest.json"
     data = json.loads(path.read_text())
     change(data)
@@ -27,7 +33,7 @@ def test_freeze_derives_expected_disposition() -> None:
     assert result["counts"] == {
         "exact": 0,
         "continuity_supported": 0,
-        "same_formula_endpoint_snapshots": 272,
+        "interval_unproven_between_matching_endpoints": 272,
         "locator_only": 110,
         "unknown": 92,
         "mixed_authority": 0,
@@ -35,12 +41,14 @@ def test_freeze_derives_expected_disposition() -> None:
     assert result["event_counts"] == {
         "exact": 0,
         "continuity_supported": 0,
-        "same_formula_endpoint_snapshots": 31,
+        "interval_unproven_between_matching_endpoints": 31,
         "locator_only": 14,
         "unknown": 15,
         "mixed_authority": 0,
     }
     assert result["p8_join"] == "deferred_to_downstream_p10_authority_binder"
+    assert result["endpoint_bracketed_interval_rows"] == 272
+    assert result["endpoint_bracketed_interval_events"] == 31
 
 
 def test_artifact_mutation_fails(tmp_path: Path) -> None:
@@ -83,7 +91,7 @@ def test_endpoint_snapshot_cannot_be_promoted_to_continuity(tmp_path: Path) -> N
     target = clone(tmp_path)
     rewrite(
         target,
-        lambda m: m["timelines"]["taker"][1].update({"status": "continuity_supported"}),
+        lambda m: m["timelines"]["taker"][1].update({"status": "exact"}),
     )
     with pytest.raises(ValueError, match="timeline"):
         validate(target)
@@ -108,7 +116,9 @@ def test_rehash_without_approved_identity_fails(tmp_path: Path) -> None:
         lambda m: m["timelines"]["taker"][1].update({"kxcpi_applicability": "perpetual_futures"}),
     ],
 )
-def test_formula_rounding_role_and_scope_substitutions_fail(tmp_path: Path, change) -> None:
+def test_formula_rounding_role_and_scope_substitutions_fail(
+    tmp_path: Path, change: Callable[[dict[str, Any]], Any]
+) -> None:
     target = clone(tmp_path)
     rewrite(target, change)
     with pytest.raises(ValueError):
@@ -153,7 +163,8 @@ def test_timeline_and_coverage_files_are_read_only_inputs(tmp_path: Path) -> Non
     timeline = target / "authority_timeline.json"
     timeline.write_text(
         timeline.read_text().replace(
-            '"status": "same_formula_endpoint_snapshots"', '"status": "locator_only"', 1
+            '"status": "interval_unproven_between_matching_endpoints"',
+            '"status": "locator_only"',
         )
     )
     with pytest.raises(ValueError, match="timeline"):
@@ -162,8 +173,8 @@ def test_timeline_and_coverage_files_are_read_only_inputs(tmp_path: Path) -> Non
     coverage = target / "event_coverage.json"
     coverage.write_text(
         coverage.read_text().replace(
-            '"same_formula_endpoint_snapshots": 272',
-            '"same_formula_endpoint_snapshots": 271',
+            '"interval_unproven_between_matching_endpoints": 272',
+            '"interval_unproven_between_matching_endpoints": 271',
             1,
         )
     )
@@ -181,6 +192,40 @@ def test_fee_covered_row_is_not_quote_usable() -> None:
     result = validate(PACKAGE)
     assert "exact_taker_p8_usable_quote_rows" not in result
     assert all("usable" not in row for row in result["market_rows"])
+    assert all(not row["exact_fee_authority"] for row in result["market_rows"])
+    assert all(not row["economics_usable"] for row in result["market_rows"])
+
+
+def test_non_exact_rows_cannot_cross_fee_consumption_boundary() -> None:
+    result = validate(PACKAGE)
+    for row in result["market_rows"]:
+        with pytest.raises(FeeAuthorityUnavailable):
+            consume_taker_fee_authority(row)
+
+
+def test_endpoint_formula_is_not_an_interval_regime() -> None:
+    result = validate(PACKAGE)
+    interval_rows = [
+        row
+        for row in result["market_rows"]
+        if row["status"] == "interval_unproven_between_matching_endpoints"
+    ]
+    assert interval_rows
+    assert all(row["formula"] is None and row["rounding"] is None for row in interval_rows)
+
+
+def test_incorrect_2020_cfr_url_fails(tmp_path: Path) -> None:
+    target = clone(tmp_path)
+    rewrite(
+        target,
+        lambda m: m["artifacts"][8].update(
+            {
+                "url": "https://www.govinfo.gov/content/pkg/CFR-2020-title17-vol1/pdf/CFR-2020-title17-vol1-part40.pdf"
+            }
+        ),
+    )
+    with pytest.raises(ValueError, match="approved set"):
+        validate(target)
 
 
 def test_inventory_is_fixed_and_not_an_individual_filing_page(tmp_path: Path) -> None:

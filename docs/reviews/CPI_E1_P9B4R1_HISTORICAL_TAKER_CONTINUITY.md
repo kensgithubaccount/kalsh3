@@ -44,11 +44,21 @@ Date-only effective evidence is not converted to midnight UTC. Quotes through
 exhibit’s 2025-05-06 “Last Updated” date is a locator boundary, not an exact
 instant. Quote mapping uses each P9A row’s `candle_end_period_ts`.
 
-The current mechanically derived fee-only coverage is 474 market rows and 60
-events: 272 same-formula endpoint-snapshot rows / 31 events, 110 locator-only
-rows / 14 events, 92 unknown rows / 15 events, and no mixed-authority rows. P8/P9A/fee
-intersection is intentionally deferred to the downstream P10 authority binder;
-no P8 event list or quote-usability claim is made here.
+P9B currently establishes zero exact historical P9A taker-fee events. The
+mechanically derived fee-only coverage is 474 market rows and 60 events: 272
+endpoint-bracketed interval rows / 31 events with status
+`interval_unproven_between_matching_endpoints`, 110 locator-only rows / 14
+events, 92 unknown rows / 15 events, and no mixed-authority rows. The 31 events
+occurred between matching endpoint snapshots; they are not snapshot events and
+cannot support an exact after-cost backtest. They may support an explicitly
+labeled sensitivity scenario using the observed 0.07 endpoint formula, but that
+scenario is not historical fee authority and cannot become the primary
+profitability result. P8/P9A/fee intersection is intentionally deferred to the
+downstream P10 authority binder; no P8 event list or quote-usability claim is
+made here.
+
+Predictive/modelability testing is fee-independent. Maker fees and fills remain
+unresolved.
 
 ## Remaining unknowns
 

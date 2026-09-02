@@ -1,11 +1,15 @@
 {
   "schema_version": "cpi-p9b-authority-timeline-v1",
+  "endpoint_observations": [
+    {"observed_date": "2022-09-22", "status": "exact", "authority_type": "taker", "authority_identity": "CFTC-49335-FINAL", "formula": "round_up(0.07 * C * P * (1-P))", "rounding": "next_cent", "exact_fee_authority": true, "economics_usable": true},
+    {"observed_date": "2025-05-06", "status": "exact", "authority_type": "taker", "authority_identity": "MD-1:25-CV-01283-28-1", "formula": "round_up(0.07 * C * P * (1-P))", "rounding": "next_cent", "exact_fee_authority": true, "economics_usable": true}
+  ],
   "taker": [
-    {"start_date": null, "end_date": "2022-09-24", "status": "unknown", "authority_type": "taker", "authority_identity": "UNKNOWN_PRE_EFFECTIVE_DATE", "formula": null, "rounding": null, "kxcpi_applicability": "unknown"},
-    {"start_date": "2022-09-24", "end_date": "2025-05-06", "status": "same_formula_endpoint_snapshots", "authority_type": "taker", "authority_identity": "CFTC-49335-FINAL", "formula": "round_up(0.07 * C * P * (1-P))", "rounding": "next_cent", "kxcpi_applicability": "general", "notes": "Direct September 2022 and May 2025 snapshots agree; intervening continuity is unknown."},
-    {"start_date": "2025-05-06", "end_date": null, "status": "locator_only", "authority_type": "taker", "authority_identity": "OCT_2025_LOCATOR_ONLY", "formula": "round_up(0.07 * C * P * (1-P))", "rounding": "next_cent", "kxcpi_applicability": "general"}
+    {"start_date": null, "end_date": "2022-09-24", "status": "unknown", "authority_type": "taker", "authority_identity": "UNKNOWN_PRE_EFFECTIVE_DATE", "formula": null, "rounding": null, "exact_fee_authority": false, "economics_usable": false, "kxcpi_applicability": "unknown"},
+    {"start_date": "2022-09-24", "end_date": "2025-05-06", "status": "interval_unproven_between_matching_endpoints", "authority_type": "taker", "authority_identity": "UNPROVEN_BETWEEN_CFTC_49335_AND_MD_28_1", "formula": null, "rounding": null, "exact_fee_authority": false, "economics_usable": false, "kxcpi_applicability": "unknown", "notes": "Matching endpoint formulas are informational only; no continuity claim."},
+    {"start_date": "2025-05-06", "end_date": null, "status": "locator_only", "authority_type": "taker", "authority_identity": "OCT_2025_LOCATOR_ONLY", "formula": null, "rounding": null, "exact_fee_authority": false, "economics_usable": false, "kxcpi_applicability": "unknown"}
   ],
   "maker": [
-    {"start_date": null, "end_date": null, "status": "unknown", "authority_type": "maker", "authority_identity": "MAKER_UNRESOLVED", "formula": null, "rounding": null, "kxcpi_applicability": "unknown"}
+    {"start_date": null, "end_date": null, "status": "unknown", "authority_type": "maker", "authority_identity": "MAKER_UNRESOLVED", "formula": null, "rounding": null, "exact_fee_authority": false, "economics_usable": false, "kxcpi_applicability": "unknown"}
   ]
 }

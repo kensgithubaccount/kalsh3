@@ -5,7 +5,7 @@
   "p9a_manifest": "evidence/cpi_p9a_historical_price/manifest.json",
   "p9a_manifest_sha256": "6f162314cbeee641a3420a1e56597ef5dee5d9ef4af95f035c96d58c9bf7b01c",
   "filing_inventory_sha256": "a979dc5e4a19c187e7d40efc384cc9737c33cd03d9478788326bd3d0f4b689a2",
-  "authority_receipt_sha256": "a06569f70c5cc99c92851f39fddb3d05b75b84adcf08a93f469730d7e08ac490",
+  "authority_receipt_sha256": "b8f6005d07bbd595a9e84bdc367415ce22d9404f8c472bcefe34f256ce089859",
   "authority_metadata": [
     {"identity": "CFTC-49335-COVER", "filing": "49335", "receipt_date": "2022-09-09", "effective_date": "2022-09-22", "scope": "taker", "kxcpi_applicability": "general", "status": "exact", "supersession": "amends prior general schedule"},
     {"identity": "CFTC-49335-REDLINE", "filing": "49335", "receipt_date": "2022-09-09", "effective_date": "2022-09-22", "scope": "taker", "kxcpi_applicability": "general", "status": "exact", "supersession": "amends prior general schedule"},
@@ -31,12 +31,16 @@
     {"path": "raw/cfr-2025-title17-part40.pdf", "sha256": "f10d901fcc847b2635782fe62f212724f876fcbd7df314c221505b957b8484ed", "bytes": 250079, "role": "historical_regulatory_authority", "identity": "CFR-2025-T17-P40", "url": "https://www.govinfo.gov/content/pkg/CFR-2025-title17-vol1/pdf/CFR-2025-title17-vol1-part40.pdf", "status": "snapshot"}
   ],
   "timelines": {
-    "taker": [
-      {"start_date": null, "end_date": "2022-09-24", "status": "unknown", "authority_type": "taker", "authority_identity": "UNKNOWN_PRE_EFFECTIVE_DATE", "formula": null, "rounding": null, "kxcpi_applicability": "unknown"},
-      {"start_date": "2022-09-24", "end_date": "2025-05-06", "status": "same_formula_endpoint_snapshots", "authority_type": "taker", "authority_identity": "CFTC-49335-FINAL", "formula": "round_up(0.07 * C * P * (1-P))", "rounding": "next_cent", "kxcpi_applicability": "general", "notes": "Direct September 2022 and May 2025 snapshots agree; intervening continuity is unknown."},
-      {"start_date": "2025-05-06", "end_date": null, "status": "locator_only", "authority_type": "taker", "authority_identity": "OCT_2025_LOCATOR_ONLY", "formula": "round_up(0.07 * C * P * (1-P))", "rounding": "next_cent", "kxcpi_applicability": "general"}
+    "endpoint_observations": [
+      {"observed_date": "2022-09-22", "status": "exact", "authority_type": "taker", "authority_identity": "CFTC-49335-FINAL", "formula": "round_up(0.07 * C * P * (1-P))", "rounding": "next_cent", "exact_fee_authority": true, "economics_usable": true},
+      {"observed_date": "2025-05-06", "status": "exact", "authority_type": "taker", "authority_identity": "MD-1:25-CV-01283-28-1", "formula": "round_up(0.07 * C * P * (1-P))", "rounding": "next_cent", "exact_fee_authority": true, "economics_usable": true}
     ],
-    "maker": [{"start_date": null, "end_date": null, "status": "unknown", "authority_type": "maker", "authority_identity": "MAKER_UNRESOLVED", "formula": null, "rounding": null, "kxcpi_applicability": "unknown"}]
+    "taker": [
+      {"start_date": null, "end_date": "2022-09-24", "status": "unknown", "authority_type": "taker", "authority_identity": "UNKNOWN_PRE_EFFECTIVE_DATE", "formula": null, "rounding": null, "exact_fee_authority": false, "economics_usable": false, "kxcpi_applicability": "unknown"},
+      {"start_date": "2022-09-24", "end_date": "2025-05-06", "status": "interval_unproven_between_matching_endpoints", "authority_type": "taker", "authority_identity": "UNPROVEN_BETWEEN_CFTC_49335_AND_MD_28_1", "formula": null, "rounding": null, "exact_fee_authority": false, "economics_usable": false, "kxcpi_applicability": "unknown", "notes": "Matching endpoint formulas are informational only; no continuity claim."},
+      {"start_date": "2025-05-06", "end_date": null, "status": "locator_only", "authority_type": "taker", "authority_identity": "OCT_2025_LOCATOR_ONLY", "formula": null, "rounding": null, "exact_fee_authority": false, "economics_usable": false, "kxcpi_applicability": "unknown"}
+    ],
+    "maker": [{"start_date": null, "end_date": null, "status": "unknown", "authority_type": "maker", "authority_identity": "MAKER_UNRESOLVED", "formula": null, "rounding": null, "exact_fee_authority": false, "economics_usable": false, "kxcpi_applicability": "unknown"}]
   },
   "p8_join": "deferred_to_downstream_p10_authority_binder",
   "boundary_policy": "Date-only authority is not assigned a UTC instant. Quotes on or before 2022-09-23 remain unknown; endpoint-snapshot status begins on the first UTC date unambiguously after the effective-date uncertainty window (2022-09-24). The 2025-05-06 date-only snapshot is treated as the locator boundary; no quote on that date is promoted.",

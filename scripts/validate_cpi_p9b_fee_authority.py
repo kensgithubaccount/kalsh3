@@ -7,13 +7,14 @@ import argparse
 import hashlib
 import json
 import re
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 from services.forecasting.cpi_p9b_authority import (
     APPROVED_ARTIFACTS,
     APPROVED_RECEIPT_SHA256,
+    APPROVED_TIMELINES,
     AUTHORITY_METADATA,
     CANONICAL_BASE,
     CANONICAL_TREE,
@@ -90,7 +91,7 @@ def instant(value: str) -> datetime:
     return datetime.fromisoformat(value.replace("Z", "+00:00")).astimezone(UTC)
 
 
-def authority_date(value: str) -> datetime.date:
+def authority_date(value: str) -> date:
     return datetime.strptime(value, "%Y-%m-%d").date()
 
 
@@ -114,7 +115,7 @@ def p9a() -> dict[str, Any]:
     ):
         raise ValueError("P9A multiplicity mismatch")
     validate_frozen_cohort(P9A)
-    return manifest
+    return cast(dict[str, Any], manifest)
 
 
 def _validate(package: Path = PACKAGE, *, require_frozen_coverage: bool = True) -> dict[str, Any]:
@@ -142,7 +143,7 @@ def _validate(package: Path = PACKAGE, *, require_frozen_coverage: bool = True) 
     if actual != expected:
         raise ValueError("manifest artifact set is not the reviewed approved set")
     for row in APPROVED_ARTIFACTS:
-        path = package / row["path"]
+        path = package / str(row["path"])
         if (
             not path.is_file()
             or path.stat().st_size != row["bytes"]
@@ -166,8 +167,13 @@ def _validate(package: Path = PACKAGE, *, require_frozen_coverage: bool = True) 
     timeline = load(package / "authority_timeline.json")
     if timeline.get("schema_version") != "cpi-p9b-authority-timeline-v1":
         raise ValueError("unsupported authority timeline schema")
-    if {kind: timeline[kind] for kind in ("taker", "maker")} != manifest.get("timelines"):
+    if timeline != {"schema_version": timeline["schema_version"], **manifest.get("timelines", {})}:
         raise ValueError("authority timeline content mismatch")
+    if manifest.get("timelines") != APPROVED_TIMELINES:
+        raise ValueError("reviewed authority timeline identity mismatch")
+    for endpoint in timeline["endpoint_observations"]:
+        if endpoint["status"] != "exact" or not endpoint["exact_fee_authority"]:
+            raise ValueError("endpoint observation is not exact")
     for kind in ("taker", "maker"):
         previous = None
         for row in timeline[kind]:
@@ -177,6 +183,13 @@ def _validate(package: Path = PACKAGE, *, require_frozen_coverage: bool = True) 
                 raise ValueError(f"gap or overlap in {kind} timeline")
             if start is not None and end is not None and start >= end:
                 raise ValueError(f"invalid {kind} interval")
+            if row["status"] != "exact" and (
+                row.get("exact_fee_authority")
+                or row.get("economics_usable")
+                or row.get("formula") is not None
+                or row.get("rounding") is not None
+            ):
+                raise ValueError("non-exact authority is consumable")
             previous = end
         if previous is not None:
             raise ValueError(f"{kind} timeline does not end open")
@@ -207,6 +220,8 @@ def _validate(package: Path = PACKAGE, *, require_frozen_coverage: bool = True) 
             "authority_identity": regime["authority_identity"],
             "formula": regime["formula"] if regime["status"] == "exact" else None,
             "rounding": regime["rounding"] if regime["status"] == "exact" else None,
+            "exact_fee_authority": regime["status"] == "exact",
+            "economics_usable": regime["status"] == "exact",
             "reason": None
             if regime["status"] == "exact"
             else regime.get("notes", regime["status"]),
@@ -237,7 +252,7 @@ def _validate(package: Path = PACKAGE, *, require_frozen_coverage: bool = True) 
             for s in (
                 "exact",
                 "continuity_supported",
-                "same_formula_endpoint_snapshots",
+                "interval_unproven_between_matching_endpoints",
                 "locator_only",
                 "unknown",
                 "mixed_authority",
@@ -248,13 +263,19 @@ def _validate(package: Path = PACKAGE, *, require_frozen_coverage: bool = True) 
             for s in (
                 "exact",
                 "continuity_supported",
-                "same_formula_endpoint_snapshots",
+                "interval_unproven_between_matching_endpoints",
                 "locator_only",
                 "unknown",
                 "mixed_authority",
             )
         },
         "p8_join": "deferred_to_downstream_p10_authority_binder",
+        "endpoint_bracketed_interval_rows": sum(
+            row["status"] == "interval_unproven_between_matching_endpoints" for row in coverage
+        ),
+        "endpoint_bracketed_interval_events": sum(
+            event["status"] == "interval_unproven_between_matching_endpoints" for event in events
+        ),
         "boundary_observations": [
             row
             for row in coverage
