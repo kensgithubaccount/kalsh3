@@ -3,14 +3,20 @@
 ## Result
 
 The offline analyzer in `services/forecasting/cpi_p10a_binding.py` mechanically
-revalidates the frozen artifacts and derives the overlap. It does not recollect
-evidence and has no network, account, order, execution, fee, or production
-influence capability.
+revalidates the frozen P8, P9A, P9B, and contract-semantics artifacts and derives
+the overlap. The integrated head is `8da06d1b0286e60b66dc1b52ffab802068e73d66`,
+tree `6869c89e5d4a3da129336110409945ffbb015ed0`, with merge parents in order
+`ee85c5ab3fe77e2e6021c671240dfab3801b18ab` and
+`eaae7dacc977aefb2cf314c3dda53fd1817b646f`. The prior head was
+`ee85c5ab3fe77e2e6021c671240dfab3801b18ab`, tree
+`e4e300b477165e9b09c56869f706807cf76bcf45`. It does not recollect evidence
+and has no network, account, order, execution, fee, or production influence.
 
 | Quantity | Result |
 |---|---:|
 | P9A independent events | 60 |
 | P9A sibling contracts | 474 |
+| truth-overlap events before rule rejection | 46 |
 | missing-truth rows | 111 |
 | absent/ambiguous-predicate rows | 21 |
 | predicate/reference mismatch rows | 1 |
@@ -18,6 +24,8 @@ influence capability.
 | truth-overlap events before rule rejection | 46 |
 | fully excluded predicate-authority events | 4 |
 | accepted independent events | 42 |
+| accepted sibling rows | 341 |
+| usable YES-ask crossing rows | 291 |
 | two-sided non-boundary rows | 200 |
 
 The accepted counts are derived, not asserted. The 21 absent/ambiguous predicate
@@ -25,6 +33,20 @@ rows span `CPI-21JUN`, `CPI-21JUL`, `CPI-21AUG`, `CPI-21OCT`, `CPI-22APR`, and
 `CPI-22MAY`; the first four events are fully excluded, while the latter two
 retain other authoritative siblings. The 14 later P9A events without canonical
 initial-release truth remain rejected.
+
+P9B fee coverage is 0 exact historical rows / 0 events, 272 interval-unproven
+rows / 31 events, 110 locator-only rows / 14 events, and 92 unknown rows / 15
+events across P9A. Within the 341 accepted P10A rows, the counts are 0 exact,
+253 interval-unproven, 18 locator-only, and 70 unknown; the event counts are 0,
+28, 3, and 11. Every frozen fee row has `economics_usable=false`; no exact
+after-cost backtest is produced.
+
+## Integrated PR scope
+
+The exact PR scope versus canonical main is five P10A files, all added by the
+branch: this review, the P7 timing receipt, the P10A runner, the P10A binder,
+and its tests (`1093` added lines). Canonical main was absorbed with the normal
+merge above; P8, P9A, and P9B evidence bytes were not modified or recollected.
 
 ## Authority inventory
 
@@ -50,6 +72,9 @@ initial-release truth remain rejected.
   selection.
 - Contract semantics: P9A's canonical parser output; only `GT`/`>` rows are
   admitted. Event identity is `kalshi:<event_ticker>`.
+- P9B: `evidence/cpi_p9b_fee_authority/event_coverage.json`, validated against
+  its frozen manifest, authority timeline, and raw artifacts. Endpoint formula
+  agreement is not promoted to interval continuity or economics authority.
 
 ## Binding and rejection policy
 
@@ -69,6 +94,12 @@ metadata. The isolated mismatch is `CPI-22JUN-T0.2`: rules-derived July 2022
 versus the ticker/event's June 2022, threshold `0.2`, comparator `GT`; the
 market-inventory row and its P9A semantic/request evidence are the involved
 artifacts.
+
+The rule/predicate rejection layer is 22 rows across seven events: 21 absent or
+ambiguous rows and one reference-month mismatch. Four events are fully excluded
+by predicate authority; the remaining predicate-rejection events retain other
+accepted siblings. Accepted independent events are the 42-event truth overlap
+after those exclusions, with 341 accepted sibling rows.
 
 ## Market baseline
 
@@ -97,6 +128,11 @@ Log loss clips diagnostic prices to `[0.01, 0.99]` before natural-log scoring.
 These are quote-evidence diagnostics, not fill truth. The frozen evidence does
 not establish depth, queue position, fill probability, slippage, fees, or
 after-cost economics.
+
+The event-equal market baseline is therefore Brier **0.0884086982** and clipped
+log loss **0.3163106457**, calculated from 291 usable YES-ask crossing rows over
+42 events. Boundary count is 141, one-sided count is 139, stale count is 276,
+and unusable-ask count is 50; these exclusion counts overlap by design.
 
 ## P10A.1 temporal and quote repair
 
@@ -159,3 +195,14 @@ separate attachment boundary keyed by actual decision timestamp.
 P10A does not establish market-relative predictive signal, statistical
 significance, causal predictability, executable fills, fee-adjusted edge,
 profitability, capacity, sizing, risk authorization, or production readiness.
+
+## Differences from the previous P10A report
+
+The prior report was based on `ee85c5ab…` and did not bind P9B. After canonical
+main was merged, P8/P9A/contract-semantics counts and market diagnostics were
+unchanged: 46 truth-overlap events, 42 accepted events, 341 accepted siblings,
+291 usable asks, 200 two-sided rows, Brier 0.0884086982, and clipped log loss
+0.3163106457. The material change is the P9B attachment: zero exact historical
+fee coverage, with the 253/18/70 bound-row and 28/3/11 bound-event statuses.
+This explicitly blocks after-cost economics and does not create a fee-adjusted
+prediction or model score.

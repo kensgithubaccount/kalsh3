@@ -21,6 +21,8 @@ from services.forecasting.cpi_annual_archive_acquisition import load_frozen_targ
 from services.historical_replay.cpi_price_evidence import validate_frozen_cohort
 
 P9A_ROOT = Path("evidence/cpi_p9a_historical_price")
+P9B_ROOT = Path("evidence/cpi_p9b_fee_authority")
+P9B_COVERAGE_SHA256 = "620a48580c603e1b6ec617cd9de73fca5eb793cb4306226727074beea0ecad9f"
 P7_VALUES: dict[tuple[int, int], Decimal] = {
     (2025, 7): Decimal("0.2"),
     (2025, 12): Decimal("0.3"),
@@ -114,6 +116,23 @@ P7_TIMING_APPROVED: dict[str, tuple[str, str, str, str, str, str, str, str, str,
 
 class P10ABindingError(ValueError):
     """A required identity or immutable artifact check failed."""
+
+
+def _load_p9b_coverage(root: Path) -> dict[str, Any]:
+    path = root / P9B_ROOT / "event_coverage.json"
+    raw = path.read_bytes()
+    if sha256(raw).hexdigest() != P9B_COVERAGE_SHA256:
+        raise P10ABindingError("P9B event coverage SHA-256 mismatch")
+    coverage = _strict_json(raw)
+    if coverage.get("schema_version") != "cpi-p9b-event-coverage-v2":
+        raise P10ABindingError("P9B event coverage schema is invalid")
+    market_rows = coverage.get("market_rows")
+    if not isinstance(market_rows, list) or len(market_rows) != 474:
+        raise P10ABindingError("P9B event coverage multiplicity is invalid")
+    for row in market_rows:
+        if not isinstance(row, dict) or row.get("economics_usable") is not False:
+            raise P10ABindingError("P9B coverage contains consumable fee economics")
+    return coverage
 
 
 @dataclass(frozen=True, slots=True)
@@ -340,6 +359,7 @@ def build_binding(repository_root: str | Path) -> dict[str, Any]:
     root = Path(repository_root)
     p9a_root = root / P9A_ROOT
     validate_frozen_cohort(p9a_root)
+    p9b_coverage = _load_p9b_coverage(root)
     manifest = json.loads((p9a_root / "manifest.json").read_bytes())
     inventory = json.loads((p9a_root / "market_inventory.json").read_bytes())["markets"]
     truth: dict[tuple[int, int], tuple[Decimal, str, datetime]] = {}
@@ -356,6 +376,9 @@ def build_binding(repository_root: str | Path) -> dict[str, Any]:
     if set(P7_VALUES) - set(truth):
         raise P10ABindingError("P7 timing authority is incomplete")
     p9a_by_ticker = {row["market_ticker"]: row for row in manifest["markets"]}
+    p9b_by_ticker = {row["market_ticker"]: row for row in p9b_coverage["market_rows"]}
+    if set(p9a_by_ticker) != set(p9b_by_ticker):
+        raise P10ABindingError("P9B coverage does not exactly match P9A market identity")
     rows: list[EventRow] = []
     for market in inventory:
         ticker = market.get("ticker")
@@ -500,6 +523,50 @@ def build_binding(repository_root: str | Path) -> dict[str, Any]:
         },
     }
 
+    p9b_bound_rows = [p9b_by_ticker[row.market_ticker] for row in bound]
+    p9b_bound_status_counts = {
+        status: sum(row["status"] == status for row in p9b_bound_rows)
+        for status in (
+            "exact",
+            "continuity_supported",
+            "interval_unproven_between_matching_endpoints",
+            "locator_only",
+            "unknown",
+            "mixed_authority",
+        )
+    }
+    p9b_bound_events: dict[str, set[str]] = {}
+    for row in p9b_bound_rows:
+        p9b_bound_events.setdefault(row["event_ticker"], set()).add(row["status"])
+    p9b_bound_event_status_counts = {
+        status: sum(
+            (len(statuses) == 1 and next(iter(statuses)) == status)
+            for statuses in p9b_bound_events.values()
+        )
+        for status in (
+            "exact",
+            "continuity_supported",
+            "interval_unproven_between_matching_endpoints",
+            "locator_only",
+            "unknown",
+            "mixed_authority",
+        )
+    }
+    truth_overlap_events = {
+        event
+        for event in {str(item["event_ticker"]) for item in manifest["events"]}
+        if _event_month(event) in truth
+    }
+    predicate_rejections = [
+        row
+        for row in rows
+        if row.rejection
+        in {"contract predicate is absent or ambiguous", "predicate/reference month mismatch"}
+    ]
+    predicate_rejection_events = {row.event_ticker for row in predicate_rejections}
+    accepted_events = set(groups)
+    fully_excluded_predicate_events = predicate_rejection_events - accepted_events
+
     def quote_score(field: str) -> dict[str, float | int]:
         eligible = [
             row
@@ -578,8 +645,37 @@ def build_binding(repository_root: str | Path) -> dict[str, Any]:
         "schema_version": "cpi-e1-p10a-binding-v1",
         "p9a_events": len(manifest["events"]),
         "p9a_siblings": len(manifest["markets"]),
+        "truth_overlap_events": len(truth_overlap_events),
+        "rule_predicate_exclusions": {
+            "rows": len(predicate_rejections),
+            "events": len(predicate_rejection_events),
+            "fully_excluded_events": len(fully_excluded_predicate_events),
+            "by_reason": {
+                reason: sum(row.rejection == reason for row in predicate_rejections)
+                for reason in (
+                    "contract predicate is absent or ambiguous",
+                    "predicate/reference month mismatch",
+                )
+            },
+        },
+        "accepted_independent_events": len(groups),
+        "accepted_sibling_rows": len(bound),
         "bound_rows": len(bound),
         "ask_usable_rows": sum(row.probability is not None for row in bound),
+        "p9b_fee_authority": {
+            "all_p9a_rows": p9b_coverage["counts"],
+            "all_p9a_events": p9b_coverage["event_counts"],
+            "bound_rows": p9b_bound_status_counts,
+            "bound_events": p9b_bound_event_status_counts,
+            "exact_historical_rows": 0,
+            "exact_historical_events": 0,
+            "economics_usable": False,
+            "after_cost_backtest": False,
+            "sensitivity_only": (
+                "The endpoint formula may be used only as a visibly non-authoritative "
+                "future sensitivity input; it is not historical fee truth."
+            ),
+        },
         "quote_evidence_vs_executable": {
             "quote_evidence_rows": len(bound),
             "ask_crossing_quote_rows": len(scored_rows),
@@ -629,6 +725,12 @@ def build_binding(repository_root: str | Path) -> dict[str, Any]:
         / len(event_scores),
         "crossing_price_log_loss_diagnostic": sum(item["log_loss"] for item in event_scores)
         / len(event_scores),
+        "event_equal_market_baseline": {
+            "brier": sum(item["brier"] for item in event_scores) / len(event_scores),
+            "clipped_log_loss": sum(item["log_loss"] for item in event_scores) / len(event_scores),
+            "rows": len(scored_rows),
+            "events": len(event_scores),
+        },
         "log_loss_clipping": "probabilities clipped to [0.01, 0.99] before natural-log scoring",
         "crossing_price_calibration_clustered_by_event": calibration,
         "performance_by_time_to_cutoff": {

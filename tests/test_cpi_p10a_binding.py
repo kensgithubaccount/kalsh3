@@ -187,3 +187,25 @@ def test_report_requires_predictor_acquisition() -> None:
     report = build_binding(ROOT)
     assert report["modelability"] == "PARTIAL_PREDICTOR_EVIDENCE_REQUIRED"
     assert report["predictor_inventory"]["missing"]
+
+
+def test_report_binds_p9b_without_inventing_fee_economics() -> None:
+    report = build_binding(ROOT)
+    assert report["truth_overlap_events"] == 46
+    assert report["rule_predicate_exclusions"] == {
+        "rows": 22,
+        "events": 7,
+        "fully_excluded_events": 4,
+        "by_reason": {
+            "contract predicate is absent or ambiguous": 21,
+            "predicate/reference month mismatch": 1,
+        },
+    }
+    fees = report["p9b_fee_authority"]
+    assert fees["all_p9a_events"]["exact"] == 0
+    assert fees["all_p9a_events"]["interval_unproven_between_matching_endpoints"] == 31
+    assert fees["all_p9a_events"]["locator_only"] == 14
+    assert fees["all_p9a_events"]["unknown"] == 15
+    assert fees["bound_rows"]["exact"] == 0
+    assert fees["economics_usable"] is False
+    assert fees["after_cost_backtest"] is False
