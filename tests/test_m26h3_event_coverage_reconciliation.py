@@ -142,6 +142,48 @@ def test_partial_recovery_never_reports_complete(tmp_path: Path) -> None:
     assert receipt.missing_event_tickers == ("E2",)
 
 
+def test_exactly_the_bound_completes_reconciliation_with_all_requests_made(
+    tmp_path: Path,
+) -> None:
+    """M27B.3 event-reconciliation capacity repair: exactly MAX_EVENT_RECONCILIATION_REQUESTS
+    missing parents must still enter reconciliation (only *exceeding* the bound skips it), and
+    with every exact read valid, reconciliation must complete fully -- proving the repaired
+    bound (200) works end to end, not just that the over-bound rejection still fires."""
+    count = MAX_EVENT_RECONCILIATION_REQUESTS
+    tickers = [f"E{i:04d}" for i in range(count)]
+    markets = [market(f"M{i:04d}", ticker) for i, ticker in enumerate(tickers)]
+    exact = {ticker: {"event": event(ticker)} for ticker in tickers}
+    transport = ReconciliationTransport(markets, [], exact)
+    path = tmp_path / "archive.sqlite"
+    receipt = collect_evidence(path, transport, clock=lambda: NOW)
+    assert receipt.complete
+    assert receipt.reconciliation_status is ReconciliationStatus.COMPLETE
+    assert receipt.reconciliation_requests == count
+    assert receipt.missing_event_tickers == ()
+    # deterministic sorted order, unchanged by the repair: point-read calls occur in ascending
+    # ticker order, exactly matching the sorted initial_missing_event_tickers set.
+    assert receipt.initial_missing_event_tickers == tuple(sorted(tickers))
+    assert transport.calls[2:] == [f"/trade-api/v2/events/{ticker}" for ticker in sorted(tickers)]
+    # production_influence remains exactly '0' for every row this reconciliation path writes.
+    with sqlite3.connect(path) as db:
+        page_influence = {
+            row[0]
+            for row in db.execute(
+                "SELECT DISTINCT production_influence FROM acquisition_pages "
+                "WHERE endpoint LIKE 'events/%'"
+            )
+        }
+        observation_influence = {
+            row[0]
+            for row in db.execute(
+                "SELECT DISTINCT production_influence FROM entity_observations "
+                "WHERE entity_kind='event'"
+            )
+        }
+    assert page_influence == {"0"}
+    assert observation_influence == {"0"}
+
+
 def test_reconciliation_bound_makes_no_point_requests(tmp_path: Path) -> None:
     count = MAX_EVENT_RECONCILIATION_REQUESTS + 1
     transport = ReconciliationTransport([market(f"M{i}", f"E{i}") for i in range(count)], [], {})

@@ -13,7 +13,7 @@ from urllib.parse import urlencode
 import pytest
 
 from services.market_universe import public_read
-from services.market_universe.collect import DEFAULT_MAX_PAGES
+from services.market_universe.collect import DEFAULT_MAX_PAGES, MAX_EVENT_RECONCILIATION_REQUESTS
 from services.market_universe.market_snapshot import FRESHNESS
 from services.market_universe.orderbook_snapshot import acquire_orderbook_snapshot
 from services.opportunity_engine import structural_measurement_runner as runner_module
@@ -515,6 +515,32 @@ def test_incomplete_refresh_fails_closed_without_observation_or_disappearance_wr
         clock=lambda: NOW,
     )
     assert not result.refresh_complete
+    assert result.observations == ()
+    assert store.all_observations() == []
+
+
+def test_bounded_reconciliation_exceeded_fails_closed_without_observation_writes(
+    tmp_path: Path,
+) -> None:
+    """M27B.3 event-reconciliation capacity repair: an incomplete refresh caused specifically by
+    MAX_EVENT_RECONCILIATION_REQUESTS being exceeded (broad Markets/Events acquisition itself
+    fully COMPLETE, zero malformed) must still produce zero structural observations -- the
+    completeness gate upstream of discovery does not distinguish incompleteness causes."""
+    count = MAX_EVENT_RECONCILIATION_REQUESTS + 1
+    markets = [
+        {**semantic_market_fields(f"M{i:04d}", "1"), "event_ticker": f"E{i:04d}"}
+        for i in range(count)
+    ]
+    store = StructuralMeasurementStore(tmp_path / "evidence.sqlite3")
+    result = run_scan_cycle(
+        archive_path=str(tmp_path / "archive.sqlite3"),
+        store=store,
+        source_authority="test",
+        universe_transport=FakeUniverseTransport(markets=markets, events=[]),
+        clock=lambda: NOW,
+    )
+    assert not result.refresh_complete
+    assert result.discovery_leads == 0
     assert result.observations == ()
     assert store.all_observations() == []
 
