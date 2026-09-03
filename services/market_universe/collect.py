@@ -39,7 +39,7 @@ DEFAULT_MAX_PAGES = 250
 ZERO_INFLUENCE = Decimal("0")
 M26H1_SCOPE_POLICY_VERSION = "m26h1-reviewed-public-scope-v1"
 M26H3_SCOPE_POLICY_VERSION = "m26h3-reviewed-public-scope-v2"
-MAX_EVENT_RECONCILIATION_REQUESTS = 100
+MAX_EVENT_RECONCILIATION_REQUESTS = 200
 
 
 @dataclass(frozen=True, slots=True)
