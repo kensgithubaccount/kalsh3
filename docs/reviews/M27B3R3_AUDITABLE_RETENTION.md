@@ -1,6 +1,15 @@
 # M27B.3R3 auditable retention design
 
-Status: ready for independent review; no pilot was started.
+Status: **superseded by `M27B3R4_RETENTION_LEDGER_REPAIR.md`.** An independent review of this
+R3 design found 5 confirmed vulnerabilities: missing primary evidence was silently skipped
+rather than failing closed; `retention-state.json` was trusted without ever reloading or
+validating the receipts it referenced; the symlink/path-redirection guard resolved the path
+before comparing it to its own resolved form, making the check a tautology that never raised;
+the smoke projection used only the latest scan's delta, so a small scan following a large one
+could erase the large scan's evidence from the projection; and the free-space check compared
+current free space to the floor alone, ignoring the ledger's own known per-scan growth trend.
+No pilot was ever started against this design -- see the R4 doc for the fail-closed repair and
+what is actually true of the current code.
 
 ## Bound
 
@@ -21,9 +30,11 @@ The approved hard bound is 24 GiB for 96 scans (15-minute cadence), with an 8 Gi
 floor. Before each scan, the ledger checks the floor and prior projection. The first bounded smoke
 sample measures the actual compressed growth of the active evidence files and projects that growth
 across the configured scan count. A projection over 24 GiB raises `RetentionGateError` before the
-next acquisition. Missing/corrupt state, missing active evidence, or an unavailable receipt also
-fails closed. The bound is deliberately below the approximately 44 GiB available capacity,
-leaving approximately 20 GiB of capacity margin at the approved limit.
+next acquisition. **As shipped in this R3 revision, missing active evidence was silently skipped
+(not failed closed) and `retention-state.json` was never reloaded or validated against its
+receipts on reopen — both were confirmed vulnerabilities. See `M27B3R4_RETENTION_LEDGER_REPAIR.md`
+for the fail-closed fix.** The bound is deliberately below the approximately 44 GiB available
+capacity, leaving approximately 20 GiB of capacity margin at the approved limit.
 
 ## Safety and reconstruction boundaries
 

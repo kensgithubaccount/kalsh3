@@ -20,6 +20,10 @@ def _write(path: Path, size: int) -> None:
 def test_smoke_projection_fails_closed(tmp_path: Path) -> None:
     archive = tmp_path / "universe.sqlite"
     evidence = tmp_path / "observations.sqlite"
+    # Primary evidence must already exist at preflight (gap A); the scan then grows it, which is
+    # what the smoke projection is measuring and bounding.
+    _write(archive, 1)
+    _write(evidence, 1)
     ledger = AuditableRetentionLedger(
         tmp_path / "retention",
         RetentionPolicy(budget_bytes=200, free_space_floor_bytes=1, expected_scans=4),

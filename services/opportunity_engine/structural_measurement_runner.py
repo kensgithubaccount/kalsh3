@@ -610,12 +610,20 @@ def run_forever(
     while max_iterations is None or iterations < max_iterations:
         if retention is not None:
             retention.check_before_scan((Path(archive_path), Path(store.path)))
-        result = run_scan_cycle(
-            archive_path=archive_path,
-            store=store,
-            source_authority=source_authority,
-            **cycle_kwargs,
-        )
+        try:
+            result = run_scan_cycle(
+                archive_path=archive_path,
+                store=store,
+                source_authority=source_authority,
+                **cycle_kwargs,
+            )
+        except BaseException:
+            # A crash or error mid-scan must release the retention lease deterministically so a
+            # subsequent scan (this process or another) is not blocked forever by a reservation
+            # that will never be completed.
+            if retention is not None:
+                retention.abort_scan()
+            raise
         if retention is not None:
             retention.record_scan(
                 scan_run_id=result.scan_run_id,
