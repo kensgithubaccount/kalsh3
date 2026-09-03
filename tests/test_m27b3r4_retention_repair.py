@@ -66,6 +66,19 @@ def _receipt_path(ledger: AuditableRetentionLedger, receipt: dict) -> Path:
     return ledger.receipts / f"{receipt['receipt_id']}.json"
 
 
+def _rekey_receipt(
+    ledger: AuditableRetentionLedger, state: dict, receipt: dict, prior_path: Path
+) -> None:
+    """Publish a deliberately forged but internally content-addressed receipt for a test."""
+    material = {key: value for key, value in receipt.items() if key != "receipt_id"}
+    receipt_id = retention_module._canonical_hash(material)
+    receipt["receipt_id"] = receipt_id
+    prior_path.unlink()
+    (ledger.receipts / f"{receipt_id}.json").write_text(json.dumps(receipt))
+    state["scans"][-1]["receipt_id"] = receipt_id
+    _save_state(ledger, state)
+
+
 # -- A: required evidence files -----------------------------------------------------------
 
 
@@ -199,6 +212,49 @@ class TestReceiptAndStateChain:
         ledger2.check_before_scan((archive, evidence))  # must not raise
         ledger2.abort_scan()
 
+    @pytest.mark.parametrize("field", ["growth_high_water_bytes", "projected_bytes"])
+    def test_forged_state_summary_fails_closed(self, tmp_path: Path, field: str) -> None:
+        archive = tmp_path / "universe.sqlite"
+        evidence = tmp_path / "observations.sqlite"
+        _write(archive, 1)
+        _write(evidence, 1)
+        ledger = _new_ledger(tmp_path)
+        ledger.check_before_scan((archive, evidence))
+        _write(archive, 100)
+        _write(evidence, 100)
+        ledger.record_scan(
+            scan_run_id="scan-1", complete=True, paths=(archive, evidence), smoke=True
+        )
+        state = _load_state(ledger)
+        assert state[field] > 0
+        state[field] = 0
+        _save_state(ledger, state)
+        ledger2 = _new_ledger(tmp_path)
+        with pytest.raises(RetentionGateError, match="state summary"):
+            ledger2.check_before_scan((archive, evidence))
+
+    def test_recomputed_receipt_id_cannot_hide_forged_arithmetic(self, tmp_path: Path) -> None:
+        ledger, archive, evidence, receipt = _run_one_scan(tmp_path)
+        state = _load_state(ledger)
+        receipt_path = _receipt_path(ledger, receipt)
+        forged = json.loads(receipt_path.read_text())
+        forged["bytes_this_scan"] += 1
+        _rekey_receipt(ledger, state, forged, receipt_path)
+        ledger2 = _new_ledger(tmp_path)
+        with pytest.raises(RetentionGateError, match="per-scan byte accounting"):
+            ledger2.check_before_scan((archive, evidence))
+
+    def test_receipt_file_sum_must_equal_cumulative_bytes(self, tmp_path: Path) -> None:
+        ledger, archive, evidence, receipt = _run_one_scan(tmp_path)
+        state = _load_state(ledger)
+        receipt_path = _receipt_path(ledger, receipt)
+        forged = json.loads(receipt_path.read_text())
+        forged["files"][0]["bytes"] += 1
+        _rekey_receipt(ledger, state, forged, receipt_path)
+        ledger2 = _new_ledger(tmp_path)
+        with pytest.raises(RetentionGateError, match="file bytes"):
+            ledger2.check_before_scan((archive, evidence))
+
 
 # -- C: path and symlink safety -----------------------------------------------------------
 
@@ -257,6 +313,60 @@ class TestPathAndSymlinkSafety:
         ledger2 = _new_ledger(tmp_path)
         with pytest.raises(RetentionGateError, match="redirection is not permitted"):
             ledger2.check_before_scan((archive, decoy))
+
+    def test_parent_swap_between_validation_and_leaf_open_fails_closed(
+        self, tmp_path: Path, monkeypatch
+    ) -> None:
+        approved = tmp_path / "approved"
+        attacker = tmp_path / "attacker"
+        approved.mkdir()
+        attacker.mkdir()
+        archive = approved / "universe.sqlite"
+        evidence = tmp_path / "observations.sqlite"
+        _write(archive, 10)
+        _write(attacker / archive.name, 10)
+        _write(evidence, 10)
+        ledger = _new_ledger(tmp_path)
+        ledger.check_before_scan((archive, evidence))
+
+        swapped = False
+
+        def swap_parent(path: Path) -> None:
+            nonlocal swapped
+            if path == archive and not swapped:
+                approved.rename(tmp_path / "approved-original")
+                approved.symlink_to(attacker, target_is_directory=True)
+                swapped = True
+
+        monkeypatch.setattr(retention_module, "_after_parent_directory_open_hook", swap_parent)
+        with pytest.raises(RetentionGateError, match="ancestry changed"):
+            ledger.record_scan(
+                scan_run_id="scan-1", complete=True, paths=(archive, evidence), smoke=True
+            )
+
+    def test_in_place_mutation_during_hashing_fails_closed(
+        self, tmp_path: Path, monkeypatch
+    ) -> None:
+        archive = tmp_path / "universe.sqlite"
+        evidence = tmp_path / "observations.sqlite"
+        _write(archive, 4 * 1024 * 1024)
+        _write(evidence, 5)
+        ledger = _new_ledger(tmp_path)
+        ledger.check_before_scan((archive, evidence))
+
+        mutated = False
+
+        def mutate(path: Path) -> None:
+            nonlocal mutated
+            if path == archive and not mutated:
+                path.write_bytes(b"z" * (4 * 1024 * 1024))
+                mutated = True
+
+        monkeypatch.setattr(retention_module, "_after_first_chunk_hook", mutate)
+        with pytest.raises(RetentionGateError, match="in-place mutation"):
+            ledger.record_scan(
+                scan_run_id="scan-1", complete=True, paths=(archive, evidence), smoke=True
+            )
 
 
 # -- D: conservative (high-water) projection ------------------------------------------------
@@ -413,6 +523,34 @@ class TestConcurrencyAndRetries:
                 scan_run_id="scan-1", complete=True, paths=(archive, evidence), smoke=True
             )
 
+    @pytest.mark.parametrize(
+        ("complete", "smoke"),
+        [(False, True), (True, False)],
+    )
+    def test_duplicate_scan_run_id_with_changed_metadata_rejected(
+        self, tmp_path: Path, complete: bool, smoke: bool
+    ) -> None:
+        ledger, archive, evidence, _ = _run_one_scan(tmp_path)
+        ledger.check_before_scan((archive, evidence))
+        with pytest.raises(RetentionGateError, match="different evidence"):
+            ledger.record_scan(
+                scan_run_id="scan-1",
+                complete=complete,
+                paths=(archive, evidence),
+                smoke=smoke,
+            )
+
+    def test_smoke_must_be_an_exact_boolean(self, tmp_path: Path) -> None:
+        ledger, archive, evidence, _ = _run_one_scan(tmp_path)
+        ledger.check_before_scan((archive, evidence))
+        with pytest.raises(RetentionGateError, match="smoke must be a boolean"):
+            ledger.record_scan(
+                scan_run_id="scan-2",
+                complete=True,
+                paths=(archive, evidence),
+                smoke="yes",  # type: ignore[arg-type]
+            )
+
     def test_crash_before_receipt_publication_leaves_no_trace(
         self, tmp_path: Path, monkeypatch
     ) -> None:
@@ -481,6 +619,18 @@ class TestConcurrencyAndRetries:
 
 
 class TestStrictNumericAndPolicyValidation:
+    @pytest.mark.parametrize("value", [True, 1.5, "10", 0, -1])
+    @pytest.mark.parametrize("field", ["budget_bytes", "free_space_floor_bytes", "expected_scans"])
+    def test_policy_requires_exact_positive_integers(self, field: str, value: object) -> None:
+        values: dict[str, object] = {
+            "budget_bytes": 100,
+            "free_space_floor_bytes": 1,
+            "expected_scans": 2,
+        }
+        values[field] = value
+        with pytest.raises(ValueError, match="positive integer"):
+            RetentionPolicy(**values)  # type: ignore[arg-type]
+
     @pytest.mark.parametrize(
         "field,value",
         [

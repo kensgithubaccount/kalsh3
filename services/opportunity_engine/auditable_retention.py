@@ -7,12 +7,10 @@ M27B.3R4 repairs every confirmed M27B.3R3 vulnerability:
 
 * every configured primary evidence file must exist and be a regular file at preflight and at
   receipt creation -- a missing primary raises :class:`RetentionGateError`, it is never skipped;
-* every reopen and every scan reloads and fully validates the receipt chain referenced by state
-  (schema, recomputed receipt_id, state<->receipt linkage, monotonic cumulative accounting,
-  orphan-receipt detection) instead of trusting ``retention-state.json`` blindly;
-* path safety rejects symlinked ancestry and the final path component (``O_NOFOLLOW``), hashes
-  through a held file descriptor so a path swap mid-hash cannot substitute content, and re-verifies
-  device/inode identity after the read completes;
+* every reopen and every scan reloads and fully validates the receipt chain referenced by state,
+  reconstructing file totals, deltas, high-water projections, and the top-level state summary;
+* path safety opens each parent and leaf by descriptor-relative ``O_NOFOLLOW`` traversal, hashes
+  through the held file descriptor, and re-verifies ancestry, identity, and mutation metadata;
 * the smoke projection uses a persisted growth high-water mark -- ``max`` over every observed
   nonnegative scan delta -- so a later small scan can never erase evidence of an earlier large one;
 * free-space reservation blocks a scan when free space *minus the known per-scan growth trend*
@@ -39,8 +37,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Final
 
-SCHEMA_VERSION = "kalsh3.m27b3r4.retention-receipt.v1"
-STATE_SCHEMA_VERSION = "kalsh3.m27b3r4.retention-state.v1"
+SCHEMA_VERSION = "kalsh3.m27b3r4_1.retention-receipt.v1"
+STATE_SCHEMA_VERSION = "kalsh3.m27b3r4_1.retention-state.v1"
 DEFAULT_BUDGET_GIB = 24
 DEFAULT_FREE_SPACE_FLOOR_GIB = 8
 DEFAULT_EXPECTED_SCANS = 96
@@ -96,6 +94,14 @@ def _after_first_chunk_hook(path: Path) -> None:  # pragma: no cover - test seam
 
     Tests monkeypatch this to simulate a concurrent path swap while a file is being hashed
     through an already-open file descriptor.
+    """
+
+
+def _after_parent_directory_open_hook(path: Path) -> None:  # pragma: no cover - test seam
+    """No-op hook after secure parent traversal and before the leaf open.
+
+    Tests replace the pathname's parent at this boundary.  The final open must continue through
+    the already-open directory descriptor and the post-read ancestry check must reject the swap.
     """
 
 
@@ -170,111 +176,207 @@ def _atomic_json(path: Path, payload: dict[str, Any]) -> None:
         raise
 
 
-def _reject_symlink_ancestry(path: Path) -> None:
-    """Reject any existing ancestor directory component that is itself a symlink.
+def _absolute_path(path: Path) -> Path:
+    """Return a lexical absolute path without following any filesystem symlink."""
+    return Path(os.path.abspath(os.fspath(path)))
 
-    ``path`` itself is intentionally not checked here -- the final component is rejected by
-    opening with ``O_NOFOLLOW`` instead, which is race-free against a last-instant swap in a way a
-    separate ``is_symlink()`` check on the leaf could never be.
+
+@dataclass(slots=True)
+class _SecureEvidenceHandle:
+    """A leaf and its parent opened without pathname-following authority."""
+
+    path: Path
+    fd: int
+    parent_fd: int
+    ancestor_identities: tuple[tuple[str, int, int], ...]
+
+    def close(self) -> None:
+        os.close(self.fd)
+        os.close(self.parent_fd)
+
+
+def _directory_flags() -> int:
+    return os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW
+
+
+def _open_parent_chain(path: Path) -> tuple[int, tuple[tuple[str, int, int], ...]]:
+    """Open every parent component relative to a held descriptor.
+
+    A pathname-level ``lstat`` followed by ``open`` has a race: an already-checked parent can be
+    replaced by a symlink between the two calls.  Descriptor-relative traversal makes each next
+    component relative to the directory object already opened, never to a re-resolved pathname.
     """
-    absolute = path if path.is_absolute() else path.absolute()
-    for ancestor in absolute.parents:
-        if ancestor.is_symlink():
-            raise RetentionGateError(f"evidence path ancestry contains a symlink: {ancestor}")
+    absolute = _absolute_path(path)
+    current_fd = os.open(os.sep, os.O_RDONLY | os.O_DIRECTORY)
+    identities: list[tuple[str, int, int]] = []
+    try:
+        for component in absolute.parent.parts[1:]:
+            next_fd = os.open(component, _directory_flags(), dir_fd=current_fd)
+            info = os.fstat(next_fd)
+            if not stat.S_ISDIR(info.st_mode):
+                os.close(next_fd)
+                raise OSError(f"path component is not a directory: {component}")
+            identities.append((component, info.st_dev, info.st_ino))
+            os.close(current_fd)
+            current_fd = next_fd
+        return current_fd, tuple(identities)
+    except BaseException:
+        os.close(current_fd)
+        raise
 
 
-def _open_nofollow(path: Path) -> int:
-    _reject_symlink_ancestry(path)
-    return os.open(path, os.O_RDONLY | os.O_NOFOLLOW)
+def _verify_parent_chain(path: Path, expected: tuple[tuple[str, int, int], ...]) -> None:
+    verification_fd: int | None = None
+    try:
+        verification_fd, observed = _open_parent_chain(path)
+        if observed != expected:
+            raise RetentionGateError(
+                f"evidence path ancestry changed during access (possible redirection): {path}"
+            )
+    except OSError as exc:
+        raise RetentionGateError(
+            f"evidence path ancestry changed during access (possible symlink redirection): {path}"
+        ) from exc
+    finally:
+        if verification_fd is not None:
+            os.close(verification_fd)
+
+
+def _secure_open(path: Path) -> _SecureEvidenceHandle:
+    absolute = _absolute_path(path)
+    parent_fd, identities = _open_parent_chain(absolute)
+    try:
+        _after_parent_directory_open_hook(absolute)
+        fd = os.open(absolute.name, os.O_RDONLY | os.O_NOFOLLOW, dir_fd=parent_fd)
+    except BaseException:
+        os.close(parent_fd)
+        raise
+    return _SecureEvidenceHandle(absolute, fd, parent_fd, identities)
+
+
+def _stable_file_metadata(info: os.stat_result) -> tuple[int, int, int, int, int]:
+    return (info.st_dev, info.st_ino, info.st_size, info.st_mtime_ns, info.st_ctime_ns)
+
+
+def _verify_secure_handle(
+    handle: _SecureEvidenceHandle, opened_stat: os.stat_result
+) -> os.stat_result:
+    post_stat = os.fstat(handle.fd)
+    try:
+        entry_stat = os.stat(handle.path.name, dir_fd=handle.parent_fd, follow_symlinks=False)
+    except OSError as exc:
+        raise RetentionGateError(f"evidence file disappeared during access: {handle.path}") from exc
+    if stat.S_ISLNK(entry_stat.st_mode) or (
+        entry_stat.st_dev,
+        entry_stat.st_ino,
+    ) != (opened_stat.st_dev, opened_stat.st_ino):
+        raise RetentionGateError(
+            f"evidence file identity changed during hashing (possible swap): {handle.path}"
+        )
+    if _stable_file_metadata(post_stat) != _stable_file_metadata(opened_stat):
+        raise RetentionGateError(
+            f"evidence file changed during access (possible in-place mutation): {handle.path}"
+        )
+    _verify_parent_chain(handle.path, handle.ancestor_identities)
+    return post_stat
 
 
 def _primary_stat(path: Path) -> os.stat_result:
     """Verify a required primary evidence file exists, is stable, and is a regular file."""
     try:
-        fd = _open_nofollow(path)
+        handle = _secure_open(path)
     except OSError as exc:
         raise RetentionGateError(
-            f"required primary evidence file is missing or unstable: {path}"
+            f"required primary evidence file is missing or unstable (symlink rejected): {path}"
         ) from exc
     try:
-        info = os.fstat(fd)
+        info = os.fstat(handle.fd)
+        if not stat.S_ISREG(info.st_mode):
+            raise RetentionGateError(
+                f"required primary evidence path is not a regular file: {path}"
+            )
+        return _verify_secure_handle(handle, info)
     finally:
-        os.close(fd)
-    if not stat.S_ISREG(info.st_mode):
-        raise RetentionGateError(f"required primary evidence path is not a regular file: {path}")
-    return info
+        handle.close()
 
 
 def _sidecar_stat(path: Path) -> os.stat_result | None:
     """Optional sidecar: absence is fine, but presence must still be a stable regular file."""
     try:
-        fd = _open_nofollow(path)
+        handle = _secure_open(path)
     except FileNotFoundError:
         return None
     except OSError as exc:
-        raise RetentionGateError(f"optional sidecar evidence path is unstable: {path}") from exc
+        raise RetentionGateError(
+            f"optional sidecar evidence path is unstable (symlink rejected): {path}"
+        ) from exc
     try:
-        info = os.fstat(fd)
+        info = os.fstat(handle.fd)
+        if not stat.S_ISREG(info.st_mode):
+            raise RetentionGateError(
+                f"optional sidecar evidence path is not a regular file: {path}"
+            )
+        return _verify_secure_handle(handle, info)
     finally:
-        os.close(fd)
-    if not stat.S_ISREG(info.st_mode):
-        raise RetentionGateError(f"optional sidecar evidence path is not a regular file: {path}")
-    return info
+        handle.close()
 
 
-def _hash_open_fd(path: Path, fd: int, opened_stat: os.stat_result) -> tuple[str, int]:
+def _hash_open_handle(
+    handle: _SecureEvidenceHandle, opened_stat: os.stat_result
+) -> tuple[str, int]:
     digest = hashlib.sha256()
     size = 0
     first_chunk = True
-    with os.fdopen(fd, "rb") as stream:
-        while True:
-            chunk = stream.read(_CHUNK_BYTES)
-            if not chunk:
-                break
-            digest.update(chunk)
-            size += len(chunk)
-            if first_chunk:
-                first_chunk = False
-                _after_first_chunk_hook(path)
-    try:
-        post_stat = os.stat(path, follow_symlinks=False)
-    except OSError as exc:
-        raise RetentionGateError(f"evidence file disappeared during hashing: {path}") from exc
-    if stat.S_ISLNK(post_stat.st_mode):
-        raise RetentionGateError(f"evidence path became a symlink during hashing: {path}")
-    if (post_stat.st_dev, post_stat.st_ino) != (opened_stat.st_dev, opened_stat.st_ino):
-        raise RetentionGateError(
-            f"evidence file identity changed during hashing (possible swap): {path}"
-        )
+    os.lseek(handle.fd, 0, os.SEEK_SET)
+    while True:
+        chunk = os.read(handle.fd, _CHUNK_BYTES)
+        if not chunk:
+            break
+        digest.update(chunk)
+        size += len(chunk)
+        if first_chunk:
+            first_chunk = False
+            _after_first_chunk_hook(handle.path)
+    _verify_secure_handle(handle, opened_stat)
     return digest.hexdigest(), size
 
 
 def _hash_primary(path: Path) -> tuple[str, int]:
     try:
-        fd = _open_nofollow(path)
+        handle = _secure_open(path)
     except OSError as exc:
         raise RetentionGateError(
-            f"required primary evidence file is missing or unstable: {path}"
+            f"required primary evidence file is missing or unstable (symlink rejected): {path}"
         ) from exc
-    opened_stat = os.fstat(fd)
-    if not stat.S_ISREG(opened_stat.st_mode):
-        os.close(fd)
-        raise RetentionGateError(f"required primary evidence path is not a regular file: {path}")
-    return _hash_open_fd(path, fd, opened_stat)
+    try:
+        opened_stat = os.fstat(handle.fd)
+        if not stat.S_ISREG(opened_stat.st_mode):
+            raise RetentionGateError(
+                f"required primary evidence path is not a regular file: {path}"
+            )
+        return _hash_open_handle(handle, opened_stat)
+    finally:
+        handle.close()
 
 
 def _hash_sidecar(path: Path) -> tuple[str, int] | None:
     try:
-        fd = _open_nofollow(path)
+        handle = _secure_open(path)
     except FileNotFoundError:
         return None
     except OSError as exc:
-        raise RetentionGateError(f"optional sidecar evidence path is unstable: {path}") from exc
-    opened_stat = os.fstat(fd)
-    if not stat.S_ISREG(opened_stat.st_mode):
-        os.close(fd)
-        raise RetentionGateError(f"optional sidecar evidence path is not a regular file: {path}")
-    return _hash_open_fd(path, fd, opened_stat)
+        raise RetentionGateError(
+            f"optional sidecar evidence path is unstable (symlink rejected): {path}"
+        ) from exc
+    try:
+        opened_stat = os.fstat(handle.fd)
+        if not stat.S_ISREG(opened_stat.st_mode):
+            raise RetentionGateError(
+                f"optional sidecar evidence path is not a regular file: {path}"
+            )
+        return _hash_open_handle(handle, opened_stat)
+    finally:
+        handle.close()
 
 
 def _sidecar_paths(primary: Path) -> tuple[Path, ...]:
@@ -282,7 +384,7 @@ def _sidecar_paths(primary: Path) -> tuple[Path, ...]:
 
 
 def _canonical_evidence_paths(primaries: tuple[Path, ...]) -> list[str]:
-    return [str(p if p.is_absolute() else p.absolute()) for p in primaries]
+    return [str(_absolute_path(p)) for p in primaries]
 
 
 @dataclass(frozen=True, slots=True)
@@ -292,8 +394,13 @@ class RetentionPolicy:
     expected_scans: int = DEFAULT_EXPECTED_SCANS
 
     def __post_init__(self) -> None:
-        if self.budget_bytes <= 0 or self.free_space_floor_bytes <= 0 or self.expected_scans <= 0:
-            raise ValueError("retention policy bounds must be positive")
+        for name, value in (
+            ("budget_bytes", self.budget_bytes),
+            ("free_space_floor_bytes", self.free_space_floor_bytes),
+            ("expected_scans", self.expected_scans),
+        ):
+            if type(value) is not int or value <= 0:
+                raise ValueError(f"retention policy {name} must be a positive integer")
 
     def as_dict(self) -> dict[str, int]:
         return {
@@ -424,6 +531,40 @@ class AuditableRetentionLedger:
         receipt = self._read_receipt_file(receipt_id)
         return self._validate_receipt(receipt, receipt_id=receipt_id)
 
+    @staticmethod
+    def _validate_receipt_files(receipt: dict[str, Any], evidence_paths: list[str]) -> None:
+        """Bind receipt byte accounting to the exact pinned primary/sidecar path set."""
+        seen_paths: set[str] = set()
+        primary_paths: list[str] = []
+        allowed_sidecars = {
+            str(_absolute_path(Path(primary).with_name(Path(primary).name + suffix)))
+            for primary in evidence_paths
+            for suffix in _SIDECAR_SUFFIXES
+        }
+        byte_total = 0
+        for entry in receipt["files"]:
+            path = entry["path"]
+            if path in seen_paths:
+                raise RetentionGateError("retention receipt contains a duplicate evidence path")
+            seen_paths.add(path)
+            if path != str(_absolute_path(Path(path))):
+                raise RetentionGateError("retention receipt evidence path is not canonical")
+            if entry["role"] == "primary":
+                primary_paths.append(path)
+            elif path not in allowed_sidecars:
+                raise RetentionGateError(
+                    "retention receipt sidecar is not bound to a pinned primary path"
+                )
+            byte_total += entry["bytes"]
+        if primary_paths != evidence_paths:
+            raise RetentionGateError(
+                "retention receipt primary files do not match pinned evidence paths"
+            )
+        if byte_total != receipt["cumulative_bytes"]:
+            raise RetentionGateError(
+                "retention receipt file bytes do not equal cumulative accounting"
+            )
+
     def _fresh_state(self) -> dict[str, Any]:
         return {
             "schema_version": STATE_SCHEMA_VERSION,
@@ -471,6 +612,10 @@ class AuditableRetentionLedger:
             or len(set(evidence_paths)) != len(evidence_paths)
         ):
             raise RetentionGateError("retention state evidence_paths is malformed")
+        if evidence_paths is not None and any(
+            path != str(_absolute_path(Path(path))) for path in evidence_paths
+        ):
+            raise RetentionGateError("retention state evidence_paths are not canonical")
 
         if state["before_scan_bytes"] is not None:
             _require_nonneg_int(state["before_scan_bytes"], "retention state before_scan_bytes")
@@ -482,11 +627,18 @@ class AuditableRetentionLedger:
         scans = state["scans"]
         if not isinstance(scans, list):
             raise RetentionGateError("retention state scans must be a list")
+        if scans and (evidence_paths is None or state["before_scan_bytes"] is None):
+            raise RetentionGateError(
+                "retention state with scans requires pinned evidence paths and a baseline"
+            )
 
         receipts: dict[str, dict[str, Any]] = {}
         seen_scan_ids: set[str] = set()
         seen_receipt_ids: set[str] = set()
         previous_cumulative = 0
+        derived_prior_cumulative = int(state["before_scan_bytes"] or 0)
+        derived_high_water = 0
+        derived_projection = 0
         for index, entry in enumerate(scans):
             entry = _require_exact_keys(entry, _STATE_SCAN_FIELDS, "retention state scan entry")
             scan_run_id = _require_str(entry["scan_run_id"], "scan entry scan_run_id")
@@ -520,7 +672,44 @@ class AuditableRetentionLedger:
                 raise RetentionGateError(
                     f"retention state entry does not match its receipt: {receipt_id}"
                 )
+            if evidence_paths is None:  # pragma: no cover - guarded before the loop
+                raise RetentionGateError("retention state evidence paths are unavailable")
+            self._validate_receipt_files(receipt, evidence_paths)
+            if cumulative_bytes < derived_prior_cumulative:
+                raise RetentionGateError(
+                    "retention receipt cumulative accounting decreased from its prior baseline"
+                )
+            derived_delta = cumulative_bytes - derived_prior_cumulative
+            if receipt["bytes_this_scan"] != derived_delta:
+                raise RetentionGateError(
+                    "retention receipt per-scan byte accounting is inconsistent"
+                )
+            derived_high_water = max(derived_high_water, derived_delta)
+            if receipt["growth_high_water_bytes"] != derived_high_water:
+                raise RetentionGateError(
+                    "retention receipt growth high-water accounting is inconsistent"
+                )
+            remaining_scans = max(0, self.policy.expected_scans - sample_count)
+            derived_projection = cumulative_bytes + derived_high_water * remaining_scans
+            if receipt["projected_24h_bytes"] != derived_projection:
+                raise RetentionGateError(
+                    "retention receipt projected byte accounting is inconsistent"
+                )
+            derived_prior_cumulative = cumulative_bytes
             receipts[receipt_id] = receipt
+
+        if scans:
+            if (
+                state["growth_high_water_bytes"] != derived_high_water
+                or state["projected_bytes"] != derived_projection
+            ):
+                raise RetentionGateError(
+                    "retention state summary does not match the validated receipt chain"
+                )
+        elif state["growth_high_water_bytes"] != 0 or state["projected_bytes"] != 0:
+            raise RetentionGateError(
+                "retention state without scans cannot contain derived accounting"
+            )
 
         try:
             on_disk = {p.stem for p in self.receipts.glob("*.json")}
@@ -612,6 +801,8 @@ class AuditableRetentionLedger:
             _require_str(scan_run_id, "scan_run_id")
             if type(complete) is not bool:
                 raise RetentionGateError("complete must be a boolean")
+            if type(smoke) is not bool:
+                raise RetentionGateError("smoke must be a boolean")
 
             state, receipts = self._load_and_validate_state()
             primaries = tuple(Path(value) for value in paths)
@@ -628,7 +819,12 @@ class AuditableRetentionLedger:
                 digest, size = _hash_primary(primary)
                 byte_count += size
                 files.append(
-                    {"path": str(primary), "bytes": size, "sha256": digest, "role": "primary"}
+                    {
+                        "path": str(_absolute_path(primary)),
+                        "bytes": size,
+                        "sha256": digest,
+                        "role": "primary",
+                    }
                 )
                 for sidecar in _sidecar_paths(primary):
                     hashed = _hash_sidecar(sidecar)
@@ -637,7 +833,7 @@ class AuditableRetentionLedger:
                         byte_count += size_s
                         files.append(
                             {
-                                "path": str(sidecar),
+                                "path": str(_absolute_path(sidecar)),
                                 "bytes": size_s,
                                 "sha256": digest_s,
                                 "role": "sidecar",
@@ -649,8 +845,11 @@ class AuditableRetentionLedger:
             )
             if existing_entry is not None:
                 existing_receipt = receipts[existing_entry["receipt_id"]]
-                if existing_receipt["cumulative_bytes"] == byte_count and (
-                    existing_receipt["files"] == files
+                if (
+                    existing_receipt["complete"] is complete
+                    and existing_receipt["smoke_sample"] is smoke
+                    and existing_receipt["cumulative_bytes"] == byte_count
+                    and existing_receipt["files"] == files
                 ):
                     return existing_receipt
                 raise RetentionGateError(
@@ -687,7 +886,7 @@ class AuditableRetentionLedger:
                 "expected_scans": self.policy.expected_scans,
                 "growth_high_water_bytes": growth_high_water,
                 "sample_count": sample_count,
-                "smoke_sample": bool(smoke),
+                "smoke_sample": smoke,
                 "files": files,
             }
             receipt_id = _canonical_hash(receipt_without_id)

@@ -1,6 +1,6 @@
 # M27B.3R4 — fail-closed retention ledger repair
 
-Status: ready for independent review; no live smoke or pilot was run by this change.
+Status: R4.1 additive repair ready for independent review; no live smoke or pilot was run.
 
 This is a repair of `services/opportunity_engine/auditable_retention.py` and its integration in
 `services/opportunity_engine/structural_measurement_runner.py`, addressing 5 confirmed
@@ -8,6 +8,32 @@ vulnerabilities found by independent review of the M27B.3R3 design (see
 `M27B3R3_AUDITABLE_RETENTION.md`) plus additional hardening. It adds no authentication,
 credentials, execution, order, capital, signer, or risk authority; `production_influence`
 remains `0` on every receipt, enforced as an exact-integer-zero check, not a truthy check.
+
+## R4.1 independent pre-review findings and repair
+
+An adversarial pre-review of the first R4 head (`69d43738`) found four remaining fail-open paths.
+All four were reproduced before this additive repair:
+
+1. the state file's top-level growth high-water and projection could be lowered independently of
+   the receipt chain and were trusted by the next preflight;
+2. a duplicate `scan_run_id` with unchanged files but changed `complete` or `smoke_sample`
+   metadata was treated as an idempotent retry;
+3. checking parent paths before a separate leaf `open` left a parent-directory symlink-swap race,
+   because `O_NOFOLLOW` protects only the final component; and
+4. `RetentionPolicy` accepted `bool` and floating-point values despite its integer contract.
+
+R4.1 reconstructs every byte delta, high-water value, projection, file-byte total, primary path
+set, and top-level state summary from the ordered receipt chain on every reopen. It rejects any
+arithmetic or path-role inconsistency even when the forged receipt ID is recomputed. Idempotent
+retries now require exact equality of completion and smoke metadata as well as evidence, and the
+public API requires `smoke` to be an exact boolean.
+
+Evidence traversal now opens every parent component relative to an already-held directory file
+descriptor using `O_DIRECTORY | O_NOFOLLOW`, then opens the leaf relative to that pinned parent.
+It re-traverses and compares the parent identity chain after hashing, checks the leaf entry through
+the held parent descriptor, and compares file identity, size, mtime, and ctime before and after the
+read. This closes both parent redirection and in-place mutation during hashing. Policy values must
+now be exact positive `int` instances at construction.
 
 ## What was actually wrong in R3
 
@@ -52,22 +78,17 @@ rejects duplicate `scan_run_id` or `receipt_id` values within state; rejects a d
 `cumulative_bytes` sequence; and lists the receipts directory to detect orphan receipts (files not
 referenced by any state entry, the signature of a crash between receipt and state publication) and
 fails closed on them rather than silently adopting or discarding them. Nothing is ever silently
-reset — every failure mode raises `RetentionGateError`.
+reset — every failure mode raises `RetentionGateError`. R4.1 additionally derives and verifies all
+per-scan arithmetic, file totals, path roles, high-water projections, and state summary values.
 
-**Path and symlink safety (gap C).** The tautological guard is gone. `_reject_symlink_ancestry`
-walks every existing ancestor directory of an evidence path and rejects any that is itself a
-symlink; the final path component is rejected by opening with `os.O_RDONLY | os.O_NOFOLLOW`
-(`ELOOP` on a symlink), which is race-free against a last-instant swap in a way a separate
-`is_symlink()` check on the leaf never is. Hashing (`_hash_open_fd`) reads through the already-open
-file descriptor — a path replaced after the open cannot change what bytes are actually hashed —
-and after the read completes, `os.stat(path, follow_symlinks=False)` is compared against the
-original `fstat` by `(st_dev, st_ino)`; any identity change (a swap, or the path becoming a
-symlink) raises `RetentionGateError("... identity changed during hashing ...")`. The evidence path
-set is also pinned to the paths approved on the first scan (`state["evidence_paths"]`); a later
-call with a redirected path — even a non-symlink substitution — is rejected
-(`"redirection is not permitted"`). Ledger writes (`retention-state.json`, `retention-receipts/`,
-`retention.lock`) are always derived from the ledger's own `root`, never from caller-supplied
-evidence paths, so they cannot be redirected outside the intended retention directory.
+**Path and symlink safety (gap C).** R4.1 replaces pathname check-then-open behavior with secure
+descriptor-relative traversal. Every parent is opened from its held predecessor with
+`O_DIRECTORY | O_NOFOLLOW`; the leaf is opened from the held final parent with `O_NOFOLLOW`.
+After hashing, the parent chain is independently traversed again and compared, the leaf entry is
+checked through the held parent, and the open file's identity and mutation metadata are rechecked.
+The evidence path set remains pinned to the paths approved on the first scan. Ledger writes
+(`retention-state.json`, `retention-receipts/`, `retention.lock`) remain derived from the ledger's
+own root, never from caller-supplied evidence paths.
 
 **Conservative (high-water) projection (gap D).** Each `record_scan` now persists
 `growth_high_water_bytes = max(previous_growth_high_water, observed_delta)` where
@@ -111,14 +132,14 @@ created under; on every reopen this is compared to the ledger's currently config
 any mismatch is rejected as "policy has changed without an explicit reviewed migration" — an
 operator who genuinely wants to change the bound must start a fresh retention directory
 deliberately, not have it silently reinterpreted.
+R4.1 applies the same exact-positive-integer rule to `RetentionPolicy` construction itself.
 
 ## Schema break
 
-`SCHEMA_VERSION` moved to `kalsh3.m27b3r4.retention-receipt.v1` and a new
-`STATE_SCHEMA_VERSION = kalsh3.m27b3r4.retention-state.v1` was introduced. R3 state/receipts are
-therefore incompatible with R4 and will be rejected as "schema is incompatible" on reopen. This is
-intentional and safe: no live smoke or pilot was ever run under R3, so no production retention
-state exists to migrate.
+`SCHEMA_VERSION` is `kalsh3.m27b3r4_1.retention-receipt.v1` and `STATE_SCHEMA_VERSION` is
+`kalsh3.m27b3r4_1.retention-state.v1`. Earlier R3/R4 state is rejected as incompatible. This is
+intentional and safe: no live smoke or pilot was run under either superseded schema, so no retained
+pilot evidence requires migration.
 
 ## Safety and reconstruction boundaries (unchanged from R3, reconfirmed)
 
@@ -140,7 +161,7 @@ state exists to migrate.
 
 `tests/test_m27b3r3_auditable_retention.py` (updated for the gap-A preflight-existence contract —
 evidence must exist before `check_before_scan`, not only before `record_scan`) and
-`tests/test_m27b3r4_retention_repair.py` (46 new adversarial cases across gaps A-G, concurrency,
-compression, and incomplete-refresh accounting) both pass, alongside the unchanged
+`tests/test_m27b3r4_retention_repair.py` (adversarial cases across gaps A-G, R4.1 findings,
+concurrency, compression, and incomplete-refresh accounting) both pass, alongside the unchanged
 `tests/test_structural_measurement_runner.py`. Independent review is required before any live
 smoke or the 24-hour pilot.
