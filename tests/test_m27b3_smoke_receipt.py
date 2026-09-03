@@ -76,6 +76,12 @@ def test_command_is_exact_and_database_paths_are_contained(tmp_path: Path) -> No
         "1",
         "--source-authority",
         receipt.HOST,
+        "--storage-budget-gib",
+        "28",
+        "--free-space-floor-gib",
+        "8",
+        "--expected-scans",
+        "96",
     ]
     escaped = list(command)
     escaped[5] = str(tmp_path / "escape.sqlite")
