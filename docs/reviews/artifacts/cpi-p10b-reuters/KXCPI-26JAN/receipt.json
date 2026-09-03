@@ -1,0 +1,75 @@
+{
+  "event_ticker": "KXCPI-26JAN",
+  "predictor_family": "Reuters survey of economists",
+  "measure": "headline CPI, month-over-month, seasonally adjusted, nonannualized",
+  "reference_month": "2026-01",
+  "value": "0.3",
+  "value_type": "Decimal",
+  "observed_publication_range": {
+    "earliest": "2026-02-13T05:00:01Z",
+    "latest": "2026-02-13T05:12:31Z",
+    "note": "Two independently operated syndication hosts report different exact seconds (TradingView JSON-LD and unix timestamp 1770958801 both give 05:00:01Z; Yahoo gives 05:12:31Z with dateModified identical to datePublished). No third host was recoverable to break the tie (AOL's supplied URL 404'd). This range is preserved explicitly rather than collapsed into a falsely exact instant."
+  },
+  "conservative_admissibility_time": "2026-02-13T05:12:31Z",
+  "decision_cutoff": "2026-02-13T13:29:00Z",
+  "temporal_comparison": "2026-02-13T05:12:31Z < 2026-02-13T13:29:00Z (conservative bound; the earlier 05:00:01Z bound clears the cutoff by an even wider margin)",
+  "minimum_proven_lead_time": "8h16m29s",
+  "vintage_status": "PASS",
+  "receipt_creation_relation_to_fetch": "SAME_RUN",
+  "forecast_vintage_basis": "PUBLISHER_METADATA_AND_REUTERS_SYNDICATION",
+  "provider_organization": "Reuters",
+  "byline": "Reuters (no individual byline given on this piece)",
+  "fetches": [
+    {
+      "host": "reuters.com",
+      "requested_url": "https://www.reuters.com/business/start-of-year-price-increases-seen-lifting-monthly-us-consumer-inflation-january-2026-02-13/",
+      "http_status": 401,
+      "retrieval_timestamp": "2026-09-03T14:48:19Z",
+      "bytes": 771,
+      "raw_response_sha256": "8d9c2dd7b418049290f5d91f5e1de9524dc224be6e75282cdd9b369b4daf3e23",
+      "access_limitation": "DataDome bot-challenge page; primary domain inaccessible."
+    },
+    {
+      "host": "ca.finance.yahoo.com",
+      "requested_url": "https://ca.finance.yahoo.com/news/start-price-increases-seen-lifting-051231695.html",
+      "http_status": 200,
+      "retrieval_timestamp": "2026-09-03T14:48:19Z",
+      "bytes": 523476,
+      "raw_response_sha256": "d038635c42d2903256278b44a2326c6373e1995b5a6421d796d4b248e727ef5f",
+      "raw_hash_note": "Differs from the P10B.4R1 fetch of the same URL (5f2a3fcd...) -- dynamic page, expected.",
+      "datePublished": "2026-02-13T05:12:31Z",
+      "dateModified": "2026-02-13T05:12:31Z"
+    },
+    {
+      "host": "tradingview.com",
+      "requested_url": "https://www.tradingview.com/news/reuters.com%2C2026%3Anewsml_L1N3Z81BY%3A0-start-of-year-price-increases-seen-lifting-monthly-us-consumer-inflation-in-january/",
+      "http_status": 200,
+      "retrieval_timestamp": "2026-09-03T14:48:19Z",
+      "bytes": 184412,
+      "raw_response_sha256": "51b128f96b1f83a8505c6bc94a6f2a7479f588ebdc14016339dfaf72c86c0808",
+      "datePublished": "2026-02-13T05:00:01Z",
+      "datePublished_unix": 1770958801
+    },
+    {
+      "host": "aol.com",
+      "requested_url": "https://www.aol.com/articles/start-price-increases-seen-lifting-050347416.html",
+      "http_status": 404,
+      "retrieval_timestamp": "2026-09-03T14:48:19Z (P10B.4R1 fetch; retested this run, unchanged)",
+      "bytes": 93826,
+      "access_limitation": "Supplied URL does not resolve; not used as evidence. Only two syndication hosts (Yahoo, TradingView) were recoverable for this event, not three."
+    }
+  ],
+  "no_duplicate_provider_counting": "ca.finance.yahoo.com and tradingview.com are two independently operated hosts carrying one Reuters wire item. Counted as a single predictor observation.",
+  "load_bearing_sentence": "The CPI likely increased by 0.3% after a similar gain in December, a Reuters survey of economists predicted. Estimates ranged from a 0.1% gain to a 0.4% rise.",
+  "load_bearing_sentence_sha256_cross_host": "65ff87d17e8e7cfea8e9eb6c2e50ada65f0ae6915eb5c926c682f64b66431faa",
+  "load_bearing_sentence_sha256_reproduced_on_refetch": true,
+  "disambiguation": {
+    "core_mom": "0.3% (separately stated, 'Excluding the volatile food and energy components, the CPI is expected to have increased 0.3% after rising 0.2% in December')",
+    "headline_yoy": "2.5%",
+    "core_yoy": "2.5%",
+    "december_prior_actual_reference": "'a similar gain in December' -- consistent with the separately verified KXCPI-25DEC headline MoM of 0.3%"
+  },
+  "retrospective_language_found": false,
+  "post_release_alteration_check": "dateModified equals datePublished on the Yahoo copy; no unresolved load-bearing alteration on either host.",
+  "artifact_access_limitations": "Complete raw HTML retained only in this session's local scratchpad; see manifest.json 'durable_raw_store' field. Only two independent syndication hosts recoverable for this event (AOL URL 404s), one fewer than KXCPI-25DEC's three."
+}

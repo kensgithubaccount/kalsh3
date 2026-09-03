@@ -1,0 +1,86 @@
+{
+  "event_ticker": "KXCPI-25DEC",
+  "predictor_family": "Reuters survey of economists",
+  "measure": "headline CPI, month-over-month, seasonally adjusted, nonannualized",
+  "reference_month": "2025-12",
+  "value": "0.3",
+  "value_type": "Decimal",
+  "governing_published_at": "2026-01-13T05:03:53Z",
+  "decision_cutoff": "2026-01-13T13:29:00Z",
+  "temporal_comparison": "2026-01-13T05:03:53Z < 2026-01-13T13:29:00Z",
+  "lead_time": "8h25m07s",
+  "vintage_status": "PASS",
+  "receipt_creation_relation_to_fetch": "SAME_RUN",
+  "forecast_vintage_basis": "PUBLISHER_METADATA_AND_REUTERS_SYNDICATION",
+  "provider_organization": "Reuters",
+  "byline": "Reuters (no individual byline given on this piece)",
+  "fetches": [
+    {
+      "host": "reuters.com",
+      "requested_url": "https://www.reuters.com/world/us/us-consumer-prices-likely-snapped-back-after-being-restrained-by-government-2026-01-13/",
+      "http_status": 401,
+      "retrieval_timestamp": "2026-09-03T14:48:18Z",
+      "bytes": 771,
+      "raw_response_sha256": "9fcb3998ee327749740f8e9e24b522782b93f96bd99872218112595e46874a97",
+      "access_limitation": "DataDome bot-challenge page; primary domain inaccessible."
+    },
+    {
+      "host": "ca.finance.yahoo.com",
+      "requested_url": "https://ca.finance.yahoo.com/news/us-consumer-prices-likely-snapped-050353571.html",
+      "http_status": 200,
+      "retrieval_timestamp": "2026-09-03T14:48:18Z",
+      "bytes": 443091,
+      "raw_response_sha256": "ebf4a7dd95eeafee67e58a11a5d67178ce0c1259dc6bbdc7f47b250160891afc",
+      "raw_hash_note": "Differs from the P10B.4R1 fetch of the same URL (8f78c4de...) -- dynamic page, expected. datePublished/dateModified and load-bearing text reproduced exactly (see below).",
+      "datePublished": "2026-01-13T05:03:53Z",
+      "dateModified": "2026-01-13T05:03:53Z"
+    },
+    {
+      "host": "wmbdradio.com",
+      "requested_url": "https://wmbdradio.com/2026/01/12/us-consumer-prices-likely-snapped-back-after-being-restrained-by-government-shutdown-distortions/",
+      "http_status": 200,
+      "retrieval_timestamp": "2026-09-03T14:48:18Z",
+      "bytes": 110229,
+      "raw_response_sha256": "90b13db00ea6c676011ea32c859140c41255295b50506867319121e1a7c2a5cd",
+      "raw_hash_note": "Byte-identical to the P10B.4R1 fetch of the same URL -- this host's page rendering is stable/static, unlike Yahoo and TradingView.",
+      "datePublished": "2026-01-13T05:03:53+00:00",
+      "dateModified": "2026-01-13T10:25:30+00:00"
+    },
+    {
+      "host": "tradingview.com",
+      "requested_url": "https://www.tradingview.com/news/reuters.com%2C2026%3Anewsml_L1N3YD0RM%3A0-us-consumer-prices-likely-snapped-back-after-being-restrained-by-government-shutdown-distortions/",
+      "http_status": 200,
+      "retrieval_timestamp": "2026-09-03T14:48:18Z",
+      "bytes": 184444,
+      "raw_response_sha256": "754053c7c48e16852660dcb52a0f577189bf6f0eadc59db1e1f3770367394fff",
+      "datePublished": "2026-01-13T05:00:01+00:00",
+      "datePublished_unix": 1768280401,
+      "role": "separate_ingestion_display_timestamp_preserved_not_governing"
+    }
+  ],
+  "timestamp_range_handling": {
+    "yahoo_and_wmbd_agree_exact_second": "2026-01-13T05:03:53Z",
+    "tradingview_separate_timestamp": "2026-01-13T05:00:01Z",
+    "governing_value_used": "2026-01-13T05:03:53Z",
+    "rationale": "Two independently operated hosts (Yahoo, a distinct company, and WMBD, an unrelated Peoria IL radio station) agree to the exact second; TradingView's value is preserved as a distinct, disclosed field rather than discarded or silently reconciled, consistent with the instruction to preserve TradingView's separate ingestion/display timestamp."
+  },
+  "no_duplicate_provider_counting": "ca.finance.yahoo.com, wmbdradio.com and tradingview.com are three independently operated hosts carrying one Reuters wire item. Counted as a single predictor observation.",
+  "load_bearing_sentence": "The CPI likely increased by 0.3% last month amid higher food and energy prices, mostly electricity because of data centers, a Reuters survey of economists predicted.",
+  "load_bearing_sentence_sha256_cross_host": "4d137d835ccd2aa868eec775c8ddd30d7c1edf41cbb01bc39708c5fae0962ad2",
+  "load_bearing_sentence_sha256_reproduced_on_refetch": true,
+  "disambiguation": {
+    "core_mom": "0.3% (separately stated, 'Excluding the volatile food and energy components, the CPI is forecast to have increased 0.3% in December')",
+    "headline_yoy": "2.7%",
+    "core_yoy": "2.7%"
+  },
+  "modification_assessment": {
+    "modification_found": true,
+    "location": "wmbdradio.com dateModified (2026-01-13T10:25:30Z) is 5h22m after datePublished (05:03:53Z)",
+    "content_impact": "None on the load-bearing forecast text -- byte-identical across all three hosts including the modified WMBD copy (see load_bearing_sentence_sha256_cross_host, reproduced identically on this fresh fetch too)",
+    "timing_impact": "Modification occurred at 10:25:30Z, ~3h before the actual BLS release (13:30Z) and before the Kalshi cutoff (13:29Z); cannot represent a post-release actual-result edit",
+    "disposition": "not_disqualifying"
+  },
+  "shutdown_methodology_caveat_preserved": "The BLS estimated the CPI rose 0.2% from September to November. The carry-forward imputation method treated October prices as unchanged. -- disclosed as downstream shutdown-imputation context, not treated as disqualifying, consistent with the methodology_tag pattern established for KXCPI-26JAN's Cleveland observation.",
+  "retrospective_language_found": false,
+  "artifact_access_limitations": "Complete raw HTML retained only in this session's local scratchpad; see manifest.json 'durable_raw_store' field."
+}

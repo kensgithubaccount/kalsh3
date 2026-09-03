@@ -1,0 +1,39 @@
+{
+  "schema_version": "1.0.0",
+  "title": "CPI-E1-P10B Reuters consensus vintage authority -- durable evidence handoff",
+  "research_only": true,
+  "production_influence": "none",
+  "scope_boundary": [
+    "No model fit or scored.",
+    "No market-relative edge, PnL or profitability calculated.",
+    "No additional CPI events acquired beyond the 5-event sample already reviewed.",
+    "No current or post-release value substituted for a historical forecast.",
+    "Does not represent full 42-event P10A coverage.",
+    "Does not modify P8/P9A/P9B/P10A frozen evidence.",
+    "Does not modify PR #119 or its branch."
+  ],
+  "committed_artifacts": [
+    {"path": "docs/reviews/artifacts/cpi-p10b-reuters/coverage.json", "sha256": "58f91e2974a1e133a15752d3102c65ffe6eadbf38a22b6a51ad32a5b57391d89"},
+    {"path": "docs/reviews/artifacts/cpi-p10b-reuters/KXCPI-25JUL/receipt.json", "sha256": "3a0c265dac5ffa61aadd76838a62c9948d4beb64ff4db131f3d407cd48bb69fc"},
+    {"path": "docs/reviews/artifacts/cpi-p10b-reuters/KXCPI-25JUL/extract.json", "sha256": "5af3b8ae712c52eca9b39b0a68ccb5cef8f0613c0383aebb2c0b61e32aabf3aa"},
+    {"path": "docs/reviews/artifacts/cpi-p10b-reuters/KXCPI-25DEC/receipt.json", "sha256": "0d49e5e46dc0c2c4269147ebd76de8cde7025517b325dbaa8f3deb4541e022fa"},
+    {"path": "docs/reviews/artifacts/cpi-p10b-reuters/KXCPI-25DEC/extract.json", "sha256": "3bf42c835e7157dc6fe5cb165c2c800b00cfad6f267114ee0b54886512b4a533"},
+    {"path": "docs/reviews/artifacts/cpi-p10b-reuters/KXCPI-26JAN/receipt.json", "sha256": "95648c04529fa46095649d6f95c1191fc8884db23cb7616f9caff8df5a0a61b9"},
+    {"path": "docs/reviews/artifacts/cpi-p10b-reuters/KXCPI-26JAN/extract.json", "sha256": "92d88bd4ddbde670887fc57422f9d6039cea95260c626cf40d1d7d09288e492e"}
+  ],
+  "durable_raw_store": {
+    "status": "NONE_AVAILABLE",
+    "explanation": "This repository's existing 'evidence store' concept (see docs/PERPS_SHADOW_RESEARCH.md, docs/reviews/M25B7_PRODUCTION_LIVE_ACCEPTANCE.md, docs/reviews/M27B2_CONTINUOUS_STRUCTURAL_MEASUREMENT.md, docs/reviews/M26B_PERSISTED_AGENT_DECISIONS.md) refers to append-only SQLite stores for this system's own production/market evidence, not an external archive for third-party copyrighted content. No such external durable store, blob bucket, or archival service is available to this working environment (no cloud storage credentials, no git-lfs, no gh CLI, no artifact-hosting tool applicable to this use case). Complete raw HTTP responses for the fetches below therefore exist only in this session's local scratchpad and are NOT committed to this repository, in line with the instruction not to redistribute complete copyrighted Reuters wire text without confirmed permission, and not to fall back to /private/tmp as a stand-in for a durable store.",
+    "assessment_of_committed_artifact_sufficiency": "The committed minimal artifacts (metadata, URLs, raw-response byte counts and hashes as fetched, hashed short load-bearing excerpts, normalized target/value fields, timing evidence, provenance, and modification assessment) are assessed as SUFFICIENT for independent verification of the specific claims under review -- publication time, forecast value, Reuters provenance, and pre-cutoff timing -- because: (1) each event's load-bearing sentence hash was independently reproduced across a second, later fetch of the same public URLs during this same task (see each receipt's 'load_bearing_sentence_sha256_reproduced_on_refetch': true), demonstrating the quoted text and metadata are stable, reviewer-reproducible facts, not one-time or fabricated claims; (2) every event is corroborated across 2-3 independently operated syndication hosts, not a single source; (3) an independent reviewer can re-fetch the same public URLs recorded in each receipt's 'fetches' array and re-derive the same load-bearing-sentence hash and datePublished/dateModified metadata themselves. The one property that is explicitly NOT independently reproducible is the raw full-page byte hash, because these are dynamically rendered pages (embedded per-request IDs, CSP nonces, ad-tech state) -- this is disclosed per-fetch as 'raw_hash_note' rather than presented as a verifiable checksum, and reviewers should not attempt to use it as one.",
+    "reviewer_verification_path": "Re-fetch the exact URLs listed in each event's receipt.json 'fetches' array; confirm the same load-bearing sentence and datePublished/dateModified metadata are present; independently recompute the load-bearing-sentence SHA-256 and compare against 'load_bearing_sentence_sha256_cross_host'. Do not attempt to match 'raw_response_sha256' values, which are fetch-instance artifacts of dynamic rendering, not content checksums.",
+    "residual_risk": "If all syndication hosts for an event later take down or edit their copies, and reuters.com remains inaccessible, this evidence chain would no longer be independently re-verifiable from live sources -- only the hashes and short excerpts already committed here would remain. This residual risk is disclosed, not hidden."
+  },
+  "reacquisition_note": "Because the prior P10B.3/P10B.4/P10B.4R1 evidence bundle lived only in an ephemeral /private/tmp scratchpad, all three events were reacquired fresh in this same run (retrieval timestamps 2026-09-03T14:47:55Z through 2026-09-03T14:48:19Z) rather than reusing the prior temporary files. Every fetch reproduced the same publication timestamps and load-bearing text as the prior review passes, cross-checked in each receipt.json.",
+  "repository_isolation": {
+    "origin_main_sha_at_task_start": "d8fd8e2d860f6f602564bf60ce7370a0b694d947",
+    "origin_main_tree_at_task_start": "1711ebb9cb10fbb70ed41679038edef3c03827a4",
+    "branch": "cpi-e1-p10b-reuters-authority",
+    "worktree_path": "isolated worktree, not the shared checkout, per standing project convention",
+    "pr_119_status": "untouched by this branch"
+  }
+}
