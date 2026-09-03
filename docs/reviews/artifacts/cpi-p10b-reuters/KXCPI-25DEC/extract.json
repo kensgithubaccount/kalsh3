@@ -1,0 +1,16 @@
+{
+  "event_ticker": "KXCPI-25DEC",
+  "title": "US consumer prices likely snapped back after being restrained by government shutdown distortions",
+  "byline": "Reuters",
+  "provider": {"name": "Reuters", "url": "http://www.reuters.com/"},
+  "datePublished": "2026-01-13T05:03:53Z",
+  "dateModified_by_host": {"yahoo": "2026-01-13T05:03:53Z", "wmbd": "2026-01-13T10:25:30Z"},
+  "reference_month": "2025-12",
+  "load_bearing_forecast_sentence": "The CPI likely increased by 0.3% last month amid higher food and energy prices, mostly electricity because of data centers, a Reuters survey of economists predicted.",
+  "core_forecast_sentence": "Excluding the volatile food and energy components, the CPI is forecast to have increased 0.3% in December.",
+  "yoy_forecast_sentence": "In the 12 months through December, the CPI is forecast to have increased 2.7%, matching November's gain. / The so-called core CPI was predicted to have advanced 2.7% year-on-year in December after gaining 2.6% in November.",
+  "shutdown_context_sentence": "The BLS estimated the CPI rose 0.2% from September to November. The carry-forward imputation method treated October prices as unchanged.",
+  "target_disambiguation": "headline MoM = 0.3% (unqualified 'The CPI'); core MoM = 0.3% (explicitly 'excluding the volatile food and energy components'); headline YoY = 2.7%; core YoY = 2.7%. Headline/core MoM coincide numerically but are stated in separate, distinctly-labeled sentences.",
+  "prospective_tense_markers": ["likely increased", "predicted", "is forecast to have increased"],
+  "retrospective_language_found": false
+}

@@ -1,0 +1,31 @@
+{
+  "schema_version": "1.0.0",
+  "predictor_family": "Reuters survey of economists",
+  "sample": [
+    {"event_ticker": "KXCPI-25JUL", "reference_month": "2025-07", "cutoff": "2025-08-12T12:29:00Z", "reuters_value": "0.2", "vintage_status": "PASS", "role": "anchor"},
+    {"event_ticker": "KXCPI-26JAN", "reference_month": "2026-01", "cutoff": "2026-02-13T13:29:00Z", "reuters_value": "0.3", "vintage_status": "PASS", "role": "newly_tested"},
+    {"event_ticker": "CPI-21SEP", "reference_month": "2021-09", "cutoff": "2021-10-12T23:00:00Z", "reuters_value": null, "vintage_status": "UNKNOWN", "role": "newly_tested"},
+    {"event_ticker": "CPI-23JUN", "reference_month": "2023-06", "cutoff": "2023-07-12T12:25:00Z", "reuters_value": null, "vintage_status": "UNKNOWN", "role": "newly_tested"},
+    {"event_ticker": "KXCPI-25DEC", "reference_month": "2025-12", "cutoff": "2026-01-13T13:29:00Z", "reuters_value": "0.3", "vintage_status": "PASS", "role": "newly_tested"}
+  ],
+  "coverage_arithmetic": {
+    "total_pass": 3,
+    "total_sample": 5,
+    "newly_tested_pass": 2,
+    "newly_tested_total": 4,
+    "gate_threshold": {"min_total_pass": 3, "min_newly_tested_pass": 2},
+    "gate_result": "SATISFIED"
+  },
+  "cpi_21sep_unresolved_reason": "No Reuters-attributed, pre-cutoff wire artifact located after extensive search across two prior review passes (P10B.2, P10B.4); only FXStreet multi-bank roundups and post-release actuals were found.",
+  "cpi_23jun_unresolved_reason": "Best candidate found ('US consumer inflation likely increased at a slow pace in June as gasoline prices retreated') was independently fetched and confirmed to be the wrong year -- a same-template Reuters wire piece for the June 2026 cycle (datePublished 2026-07-14), not June 2023. No correctly-dated Reuters artifact was located.",
+  "cleveland_claims_kept_separate": {
+    "KXCPI-26JAN": {"predictor_family": "Cleveland Fed inflation nowcasting", "value": "0.13", "vintage_status": "PASS", "note": "Distinct claim from this file's Reuters observation for the same event; not conflated."},
+    "KXCPI-25JUL": {"predictor_family": "Cleveland Fed inflation nowcasting", "vintage_status": "UNKNOWN", "note": "Distinct claim from this file's Reuters PASS for the same event; not conflated."}
+  },
+  "not_established": [
+    "full 42-event P10A cohort coverage",
+    "provider-wide archival integrity",
+    "predictive edge, market comparison, PnL or profitability",
+    "any model fit or score"
+  ]
+}

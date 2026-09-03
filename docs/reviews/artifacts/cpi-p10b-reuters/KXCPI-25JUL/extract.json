@@ -1,0 +1,16 @@
+{
+  "event_ticker": "KXCPI-25JUL",
+  "title": "US consumer prices likely increased marginally in July; data quality concerns rising",
+  "byline": "Lucia Mutikani",
+  "dateline": "WASHINGTON (Reuters)",
+  "provider": {"name": "Reuters", "url": "https://www.reuters.com/"},
+  "datePublished": "2025-08-12T04:02:11Z",
+  "dateModified": "2025-08-12T04:02:11Z",
+  "reference_month": "2025-07",
+  "load_bearing_forecast_sentence": "The CPI likely rose 0.2% last month, a Reuters survey of economists showed. The anticipated slowdown from a 0.3% increase in June would reflect a slight decline in gasoline prices, which would partially offset rising food prices.",
+  "core_forecast_sentence": "[core CPI] climbed 0.3%, which would be the biggest gain since January, after rising 0.2% in June.",
+  "yoy_forecast_sentence": "In the 12 months through July, core CPI is anticipated to have increased 3.0% after rising 2.9% in June.",
+  "target_disambiguation": "headline MoM = 0.2% (unqualified 'The CPI'); core MoM = 0.3% (explicitly '[core CPI]'); core YoY = 3.0% (explicitly '12 months through July'); June headline MoM prior-actual = 0.3% (comparison baseline, not the forecast itself)",
+  "prospective_tense_markers": ["likely rose", "will be published", "anticipated", "showed"],
+  "retrospective_language_found": false
+}

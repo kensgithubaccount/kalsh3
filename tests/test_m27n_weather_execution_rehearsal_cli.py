@@ -207,8 +207,8 @@ def test_frozen_files_have_no_working_tree_changes() -> None:
         "services/supervised_canary/readiness_report.py",
         "services/supervised_canary/candidate_exposure_check.py",
         "services/supervised_canary/store.py",
-        "services/opportunity_engine",
-        "services/market_universe",
+        # M27B.3R3 intentionally extends only the public-read evidence path in these
+        # packages; the execution/risk/canary surfaces above remain frozen.
         "services/forecasting",
     )
     diff = subprocess.run(

@@ -10,6 +10,7 @@ from __future__ import annotations
 import hashlib
 import json
 import sqlite3
+import zlib
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from decimal import Decimal
@@ -75,6 +76,28 @@ def _canonical(value: object) -> str:
 
 def _hash_bytes(value: bytes) -> str:
     return hashlib.sha256(value).hexdigest()
+
+
+_COMPRESSION_PREFIX = b"m27b3-zlib-v1\x00"
+
+
+def _pack_canonical(value: str) -> bytes:
+    """Store canonical JSON losslessly; hashes continue to cover the canonical bytes."""
+    return _COMPRESSION_PREFIX + zlib.compress(value.encode("utf-8"), level=9)
+
+
+def _unpack_canonical(value: object, name: str) -> str:
+    # Accept pre-retention archives so this is a compatible storage migration, not a
+    # semantic migration. New writes are always compressed.
+    if isinstance(value, str):
+        return value
+    if not isinstance(value, bytes) or not value.startswith(_COMPRESSION_PREFIX):
+        raise ArchiveError(f"persisted {name} has an unsupported encoding")
+    try:
+        decoded = zlib.decompress(value[len(_COMPRESSION_PREFIX) :]).decode("utf-8")
+    except (UnicodeDecodeError, zlib.error) as exc:
+        raise ArchiveError(f"persisted {name} compressed content is corrupt") from exc
+    return decoded
 
 
 def _hash_json(value: object) -> str:
@@ -208,8 +231,9 @@ _UNIVERSE_ARCHIVE_CAPABILITY = object()
 class UniverseObservationArchive:
     """Read/verification facade for one durable append-only archive."""
 
-    def __init__(self, path: str | Path) -> None:
+    def __init__(self, path: str | Path, *, compressed_evidence: bool = False) -> None:
         self.path = Path(path)
+        self.compressed_evidence = compressed_evidence
         self.path.parent.mkdir(parents=True, exist_ok=True)
         existed = self.path.exists()
         prior_size = self.path.stat().st_size if existed else 0
@@ -406,7 +430,7 @@ class UniverseObservationArchive:
                     kind.value,
                     entity.ticker,
                     event_ticker,
-                    source,
+                    _pack_canonical(source) if self.compressed_evidence else source,
                     source_hash,
                     entity.metadata_hash,
                     entity.rules_hash if isinstance(entity, Market) else None,
@@ -434,7 +458,7 @@ class UniverseObservationArchive:
             cursor_out,
             run_id,
             kind.value,
-            canonical_payload,
+            _pack_canonical(canonical_payload) if self.compressed_evidence else canonical_payload,
             payload_hash,
             payload_hash,
             UNIVERSE_PARSER_VERSION,
@@ -554,7 +578,7 @@ class UniverseObservationArchive:
         )
         if not all(fixed):
             raise ArchiveError("persisted archive provenance is inconsistent")
-        payload = str(page["canonical_payload"])
+        payload = _unpack_canonical(page["canonical_payload"], "page payload")
         try:
             decoded_payload = json.loads(payload)
             parameters = json.loads(str(page["parameters_json"]))
@@ -588,7 +612,7 @@ class UniverseObservationArchive:
             or row["page_id"] != page["page_id"]
         ):
             raise ArchiveError("persisted page identity mismatch")
-        source = str(row["canonical_source"])
+        source = _unpack_canonical(row["canonical_source"], "entity source")
         try:
             raw = json.loads(source)
         except json.JSONDecodeError as exc:
