@@ -68,6 +68,7 @@ from services.market_universe.sync import (
     UniverseSynchronizer,
 )
 
+from .auditable_retention import AuditableRetentionLedger, RetentionGateError, RetentionPolicy
 from .authoritative_economics import build_authoritative_market_economics
 from .domain import OpportunityError
 from .fees import current_event_formula_policy
@@ -124,6 +125,7 @@ class UniverseRefreshResult:
 def refresh_universe(
     archive_path: str,
     *,
+    compressed_evidence: bool = False,
     transport: PublicTransport | None = None,
     clock: Callable[[], datetime] = lambda: datetime.now(UTC),
     progress: Callable[[SyncProgress], None] | None = None,
@@ -137,7 +139,7 @@ def refresh_universe(
     scanner needs the resulting Market/Event objects directly.
     """
     live_transport = transport if transport is not None else PublicUniverseTransport()
-    archive = UniverseObservationArchive(archive_path)
+    archive = UniverseObservationArchive(archive_path, compressed_evidence=compressed_evidence)
     repo = MemoryUniverseRepository()
     synchronizer = UniverseSynchronizer(
         live_transport,
@@ -504,7 +506,11 @@ def _run_scan_cycle_unlocked(
     """
     scan_run_id = new_scan_run_id()
     refresh = refresh_universe(
-        archive_path, transport=universe_transport, clock=clock, progress=progress
+        archive_path,
+        compressed_evidence=True,
+        transport=universe_transport,
+        clock=clock,
+        progress=progress,
     )
     if not refresh.complete:
         # A successful prefix is not evidence that previously observed relationships disappeared.
@@ -594,6 +600,7 @@ def run_forever(
     cadence_seconds: float = DEFAULT_CADENCE_SECONDS,
     max_iterations: int | None = None,
     sleeper: Callable[[float], None] = time.sleep,
+    retention: AuditableRetentionLedger | None = None,
     **cycle_kwargs: Any,
 ) -> Iterator[ScanCycleResult]:
     """Repeated unattended read-only measurement. ``cadence_seconds`` is a conservative,
@@ -601,12 +608,22 @@ def run_forever(
     implies any claim about lead persistence or profitability."""
     iterations = 0
     while max_iterations is None or iterations < max_iterations:
-        yield run_scan_cycle(
+        if retention is not None:
+            retention.check_before_scan((Path(archive_path), Path(store.path)))
+        result = run_scan_cycle(
             archive_path=archive_path,
             store=store,
             source_authority=source_authority,
             **cycle_kwargs,
         )
+        if retention is not None:
+            retention.record_scan(
+                scan_run_id=result.scan_run_id,
+                complete=result.refresh_complete,
+                paths=(Path(archive_path), Path(store.path)),
+                smoke=iterations == 0,
+            )
+        yield result
         iterations += 1
         if max_iterations is None or iterations < max_iterations:
             sleep_between_scans(cadence_seconds, sleeper=sleeper)
@@ -633,6 +650,12 @@ def _parser() -> argparse.ArgumentParser:
         help="stop after this many scans instead of running unattended forever",
     )
     parser.add_argument("--source-authority", default="external-api.kalshi.com")
+    parser.add_argument(
+        "--retention-dir", type=Path, help="audit ledger directory (defaults beside evidence-db)"
+    )
+    parser.add_argument("--storage-budget-gib", type=int, default=24)
+    parser.add_argument("--free-space-floor-gib", type=int, default=8)
+    parser.add_argument("--expected-scans", type=int, default=96)
     return parser
 
 
@@ -712,6 +735,18 @@ def main(argv: list[str] | None = None) -> int:
         print(f"Structural measurement: NOT STARTED ({exc})", flush=True)
         return 2
     store = StructuralMeasurementStore(args.evidence_db)
+    try:
+        retention = AuditableRetentionLedger(
+            args.retention_dir or args.evidence_db.parent / "retention",
+            RetentionPolicy(
+                budget_bytes=args.storage_budget_gib * 1024**3,
+                free_space_floor_bytes=args.free_space_floor_gib * 1024**3,
+                expected_scans=args.expected_scans,
+            ),
+        )
+    except (OSError, ValueError, RetentionGateError) as exc:
+        print(f"Structural measurement: NOT STARTED ({exc})", flush=True)
+        return 2
     print(
         "Starting M27B.2 structural-lead measurement (research only, production_influence=0)",
         flush=True,
@@ -733,6 +768,7 @@ def main(argv: list[str] | None = None) -> int:
             cadence_seconds=args.cadence_seconds,
             max_iterations=args.max_iterations,
             progress=_cli_progress,
+            retention=retention,
         ):
             incomplete = incomplete or not result.refresh_complete
             print(
@@ -747,6 +783,9 @@ def main(argv: list[str] | None = None) -> int:
             flush=True,
         )
         return 1 if incomplete else 0
+    except RetentionGateError as exc:
+        print(f"Structural measurement: STOPPED ({exc})", flush=True)
+        return 2
     finally:
         _stop_parent_watchdog(watchdog)
 
