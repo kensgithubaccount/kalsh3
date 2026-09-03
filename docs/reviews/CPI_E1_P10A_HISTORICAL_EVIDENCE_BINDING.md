@@ -4,16 +4,17 @@
 
 The offline analyzer in `services/forecasting/cpi_p10a_binding.py` mechanically
 revalidates the frozen P8, P9A, P9B, and contract-semantics artifacts and derives
-the overlap. Canonical main was absorbed by merge commit
-`8da06d1b0286e60b66dc1b52ffab802068e73d66` (tree
-`6869c89e5d4a3da129336110409945ffbb015ed0`), with merge parents in order
-`ee85c5ab3fe77e2e6021c671240dfab3801b18ab` and
-`eaae7dacc977aefb2cf314c3dda53fd1817b646f`. The prior head was
-`ee85c5ab3fe77e2e6021c671240dfab3801b18ab`, tree
-`e4e300b477165e9b09c56869f706807cf76bcf45`. The final frozen integrated head
-is `3c018a4cb21b6f7fb08c0aeec3bef69b0601b030` with tree
-`9446cd5a1c095a964dd965d14de2d3e779964f51`. It does not recollect evidence
-and has no network, account, order, execution, fee, or production influence.
+the overlap. The starting PR head for the final refresh was
+`a270c8c356b1dd20fd88d2619505e0130a399c11`, tree
+`2ca830a9a33936e29648e399b2dc6507a743bb9b`. Current canonical main was absorbed
+by merge commit `98b7d5350bdcb7228f6af6a323f3602d6b0d912c`, tree
+`5456e2365eccfc0ca755de507790369178897d21`, with merge parents in order
+`a270c8c356b1dd20fd88d2619505e0130a399c11` and
+`75bb928f9fc8ccecedb41d091c447c10c1d983ec`. The supplied main
+`47c52eda1e415756bc90048d7388fe6a3adcafc2` had advanced through the reviewed
+PR #124 merge before this refresh began. The refresh does not recollect
+evidence and has no network, account, order, execution, fee, or production
+influence.
 
 | Quantity | Result |
 |---|---:|
@@ -48,8 +49,10 @@ after-cost backtest is produced.
 
 The exact PR scope versus canonical main is five P10A files, all added by the
 branch: this review, the P7 timing receipt, the P10A runner, the P10A binder,
-and its tests (`1093` added lines). Canonical main was absorbed with the normal
-merge above; P8, P9A, and P9B evidence bytes were not modified or recollected.
+and its tests. Canonical main was absorbed with the normal merge above; P8,
+P9A, and P9B evidence bytes were not modified or recollected. The exact final
+line count and head are reported from the immutable Git diff after the final
+documentation commit rather than embedded as a self-referential claim here.
 
 ## Authority inventory
 
@@ -163,12 +166,15 @@ event weighting.
 
 ## Modelability gate
 
-Admissible existing input: prior P8 initial-release values whose independently
-proven `release_instant` is strictly before the relevant cutoff. Missing evidence
-is an independent contemporaneous forecast or survey vintage with exact public
-availability timestamps, plus point-in-time release-calendar snapshots for every
-cutoff. Consequently no challenger model is scored or selected in P10A, and no
-revised historical value is manufactured as a feature.
+Admissible P10A input: prior P8 initial-release values whose independently
+proven `release_instant` is strictly before the relevant cutoff. Canonical main
+now separately contains the reviewed P10B Reuters authority bundle for three
+sample events. P10A deliberately does not load or score those artifacts: they
+establish bounded acquisition feasibility, not a cohort-wide predictor input.
+Missing evidence remains broader contemporaneous forecast coverage with exact
+public-availability timestamps, plus point-in-time release-calendar snapshots
+for every applicable cutoff. Consequently no challenger model is scored or
+selected in P10A, and no revised historical value is manufactured as a feature.
 
 Verdict: **PREDICTOR EVIDENCE ACQUISITION REQUIRED**.
 

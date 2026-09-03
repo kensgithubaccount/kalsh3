@@ -30,6 +30,37 @@ def test_canonical_overlap_is_derived_and_event_weighted() -> None:
     assert report["crossing_price_log_loss_diagnostic"] >= 0
 
 
+def test_accepted_cohort_identity_is_frozen() -> None:
+    report = build_binding(ROOT)
+    identities = sorted(
+        (
+            item["event_ticker"],
+            item["market_ticker"],
+            item["threshold"],
+            item["comparator"],
+            item["predicate_identity"],
+        )
+        for item in report["accepted_threshold_identity"]
+    )
+    digest = sha256(json.dumps(identities, separators=(",", ":")).encode()).hexdigest()
+    assert digest == "11bc2723d0b75d0ab059f5c677ef061456f54d264592016b9e67402adffedec9"
+
+
+def test_canonical_reuters_authority_remains_outside_p10a_scoring(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    original_read_bytes = Path.read_bytes
+
+    def guarded_read_bytes(path: Path) -> bytes:
+        assert "cpi-p10b-reuters" not in path.parts
+        return original_read_bytes(path)
+
+    monkeypatch.setattr(Path, "read_bytes", guarded_read_bytes)
+    report = build_binding(ROOT)
+    assert report["modelability"] == "PARTIAL_PREDICTOR_EVIDENCE_REQUIRED"
+    assert report["predictor_inventory"]["missing"]
+
+
 def test_malformed_identity_fails_closed() -> None:
     from services.forecasting.cpi_p10a_binding import _event_month
 
