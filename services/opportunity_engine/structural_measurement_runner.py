@@ -26,8 +26,10 @@ from __future__ import annotations
 
 import argparse
 import contextlib
+import gc
 import os
 import select
+import sqlite3
 import stat
 import threading
 import time
@@ -170,6 +172,50 @@ def refresh_universe(
         and reconciliation_complete
     )
     return UniverseRefreshResult(repo, complete)
+
+
+def _checkpoint_sqlite_wal(path: Path) -> None:
+    """Force a full WAL checkpoint so a retention byte-count snapshot of this SQLite file is a
+    stable, complete measurement rather than racing SQLite's own unpredictable
+    connection-close checkpoint timing.
+
+    ``PRAGMA wal_checkpoint(TRUNCATE)`` merges every WAL frame into the main database file and
+    removes/truncates the ``-wal``/``-shm`` sidecars; it changes storage layout only, never data,
+    schema, or identity. Without this, the total on-disk footprint of an actively written WAL
+    database can *shrink* between two retention snapshots purely from ordinary SQLite
+    housekeeping (a later connection close happening to trigger the checkpoint SQLite deferred
+    earlier) -- which the retention ledger's growth-can-only-increase check correctly treats as a
+    fail-closed anomaly. Checkpointing explicitly at every retention measurement point removes
+    that timing dependency entirely; it is a no-op for a path that does not yet exist.
+    """
+    if not path.exists():
+        return
+    # A TRUNCATE checkpoint (and the -shm sidecar's removal specifically) needs every other
+    # connection to this database closed; services.market_universe.archive opens and drops a
+    # fresh short-lived connection per call, so an as-yet-uncollected one from an earlier write
+    # in this same scan can silently block a full checkpoint. Force those finalizers to run
+    # first so this checkpoint is not racing Python's own non-deterministic GC timing.
+    gc.collect()
+    connection = sqlite3.connect(str(path), timeout=30)
+    try:
+        connection.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+        connection.commit()
+    finally:
+        connection.close()
+
+
+def _bootstrap_universe_archive(path: Path) -> None:
+    """Cold-start bootstrap hook for :meth:`AuditableRetentionLedger.check_before_scan`.
+
+    Initializes a brand-new local universe archive through the exact canonical
+    :class:`UniverseObservationArchive` schema initializer -- the same constructor
+    :func:`refresh_universe` itself uses, never a hand-rolled placeholder file. The retention
+    ledger only ever invokes this for a demonstrably pristine ledger (no state, scans, or
+    receipts) and a primary path it has already confirmed is genuinely absent, secured against a
+    symlinked leaf or parent by the ledger's own descriptor-relative traversal before this runs.
+    """
+    UniverseObservationArchive(str(path))
+    _checkpoint_sqlite_wal(path)
 
 
 def _discovery_quote(raw: Mapping[str, Any]) -> DiscoveryQuotes | None:
@@ -609,7 +655,21 @@ def run_forever(
     iterations = 0
     while max_iterations is None or iterations < max_iterations:
         if retention is not None:
-            retention.check_before_scan((Path(archive_path), Path(store.path)))
+            archive_evidence_path = Path(archive_path)
+            evidence_store_path = Path(store.path)
+            # Force any as-yet-uncollected connection from an earlier write (this module's own
+            # short-lived per-call connections, or StructuralMeasurementStore's) to finalize --
+            # see _checkpoint_sqlite_wal's docstring -- before retention takes its
+            # preflight/baseline byte measurement. This does not open either evidence path
+            # itself (that stays exclusively inside retention's own secure, descriptor-relative
+            # validation below); it only lets Python's normal refcounting catch up so that
+            # validation observes a settled file rather than racing SQLite's own deferred
+            # checkpoint.
+            gc.collect()
+            retention.check_before_scan(
+                (archive_evidence_path, evidence_store_path),
+                bootstrap_primaries={archive_evidence_path: _bootstrap_universe_archive},
+            )
         try:
             result = run_scan_cycle(
                 archive_path=archive_path,
@@ -625,6 +685,13 @@ def run_forever(
                 retention.abort_scan()
             raise
         if retention is not None:
+            # Force both primaries to a checkpointed, stable on-disk state before retention
+            # measures them -- see _checkpoint_sqlite_wal. Without this, SQLite's own
+            # unpredictable WAL-checkpoint-on-close timing can shrink a growing WAL database's
+            # total footprint between this measurement and the next scan's, which the ledger's
+            # (correct) monotonic-growth check would then reject as an evidence-rollback anomaly.
+            _checkpoint_sqlite_wal(Path(archive_path))
+            _checkpoint_sqlite_wal(Path(store.path))
             retention.record_scan(
                 scan_run_id=result.scan_run_id,
                 complete=result.refresh_complete,
