@@ -4,12 +4,15 @@
 
 The offline analyzer in `services/forecasting/cpi_p10a_binding.py` mechanically
 revalidates the frozen P8, P9A, P9B, and contract-semantics artifacts and derives
-the overlap. The integrated head is `8da06d1b0286e60b66dc1b52ffab802068e73d66`,
-tree `6869c89e5d4a3da129336110409945ffbb015ed0`, with merge parents in order
+the overlap. Canonical main was absorbed by merge commit
+`8da06d1b0286e60b66dc1b52ffab802068e73d66` (tree
+`6869c89e5d4a3da129336110409945ffbb015ed0`), with merge parents in order
 `ee85c5ab3fe77e2e6021c671240dfab3801b18ab` and
 `eaae7dacc977aefb2cf314c3dda53fd1817b646f`. The prior head was
 `ee85c5ab3fe77e2e6021c671240dfab3801b18ab`, tree
-`e4e300b477165e9b09c56869f706807cf76bcf45`. It does not recollect evidence
+`e4e300b477165e9b09c56869f706807cf76bcf45`. The final frozen integrated head
+is `3c018a4cb21b6f7fb08c0aeec3bef69b0601b030` with tree
+`9446cd5a1c095a964dd965d14de2d3e779964f51`. It does not recollect evidence
 and has no network, account, order, execution, fee, or production influence.
 
 | Quantity | Result |
