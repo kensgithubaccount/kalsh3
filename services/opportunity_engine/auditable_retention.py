@@ -22,6 +22,17 @@ M27B.3R4 repairs every confirmed M27B.3R3 vulnerability:
 * every persisted numeric field is validated as an exact nonnegative (or positive) ``int`` -- never
   a ``bool``, ``float`` or numeric string -- and policy identity (budget/floor/expected-scans) is
   pinned at first use and rejected on any later mismatch without an explicit reviewed migration.
+
+M27B.3R4.2 adds a deliberate, fail-closed cold-start bootstrap: on a genuinely fresh run, the
+primary universe archive does not exist yet because it is only ever created by the acquisition
+that ``check_before_scan`` gates. ``check_before_scan`` now accepts an optional
+``bootstrap_primaries`` mapping; it is used only for a demonstrably pristine ledger (no state
+file and no receipts -- ``_is_pristine_ledger``) and only for a primary that is genuinely absent
+(``_primary_is_absent`` -- a symlink, dangling or not, is never eligible). The new file is created
+with the same descriptor-relative ``O_NOFOLLOW`` traversal and an ``O_CREAT | O_EXCL`` leaf create
+used everywhere else in this module, then handed to the caller's own canonical schema initializer
+-- never a hand-rolled placeholder. The unchanged preflight below then validates the result exactly
+as it always has. Once any state file exists, a missing primary remains a hard failure, unchanged.
 """
 
 from __future__ import annotations
@@ -33,6 +44,7 @@ import os
 import shutil
 import stat
 import tempfile
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Final
@@ -387,6 +399,65 @@ def _canonical_evidence_paths(primaries: tuple[Path, ...]) -> list[str]:
     return [str(_absolute_path(p)) for p in primaries]
 
 
+def _primary_is_absent(path: Path) -> bool:
+    """True only when nothing at all exists at ``path`` -- never true for a symlink (even a
+    dangling one) or a wrong-typed entry, which must hard-fail through the unchanged
+    ``_primary_stat`` check rather than be silently treated as bootstrap-eligible."""
+    absolute = _absolute_path(path)
+    return not absolute.exists() and not absolute.is_symlink()
+
+
+def _bootstrap_primary(path: Path, initializer: Callable[[Path], None]) -> None:
+    """Securely create a brand-new primary evidence file and hand it to the caller's canonical
+    schema initializer -- never a hand-rolled placeholder file.
+
+    Only ever called by :meth:`AuditableRetentionLedger.check_before_scan` for a demonstrably
+    pristine ledger (see ``_is_pristine_ledger``) and a genuinely absent primary path (see
+    ``_primary_is_absent``); the caller's free-space floor check has already run.  The leaf is
+    created with ``O_CREAT | O_EXCL | O_NOFOLLOW`` relative to a descriptor-relative parent
+    chain -- the same symlink/TOCTOU protection used for every other evidence access in this
+    module -- so a symlink or an unexpected concurrent creator is rejected rather than silently
+    written through or adopted.
+    """
+    absolute = _absolute_path(path)
+    if absolute.is_symlink():
+        raise RetentionGateError(f"evidence bootstrap target must not be a symlink: {path}")
+    try:
+        parent_fd, _identities = _open_parent_chain(absolute)
+    except OSError as exc:
+        raise RetentionGateError(
+            f"evidence bootstrap target parent path is unstable (symlink rejected): {path}"
+        ) from exc
+    try:
+        try:
+            fd = os.open(
+                absolute.name,
+                os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW | os.O_RDWR,
+                0o600,
+                dir_fd=parent_fd,
+            )
+        except FileExistsError as exc:
+            raise RetentionGateError(
+                f"evidence bootstrap target appeared unexpectedly during bootstrap "
+                f"(concurrent creation outside the retention lease): {path}"
+            ) from exc
+        except OSError as exc:
+            raise RetentionGateError(
+                f"evidence bootstrap target could not be created: {path}"
+            ) from exc
+        os.close(fd)
+    finally:
+        os.close(parent_fd)
+    try:
+        initializer(absolute)
+    except RetentionGateError:
+        raise
+    except Exception as exc:
+        raise RetentionGateError(
+            f"evidence bootstrap initializer failed for a pristine ledger: {path}"
+        ) from exc
+
+
 @dataclass(frozen=True, slots=True)
 class RetentionPolicy:
     budget_bytes: int = DEFAULT_BUDGET_GIB * 1024**3
@@ -459,6 +530,25 @@ class AuditableRetentionLedger:
     def abort_scan(self) -> None:
         """Release an active reservation without recording a scan (crash/abort recovery path)."""
         self._release_lease()
+
+    # -- cold-start bootstrap ----------------------------------------------------------------
+
+    def _is_pristine_ledger(self) -> bool:
+        """True only when no retention state file and no receipt files exist yet.
+
+        Deliberately checked directly against the filesystem rather than derived from a
+        ``state`` value already in hand: a state file that exists but is corrupt must never be
+        treated as pristine (``_load_and_validate_state`` already raises for that before this
+        is ever reached), and an orphan receipt with no state file -- a crash signature -- must
+        also block bootstrap even though ``_load_and_validate_state`` returns fresh, empty state
+        for a missing state file without itself scanning the receipts directory.
+        """
+        if self.state_path.exists():
+            return False
+        try:
+            return not any(self.receipts.iterdir())
+        except OSError as exc:
+            raise RetentionGateError("retention receipts directory is unavailable") from exc
 
     # -- state and receipt chain validation -------------------------------------------------
 
@@ -744,7 +834,17 @@ class AuditableRetentionLedger:
     # derived from ``self.root`` and never from caller-supplied evidence paths, so they cannot be
     # redirected outside the intended retention directory.
 
-    def check_before_scan(self, paths: tuple[str | Path, ...]) -> None:
+    def check_before_scan(
+        self,
+        paths: tuple[str | Path, ...],
+        *,
+        bootstrap_primaries: Mapping[Path, Callable[[Path], None]] | None = None,
+    ) -> None:
+        """Preflight gate. ``bootstrap_primaries`` (keyed by the exact ``Path`` values also
+        present in ``paths``) is optional and only ever consulted for a demonstrably pristine
+        ledger (:meth:`_is_pristine_ledger`) and a primary that is genuinely absent
+        (:func:`_primary_is_absent`); once any state file exists -- even with zero recorded
+        scans -- a missing primary is always a hard failure, exactly as in R4.1."""
         self._acquire_lease()
         try:
             primaries = tuple(Path(value) for value in paths)
@@ -758,6 +858,17 @@ class AuditableRetentionLedger:
                     "hard free-space floor would be crossed by the next scan's known growth; "
                     "scan stopped before acquisition"
                 )
+
+            # Cold-start bootstrap. The free-space floor check above already ran (``growth`` is
+            # always 0 for a pristine ledger, so it reduces to "free space already below the
+            # floor"), so bootstrap never writes when the floor is already breached. Bootstrap
+            # never overrides the unchanged preflight below -- it only ever creates a file that
+            # preflight then validates exactly as it always has.
+            if bootstrap_primaries and self._is_pristine_ledger():
+                for primary in primaries:
+                    initializer = bootstrap_primaries.get(primary)
+                    if initializer is not None and _primary_is_absent(primary):
+                        _bootstrap_primary(primary, initializer)
 
             for primary in primaries:
                 _primary_stat(primary)
