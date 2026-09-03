@@ -1,10 +1,18 @@
+import json
+from collections import Counter
 from copy import copy
 from dataclasses import replace
 from datetime import UTC, datetime
 from decimal import Decimal
+from pathlib import Path
 
 import pytest
 
+from services.contract_intelligence.specification import (
+    ComparisonSelectionState,
+    ContractSpecificationParser,
+    select_authoritative_comparison,
+)
 from services.market_universe import router as router_module
 from services.market_universe.lifecycle import LifecycleState, ProductType
 from services.market_universe.router import (
@@ -409,6 +417,128 @@ def test_title_keywords_alone_cannot_promote_unsupported_rules() -> None:
     assert first.records[0].state is LifecycleState.DISCOVERED
     assert second.records[0].state is LifecycleState.DISCOVERED
     assert "RULES_COMPARATOR_UNPROVEN" in second.records[0].semantic_blockers
+
+
+def test_primary_comparison_is_not_invalidated_by_secondary_boilerplate() -> None:
+    result = census(
+        [
+            market(
+                title="Will the official value be at least 10?",
+                rules_secondary=(
+                    "The market closes after the scheduled release. "
+                    "The official agency publishes the final value."
+                ),
+            )
+        ]
+    )
+    assert result.records[0].state is LifecycleState.SEMANTICALLY_UNDERSTOOD
+    assert "RULES_COMPARATOR_UNPROVEN" not in result.records[0].semantic_blockers
+
+
+def test_refused_primary_cannot_fall_back_to_title() -> None:
+    result = census(
+        [
+            market(
+                title="Will the official value be at least 10?",
+                rules_primary="The NO side prevails if the official value is greater than 10.",
+            )
+        ]
+    )
+    assert result.records[0].state is LifecycleState.DISCOVERED
+    assert "RULES_COMPARATOR_UNPROVEN" in result.records[0].semantic_blockers
+
+
+def test_frozen_p9a_inventory_replays_through_router_with_real_secondary() -> None:
+    root = Path("evidence/cpi_p9a_historical_price")
+    inventory = json.loads((root / "market_inventory.json").read_text())["markets"]
+    events = {
+        row["event_ticker"]: {
+            "event_ticker": row["event_ticker"],
+            "series_ticker": "KXCPI",
+            "title": row["event_ticker"],
+            "category": "Economics",
+        }
+        for row in inventory
+    }
+    series_rows = [
+        {
+            "ticker": "KXCPI",
+            "title": "CPI",
+            "category": "Economics",
+            "frequency": "monthly",
+            "settlement_sources": [{"name": "BLS", "url": "https://bls.gov"}],
+        }
+    ]
+    captured: list[object] = []
+    original = router_module.ContractSpecificationParser
+
+    class RecordingParser:
+        def parse(self, *args: object, **kwargs: object) -> object:
+            parsed = ContractSpecificationParser().parse(*args, **kwargs)
+            captured.append(parsed)
+            return parsed
+
+    router_module.ContractSpecificationParser = RecordingParser  # type: ignore[assignment]
+    try:
+        result = MarketUniverseRouter().census(
+            market_rows=inventory,
+            event_rows=list(events.values()),
+            series_rows=series_rows,
+            source_authority="frozen-p9a",
+            request_locator="fixture://p9a-market-inventory",
+            response_sha256="a" * 64,
+            captured_at=CAPTURED_AT,
+        )
+    finally:
+        router_module.ContractSpecificationParser = original
+
+    assert len(result.records) == len(inventory) == 474
+    assert Counter(spec.comparator.name for spec in captured) == Counter({"GT": 474})
+    assert {
+        record.market_ticker
+        for record in result.records
+        if "RULES_COMPARATOR_UNPROVEN" in record.semantic_blockers
+    } == set()
+
+    fallback_rows = {
+        "CPI-21OCT-T0.4",
+        "CPI-21OCT-T0.3",
+        "CPI-21OCT-T0.5",
+    }
+    assert {
+        row["ticker"]
+        for row in inventory
+        if select_authoritative_comparison(
+            rules_primary=row["rules_primary"],
+            title=row["title"],
+            rules_secondary=row["rules_secondary"],
+        ).state
+        is ComparisonSelectionState.MATCHED_REVIEWED_TITLE_FALLBACK
+    } == fallback_rows
+    assert sum(bool(row["rules_secondary"]) for row in inventory) == 473
+    assert all(
+        select_authoritative_comparison(
+            rules_primary=row["rules_primary"],
+            title=row["title"],
+            rules_secondary=row["rules_secondary"],
+        ).state
+        == select_authoritative_comparison(
+            rules_primary=row["rules_primary"], title=row["title"], rules_secondary=""
+        ).state
+        for row in inventory
+    )
+
+
+def test_secondary_conflicting_comparison_fails_closed() -> None:
+    result = census(
+        [
+            market(
+                rules_secondary="The official value is less than 10 units.",
+            )
+        ]
+    )
+    assert result.records[0].state is LifecycleState.DISCOVERED
+    assert "RULES_COMPARATOR_UNPROVEN" in result.records[0].semantic_blockers
 
 
 def test_exchange_category_alone_cannot_promote_weather_without_station() -> None:

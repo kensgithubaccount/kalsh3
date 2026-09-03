@@ -15,12 +15,12 @@ from enum import StrEnum
 from typing import Any
 
 from services.contract_intelligence.specification import (
-    Comparator,
+    ComparisonSelectionState,
     ContractSpecification,
     ContractSpecificationParser,
     SemanticsInputBundle,
     SemanticStatus,
-    parse_comparison,
+    select_authoritative_comparison,
 )
 from services.opportunity_engine.live_economics import DiscoveryQuotes
 from services.opportunity_engine.structural import StructuralRoute, scan_structural_markets
@@ -919,7 +919,19 @@ def _semantic_blockers(market: Market, spec: ContractSpecification) -> tuple[str
         blockers.append("SEMANTIC_RULES_HASH_MISMATCH")
     if spec.market_metadata_hash != market.metadata_hash:
         blockers.append("SEMANTIC_METADATA_HASH_MISMATCH")
-    rules = " ".join(
+    selection = select_authoritative_comparison(
+        rules_primary=market.raw.get("rules_primary"),
+        title=market.raw.get("title"),
+        rules_secondary=market.raw.get("rules_secondary"),
+    )
+    if selection.state in {
+        ComparisonSelectionState.REFUSED_OR_AMBIGUOUS,
+        ComparisonSelectionState.ABSENT_OR_APPROVED_PLACEHOLDER,
+    }:
+        blockers.append("RULES_COMPARATOR_UNPROVEN")
+    elif selection.comparator is not spec.comparator:
+        blockers.append("RULES_COMPARATOR_MISMATCH")
+    family_text = " ".join(
         text
         for text in (
             str(market.raw.get("rules_primary", "")).strip(),
@@ -927,12 +939,10 @@ def _semantic_blockers(market: Market, spec: ContractSpecification) -> tuple[str
         )
         if text
     )
-    comparator = parse_comparison(rules)[0]
-    if comparator is Comparator.NONE:
-        blockers.append("RULES_COMPARATOR_UNPROVEN")
-    elif comparator is not spec.comparator:
-        blockers.append("RULES_COMPARATOR_MISMATCH")
-    if classify("", rules) is Family.WEATHER and _text(market.raw.get("station_code")) is None:
+    if (
+        classify("", family_text) is Family.WEATHER
+        and _text(market.raw.get("station_code")) is None
+    ):
         blockers.append("WEATHER_STATION_MISSING")
     if spec.semantic_status is not SemanticStatus.VALID:
         blockers.append(f"SEMANTIC_STATUS_{spec.semantic_status.value}")

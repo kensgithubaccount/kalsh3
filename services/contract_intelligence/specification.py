@@ -88,6 +88,36 @@ class Comparator(StrEnum):
     NONE = "none"
 
 
+class ComparisonSelectionState(StrEnum):
+    MATCHED_RULES_PRIMARY = "MATCHED_RULES_PRIMARY"
+    MATCHED_REVIEWED_TITLE_FALLBACK = "MATCHED_REVIEWED_TITLE_FALLBACK"
+    ABSENT_OR_APPROVED_PLACEHOLDER = "ABSENT_OR_APPROVED_PLACEHOLDER"
+    REFUSED_OR_AMBIGUOUS = "REFUSED_OR_AMBIGUOUS"
+
+
+@dataclass(frozen=True, slots=True)
+class ComparisonSelection:
+    state: ComparisonSelectionState
+    comparator: Comparator
+    threshold: Decimal | None
+    lower_bound: Decimal | None
+    upper_bound: Decimal | None
+    inclusivity: str | None
+    source_field: str | None
+
+    @property
+    def interpretation(
+        self,
+    ) -> tuple[Comparator, Decimal | None, Decimal | None, Decimal | None, str | None]:
+        return (
+            self.comparator,
+            self.threshold,
+            self.lower_bound,
+            self.upper_bound,
+            self.inclusivity,
+        )
+
+
 @dataclass(frozen=True, slots=True)
 class InputLayer:
     layer: SourceLayer
@@ -328,35 +358,286 @@ def _issue(
     return SemanticIssue(kind, Severity.BLOCKING, fields, description, fields, True, now)
 
 
-PHRASES = (
-    (r"\bat least\s+(-?\d+(?:\.\d+)?)", Comparator.GTE, True),
-    (r"\b(?:at most|no more than)\s+(-?\d+(?:\.\d+)?)", Comparator.LTE, True),
-    (r"\b(-?\d+(?:\.\d+)?)\s+or less", Comparator.LTE, True),
-    (r"\b(?:greater than|more than|above|over)\s+(-?\d+(?:\.\d+)?)", Comparator.GT, False),
-    (r"\b(?:under|below|fewer than)\s+(-?\d+(?:\.\d+)?)", Comparator.LT, False),
-    (r"\bexactly\s+(-?\d+(?:\.\d+)?)", Comparator.EQ, True),
-    (r"\bbetween\s+(-?\d+(?:\.\d+)?)\s+(?:and|to)\s+(-?\d+(?:\.\d+)?)", Comparator.BETWEEN, True),
+_NUMBER = r"(-?\d+(?:\.\d+)?)"
+_COMPARISON_PHRASE = (
+    rf"(?:not\s+exactly\s+{_NUMBER}|"
+    rf"(?:no\s+more\s+than|not\s+(?:more|greater)\s+than|at\s+most)\s+{_NUMBER}|"
+    rf"not\s+(?:less\s+than|below)\s+{_NUMBER}|"
+    rf"between\s+{_NUMBER}\s+(?:and|to)\s+{_NUMBER}|"
+    rf"at\s+least\s+{_NUMBER}|"
+    rf"{_NUMBER}\s+or\s+less|"
+    rf"(?:greater\s+than|more\s+than|above|over)\s+{_NUMBER}|"
+    rf"(?:less\s+than|under|below|fewer\s+than)\s+{_NUMBER}|"
+    rf"exactly\s+{_NUMBER})"
 )
+
+# Versioned, complete clause templates.  Subject and unit productions are
+# deliberately allowlisted.  They are not arbitrary lexical slots: every
+# token in an accepted clause is part of a reviewed production, while payout,
+# denial, modality, and conditional language has no production at all.
+_REVIEWED_SUBJECT = (
+    r"(?:the\s+final\s+nws\s+report\s+at\s+station\s+[a-z0-9()-]+|"
+    r"final\s+nws\s+[a-z0-9()-]+\s+report|"
+    r"(?:the\s+)?final\s+noaa\s+daily\s+high|"
+    r"(?:the\s+)?(?:final\s+)?temperature|"
+    r"(?:the\s+)?measured\s+value|"
+    r"(?:the\s+)?official\s+value|"
+    r"(?:the\s+)?(?:consumer\s+price\s+index|cpi))\s+is\s+"
+)
+_REVIEWED_UNIT = (
+    r"(?:%|percent|f|c|k|units|points|fahrenheit|celsius|"
+    r"degrees(?:\s+(?:f|c|fahrenheit|celsius))?|"
+    r"°\s*(?:f|c|fahrenheit|celsius))"
+)
+_COMPARISON_TEMPLATES = (
+    re.compile(rf"(?:{_COMPARISON_PHRASE})[.!?]?"),
+    re.compile(
+        rf"(?:yes\s+if\s+|the\s+market\s+resolves\s+yes\s+if\s+)"
+        rf"{_REVIEWED_SUBJECT}(?:{_COMPARISON_PHRASE})(?:\s+{_REVIEWED_UNIT})?[.!?]?"
+    ),
+    re.compile(
+        rf"(?:the\s+official\s+value\s+is|the\s+measured\s+value\s+is)\s+"
+        rf"(?:{_COMPARISON_PHRASE})(?:\s+{_REVIEWED_UNIT})?[.!?]?"
+    ),
+    re.compile(
+        rf"if\s+the\s+consumer\s+price\s+index\s+\(cpi\)\s+increases\s+by\s+"
+        rf"{_COMPARISON_PHRASE}%?(?:\s+\(single\s+decimal\))?\s+in\s+"
+        rf"(?:january|february|march|april|may|june|july|august|september|october|november|december)"
+        rf"(?:\s+\d{{4}})?,\s+"
+        rf"then\s+the\s+market\s+resolves\s+to\s+yes[.!?]?"
+    ),
+    re.compile(
+        rf"if\s+the\s+cpi\s+increases\s+by\s+{_COMPARISON_PHRASE}%?\s+in\s+"
+        rf"(?:january|february|march|april|may|june|july|august|september|october|november|december)"
+        rf"(?:\s*,?\s*\d{{4}})?\s*,\s+then\s+the\s+market\s+resolves\s+to\s+yes[.!?]?"
+    ),
+    re.compile(
+        rf"if\s+the\s+consumer\s+price\s+index\s+\(cpi\)\s+as\s+reported\s+by\s+the\s+bls's\s+"
+        rf"monthly\s+single\s+digit\s+consumer\s+price\s+index\s+summary\s+report\s+increases\s+by\s+"
+        rf"{_COMPARISON_PHRASE}%?\s+in\s+"
+        rf"(?:january|february|march|april|may|june|july|august|september|october|november|december)\s+\d{{4}},\s+"
+        rf"then\s+the\s+market\s+resolves\s+to\s+yes[.!?]?"
+    ),
+    re.compile(
+        rf"will\s+(?:the\s+)?(?:\*\*)?(?:consumer\s+price\s+index|cpi|inflation)(?:\*\*)?\s+rise\s+"
+        rf"{_COMPARISON_PHRASE}%?\s+in\s+"
+        rf"(?:january|february|march|april|may|june|july|august|september|october|november|december)"
+        rf"(?:\s+\d{{4}})?\?"
+    ),
+)
+
+
+def _comparison_from_phrase(
+    phrase: str,
+) -> tuple[Comparator, tuple[Decimal, ...], bool] | None:
+    match = re.fullmatch(_COMPARISON_PHRASE, phrase)
+    if match is None:
+        return None
+    values = tuple(Decimal(value) for value in re.findall(_NUMBER, phrase))
+    if not all(value.is_finite() for value in values):
+        return None
+    lowered = phrase
+    if lowered.startswith("not exactly"):
+        return Comparator.NONE, values, True
+    if re.match(r"(?:no more than|not (?:more|greater) than|at most)", lowered):
+        return Comparator.LTE, values, True
+    if re.match(r"not (?:less than|below)", lowered):
+        return Comparator.GTE, values, True
+    if lowered.startswith("between"):
+        return Comparator.BETWEEN, values, True
+    if lowered.startswith("at least"):
+        return Comparator.GTE, values, True
+    if re.search(r"\sor less$", lowered):
+        return Comparator.LTE, values, True
+    if re.match(r"(?:greater than|more than|above|over)", lowered):
+        return Comparator.GT, values, False
+    if re.match(r"(?:less than|under|below|fewer than)", lowered):
+        return Comparator.LT, values, False
+    return Comparator.EQ, values, True
 
 
 def parse_comparison(
     text: str,
 ) -> tuple[Comparator, Decimal | None, Decimal | None, Decimal | None, str | None]:
+    normalized = text.lower().replace("\u2019", "'")
+    normalized = re.sub(r"(?<=[a-z])-(?=[a-z])", " ", normalized)
+    lowered = " ".join(normalized.split())
+    interpretations: set[tuple[Comparator, tuple[Decimal, ...], bool]] = set()
+    for template in _COMPARISON_TEMPLATES:
+        match = template.fullmatch(lowered)
+        if match is None:
+            continue
+        phrase_match = re.search(_COMPARISON_PHRASE, match.group(0))
+        if phrase_match is None:
+            return Comparator.NONE, None, None, None, None
+        try:
+            interpretation = _comparison_from_phrase(phrase_match.group(0))
+        except (ValueError, ArithmeticError):
+            return Comparator.NONE, None, None, None, None
+        if interpretation is None:
+            return Comparator.NONE, None, None, None, None
+        interpretations.add(interpretation)
+
+    if len(interpretations) != 1:
+        return Comparator.NONE, None, None, None, None
+    comparator, values, inclusive = next(iter(interpretations))
+    if comparator == Comparator.BETWEEN:
+        return comparator, None, values[0], values[1], "inclusive" if inclusive else "exclusive"
+    return comparator, values[0], None, None, "inclusive" if inclusive else "exclusive"
+
+
+# Frozen P9A's title fallback is limited to absent input and the two exact
+# historical placeholder strings below.  Other malformed nonempty rules are
+# refused and never consult the title.
+APPROVED_TITLE_FALLBACK_PLACEHOLDERS = frozenset(
+    {
+        "",
+        "If the CPI increases by more than || percent ||% in October 2021, "
+        "then the market resolves to Yes.",
+        "If the CPI increases by more than 0.50 percent% in October 2021, "
+        "then the market resolves to Yes.",
+    }
+)
+
+
+class SecondaryAssertionState(StrEnum):
+    INERT = "INERT"
+    REVIEWED_COMPARISON = "REVIEWED_COMPARISON"
+    UNSUPPORTED_ASSERTION = "UNSUPPORTED_ASSERTION"
+
+
+_SECONDARY_COMPARISON_MARKER = re.compile(
+    r"\b(?:more\s+than|greater\s+than|less\s+than|below|above|under|between|"
+    r"at\s+least|at\s+most|exactly|no\s+more\s+than|not\s+(?:more|less|below|greater)|"
+    r"exceeds?|surpasses?)\b|[<>]=?|[≤≥]"
+)
+_SECONDARY_NUMERIC_MARKER = re.compile(r"\b-?\d+(?:\.\d+)?\b")
+_SECONDARY_SUBJECT_MARKER = re.compile(
+    r"\b(?:official\s+value|measured\s+value|consumer\s+price\s+index|cpi|temperature)\b",
+    re.IGNORECASE,
+)
+_SECONDARY_PAYOUT_MARKER = re.compile(
+    r"\b(?:yes|no)\s+(?:side\s+)?(?:wins?|loses?|is\s+credited)\b|"
+    r"\b(?:pays?|resolves?|settles?|credited)\s+(?:to\s+)?(?:yes|no)\b"
+)
+_MONTHS = "january|february|march|april|may|june|july|august|september|october|november|december"
+
+
+def _comparison_authority_key(text: str) -> tuple[object, object]:
+    """Return the material period and payout bindings of a reviewed clause."""
     lowered = " ".join(text.lower().split())
-    for pattern, comparator, inclusive in PHRASES:
-        match = re.search(pattern, lowered)
-        if match:
-            values = [Decimal(x) for x in match.groups() if x is not None]
-            if comparator == Comparator.BETWEEN:
-                return (
-                    comparator,
-                    None,
-                    values[0],
-                    values[1],
-                    "inclusive" if inclusive else "exclusive",
-                )
-            return comparator, values[0], None, None, "inclusive" if inclusive else "exclusive"
-    return Comparator.NONE, None, None, None, None
+    period_match = re.search(rf"\b({_MONTHS})\s+(\d{{4}})\b", lowered)
+    period = period_match.groups() if period_match else None
+    payout = "YES" if re.search(r"\b(?:resolves?|settles?)\s+to\s+yes\b", lowered) else None
+    return period, payout
+
+
+def _classify_secondary_assertion(
+    text: str,
+) -> tuple[
+    SecondaryAssertionState,
+    tuple[Comparator, Decimal | None, Decimal | None, Decimal | None, str | None],
+]:
+    normalized = " ".join(text.lower().split())
+    parsed = parse_comparison(normalized)
+    if parsed[0] is not Comparator.NONE:
+        return SecondaryAssertionState.REVIEWED_COMPARISON, parsed
+    has_comparison = _SECONDARY_COMPARISON_MARKER.search(normalized) is not None
+    has_number = _SECONDARY_NUMERIC_MARKER.search(normalized) is not None
+    has_conditional = re.search(r"\b(?:if|when|unless)\b", normalized) is not None
+    has_payout = _SECONDARY_PAYOUT_MARKER.search(normalized) is not None
+    if (
+        has_comparison
+        and (has_number or has_conditional or _SECONDARY_SUBJECT_MARKER.search(normalized))
+    ) or has_payout:
+        return SecondaryAssertionState.UNSUPPORTED_ASSERTION, parsed
+    return SecondaryAssertionState.INERT, parsed
+
+
+def _comparison_result(
+    state: ComparisonSelectionState,
+    parsed: tuple[Comparator, Decimal | None, Decimal | None, Decimal | None, str | None],
+    source_field: str | None,
+) -> ComparisonSelection:
+    return ComparisonSelection(state, *parsed, source_field)
+
+
+def select_authoritative_comparison(
+    *, rules_primary: str | None, title: str | None, rules_secondary: str | None = None
+) -> ComparisonSelection:
+    primary = "" if rules_primary is None else rules_primary.strip()
+    title_text = "" if title is None else title.strip()
+    secondary = "" if rules_secondary is None else rules_secondary.strip()
+    primary_is_placeholder = primary in APPROVED_TITLE_FALLBACK_PLACEHOLDERS
+    primary_parsed = (
+        parse_comparison(primary)
+        if primary
+        else (
+            Comparator.NONE,
+            None,
+            None,
+            None,
+            None,
+        )
+    )
+    title_parsed = (
+        parse_comparison(title_text)
+        if title_text
+        else (
+            Comparator.NONE,
+            None,
+            None,
+            None,
+            None,
+        )
+    )
+
+    if not primary_is_placeholder and primary_parsed[0] is Comparator.NONE:
+        return _comparison_result(
+            ComparisonSelectionState.REFUSED_OR_AMBIGUOUS, primary_parsed, "rules_primary"
+        )
+    if primary_is_placeholder:
+        if title_parsed[0] is Comparator.NONE:
+            return _comparison_result(
+                ComparisonSelectionState.ABSENT_OR_APPROVED_PLACEHOLDER,
+                primary_parsed,
+                None,
+            )
+        selected = _comparison_result(
+            ComparisonSelectionState.MATCHED_REVIEWED_TITLE_FALLBACK,
+            title_parsed,
+            "title",
+        )
+    else:
+        title_key = _comparison_authority_key(title_text)
+        primary_key = _comparison_authority_key(primary)
+        same_interpretation = title_parsed == primary_parsed
+        same_explicit_period = title_key[0] is None or primary_key[0] == title_key[0]
+        same_payout = title_key[1] is None or primary_key[1] == title_key[1]
+        if title_parsed[0] is not Comparator.NONE and (
+            not same_interpretation or not same_explicit_period or not same_payout
+        ):
+            return _comparison_result(
+                ComparisonSelectionState.REFUSED_OR_AMBIGUOUS,
+                primary_parsed,
+                "rules_primary",
+            )
+        selected = _comparison_result(
+            ComparisonSelectionState.MATCHED_RULES_PRIMARY, primary_parsed, "rules_primary"
+        )
+
+    if secondary:
+        secondary_state, secondary_parsed = _classify_secondary_assertion(secondary)
+        if secondary_state is SecondaryAssertionState.UNSUPPORTED_ASSERTION or (
+            secondary_state is SecondaryAssertionState.REVIEWED_COMPARISON
+            and secondary_parsed != selected.interpretation
+        ):
+            return _comparison_result(
+                ComparisonSelectionState.REFUSED_OR_AMBIGUOUS,
+                selected.interpretation,
+                selected.source_field,
+            )
+    return selected
 
 
 TZ_MAP = {
@@ -414,10 +695,14 @@ class ContractSpecificationParser:
             or market.get("no_proposition")
             or (f"Not: {yes}" if yes else "")
         )
-        comparator, threshold, lower, upper, inclusivity = parse_comparison(
-            " ".join((title, rules, secondary))
+        selection = select_authoritative_comparison(
+            rules_primary=rules, title=title, rules_secondary=secondary
         )
-        if comparator == Comparator.NONE:
+        comparator, threshold, lower, upper, inclusivity = selection.interpretation
+        if (
+            comparator == Comparator.NONE
+            or selection.state is ComparisonSelectionState.REFUSED_OR_AMBIGUOUS
+        ):
             issues.append(
                 _issue(
                     IssueType.UNKNOWN_LANGUAGE,
@@ -522,7 +807,12 @@ class ContractSpecificationParser:
         for field_name, layer, source_field, value in (
             ("yes_proposition", SourceLayer.MARKET, "rules_primary", yes),
             ("no_proposition", SourceLayer.MARKET, "rules_primary", no),
-            ("comparator", SourceLayer.MARKET, "rules_primary", comparator.value),
+            (
+                "comparator",
+                SourceLayer.MARKET,
+                selection.source_field or "rules_primary",
+                comparator.value,
+            ),
             (
                 "settlement_authority",
                 sources[0].origin if sources else SourceLayer.SERIES,
