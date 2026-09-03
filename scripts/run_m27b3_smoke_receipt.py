@@ -22,6 +22,18 @@ SCHEMA_VERSION = "kalsh3.m27b3.process-receipt.v2"
 MODULE = "services.opportunity_engine.structural_measurement_runner"
 HOST = "external-api.kalshi.com"
 GRACE_SECONDS = 10.0
+# M27B.3R4.3: the reviewed budget for this operator boundary (bounded smoke and the eventual
+# 24-hour pilot, which shares this exact command shape apart from --max-iterations). Empirically
+# measured first-scan compressed evidence growth projected 27.067474365234375 GiB across 96
+# scans, exceeding the prior 24 GiB budget; 28 GiB was reviewed and approved to cover it with
+# margin (see docs/reviews/M27B3R4_3_RETENTION_CAPACITY_POLICY.md). Bound explicitly here, at
+# this one reviewed entrypoint, rather than by changing the runner's repository-wide
+# --storage-budget-gib default (24), which remains available to any other, differently-reviewed
+# caller of the same module. Cadence, expected-scan count, and the free-space floor are
+# unchanged and are pinned explicitly below for the same reason --cadence-seconds already was.
+BUDGET_GIB = 28
+FREE_SPACE_FLOOR_GIB = 8
+EXPECTED_SCANS = 96
 ENVIRONMENT_ALLOWLIST = frozenset(
     {
         "LANG",
@@ -144,6 +156,12 @@ def build_command(python: Path, run_dir: Path) -> list[str]:
         "1",
         "--source-authority",
         HOST,
+        "--storage-budget-gib",
+        str(BUDGET_GIB),
+        "--free-space-floor-gib",
+        str(FREE_SPACE_FLOOR_GIB),
+        "--expected-scans",
+        str(EXPECTED_SCANS),
     ]
 
 
@@ -306,6 +324,9 @@ def main(argv: list[str] | None = None) -> int:
         "parent_directory": str(parent),
         "source_authority": HOST,
         "production_influence": 0,
+        "storage_budget_gib": BUDGET_GIB,
+        "free_space_floor_gib": FREE_SPACE_FLOOR_GIB,
+        "expected_scans": EXPECTED_SCANS,
         "environment_allowlist": sorted(
             (
                 *ENVIRONMENT_ALLOWLIST,
