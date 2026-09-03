@@ -23,6 +23,7 @@ from services.contract_intelligence.settlement import (
 )
 from services.contract_intelligence.specification import (
     Comparator,
+    ComparisonSelectionState,
     ContractSpecificationParser,
     IssueType,
     PayoutModel,
@@ -30,6 +31,7 @@ from services.contract_intelligence.specification import (
     SemanticStatus,
     normalize_timezone,
     parse_comparison,
+    select_authoritative_comparison,
     validate_llm_proposal,
 )
 from services.market_universe.domain import material_hashes
@@ -142,6 +144,286 @@ def test_comparison_language_corpus() -> None:
         "inclusive",
     )
     assert parse_comparison("roughly five")[0] == Comparator.NONE
+
+
+@pytest.mark.parametrize(
+    ("text", "expected", "value"),
+    [
+        ("more than 0.2", Comparator.GT, "0.2"),
+        ("greater than 0.2", Comparator.GT, "0.2"),
+        ("no more than 0.2", Comparator.LTE, "0.2"),
+        ("not more than 0.2", Comparator.LTE, "0.2"),
+        ("not greater than 0.2", Comparator.LTE, "0.2"),
+        ("less than 0.2", Comparator.LT, "0.2"),
+        ("not less than 0.2", Comparator.GTE, "0.2"),
+        ("not below 0.2", Comparator.GTE, "0.2"),
+    ],
+)
+def test_polarity_aware_comparison_phrases(text: str, expected: Comparator, value: str) -> None:
+    comparator, threshold, _, _, _ = parse_comparison(text)
+    assert comparator == expected and threshold == Decimal(value)
+
+
+def test_shared_comparison_selection_distinguishes_absence_and_refusal() -> None:
+    matched = select_authoritative_comparison(
+        rules_primary="YES if the final NWS report at station KNYC is at least 90 F.",
+        title="Will the final temperature be at least 90 F?",
+        rules_secondary="The official report is published after observation.",
+    )
+    assert matched.state is ComparisonSelectionState.MATCHED_RULES_PRIMARY
+    assert matched.source_field == "rules_primary"
+
+    fallback = select_authoritative_comparison(
+        rules_primary="", title="Will CPI rise more than 0.2% in May 2026?"
+    )
+    assert fallback.state is ComparisonSelectionState.MATCHED_REVIEWED_TITLE_FALLBACK
+    assert fallback.source_field == "title"
+
+    refused = select_authoritative_comparison(
+        rules_primary="The NO side prevails if CPI is more than 0.2%.",
+        title="Will CPI rise more than 0.2%?",
+    )
+    assert refused.state is ComparisonSelectionState.REFUSED_OR_AMBIGUOUS
+
+    period_conflict = select_authoritative_comparison(
+        rules_primary=(
+            "If the Consumer Price Index (CPI) increases by more than 0.2% "
+            "in May 2026, then the market resolves to Yes."
+        ),
+        title="Will CPI rise more than 0.2% in June 2026?",
+    )
+    assert period_conflict.state is ComparisonSelectionState.REFUSED_OR_AMBIGUOUS
+
+
+@pytest.mark.parametrize(
+    ("primary", "secondary", "title", "expected"),
+    [
+        (
+            "YES if the official value is greater than 10 units.",
+            "The official value is reported after publication.",
+            "Test threshold",
+            ComparisonSelectionState.MATCHED_RULES_PRIMARY,
+        ),
+        (
+            "YES if the official value is greater than 10 units.",
+            "The official value is less than 10 units.",
+            "Test threshold",
+            ComparisonSelectionState.REFUSED_OR_AMBIGUOUS,
+        ),
+        (
+            "unknown nonempty primary",
+            "",
+            "Will the value be greater than 10?",
+            ComparisonSelectionState.REFUSED_OR_AMBIGUOUS,
+        ),
+    ],
+)
+def test_secondary_and_primary_authority_policy(
+    primary: str, secondary: str, title: str, expected: ComparisonSelectionState
+) -> None:
+    result = select_authoritative_comparison(
+        rules_primary=primary, rules_secondary=secondary, title=title
+    )
+    assert result.state is expected
+
+
+@pytest.mark.parametrize(
+    "secondary",
+    [
+        "The market resolves according to the final agency report.",
+        "YES and NO contracts settle after publication.",
+        "If no report is published, settlement may be delayed.",
+        "The source resolves revisions according to its published policy.",
+        "Payment occurs after the official result is released.",
+    ],
+)
+def test_bare_secondary_settlement_language_is_inert(secondary: str) -> None:
+    result = select_authoritative_comparison(
+        rules_primary="The official value is at least 10 units.",
+        title="Test threshold",
+        rules_secondary=secondary,
+    )
+    assert result.state is ComparisonSelectionState.MATCHED_RULES_PRIMARY
+
+
+def test_structured_secondary_agreement_and_unsupported_assertions() -> None:
+    agreeing = select_authoritative_comparison(
+        rules_primary="The official value is at least 10 units.",
+        title="Test threshold",
+        rules_secondary="The official value is at least 10 units.",
+    )
+    assert agreeing.state is ComparisonSelectionState.MATCHED_RULES_PRIMARY
+
+    for secondary in (
+        "The official value is not more than 10 units.",
+        "The official value is at least ten units.",
+        "NO wins if the official value is at least 10 units.",
+        "The official value is at least 10 units and less than 5 units.",
+    ):
+        refused = select_authoritative_comparison(
+            rules_primary="The official value is at least 10 units.",
+            title="Test threshold",
+            rules_secondary=secondary,
+        )
+        assert refused.state is ComparisonSelectionState.REFUSED_OR_AMBIGUOUS
+
+
+@pytest.mark.parametrize(
+    "secondary",
+    [
+        "NO WINS IF THE TEMPERATURE IS AT LEAST 90 F.",
+        "The NO Side Prevails If CPI Is More Than 0.3%.",
+        "The market pays NO when the official value is ≥ 10.",
+        "The NO side is credited if the measured value exceeds the stated ceiling.",
+        "NO wins if the temperature surpasses 90 F.",
+    ],
+)
+def test_secondary_material_assertions_are_case_invariant(secondary: str) -> None:
+    primary = "The official value is at least 10 units."
+    outcomes = {
+        select_authoritative_comparison(
+            rules_primary=primary, title="Test threshold", rules_secondary=variant
+        ).state
+        for variant in (secondary.lower(), secondary, secondary.title(), secondary.upper())
+    }
+    assert outcomes == {ComparisonSelectionState.REFUSED_OR_AMBIGUOUS}
+
+
+@pytest.mark.parametrize(
+    "secondary",
+    ["The report was credited to the agency.", "The agency exceeds its publication target."],
+)
+def test_secondary_bare_vocabulary_remains_inert(secondary: str) -> None:
+    result = select_authoritative_comparison(
+        rules_primary="The official value is at least 10 units.",
+        title="Test threshold",
+        rules_secondary=secondary,
+    )
+    assert result.state is ComparisonSelectionState.MATCHED_RULES_PRIMARY
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "not exactly 0.2",
+        "not not more than 0.2",
+        "more than 0.2 and less than 0.1",
+        "more than 0.2 and no more than 0.2",
+        "exactly 0.2 or more than 0.3",
+        "between 0.1 and 0.3 but below 0.2",
+        "If not more than 0.2, the market resolves to No",
+        "more than 0.2, but not more than 0.3",
+        "not more than 0.2 in Junebug",
+        "more than ||",
+        "more than NaN",
+    ],
+)
+def test_negated_contradictory_and_malformed_comparisons_are_unsupported(text: str) -> None:
+    assert parse_comparison(text)[0] == Comparator.NONE
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "  NOT   MORE   THAN  0.2  ",
+        "not-more-than 0.2",
+        "not\tless\tthan 0.2",
+    ],
+)
+def test_punctuation_and_whitespace_do_not_hide_polarity(text: str) -> None:
+    comparator = parse_comparison(text)[0]
+    assert comparator in {Comparator.NONE, Comparator.LTE, Comparator.GTE}
+    assert comparator != Comparator.GT and comparator != Comparator.LT
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "isn't more than 0.2",
+        "isn\u2019t more than 0.2",
+        "wasn't more than 0.2",
+        "cannot be more than 0.2",
+        "can't be more than 0.2",
+        "won't be more than 0.2",
+        "neither more than 0.2 nor less than 0.1",
+        "isn't less than 0.2",
+        "NO wins if more than 0.2",
+        "pays NO if more than 0.2",
+        "pays out to NO if more than 0.2",
+        "the NO side wins if more than 0.2",
+        "is determined NO if more than 0.2",
+        "results in NO if more than 0.2",
+    ],
+)
+def test_residual_negation_and_no_direction_fail_closed(text: str) -> None:
+    assert parse_comparison(text)[0] == Comparator.NONE
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "The outcome is NO if CPI is more than 0.2% in June 2022",
+        "The result is NO when CPI is more than 0.2% in June 2022",
+        "More than 0.2% means a NO outcome",
+        "YES loses if CPI is more than 0.2% in June 2022",
+        "The YES side does not win if CPI is more than 0.2%",
+        "It is false that CPI is more than 0.2%",
+        "It is not true that CPI is more than 0.2%",
+        "CPI is not necessarily more than 0.2%",
+        "Unless CPI is more than 0.2%, YES wins",
+        "Except when CPI is more than 0.2%, YES wins",
+        "The NO side prevails if CPI is more than 0.2%",
+        "A NO outcome occurs when CPI is more than 0.2%",
+        "YES is unsuccessful when CPI is more than 0.2%",
+        "It is untrue that CPI is more than 0.2%",
+        "CPI may not actually be more than 0.2%",
+        "Barring CPI being more than 0.2%, YES wins",
+        "Other than when CPI is more than 0.2%, YES wins",
+        "Unless CPI is more than 0.2%, this explanatory clause is deliberately "
+        "long enough to exceed the former bounded search window before YES wins",
+        "THE OUTCOME IS NO IF CPI IS MORE THAN 0.2%.",
+        "unless-CPI-is-more-than-0.2%, the YES side wins",
+        "The result is NO if CPI isn\u2019t less than 0.2%",
+    ],
+)
+def test_clause_level_polarity_cannot_escape_affirmative_candidate(text: str) -> None:
+    assert parse_comparison(text)[0] == Comparator.NONE
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "More than 0.2% means a NO outcome",
+        "MORE THAN 0.2% MEANS A NO OUTCOME!",
+        "The result is NO when CPI is more than 0.2%.",
+        "CPI is more than 0.2%, but this is unsupported explanatory prose.",
+        "more than 0.2% and more than 0.2%",
+    ],
+)
+def test_formal_templates_reject_residual_or_multiple_prose(text: str) -> None:
+    assert parse_comparison(text)[0] == Comparator.NONE
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "YES if the measured value is more than 0.2% maybe.",
+        "YES if the measured value is more than 0.2% according to an unreviewed source.",
+        "YES if despite the official value being more than 0.2% the market resolves Yes.",
+        "YES if the measured value is more than 0.2% unless the source is revised.",
+        "YES if the measured value is more than 0.2% and the market pays NO.",
+        "YES if the measured value is more than 0.2% in a future reference month.",
+    ],
+)
+def test_allowlisted_templates_consume_all_semantically_material_tokens(text: str) -> None:
+    assert parse_comparison(text)[0] == Comparator.NONE
+
+
+def test_formal_template_has_no_distance_window() -> None:
+    distant_denial = " ".join(
+        ("YES if the measured value is more than 0.2%",) + ("documented",) * 80 + ("not",)
+    )
+    assert parse_comparison(distant_denial)[0] == Comparator.NONE
 
 
 def test_missing_timezone_station_source_and_conflicts_fail_closed() -> None:
