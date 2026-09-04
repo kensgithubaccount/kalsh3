@@ -17,12 +17,28 @@ smoke run, observed and reported once.
 
 ## What the pilot is
 
-96 scans at a 900-second cadence: `96 * 900s = 86,400s = 24 hours`, under the exact same reviewed
-retention policy the bounded smoke just cleared: budget = 28 GiB, free-space floor = 8 GiB,
-expected scans = 96. Its purpose is to observe real, repeated retention growth and auditability
-across a full day's worth of scans -- not a claim of predictive edge, after-cost economics,
-trading readiness, or execution authority. It is research infrastructure and prospective-validation
-evidence only.
+Exactly 96 scans at a 900-second cadence, under the exact same reviewed retention policy the
+bounded smoke just cleared: budget = 28 GiB, free-space floor = 8 GiB, expected scans = 96. The
+first scan starts immediately; after each completed scan except the final one, `run_forever` waits
+900 seconds before starting the next -- exactly 95 inter-scan sleeps, never 96 (unchanged,
+long-standing `structural_measurement_runner.run_forever` behavior, confirmed by the existing test
+`test_run_forever_respects_max_iterations_and_never_sleeps_after_the_last_scan`). Elapsed wall-clock
+duration is therefore `85,500 seconds + the actual execution time of all 96 scans` -- **this does
+not guarantee exactly 86,400 seconds (24 hours) elapsed**; a single real scan observed in the
+preserved bounded-smoke evidence took materially longer than a negligible fraction of the 900-second
+interval, so the real total will typically exceed 24 hours by a material, not merely theoretical,
+margin. The actual observation timestamp recorded on each scan remains authoritative for any
+persistence/lifetime analysis of the retained evidence, independent of nominal cadence or total
+elapsed duration (per `docs/reviews/M27B2_CONTINUOUS_STRUCTURAL_MEASUREMENT.md`'s "Run cadence"
+section). `expected_scans = 96` is a scan-count retention-capacity parameter consumed only by
+`AuditableRetentionLedger`'s storage-budget projection -- it is not a wall-clock-duration assertion
+and carries no dependency on how much real time those 96 scans actually span. "24-hour pilot" (this
+document's title) and the pilot receipt's `experiment_kind` field
+(`m27b3_24_hour_retention_pilot`) are stable historical/checkpoint labels for this reviewed
+96-scan / 900-second-courtesy-cadence experiment -- not a guarantee of exactly 24 elapsed hours.
+The pilot's purpose is to observe real, repeated retention growth and auditability across a full
+day's worth of scans -- not a claim of predictive edge, after-cost economics, trading readiness, or
+execution authority. It is research infrastructure and prospective-validation evidence only.
 
 ## Storage headroom, and why it is not a guarantee
 
