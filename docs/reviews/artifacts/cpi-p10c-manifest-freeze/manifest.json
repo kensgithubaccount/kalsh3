@@ -1,0 +1,3384 @@
+{
+  "accepted_event_count": 42,
+  "accepted_sibling_row_count": 341,
+  "canonical_main_sha": "5e2d88fb08dd49aa916bf4152f5c599b26ba81b4",
+  "canonical_main_tree": "724376b760ffad81e77ddbef75700c176688c785",
+  "cutoff_semantics": "per_sibling_market",
+  "edge_pnl_fees_computed": false,
+  "events": [
+    {
+      "accepted_sibling_count": 4,
+      "accepted_siblings": [
+        {
+          "comparator": "GT",
+          "market_ticker": "CPI-21DEC-T0.5",
+          "p9a_evidence_id": "86ad921f9b75d8f59747424c2d40cde0f7bea3554f511c69db9589d20e953e97",
+          "predicate_identity": "GT:0.5",
+          "request_identity": "0e684b7b207ed61a13aa680f9e8d9c03737c729149026735d372b275af48502c",
+          "sibling_cutoff": "2022-01-12T04:59:00+00:00",
+          "threshold": "0.5"
+        },
+        {
+          "comparator": "GT",
+          "market_ticker": "CPI-21DEC-T0.6",
+          "p9a_evidence_id": "a0a8c528a0d1b81001738a5cc6f414d5cd0927527f1f7a94b85fd498206138f4",
+          "predicate_identity": "GT:0.6",
+          "request_identity": "34b118eef8cd0e968dda46cb3fe56fc07e2f25d7e098585ad25a7b9595be6b8a",
+          "sibling_cutoff": "2022-01-12T04:59:00+00:00",
+          "threshold": "0.6"
+        },
+        {
+          "comparator": "GT",
+          "market_ticker": "CPI-21DEC-T0.7",
+          "p9a_evidence_id": "1069cfbfdb839469b39b512f6f79ac46384ae36bcf29dbc45659359dc8eca449",
+          "predicate_identity": "GT:0.7",
+          "request_identity": "a786e2006fa008fca43389fad26b433bcd2384b3bb808b65d602fa0af47f7c68",
+          "sibling_cutoff": "2022-01-12T04:59:00+00:00",
+          "threshold": "0.7"
+        },
+        {
+          "comparator": "GT",
+          "market_ticker": "CPI-21DEC-T0.8",
+          "p9a_evidence_id": "2a6713742645e7b1cdb9dff6a20efb1ec9af88b10b892c1a18bd8f4f3c9f70d1",
+          "predicate_identity": "GT:0.8",
+          "request_identity": "c8b3633e67c3a9eaf36bd3886ba55802e6179e65f9a32de1b617c70e86f3f4a0",
+          "sibling_cutoff": "2022-01-12T04:59:00+00:00",
+          "threshold": "0.8"
+        }
+      ],
+      "event_ticker": "CPI-21DEC",
+      "reference_month": "2021-12"
+    },
+    {
+      "accepted_sibling_count": 3,
+      "accepted_siblings": [
+        {
+          "comparator": "GT",
+          "market_ticker": "CPI-21NOV-T0.3",
+          "p9a_evidence_id": "b3aabe3f26ef7e1df90d74a063fe878e2309aebdedc150e4f3b40544115bde11",
+          "predicate_identity": "GT:0.3",
+          "request_identity": "b2e680d762c138a4bfc6159d87b80534b667a6708b7be0ac54c9dd1cf896685a",
+          "sibling_cutoff": "2021-12-10T00:00:00+00:00",
+          "threshold": "0.3"
+        },
+        {
+          "comparator": "GT",
+          "market_ticker": "CPI-21NOV-T0.6",
+          "p9a_evidence_id": "72d99e9ca572721faf0eda521919807f945520cefa13dad3a02c26d00444ed1d",
+          "predicate_identity": "GT:0.6",
+          "request_identity": "8f99579189dc63c3a707fc9bcefb1d4d2eba485aea27d016abcdb5034c8f6772",
+          "sibling_cutoff": "2021-12-10T04:59:00+00:00",
+          "threshold": "0.6"
+        },
+        {
+          "comparator": "GT",
+          "market_ticker": "CPI-21NOV-T0.8",
+          "p9a_evidence_id": "d94d7ab42cb2f10d8d9b1d63995a170a09e2a1abdba394a72c39867dfdb07e5d",
+          "predicate_identity": "GT:0.8",
+          "request_identity": "d1760cd4f196b5450f89bd153958d9cfec175956305d14d4bac65d9d781ff104",
+          "sibling_cutoff": "2021-12-10T04:59:00+00:00",
+          "threshold": "0.8"
+        }
+      ],
+      "event_ticker": "CPI-21NOV",
+      "reference_month": "2021-11"
+    },
+    {
+      "accepted_sibling_count": 1,
+      "accepted_siblings": [
+        {
+          "comparator": "GT",
+          "market_ticker": "CPI-21SEP-T0.2",
+          "p9a_evidence_id": "f11f7a68b31f575d8921ed2421abbab97699db268769a95a4c6b17001ca00883",
+          "predicate_identity": "GT:0.2",
+          "request_identity": "1aa8192e2fc46bd4418f02fe4c0f356815b15ab48470f580eba613111ee4e1c1",
+          "sibling_cutoff": "2021-10-12T23:00:00+00:00",
+          "threshold": "0.2"
+        }
+      ],
+      "event_ticker": "CPI-21SEP",
+      "reference_month": "2021-09"
+    },
+    {
+      "accepted_sibling_count": 5,
+      "accepted_siblings": [
+        {
+          "comparator": "GT",
+          "market_ticker": "CPI-22APR-T0.1",
+          "p9a_evidence_id": "fbee40489e6215fc915e6511a54f7b60afb078c2d3715a658b2c0c3fb9279519",
+          "predicate_identity": "GT:0.1",
+          "request_identity": "ec8001c1aeb96a92b9ea0950eb157b5716f2c77eeb5379e4f12f3875fd83afb3",
+          "sibling_cutoff": "2022-05-11T12:25:52+00:00",
+          "threshold": "0.1"
+        },
+        {
+          "comparator": "GT",
+          "market_ticker": "CPI-22APR-T0.2",
+          "p9a_evidence_id": "90ec8d15c69bf6ebb0f92fc2aad6c998ea2c96bba5bd5a459c0e80d0ca41560c",
+          "predicate_identity": "GT:0.2",
+          "request_identity": "ecf840487c6260156326f866552e686a4a5b39acfe2237abbcc33a1ce11291de",
+          "sibling_cutoff": "2022-05-11T12:25:57+00:00",
+          "threshold": "0.2"
+        },
+        {
+          "comparator": "GT",
+          "market_ticker": "CPI-22APR-T0.3",
+          "p9a_evidence_id": "9635580edfc8d04b254e9eb674d647bf403307fd36966a442d897de21464cb55",
+          "predicate_identity": "GT:0.3",
+          "request_identity": "0068aa80a576a2af223f6679892ba5d14fb4bbf2cc0fff67bda2066ca4876bd0",
+          "sibling_cutoff": "2022-05-11T12:25:54+00:00",
+          "threshold": "0.3"
+        },
+        {
+          "comparator": "GT",
+          "market_ticker": "CPI-22APR-T0.4",
+          "p9a_evidence_id": "45fb8d29e0458a3747a64222d99bafd87f77012225babf4e2c0b05c5ed08d126",
+          "predicate_identity": "GT:0.4",
+          "request_identity": "eefdf7f956f9e48e2f42e071ccd25db2752227269e2182edfe7b5ec3edf014a1",
+          "sibling_cutoff": "2022-05-11T12:25:08+00:00",
+          "threshold": "0.4"
+        },
+        {
+          "comparator": "GT",
+          "market_ticker": "CPI-22APR-T0.5",
+          "p9a_evidence_id": "9620e122fefc8d17c41cc980648f5030319d071c76fd48df06f0af94c0e00942",
+          "predicate_identity": "GT:0.5",
+          "request_identity": "36473d6796acf8947fd529a904b034eab617d4d323c0154424e6563a5b731c7b",
+          "sibling_cutoff": "2022-05-11T12:25:17+00:00",
+          "threshold": "0.5"
+        }
+      ],
+      "event_ticker": "CPI-22APR",
+      "reference_month": "2022-04"
+    },
+    {
+      "accepted_sibling_count": 15,
+      "accepted_siblings": [
+        {
+          "comparator": "GT",
+          "market_ticker": "CPI-22AUG-T0.0",
+          "p9a_evidence_id": "a27264c3000fa013fb1ff7d298a850e92f7b979c0fe39df61d7fcdcff4721403",
+          "predicate_identity": "GT:0.0",
+          "request_identity": "b1a29426bbc1e9f58759a12da48bbcb1dd08a754944b882851c76e08e0e65486",
+          "sibling_cutoff": "2022-09-13T12:25:00+00:00",
+          "threshold": "0.0"
+        },
+        {
+          "comparator": "GT",
+          "market_ticker": "CPI-22AUG-T0.1",
+          "p9a_evidence_id": "0dffb44054bec098a05a1c0ad8bb34d7dc09c4d5e1b7778d8a83de28acc61fc8",
+          "predicate_identity": "GT:0.1",
+          "request_identity": "1792471c0e3012407bbb564c4c8884c2af41e00f26a0e093358d9a3e6c13f5ba",
+          "sibling_cutoff": "2022-09-13T12:25:00+00:00",
+          "threshold": "0.1"
+        },
+        {
+          "comparator": "GT",
+          "market_ticker": "CPI-22AUG-T0.2",
+          "p9a_evidence_id": "aa6b4e968ddb91b73dbac64878406e70f90efe2f590b009fde025574d21e8a82",
+          "predicate_identity": "GT:0.2",
+          "request_identity": "65a1030639ea7984368f753683718cebd611e13e7bb6cd622d186eb07adf7709",
+          "sibling_cutoff": "2022-09-13T12:25:00+00:00",
+          "threshold": "0.2"
+        },
+        {
+          "comparator": "GT",
+          "market_ticker": "CPI-22AUG-T0.3",
+          "p9a_evidence_id": "ddf1567980d8a85d19523198fa7f45e00c744b3afdce513dda7238e165c15102",
+          "predicate_identity": "GT:0.3",
+          "request_identity": "954500be7e9536a421979410a039cd3a82f4916db2d080be45db538bfb5f5192",
+          "sibling_cutoff": "2022-09-13T12:25:00+00:00",
+          "threshold": "0.3"
+        },
+        {
+          "comparator": "GT",
+          "market_ticker": "CPI-22AUG-T0.4",
+          "p9a_evidence_id": "a1640d4dfa815b29668ac506353cd975fa456058f46457066b12cd09b26dc016",
+          "predicate_identity": "GT:0.4",
+          "request_identity": "55d9acab7657b27c2edfb1bd78a00bd83040891ccc2fffb67e98ab44450a08ab",
+          "sibling_cutoff": "2022-09-13T12:25:00+00:00",
+          "threshold": "0.4"
+        },
+        {
+          "comparator": "GT",
+          "market_ticker": "CPI-22AUG-T0.5",
+          "p9a_evidence_id": "f457da1d07b7169b40a5fa9407c2ca39a6833558bb5b3138779abb7048205277",
+          "predicate_identity": "GT:0.5",
+          "request_identity": "e40807a2d3f7a434ac5f9ddb7ae18acac19d3570c9fc0914259ea02463340c3d",
+          "sibling_cutoff": "2022-09-13T12:25:00+00:00",
+          "threshold": "0.5"
+        },
+        {
+          "comparator": "GT",
+          "market_ticker": "CPI-22AUG-T0.6",
+          "p9a_evidence_id": "9d7f532071b5ed4bb587e2e2f5270a8db6b571b181a5707e87e2c43162a7b3e9",
+          "predicate_identity": "GT:0.6",
+          "request_identity": "1b1bf77cf3302a4204b317370383b47765a60df6761324f05584391026ef695e",
+          "sibling_cutoff": "2022-09-13T12:25:00+00:00",
+          "threshold": "0.6"
+        },
+        {
+          "comparator": "GT",
+          "market_ticker": "CPI-22AUG-T0.7",
+          "p9a_evidence_id": "678dba5af2b847536cd52f14fe0cca8fbae23575c8830245f39a02d10e2f8527",
+          "predicate_identity": "GT:0.7",
+          "request_identity": "ea64604d77c1a7a9747498d959a1a6089b23c13df9349b6e920a2f7f74ba334a",
+          "sibling_cutoff": "2022-09-13T12:25:00+00:00",
+          "threshold": "0.7"
+        },
+        {
+          "comparator": "GT",
+          "market_ticker": "CPI-22AUG-T0.8",
+          "p9a_evidence_id": "489bde840c5d2ffeb4425f5b5a8cdb7fd754d31e8169ff4ad93ce1416f711117",
+          "predicate_identity": "GT:0.8",
+          "request_identity": "2ab96279c548d1f66885ef3cb0d8fb18989f878b944e4196926ac2fae1612f9f",
+          "sibling_cutoff": "2022-09-13T12:25:00+00:00",
+          "threshold": "0.8"
+        },
+        {
+          "comparator": "GT",
+          "market_ticker": "CPI-22AUG-T0.9",
+          "p9a_evidence_id": "7301cc3c10fe10692edfafc94145303f962264479268b3eb13e92a79e219694a",
+          "predicate_identity": "GT:0.9",
+          "request_identity": "0efd5cb1491fe3836731b7eed191281035eb6e2a47f7bd1098bc07c4edc4f61a",
+          "sibling_cutoff": "2022-09-13T12:25:00+00:00",
+          "threshold": "0.9"
+        },
+        {
+          "comparator": "GT",
+          "market_ticker": "CPI-22AUG-T1.0",
+          "p9a_evidence_id": "8ec2ebd03872c55b133548abb1f17084bfdec82bd5fb45380ff09498cd1c3459",
+          "predicate_identity": "GT:1.0",
+          "request_identity": "aeb77c252be159f59eed879e3fa41ac8b75bcbc377c59a8fe4f6bea5dc8ca274",
+          "sibling_cutoff": "2022-09-13T12:25:00+00:00",
+          "threshold": "1.0"
+        },
+        {
+          "comparator": "GT",
+          "market_ticker": "CPI-22AUG-TN0.1",
+          "p9a_evidence_id": "8fea7d878c2769f92e89babc0d865822ff7940f6755a12f5863bd18cd9778059",
+          "predicate_identity": "GT:-0.1",
+          "request_identity": "758aab475a050cd94a8acff9753eb13eeec7db53e1bba294d22cf4f5d7eac2c9",
+          "sibling_cutoff": "2022-09-13T12:25:00+00:00",
+          "threshold": "-0.1"
+        },
+        {
+          "comparator": "GT",
+          "market_ticker": "CPI-22AUG-TN0.2",
+          "p9a_evidence_id": "ddd0032d811903e77dfb48aa5aaa168d6e7632eb0a64776d7abdad9508001824",
+          "predicate_identity": "GT:-0.2",
+          "request_identity": "56019edec5a874167e4c07d3e1ce3971063e078c6d53482aa3926b7d5aebb203",
+          "sibling_cutoff": "2022-09-13T12:25:00+00:00",
+          "threshold": "-0.2"
+        },
+        {
+          "comparator": "GT",
+          "market_ticker": "CPI-22AUG-TN0.3",
+          "p9a_evidence_id": "92144455487d58e2e960f7a920c2759e9ef4ea155f3370764494a7fab8ae0bf0",
+          "predicate_identity": "GT:-0.3",
+          "request_identity": "efbec02b8787aa4f53be2e3640b3869692a6c25ffc64efb1ffac9d1243993f47",
+          "sibling_cutoff": "2022-09-13T12:25:00+00:00",
+          "threshold": "-0.3"
+        },
+        {
+          "comparator": "GT",
+          "market_ticker": "CPI-22AUG-TN0.4",
+          "p9a_evidence_id": "120c3e1dd12945e7d3c947988597a7f6d7a2d24b39661c3130dbaba55b34debf",
+          "predicate_identity": "GT:-0.4",
+          "request_identity": "b681760c6902df9e233438a965417503f948aba72ba6fce2ec808492deb65963",
+          "sibling_cutoff": "2022-09-13T12:25:00+00:00",
+          "threshold": "-0.4"
+        }
+      ],
+      "event_ticker": "CPI-22AUG",
+      "reference_month": "2022-08"
+    },
+    {
+      "accepted_sibling_count": 12,
+      "accepted_siblings": [
+        {
+          "comparator": "GT",
+          "market_ticker": "CPI-22DEC-T0.0",
+          "p9a_evidence_id": "566d713ccab819299f3e98ebd020826296b197fff1dc3dd7f6f361dc453f087a",
+          "predicate_identity": "GT:0.0",
+          "request_identity": "fa8258c4473c254e721c8c8ed688701824c5748ddf6538fa065b57ce1044b586",
+          "sibling_cutoff": "2023-01-12T13:25:00+00:00",
+          "threshold": "0.0"
+        },
+        {
+          "comparator": "GT",
+          "market_ticker": "CPI-22DEC-T0.1",
+          "p9a_evidence_id": "05925cd76bef0d5842f7b9add47ee45e35cbdd56df7616dc6897fd2ba046399c",
+          "predicate_identity": "GT:0.1",
+          "request_identity": "a250a32e000ebfa0702b57b8a3bf624028c024988d2a4b33ba20289cc7c3fa7e",
+          "sibling_cutoff": "2023-01-12T13:25:00+00:00",
+          "threshold": "0.1"
+        },
+        {
+          "comparator": "GT",
+          "market_ticker": "CPI-22DEC-T0.2",
+          "p9a_evidence_id": "c0af740a35c864201947667f4ed542d59663afd2cf68780e89f97332481fe755",
+          "predicate_identity": "GT:0.2",
+          "request_identity": "bbebc3f631f5be14c1544de6f090dcc649ca5b02e21f0135f394c6e5ffa4cebe",
+          "sibling_cutoff": "2023-01-12T13:25:00+00:00",
+          "threshold": "0.2"
+        },
+        {
+          "comparator": "GT",
+          "market_ticker": "CPI-22DEC-T0.3",
+          "p9a_evidence_id": "a014fd8a023cece81203f0d585c91b05ca53e345489eb6ae670736a48c4ed9da",
+          "predicate_identity": "GT:0.3",
+          "request_identity": "ba800e1d5c3944de4baa7174c38bae275bf6bb0a49953ae4b7625400bfb20b81",
+          "sibling_cutoff": "2023-01-12T13:25:00+00:00",
+          "threshold": "0.3"
+        },
+        {
+          "comparator": "GT",
+          "market_ticker": "CPI-22DEC-T0.4",
+          "p9a_evidence_id": "839e6aa3d821b74736ef728fe42dc0e1ea553e71b06bc4e9e90aedb6e67fedbb",
+          "predicate_identity": "GT:0.4",
+          "request_identity": "03054443b76bc22e2b00bd3dd0014dbd466e4afc19f2e8d1191c7d731cb35a6d",
+          "sibling_cutoff": "2023-01-12T13:25:00+00:00",
+          "threshold": "0.4"
+        },
+        {
+          "comparator": "GT",
+          "market_ticker": "CPI-22DEC-T0.5",
+          "p9a_evidence_id": "da4760e5be9819dcaaa0e8fb2504b681316b76e19e9d9e4473f305f4b8c3f760",
+          "predicate_identity": "GT:0.5",
+          "request_identity": "b8b8e7156e759e74c41ba02137cfb96d5892d9292af1aaf7c2df2710729423f7",
+          "sibling_cutoff": "2023-01-12T13:25:00+00:00",
+          "threshold": "0.5"
+        },
+        {
+          "comparator": "GT",
+          "market_ticker": "CPI-22DEC-T0.6",
+          "p9a_evidence_id": "13b4c3dfe2607b4d6b9e736ac3f0b147663b44850c7de128de7c52fe9ac19da4",
+          "predicate_identity": "GT:0.6",
+          "request_identity": "ce3d85a9ef04a70ccdb3bb4f12b5c13882de3efb51588ab6ebc1e59265c5ea58",
+          "sibling_cutoff": "2023-01-12T13:25:00+00:00",
+          "threshold": "0.6"
+        },
+        {
+          "comparator": "GT",
+          "market_ticker": "CPI-22DEC-T0.7",
+          "p9a_evidence_id": "89252c35a3e5882a72fa5d50e62ccaa88d48e6eae04b6eb74950820540cd1790",
+          "predicate_identity": "GT:0.7",
+          "request_identity": "0c5f066d55e0109be2e9768d512ee91067df465954df53f34ca5d4829fbcabae",
+          "sibling_cutoff": "2023-01-12T13:25:00+00:00",
+          "threshold": "0.7"
+        },
+        {
+          "comparator": "GT",
+          "market_ticker": "CPI-22DEC-T0.8",
+          "p9a_evidence_id": "dd7c9381f3ff31d907f1d522d46598f9038c51c57046c253b28667ef062954d6",
+          "predicate_identity": "GT:0.8",
+          "request_identity": "4fc6ca1dfc38607ebbdaf557699695975709fefa181a670862482caa979995e2",
+          "sibling_cutoff": "2023-01-12T13:25:00+00:00",
+          "threshold": "0.8"
+        },
+        {
+          "comparator": "GT",
+          "market_ticker": "CPI-22DEC-TN0.1",
+          "p9a_evidence_id": "99ee50ee6d278479eae1305225602c4103df11c3abae2ef2a2bd73eb8a299c6f",
+          "predicate_identity": "GT:-0.1",
+          "request_identity": "3c995d814af5a85f2c65dba8870ce10c9b6bd85d9f1b001302d198af23a31554",
+          "sibling_cutoff": "2023-01-12T13:25:00+00:00",
+          "threshold": "-0.1"
+        },
+        {
+          "comparator": "GT",
+          "market_ticker": "CPI-22DEC-TN0.2",
+          "p9a_evidence_id": "13e1ee2d401165632229a1279fc03b2b2a4674d0a384f8484d1e3a290e8176df",
+          "predicate_identity": "GT:-0.2",
+          "request_identity": "cb72e87f24028e775c19b45b7c99fac7cf914feae8001274abeb30bbc86bc981",
+          "sibling_cutoff": "2023-01-12T13:25:00+00:00",
+          "threshold": "-0.2"
+        },
+        {
+          "comparator": "GT",
+          "market_ticker": "CPI-22DEC-TN0.3",
+          "p9a_evidence_id": "af0fd2aaea245b53f8196a2853c3174c5f194dc8ed3bf5bc463a566b1d889152",
+          "predicate_identity": "GT:-0.3",
+          "request_identity": "b111518596d5403e23f9881fafe5af600b69a1758cfa58a8dd48fa0d4f7e8ceb",
+          "sibling_cutoff": "2023-01-12T13:25:00+00:00",
+          "threshold": "-0.3"
+        }
+      ],
+      "event_ticker": "CPI-22DEC",
+      "reference_month": "2022-12"
+    },
+    {
+      "accepted_sibling_count": 4,
+      "accepted_siblings": [
+        {
+          "comparator": "GT",
+          "market_ticker": "CPI-22FEB-T0.4",
+          "p9a_evidence_id": "ca940007f066d3e7a1c3cc17cf7efb034af57afd6c8cd36308c3c825814438da",
+          "predicate_identity": "GT:0.4",
+          "request_identity": "ac6924995ed683defad09b16376057501bb1cbe271921ba6f7cef849ae68b282",
+          "sibling_cutoff": "2022-03-10T13:25:00+00:00",
+          "threshold": "0.4"
+        },
+        {
+          "comparator": "GT",
+          "market_ticker": "CPI-22FEB-T0.5",
+          "p9a_evidence_id": "1834b0a71d20307cf177bfc62ca1c169511da16234fcf3c30a846e348809677b",
+          "predicate_identity": "GT:0.5",
+          "request_identity": "e2f9eb0cf822ef5deb463d955574e0cbafe342c9b320447471752c35d2a0182d",
+          "sibling_cutoff": "2022-03-10T13:25:00+00:00",
+          "threshold": "0.5"
+        },
+        {
+          "comparator": "GT",
+          "market_ticker": "CPI-22FEB-T0.6",
+          "p9a_evidence_id": "412d2dffef98340321a62f10b570145289d486da3456dea6cf3967c45acabc39",
+          "predicate_identity": "GT:0.6",
+          "request_identity": "8c52f7fef3293445c51e23353fedd63b5fbec31902154e8545d7b7a352ba6ff3",
+          "sibling_cutoff": "2022-03-10T13:25:00+00:00",
+          "threshold": "0.6"
+        },
+        {
+          "comparator": "GT",
+          "market_ticker": "CPI-22FEB-T0.7",
+          "p9a_evidence_id": "63f951ef043ea0b9b3c51da4bb8a600e1edb60a9e01347a96422ebea74be5a0a",
+          "predicate_identity": "GT:0.7",
+          "request_identity": "d9421b127bb98c2f208d7dae654c49cc0a822f063d7f15125415485a7408bdf9",
+          "sibling_cutoff": "2022-03-10T13:25:00+00:00",
+          "threshold": "0.7"
+        }
+      ],
+      "event_ticker": "CPI-22FEB",
+      "reference_month": "2022-02"
+    },
+    {
+      "accepted_sibling_count": 4,
+      "accepted_siblings": [
+        {
+          "comparator": "GT",
+          "market_ticker": "CPI-22JAN-T0.4",
+          "p9a_evidence_id": "d1c95c9b8948a6ce2caf666232d99c6b999613a18ee54061ba24afc623400cad",
+          "predicate_identity": "GT:0.4",
+          "request_identity": "ec4991ccb173b8441c67e791c96de4b7d80cfb8b006e670d39363fde381e617b",
+          "sibling_cutoff": "2022-02-10T13:25:00+00:00",
+          "threshold": "0.4"
+        },
+        {
+          "comparator": "GT",
+          "market_ticker": "CPI-22JAN-T0.5",
+          "p9a_evidence_id": "1f5cce48b06efc0c4f6ef90e64af6fc46045e53645a58c1d7438328aac1da587",
+          "predicate_identity": "GT:0.5",
+          "request_identity": "16e083c8ed0250a4a2c2104df1e27ad309ce28535ad4f5aa01245019ccbdc026",
+          "sibling_cutoff": "2022-02-10T13:25:00+00:00",
+          "threshold": "0.5"
+        },
+        {
+          "comparator": "GT",
+          "market_ticker": "CPI-22JAN-T0.6",
+          "p9a_evidence_id": "fcef4f624c9baee8f36fc19eff3c6469de93e7ddd5e91bb115b677ceb8009785",
+          "predicate_identity": "GT:0.6",
+          "request_identity": "bb68170e551ba9a5576c4beab49c19ec4a47bcebd808b7e855feff65842e0bd7",
+          "sibling_cutoff": "2022-02-10T13:25:00+00:00",
+          "threshold": "0.6"
+        },
+        {
+          "comparator": "GT",
+          "market_ticker": "CPI-22JAN-T0.7",
+          "p9a_evidence_id": "1d238d8e8d8be255cb7cdb4dc596f0d4c990fe636e3fc19fde0751338fe6e271",
+          "predicate_identity": "GT:0.7",
+          "request_identity": "a464a579839adc52cad5e2ec062568d1239a03659c85ac73c0cdd36c9151a111",
+          "sibling_cutoff": "2022-02-10T13:25:00+00:00",
+          "threshold": "0.7"
+        }
+      ],
+      "event_ticker": "CPI-22JAN",
+      "reference_month": "2022-01"
+    },
+    {
+      "accepted_sibling_count": 11,
+      "accepted_siblings": [
+        {
+          "comparator": "GT",
+          "market_ticker": "CPI-22JUL-T0.1",
+          "p9a_evidence_id": "9649175044d9b96b2a78687366ab0c4c5df9724a59473b7df1a6fc0dd1125133",
+          "predicate_identity": "GT:0.1",
+          "request_identity": "dd973b42d3eca8688a67b1868d031f0cbed720c104899e2441f1a40a316fae7c",
+          "sibling_cutoff": "2022-08-10T12:25:30+00:00",
+          "threshold": "0.1"
+        },
+        {
+          "comparator": "GT",
+          "market_ticker": "CPI-22JUL-T0.2",
+          "p9a_evidence_id": "985bec89f1192c85913fc97f97ba2cb5fa5ccd1ababad5211511acc83f52f1f9",
+          "predicate_identity": "GT:0.2",
+          "request_identity": "5b62efe1db5fdf1236cf0d1caf10f6cfd0501ac8008d5619c92e8abddd294175",
+          "sibling_cutoff": "2022-08-10T12:25:06+00:00",
+          "threshold": "0.2"
+        },
+        {
+          "comparator": "GT",
+          "market_ticker": "CPI-22JUL-T0.3",
+          "p9a_evidence_id": "883f8ddeb6cf74aa403b3b88cb348c5622cea8cd8cbe835eafb89ddcdcc22a36",
+          "predicate_identity": "GT:0.3",
+          "request_identity": "ea2417b3a1cb21fc504a52fab51cc126d14fa8d1b51dc82d9d7195b92d45d20e",
+          "sibling_cutoff": "2022-08-10T12:25:16+00:00",
+          "threshold": "0.3"
+        },
+        {
+          "comparator": "GT",
+          "market_ticker": "CPI-22JUL-T0.4",
+          "p9a_evidence_id": "10596ceb1cc78d6de146d92ce3cd72b44c285ad58667d14442c458c2cd3ddeb5",
+          "predicate_identity": "GT:0.4",
+          "request_identity": "d7f35b7f7c08311e183a0758c9c5516769d5dfa5827590b131ee69ff60b34f59",
+          "sibling_cutoff": "2022-08-10T12:25:00+00:00",
+          "threshold": "0.4"
+        },
+        {
+          "comparator": "GT",
+          "market_ticker": "CPI-22JUL-T0.5",
+          "p9a_evidence_id": "7de535468064df47681ea67b782388f0e6764d2427a9a0cb6e38da0cf45f4984",
+          "predicate_identity": "GT:0.5",
+          "request_identity": "8416156d719eae4419dc92ade1a645e2cd7db5da85f17922942f2c97012a34e1",
+          "sibling_cutoff": "2022-08-10T12:25:00+00:00",
+          "threshold": "0.5"
+        },
+        {
+          "comparator": "GT",
+          "market_ticker": "CPI-22JUL-T0.6",
+          "p9a_evidence_id": "45f9fb3750f0bf6e076553258dfa1dcab22e0785899cff23e2cc20ad0284b43d",
+          "predicate_identity": "GT:0.6",
+          "request_identity": "c734158c116504de8c2ff1667abcf7d1390723dc6e5c052f52755c98c310d7eb",
+          "sibling_cutoff": "2022-08-10T12:25:00+00:00",
+          "threshold": "0.6"
+        },
+        {
+          "comparator": "GT",
+          "market_ticker": "CPI-22JUL-T0.7",
+          "p9a_evidence_id": "47c8c5bd6a971adb6303d028483c1030bdeee5ecbda137678ddfe3a2e16c98fa",
+          "predicate_identity": "GT:0.7",
+          "request_identity": "258df778e947c182c937e24b371c5ed69c8db863b3a8cc395ff86b01d19609c4",
+          "sibling_cutoff": "2022-08-10T12:25:00+00:00",
+          "threshold": "0.7"
+        },
+        {
+          "comparator": "GT",
+          "market_ticker": "CPI-22JUL-T0.8",
+          "p9a_evidence_id": "556c83361a466faffdb87955ebd18e3c44fc31813c7ef3cbfc22897d371ee85a",
+          "predicate_identity": "GT:0.8",
+          "request_identity": "91b235152c033cea29c750a4664f4a9b6371ee7f8553fd246384996cc84842e2",
+          "sibling_cutoff": "2022-08-10T12:25:00+00:00",
+          "threshold": "0.8"
+        },
+        {
+          "comparator": "GT",
+          "market_ticker": "CPI-22JUL-T0.9",
+          "p9a_evidence_id": "4b780aba78ca2f03f96e9760849faa477a609fbbfe3e31fd4dc9205102f2c9db",
+          "predicate_identity": "GT:0.9",
+          "request_identity": "c0e1d2bb67acfc2bf24e74d207c17119e6019c6c10f9d2d505bf6b7775055da5",
+          "sibling_cutoff": "2022-08-10T12:25:00+00:00",
+          "threshold": "0.9"
+        },
+        {
+          "comparator": "GT",
+          "market_ticker": "CPI-22JUL-T1.0",
+          "p9a_evidence_id": "cd8e3004fba932a1a046af2e7db5321a9fe847404c90dfbe8665cfdfd825d14e",
+          "predicate_identity": "GT:1.0",
+          "request_identity": "88c4b7ab3f275881565f49f5dace60e527764bc7e73f7255cd3c0ffd48690eee",
+          "sibling_cutoff": "2022-08-10T12:25:00+00:00",
+          "threshold": "1.0"
+        },
+        {
+          "comparator": "GT",
+          "market_ticker": "CPI-22JUL-T1.1",
+          "p9a_evidence_id": "b5c9eef8ad188674ff6ac85a0af4abd410bb73eaecd25ed25360f5b4bd4d4cac",
+          "predicate_identity": "GT:1.1",
+          "request_identity": "f95aada2c69aaae05d7230853df8e595a4830968aec347071d23ef009f081fff",
+          "sibling_cutoff": "2022-08-10T12:25:00+00:00",
+          "threshold": "1.1"
+        }
+      ],
+      "event_ticker": "CPI-22JUL",
+      "reference_month": "2022-07"
+    },
+    {
+      "accepted_sibling_count": 12,
+      "accepted_siblings": [
+        {
+          "comparator": "GT",
+          "market_ticker": "CPI-22JUN-T0.1",
+          "p9a_evidence_id": "4e71deb128ce6a93f7fb91768de4b820c8ff5576250682f5c001d196385082f8",
+          "predicate_identity": "GT:0.1",
+          "request_identity": "c2efbb482750b7301cfd6bc1e4ff9b8e6c7cd93a92b7325fd36e166e40106f55",
+          "sibling_cutoff": "2022-07-13T12:25:06+00:00",
+          "threshold": "0.1"
+        },
+        {
+          "comparator": "GT",
+          "market_ticker": "CPI-22JUN-T0.3",
+          "p9a_evidence_id": "2f7144a113dee774d08daacd6c70259d97f97713deca332332b956d81be37af0",
+          "predicate_identity": "GT:0.3",
+          "request_identity": "2832ac6b49dc4988cb690f285b701492dff18df1a80ece4ebb9401993efec0f6",
+          "sibling_cutoff": "2022-07-13T12:25:20+00:00",
+          "threshold": "0.3"
+        },
+        {
+          "comparator": "GT",
+          "market_ticker": "CPI-22JUN-T0.4",
+          "p9a_evidence_id": "0cf4be74f405318aa28be4260125bb4653b49afb2590ea77deff41cedbf0d7a4",
+          "predicate_identity": "GT:0.4",
+          "request_identity": "daf06a50503bd08ea49ff4df3a6383b09af75d5666e7e12821c3c8ae47c7cac7",
+          "sibling_cutoff": "2022-07-13T12:25:00+00:00",
+          "threshold": "0.4"
+        },
+        {
+          "comparator": "GT",
+          "market_ticker": "CPI-22JUN-T0.5",
+          "p9a_evidence_id": "aaa7a6ce6748acdf5a87f0396e393cd9143d786b4d69f3bbe45741a5ddf6435f",
+          "predicate_identity": "GT:0.5",
+          "request_identity": "705f3a258d9757ce8768dece57c75a211b123f77d72538d31480404d86a24746",
+          "sibling_cutoff": "2022-07-13T12:25:00+00:00",
+          "threshold": "0.5"
+        },
+        {
+          "comparator": "GT",
+          "market_ticker": "CPI-22JUN-T0.6",
+          "p9a_evidence_id": "86e921c28f342f217a353d37d0b7b3fd59c449a3660c123587ca4f84dc044e64",
+          "predicate_identity": "GT:0.6",
+          "request_identity": "b1c0fa29f6f642dfaab6e61724349cd2a5a6a236f7e8201436d4bb194403b8eb",
+          "sibling_cutoff": "2022-07-13T12:25:00+00:00",
+          "threshold": "0.6"
+        },
+        {
+          "comparator": "GT",
+          "market_ticker": "CPI-22JUN-T0.7",
+          "p9a_evidence_id": "c1927aecbd10fec589367e5eeb3e0e3d0f6eeb9ef1a73a964ba69cb0c1ae795c",
+          "predicate_identity": "GT:0.7",
+          "request_identity": "2e47c337f29178de7f4b0c42e51a6afd8a1e200162e067d251a6bd5d6bb59d3d",
+          "sibling_cutoff": "2022-07-13T12:25:00+00:00",
+          "threshold": "0.7"
+        },
+        {
+          "comparator": "GT",
+          "market_ticker": "CPI-22JUN-T0.8",
+          "p9a_evidence_id": "bc457782e7fedad7d4c06577989547d969e71b3e098c3b021d79b3de9b6b6e6e",
+          "predicate_identity": "GT:0.8",
+          "request_identity": "9f717a4a9372da99142fd143fcfc8f6b6c3d506e9c1af7408c63891e312e0317",
+          "sibling_cutoff": "2022-07-13T12:25:00+00:00",
+          "threshold": "0.8"
+        },
+        {
+          "comparator": "GT",
+          "market_ticker": "CPI-22JUN-T0.9",
+          "p9a_evidence_id": "da0aa9075d796516e0a5455650da0987006f9a10666fde54efc5eaf21060bde5",
+          "predicate_identity": "GT:0.9",
+          "request_identity": "3fd32574acb4f5e59e7810513c2882268c950fa06052eb2cc8b6c7d8641aa5b9",
+          "sibling_cutoff": "2022-07-13T12:25:00+00:00",
+          "threshold": "0.9"
+        },
+        {
+          "comparator": "GT",
+          "market_ticker": "CPI-22JUN-T1.0",
+          "p9a_evidence_id": "25b0d26e86f4d7ad9553194952c87d5d3d5d444e5464293dcc3499fa00444911",
+          "predicate_identity": "GT:1.0",
+          "request_identity": "4ebcfa731627493a74aae9f555a5387f79360054df0c904005617b97b6812d1b",
+          "sibling_cutoff": "2022-07-13T12:25:00+00:00",
+          "threshold": "1.0"
+        },
+        {
+          "comparator": "GT",
+          "market_ticker": "CPI-22JUN-T1.1",
+          "p9a_evidence_id": "e33756e85f68fdf70b9e7378c7808cd95155377782270039282ffdb6198ab105",
+          "predicate_identity": "GT:1.1",
+          "request_identity": "e0d393432a05c521bb8ed99613c24a56135d89e44dccd88bf2f293e51714ed76",
+          "sibling_cutoff": "2022-07-13T12:25:00+00:00",
+          "threshold": "1.1"
+        },
+        {
+          "comparator": "GT",
+          "market_ticker": "CPI-22JUN-T1.2",
+          "p9a_evidence_id": "725cdcf663be17944bdc6868be4a238ffee560e5ca16d2cb3b8268c20539f16f",
+          "predicate_identity": "GT:1.2",
+          "request_identity": "84c1c5a843357b32aa4454c4894c97c360d1296a911577a87b0797ed68bd8b5b",
+          "sibling_cutoff": "2022-07-13T12:25:00+00:00",
+          "threshold": "1.2"
+        },
+        {
+          "comparator": "GT",
+          "market_ticker": "CPI-22JUN-T1.3",
+          "p9a_evidence_id": "90074094f664e47c2bf04fea5fd7bd9dbf152c95209561167b8b4b1c4eac475b",
+          "predicate_identity": "GT:1.3",
+          "request_identity": "5263f974dc563c3c1cefa59a4266a53c3b5f8330a121dadd21aae01f12bee736",
+          "sibling_cutoff": "2022-07-13T12:25:00+00:00",
+          "threshold": "1.3"
+        }
+      ],
+      "event_ticker": "CPI-22JUN",
+      "reference_month": "2022-06"
+    },
+    {
+      "accepted_sibling_count": 7,
+      "accepted_siblings": [
+        {
+          "comparator": "GT",
+          "market_ticker": "CPI-22MAR-T0.5",
+          "p9a_evidence_id": "ab6955d6c79323fc71c1c219c2828d2fe119487e1e6c01bac7a48eef2c3a85ee",
+          "predicate_identity": "GT:0.5",
+          "request_identity": "fc6b1eacb15c5f1fc40bf0759e53e404e7285962a484d53242a7ff1811d292bc",
+          "sibling_cutoff": "2022-04-12T12:25:00+00:00",
+          "threshold": "0.5"
+        },
+        {
+          "comparator": "GT",
+          "market_ticker": "CPI-22MAR-T0.6",
+          "p9a_evidence_id": "93b0929f57676aebafc213107d95e6a3621c0a9a29345911eea004f0000b7a39",
+          "predicate_identity": "GT:0.6",
+          "request_identity": "ed44d91caf8c54695f6f05013d0b1489e541d7fde9d6429c3404b95bd76cadde",
+          "sibling_cutoff": "2022-04-12T12:25:00+00:00",
+          "threshold": "0.6"
+        },
+        {
+          "comparator": "GT",
+          "market_ticker": "CPI-22MAR-T0.7",
+          "p9a_evidence_id": "33fbfba3bc6b2ecf903e4108728ce2f739f35f033ce6b351fe09fbb6176b49ef",
+          "predicate_identity": "GT:0.7",
+          "request_identity": "92274ad2786322f0a402e9b8efaac740dd39241b10b5a86a961a7b6b3449cb57",
+          "sibling_cutoff": "2022-04-12T12:25:00+00:00",
+          "threshold": "0.7"
+        },
+        {
+          "comparator": "GT",
+          "market_ticker": "CPI-22MAR-T0.8",
+          "p9a_evidence_id": "ee16f41441043df23a0a88fcc6de9e8865f126d665672c8e006d42c8ac06c91d",
+          "predicate_identity": "GT:0.8",
+          "request_identity": "b0796ff2f00e0f4e7891fb99697f3865f7a703484a270f58676d3f45bf65e6bf",
+          "sibling_cutoff": "2022-04-12T12:25:00+00:00",
+          "threshold": "0.8"
+        },
+        {
+          "comparator": "GT",
+          "market_ticker": "CPI-22MAR-T0.9",
+          "p9a_evidence_id": "8165bed70253e4944a772e7e12a24056588ab2b023cf59ee434f7562725beff5",
+          "predicate_identity": "GT:0.9",
+          "request_identity": "31636b092988cd499cfb08f6d94705b995188c3a874c09fbdb0084d260a9da00",
+          "sibling_cutoff": "2022-04-12T12:25:00+00:00",
+          "threshold": "0.9"
+        },
+        {
+          "comparator": "GT",
+          "market_ticker": "CPI-22MAR-T1.0",
+          "p9a_evidence_id": "b8443673640b126a6b5cce1008ffe7799f98a1d48c5bcca286931f6a11351a00",
+          "predicate_identity": "GT:1.0",
+          "request_identity": "4258c6a1e0939f98afb310ec0d270683544ddb27177341e0502d9e84b2a97d34",
+          "sibling_cutoff": "2022-04-12T12:25:00+00:00",
+          "threshold": "1.0"
+        },
+        {
+          "comparator": "GT",
+          "market_ticker": "CPI-22MAR-T1.1",
+          "p9a_evidence_id": "6b37c79125eae51a3e82192e68966a6226c27656b05e050efc4c96c688d7b63a",
+          "predicate_identity": "GT:1.1",
+          "request_identity": "49ffaac7669fddb4bff353b176fdb6cc8489f5bb919581cba453a4d0394ef7bd",
+          "sibling_cutoff": "2022-04-12T12:25:00+00:00",
+          "threshold": "1.1"
+        }
+      ],
+      "event_ticker": "CPI-22MAR",
+      "reference_month": "2022-03"
+    },
+    {
+      "accepted_sibling_count": 4,
+      "accepted_siblings": [
+        {
+          "comparator": "GT",
+          "market_ticker": "CPI-22MAY-T0.1",
+          "p9a_evidence_id": "63da0f1a1aed788cf4db28fc61b2f3da5d4ab98c605fe8af4f0634b51a8cee40",
+          "predicate_identity": "GT:0.1",
+          "request_identity": "308b8fcd640bf04f98b03b765d0dd6288dce2b854599adc40002e1f7fa5e3643",
+          "sibling_cutoff": "2022-06-10T12:25:44+00:00",
+          "threshold": "0.1"
+        },
+        {
+          "comparator": "GT",
+          "market_ticker": "CPI-22MAY-T0.2",
+          "p9a_evidence_id": "8b78f613a861182162a2b80bc738e1f2fa9296014000f11b06f16dc450dc48ba",
+          "predicate_identity": "GT:0.2",
+          "request_identity": "f3649e75578427e969dda74abf2ebde4bdaa92792c5eacfec969f062a6a29195",
+          "sibling_cutoff": "2022-06-10T12:25:08+00:00",
+          "threshold": "0.2"
+        },
+        {
+          "comparator": "GT",
+          "market_ticker": "CPI-22MAY-T0.3",
+          "p9a_evidence_id": "baa6b455a5483164ae1c141e7744c8fe15e5014a9bb708759c0b183f2f72ff83",
+          "predicate_identity": "GT:0.3",
+          "request_identity": "3a1aac00f2cc217bb362629a6d9070a598e34afe6a7d5145d2ea691cabc2c5aa",
+          "sibling_cutoff": "2022-06-10T12:25:21+00:00",
+          "threshold": "0.3"
+        },
+        {
+          "comparator": "GT",
+          "market_ticker": "CPI-22MAY-T0.4",
+          "p9a_evidence_id": "3c961ba9402a76d2de20c3863553212ffdc63fc23c4df2576e82493147ccbd39",
+          "predicate_identity": "GT:0.4",
+          "request_identity": "6cb5223c88b11bee3c3ee4181433630b1258f245fe08405b883a6fab9e5a0527",
+          "sibling_cutoff": "2022-06-10T12:25:01+00:00",
+          "threshold": "0.4"
+        }
+      ],
+      "event_ticker": "CPI-22MAY",
+      "reference_month": "2022-05"
+    },
+    {
+      "accepted_sibling_count": 10,
+      "accepted_siblings": [
+        {
+          "comparator": "GT",
+          "market_ticker": "CPI-22NOV-T0.0",
+          "p9a_evidence_id": "d508f5621303c7e377279c6d19d79fd12edd15ee9a085160d2d7b06ede2e8bb6",
+          "predicate_identity": "GT:0.0",
+          "request_identity": "42f3b644bfaa12717f0c84e69782ec855d39903326eb2e9f5b6efa2fc84e93de",
+          "sibling_cutoff": "2022-12-13T13:25:00+00:00",
+          "threshold": "0.0"
+        },
+        {
+          "comparator": "GT",
+          "market_ticker": "CPI-22NOV-T0.1",
+          "p9a_evidence_id": "18efcec80d75a7b4b015442a3b3e0b768ab5f1f02e911ce01b0b972d3df5a225",
+          "predicate_identity": "GT:0.1",
+          "request_identity": "149df5e8f9825189cd2601795aa8d01f63bfab04059c0fe907b8b43884886836",
+          "sibling_cutoff": "2022-12-13T13:25:00+00:00",
+          "threshold": "0.1"
+        },
+        {
+          "comparator": "GT",
+          "market_ticker": "CPI-22NOV-T0.2",
+          "p9a_evidence_id": "0aa51e27c390b0de2ef29f14d419799053d8158a468ea28b47e452f2720c0a32",
+          "predicate_identity": "GT:0.2",
+          "request_identity": "2fbd547258e08c75547a860a13a0818c241ba1cc279f0c1e8b2ffcb359787ae6",
+          "sibling_cutoff": "2022-12-13T13:25:00+00:00",
+          "threshold": "0.2"
+        },
+        {
+          "comparator": "GT",
+          "market_ticker": "CPI-22NOV-T0.3",
+          "p9a_evidence_id": "c81c4abe4138a6d34a3ee0f53f3788f6349c3e254299dc9682463ee4b75b4605",
+          "predicate_identity": "GT:0.3",
+          "request_identity": "96c466514f8fa3704ba12069b00d21a3c4259fb9033ece5c8ef7849274a1c49f",
+          "sibling_cutoff": "2022-12-13T13:25:00+00:00",
+          "threshold": "0.3"
+        },
+        {
+          "comparator": "GT",
+          "market_ticker": "CPI-22NOV-T0.4",
+          "p9a_evidence_id": "938453573cf420b0769fef0eb873c504dbd220ce885b7ecb978135609e8564f7",
+          "predicate_identity": "GT:0.4",
+          "request_identity": "612bd19f9c20921ce5ec244ef325324f01724a01f123812cfa44c774d1aefadd",
+          "sibling_cutoff": "2022-12-13T13:25:00+00:00",
+          "threshold": "0.4"
+        },
+        {
+          "comparator": "GT",
+          "market_ticker": "CPI-22NOV-T0.5",
+          "p9a_evidence_id": "41334090c3dca5bf346f33db35cd68a95066ac903b32ba3ece260a868bcad48c",
+          "predicate_identity": "GT:0.5",
+          "request_identity": "126daa74f8e7e765b2433396947b0133b31bd85cdd836883e4bf2b098bd79a51",
+          "sibling_cutoff": "2022-12-13T13:25:00+00:00",
+          "threshold": "0.5"
+        },
+        {
+          "comparator": "GT",
+          "market_ticker": "CPI-22NOV-T0.6",
+          "p9a_evidence_id": "69655c274b52bef1213226376fa3f44fdfacb79e777cce0b45c92a0fcc634c46",
+          "predicate_identity": "GT:0.6",
+          "request_identity": "ba303dd72a1d1dc70881b6e8d8a9013cf52d8175b08a9cc96a527602f7b9bfbd",
+          "sibling_cutoff": "2022-12-13T13:25:00+00:00",
+          "threshold": "0.6"
+        },
+        {
+          "comparator": "GT",
+          "market_ticker": "CPI-22NOV-T0.7",
+          "p9a_evidence_id": "0f4c3e09ac1555489b859f383eb41b1bd03f30d00f4a2cc08381c011476e6322",
+          "predicate_identity": "GT:0.7",
+          "request_identity": "ee898b24e94f546553953ef8841cf66f8de3a21e75f45287e73273c5a6cc47bd",
+          "sibling_cutoff": "2022-12-13T13:25:00+00:00",
+          "threshold": "0.7"
+        },
+        {
+          "comparator": "GT",
+          "market_ticker": "CPI-22NOV-T0.8",
+          "p9a_evidence_id": "3af5f282606d7b54a9bb4c5c6d548d3f9d34c7bca41fb91fcbc0a689fb5a43f7",
+          "predicate_identity": "GT:0.8",
+          "request_identity": "16903c3124530ba20234a29986de49904076d31e626c0694be524cb432801c07",
+          "sibling_cutoff": "2022-12-13T13:25:00+00:00",
+          "threshold": "0.8"
+        },
+        {
+          "comparator": "GT",
+          "market_ticker": "CPI-22NOV-T0.9",
+          "p9a_evidence_id": "ef29b83a30411e57bbc0cdb24ef5c43e599c6a014fe45a75847f23ebda497383",
+          "predicate_identity": "GT:0.9",
+          "request_identity": "3714044f9f0d401695501fa33cb54e42a768ecb494252e59e9484ca75a9da40c",
+          "sibling_cutoff": "2022-12-13T13:25:00+00:00",
+          "threshold": "0.9"
+        }
+      ],
+      "event_ticker": "CPI-22NOV",
+      "reference_month": "2022-11"
+    },
+    {
+      "accepted_sibling_count": 8,
+      "accepted_siblings": [
+        {
+          "comparator": "GT",
+          "market_ticker": "CPI-22OCT-T0.2",
+          "p9a_evidence_id": "70aa7449a139d9598aee5f0ab908d3bf4d51ffd719ca75e7578cd47b20ad1a04",
+          "predicate_identity": "GT:0.2",
+          "request_identity": "7a11a60ef0336e0c9bf52ba5f47d4c0493de16942612a20145110159597f495d",
+          "sibling_cutoff": "2022-11-10T13:25:00+00:00",
+          "threshold": "0.2"
+        },
+        {
+          "comparator": "GT",
+          "market_ticker": "CPI-22OCT-T0.3",
+          "p9a_evidence_id": "7b08753e94ce0657d45c52489e97703a3a342d55dbf02b5e3955ebecb277c91e",
+          "predicate_identity": "GT:0.3",
+          "request_identity": "3c13f63ff9e712480197e65b798b2014b9b81bd6dca6a2c2ce5e0ef459a8359d",
+          "sibling_cutoff": "2022-11-10T13:25:00+00:00",
+          "threshold": "0.3"
+        },
+        {
+          "comparator": "GT",
+          "market_ticker": "CPI-22OCT-T0.4",
+          "p9a_evidence_id": "b5add7a894a4be3dc6c4bebb0d23e4a9e885f2c9ce8cf10e2a192d843cdfcde8",
+          "predicate_identity": "GT:0.4",
+          "request_identity": "c8da9994d0222653602c320fd9ac02d22bea0e01130ce57147a5ab1f3b223fb2",
+          "sibling_cutoff": "2022-11-10T13:25:00+00:00",
+          "threshold": "0.4"
+        },
+        {
+          "comparator": "GT",
+          "market_ticker": "CPI-22OCT-T0.5",
+          "p9a_evidence_id": "613048776d7a3a07767ff2648d7e0742902dac30bd93ed4e914feb76fc45a5c7",
+          "predicate_identity": "GT:0.5",
+          "request_identity": "601d8503926b95d12ca37241db02bbbb0acf8e387dcc65b1eca4ca8dbe2a3d7b",
+          "sibling_cutoff": "2022-11-10T13:25:00+00:00",
+          "threshold": "0.5"
+        },
+        {
+          "comparator": "GT",
+          "market_ticker": "CPI-22OCT-T0.6",
+          "p9a_evidence_id": "46849d90e99bbeef7db22dfc7408e1786e828031ad862cc97a28228f01f179d8",
+          "predicate_identity": "GT:0.6",
+          "request_identity": "d267e369675d4715ad8744c456fc6a5924c7eb5199c1465fb4fb16c2f36fb07c",
+          "sibling_cutoff": "2022-11-10T13:25:00+00:00",
+          "threshold": "0.6"
+        },
+        {
+          "comparator": "GT",
+          "market_ticker": "CPI-22OCT-T0.7",
+          "p9a_evidence_id": "5f5343bf7a6e1c5cb1f633bed20043185e84c3adb266a87a277deda36e8be1a4",
+          "predicate_identity": "GT:0.7",
+          "request_identity": "4dd5288b0421a96d279489752990153aada9d4cf212fa2dea876db48c732f287",
+          "sibling_cutoff": "2022-11-10T13:25:00+00:00",
+          "threshold": "0.7"
+        },
+        {
+          "comparator": "GT",
+          "market_ticker": "CPI-22OCT-T0.8",
+          "p9a_evidence_id": "de67bae909b45a6fa48bc61b1b0bc3968ab3090404880215577d764dbb60811b",
+          "predicate_identity": "GT:0.8",
+          "request_identity": "96ec4a41d5717f94cd2bf3ddf31b8038e48241a9a6c4edc55974465b72951517",
+          "sibling_cutoff": "2022-11-10T13:25:00+00:00",
+          "threshold": "0.8"
+        },
+        {
+          "comparator": "GT",
+          "market_ticker": "CPI-22OCT-T0.9",
+          "p9a_evidence_id": "074f8c36ac2b1b3e74d2638b40cf86eccefa8f6c6169fb4eafb22f4e4620055c",
+          "predicate_identity": "GT:0.9",
+          "request_identity": "75e0307c47e9e767e22afd76d2c3d6a9c45c5c3145a2d6dcda6b274ed81fdee7",
+          "sibling_cutoff": "2022-11-10T13:25:00+00:00",
+          "threshold": "0.9"
+        }
+      ],
+      "event_ticker": "CPI-22OCT",
+      "reference_month": "2022-10"
+    },
+    {
+      "accepted_sibling_count": 11,
+      "accepted_siblings": [
+        {
+          "comparator": "GT",
+          "market_ticker": "CPI-22SEP-T0.0",
+          "p9a_evidence_id": "7c98b792ec2e8dc3878f6e8166a20b154172bbef9a1ded42879b1373b31bac10",
+          "predicate_identity": "GT:0.0",
+          "request_identity": "e45dc07a53837bbbb79ebbafb56280f2c6f88dc35aae517dfcc83c6b849f15ea",
+          "sibling_cutoff": "2022-10-13T12:25:00+00:00",
+          "threshold": "0.0"
+        },
+        {
+          "comparator": "GT",
+          "market_ticker": "CPI-22SEP-T0.1",
+          "p9a_evidence_id": "542c71fb08d2b9dc5f9da2d0000a0147aa81c28bdac8c5f432abb131b03e350e",
+          "predicate_identity": "GT:0.1",
+          "request_identity": "7814caccc7e3a379fa2319e3866d85f72522bfef2f9dac0161e1bafcae3b3409",
+          "sibling_cutoff": "2022-10-13T12:25:00+00:00",
+          "threshold": "0.1"
+        },
+        {
+          "comparator": "GT",
+          "market_ticker": "CPI-22SEP-T0.2",
+          "p9a_evidence_id": "5ccfaf5419d65d5dc4f768c61372d1aee8cadde73781b6afa8464df92dad5964",
+          "predicate_identity": "GT:0.2",
+          "request_identity": "b31c5fb29ab3ba6a69dae236efbc664e5216e3acad9a3615dce1cac75bb0e87f",
+          "sibling_cutoff": "2022-10-13T12:25:00+00:00",
+          "threshold": "0.2"
+        },
+        {
+          "comparator": "GT",
+          "market_ticker": "CPI-22SEP-T0.3",
+          "p9a_evidence_id": "e0beeae5c4aa48ace0be7dbc23fcb76c41dcf915536350fd73dba30307bd960c",
+          "predicate_identity": "GT:0.3",
+          "request_identity": "6d3f39926087fe3d70edec3d0c041a611d0afe7c53053de9aca5077c7c488e78",
+          "sibling_cutoff": "2022-10-13T12:25:00+00:00",
+          "threshold": "0.3"
+        },
+        {
+          "comparator": "GT",
+          "market_ticker": "CPI-22SEP-T0.4",
+          "p9a_evidence_id": "6c010f208499f650dc778538412c952b2970fdc7135634bfa9cceaa0e22e1c5a",
+          "predicate_identity": "GT:0.4",
+          "request_identity": "a5c0cc957e9db9d35389a1d8c0cf0db6fc772aa8d25557d90218c782c432a584",
+          "sibling_cutoff": "2022-10-13T12:25:00+00:00",
+          "threshold": "0.4"
+        },
+        {
+          "comparator": "GT",
+          "market_ticker": "CPI-22SEP-T0.5",
+          "p9a_evidence_id": "46c560130521271c0e54f11df31131a1b4695659326f32f8f502b5596e10a580",
+          "predicate_identity": "GT:0.5",
+          "request_identity": "bd79243c7b9e9fef97fc2441ae25ab61cbfad34c0b5f77d2139a32590e6bcfdb",
+          "sibling_cutoff": "2022-10-13T12:25:00+00:00",
+          "threshold": "0.5"
+        },
+        {
+          "comparator": "GT",
+          "market_ticker": "CPI-22SEP-T0.6",
+          "p9a_evidence_id": "90c440d97077520dcf1c10f3d7491f80595f776ec0a402f6ff6b79cde13c6eb6",
+          "predicate_identity": "GT:0.6",
+          "request_identity": "4834ae9ad521e17ef9fc5e9b56bd7597a9ebdc7c4b3fc66c415f0555ca7a0bc7",
+          "sibling_cutoff": "2022-10-13T12:25:00+00:00",
+          "threshold": "0.6"
+        },
+        {
+          "comparator": "GT",
+          "market_ticker": "CPI-22SEP-T0.7",
+          "p9a_evidence_id": "67f3678a053f508601eb52e030f1b9098eef151d494b3d422bf386026699df3b",
+          "predicate_identity": "GT:0.7",
+          "request_identity": "0baffc92832ec3a30acc1033df082a6cbdd12fadb371993a0058a01167c00aa9",
+          "sibling_cutoff": "2022-10-13T12:25:00+00:00",
+          "threshold": "0.7"
+        },
+        {
+          "comparator": "GT",
+          "market_ticker": "CPI-22SEP-T0.8",
+          "p9a_evidence_id": "ea293c38c436ba31ee63d775318a9b6ed0cbf8d12050161a861b0411a4b81b5c",
+          "predicate_identity": "GT:0.8",
+          "request_identity": "2d22e82bd37af9e729f28e94d3456c9af915381f278e30d51cefa7f4f4495f8f",
+          "sibling_cutoff": "2022-10-13T12:25:00+00:00",
+          "threshold": "0.8"
+        },
+        {
+          "comparator": "GT",
+          "market_ticker": "CPI-22SEP-T0.9",
+          "p9a_evidence_id": "587f6e9903d22f4447d3d310f57b2b212e88a5b89f5801a8f02f9895c4d3e1d2",
+          "predicate_identity": "GT:0.9",
+          "request_identity": "42de416c8e43a6f580b3bd5bf17c9b050ff16dead87b1fa78ce0d7ea1bf52696",
+          "sibling_cutoff": "2022-10-13T12:25:00+00:00",
+          "threshold": "0.9"
+        },
+        {
+          "comparator": "GT",
+          "market_ticker": "CPI-22SEP-T1.0",
+          "p9a_evidence_id": "915c15fb00aab305b75bcae1232f5e125a80daf0b6e8bf8837ccd4fa6fec5a89",
+          "predicate_identity": "GT:1.0",
+          "request_identity": "68bdc974fa6ef0bc1d06c3e044c23f1e70034a10f1bbcbe1bbb415f94f4b08d5",
+          "sibling_cutoff": "2022-10-13T12:25:00+00:00",
+          "threshold": "1.0"
+        }
+      ],
+      "event_ticker": "CPI-22SEP",
+      "reference_month": "2022-09"
+    },
+    {
+      "accepted_sibling_count": 9,
+      "accepted_siblings": [
+        {
+          "comparator": "GT",
+          "market_ticker": "CPI-23APR-T0.0",
+          "p9a_evidence_id": "fcdc8ccf1f31952e87fff81f4f1c8d6ee66116711403616f95d21c3ffbc4b5c2",
+          "predicate_identity": "GT:0.0",
+          "request_identity": "b6c99cb202be355fcaff06ad4772358d2210aa72584855622a39eafa86d5fcca",
+          "sibling_cutoff": "2023-05-10T12:25:00+00:00",
+          "threshold": "0.0"
+        },
+        {
+          "comparator": "GT",
+          "market_ticker": "CPI-23APR-T0.1",
+          "p9a_evidence_id": "1acf1a43bb22b753fa61a9e40c4d5614691285155864d195dc99559055980948",
+          "predicate_identity": "GT:0.1",
+          "request_identity": "ce18201b960a1472d3f4baa48fa122bbe9f24c1a2ab3410e0a33f334655d80d1",
+          "sibling_cutoff": "2023-05-10T12:25:00+00:00",
+          "threshold": "0.1"
+        },
+        {
+          "comparator": "GT",
+          "market_ticker": "CPI-23APR-T0.2",
+          "p9a_evidence_id": "5f1993355bfcd818df5e1d95a11410f62d9661a3a5504534606769527764a5c9",
+          "predicate_identity": "GT:0.2",
+          "request_identity": "b80e563c83181370d144c31eaf410f68b2218979edf6d2e511a52ac87b61219b",
+          "sibling_cutoff": "2023-05-10T12:25:00+00:00",
+          "threshold": "0.2"
+        },
+        {
+          "comparator": "GT",
+          "market_ticker": "CPI-23APR-T0.3",
+          "p9a_evidence_id": "ed5966f43b275a34d258cf2135a56b958cb15bec561c951db77f5270f6e0193d",
+          "predicate_identity": "GT:0.3",
+          "request_identity": "5158a943485f74539c0d50596953707c0864c8b3b5176fa832e59a20d30a1f99",
+          "sibling_cutoff": "2023-05-10T12:25:00+00:00",
+          "threshold": "0.3"
+        },
+        {
+          "comparator": "GT",
+          "market_ticker": "CPI-23APR-T0.4",
+          "p9a_evidence_id": "803d186ad6740af2d8633a026ff8ba636b9a3555ad817cbb4641f66ea8552508",
+          "predicate_identity": "GT:0.4",
+          "request_identity": "6fdf0666409bb2efc2e63b6696512f160a34ffdb34c96408997322df0085c95a",
+          "sibling_cutoff": "2023-05-10T12:25:00+00:00",
+          "threshold": "0.4"
+        },
+        {
+          "comparator": "GT",
+          "market_ticker": "CPI-23APR-T0.5",
+          "p9a_evidence_id": "af8b98e23ab088f8072b63225ce7142367e1c6922fea313bf62e06918920130d",
+          "predicate_identity": "GT:0.5",
+          "request_identity": "8558efdd6ffbc91931230436dbf7e98480ab03f71ffa13ec8473ab86f9b3cc48",
+          "sibling_cutoff": "2023-05-10T12:25:00+00:00",
+          "threshold": "0.5"
+        },
+        {
+          "comparator": "GT",
+          "market_ticker": "CPI-23APR-T0.6",
+          "p9a_evidence_id": "72695c7689a517970e9369ae2cd0e64f612dfe33c7934ce5a739ec0d3150030f",
+          "predicate_identity": "GT:0.6",
+          "request_identity": "f10727b315a4f8d2f6f3045522312c7854d9a27d640e5c7ffe7a38b1858efd46",
+          "sibling_cutoff": "2023-05-10T12:25:00+00:00",
+          "threshold": "0.6"
+        },
+        {
+          "comparator": "GT",
+          "market_ticker": "CPI-23APR-T0.7",
+          "p9a_evidence_id": "972ecf40f4c11535fd9fe36f1d94c15c83338202a0c5d983c5a88be02418ec5f",
+          "predicate_identity": "GT:0.7",
+          "request_identity": "2f156b4610ad9597b3a7b5ed573d87a9cb95d04d76eb6ec4f62c727c25c92ad7",
+          "sibling_cutoff": "2023-05-10T12:25:00+00:00",
+          "threshold": "0.7"
+        },
+        {
+          "comparator": "GT",
+          "market_ticker": "CPI-23APR-T0.8",
+          "p9a_evidence_id": "03f0114a3d98ba50ef4e12dcdb20e5c5fa2913c2301dc3d7af12492eed3848bb",
+          "predicate_identity": "GT:0.8",
+          "request_identity": "70bb2ba8ec7d05132ffaaae62c6b709c5b3a07a3fe884f5be31fe1558653e4a6",
+          "sibling_cutoff": "2023-05-10T12:25:00+00:00",
+          "threshold": "0.8"
+        }
+      ],
+      "event_ticker": "CPI-23APR",
+      "reference_month": "2023-04"
+    },
+    {
+      "accepted_sibling_count": 9,
+      "accepted_siblings": [
+        {
+          "comparator": "GT",
+          "market_ticker": "CPI-23AUG-T0.0",
+          "p9a_evidence_id": "4105fbd7555ca5577219045bb2dc4a50a0d81d73b5aa8b36ac036e89e4d20bf6",
+          "predicate_identity": "GT:0.0",
+          "request_identity": "eeb28939c4dc9f7082b99e80c66e560aee5f13de413df8e7359aace6008dce19",
+          "sibling_cutoff": "2023-09-13T12:25:00+00:00",
+          "threshold": "0.0"
+        },
+        {
+          "comparator": "GT",
+          "market_ticker": "CPI-23AUG-T0.1",
+          "p9a_evidence_id": "c1cd13079625a285066c5af7b7792674ec6c6369eb36da9cd51c24c105cca37a",
+          "predicate_identity": "GT:0.1",
+          "request_identity": "0ca36025c6df967bdd6b220893de139cef036cc5dfcba8e4ff0e97cbf6c3e4eb",
+          "sibling_cutoff": "2023-09-13T12:25:00+00:00",
+          "threshold": "0.1"
+        },
+        {
+          "comparator": "GT",
+          "market_ticker": "CPI-23AUG-T0.2",
+          "p9a_evidence_id": "02abfe757c090cf0ff9aa03886e88543648dc77e4b1ef1d37f02a92f795b95c4",
+          "predicate_identity": "GT:0.2",
+          "request_identity": "c5b6d2b4da11ffaaabbb3e87ae0edc37d4ce631591e589dfeceea0ca62deac8d",
+          "sibling_cutoff": "2023-09-13T12:25:00+00:00",
+          "threshold": "0.2"
+        },
+        {
+          "comparator": "GT",
+          "market_ticker": "CPI-23AUG-T0.3",
+          "p9a_evidence_id": "287d4e58063dd1acbde00bafc1a5678d095cd7a9ae4e6b14fc3dc090dedf923b",
+          "predicate_identity": "GT:0.3",
+          "request_identity": "b8a4a55d3b6b50ab5f528a764dfbc89ab6c4cc77f7bf2ef24950a3bede78c6a5",
+          "sibling_cutoff": "2023-09-13T12:25:00+00:00",
+          "threshold": "0.3"
+        },
+        {
+          "comparator": "GT",
+          "market_ticker": "CPI-23AUG-T0.4",
+          "p9a_evidence_id": "90e8ecad2537bd00d3c107af1a7355bef51c93266ed218ebc987dd32efd9103a",
+          "predicate_identity": "GT:0.4",
+          "request_identity": "597043e46f3749de9e0090aaa82f7eaf2da7e48d03a3f88421867ceadda21d80",
+          "sibling_cutoff": "2023-09-13T12:25:00+00:00",
+          "threshold": "0.4"
+        },
+        {
+          "comparator": "GT",
+          "market_ticker": "CPI-23AUG-T0.5",
+          "p9a_evidence_id": "4ccb0e31e1ccdf02d10b10f20d5476d59bfb477a7ca7626daa3e4e4f1cc2e1af",
+          "predicate_identity": "GT:0.5",
+          "request_identity": "a4747fd92f3792d9f7714df8de2d2e33763509c883a7a3d88f09528ff75514f8",
+          "sibling_cutoff": "2023-09-13T12:25:00+00:00",
+          "threshold": "0.5"
+        },
+        {
+          "comparator": "GT",
+          "market_ticker": "CPI-23AUG-T0.6",
+          "p9a_evidence_id": "af460b46a2a3f915c49deec10815941566baf7f71ef07ac9fac736cdc0b58bb7",
+          "predicate_identity": "GT:0.6",
+          "request_identity": "688f03ed7fb02448ae1eed517b3aed03a250437deb560dd962259e365d95f0e6",
+          "sibling_cutoff": "2023-09-13T12:25:00+00:00",
+          "threshold": "0.6"
+        },
+        {
+          "comparator": "GT",
+          "market_ticker": "CPI-23AUG-T0.7",
+          "p9a_evidence_id": "9105a1827138b12ab0aaf386ba914a5c078f0d188a55167282d02b1075928582",
+          "predicate_identity": "GT:0.7",
+          "request_identity": "ec9681f57795eb2cb7513450afa2d181e9440ce1601cb90f226c952eb1abc980",
+          "sibling_cutoff": "2023-09-13T12:25:00+00:00",
+          "threshold": "0.7"
+        },
+        {
+          "comparator": "GT",
+          "market_ticker": "CPI-23AUG-T0.8",
+          "p9a_evidence_id": "dd11667aca78a11b1a13b2ecd2fd6acdd2b4436c8ba95270b34471db81546fe6",
+          "predicate_identity": "GT:0.8",
+          "request_identity": "2988477b69fb9e50f75502dfe293ae43fe65207567dcce31ca70c5a7b17a483f",
+          "sibling_cutoff": "2023-09-13T12:25:00+00:00",
+          "threshold": "0.8"
+        }
+      ],
+      "event_ticker": "CPI-23AUG",
+      "reference_month": "2023-08"
+    },
+    {
+      "accepted_sibling_count": 7,
+      "accepted_siblings": [
+        {
+          "comparator": "GT",
+          "market_ticker": "CPI-23DEC-T-0.1",
+          "p9a_evidence_id": "ea73f10682543ee40738dbf50f764a850e1f8698e666367f29ba7cdb0700f0fa",
+          "predicate_identity": "GT:-0.1",
+          "request_identity": "46ef85b3f47404457d4532465786ede15068133766174055fddccf8c6049f934",
+          "sibling_cutoff": "2024-01-11T13:25:00+00:00",
+          "threshold": "-0.1"
+        },
+        {
+          "comparator": "GT",
+          "market_ticker": "CPI-23DEC-T-0.2",
+          "p9a_evidence_id": "5d55b29eb1afedda26ed32e8dbcfc1f0249af6c56606a77d21f35258f22fb7e5",
+          "predicate_identity": "GT:-0.2",
+          "request_identity": "06fbdd1321a906e9444fc022dab8ef6de108f82b80bdca616d15c70fd1accac9",
+          "sibling_cutoff": "2024-01-11T13:25:00+00:00",
+          "threshold": "-0.2"
+        },
+        {
+          "comparator": "GT",
+          "market_ticker": "CPI-23DEC-T0.0",
+          "p9a_evidence_id": "1566caf5cfad2f0691e5304ecc76a6ccc9d5f4a66480e4044aa27713f460d91e",
+          "predicate_identity": "GT:0.0",
+          "request_identity": "f002c45d1a0360ea4de0e943b6eecb39e338268b6b2ee9838146bbffb23cc549",
+          "sibling_cutoff": "2024-01-11T13:25:00+00:00",
+          "threshold": "0.0"
+        },
+        {
+          "comparator": "GT",
+          "market_ticker": "CPI-23DEC-T0.1",
+          "p9a_evidence_id": "2af40967f347f852f6a01c1ea2402d85175fb513b23b73172233c9c62805754a",
+          "predicate_identity": "GT:0.1",
+          "request_identity": "50e32816ee76c6f6739a8a0d534f6a8856c7699f9f31f2f564a37c3cbaf856f3",
+          "sibling_cutoff": "2024-01-11T13:25:00+00:00",
+          "threshold": "0.1"
+        },
+        {
+          "comparator": "GT",
+          "market_ticker": "CPI-23DEC-T0.2",
+          "p9a_evidence_id": "abefed6788646f2ba859eebaddeb902f4322f902a0d0fd8e7a1c36a33dd13901",
+          "predicate_identity": "GT:0.2",
+          "request_identity": "b980ae44d28e03190755f53be6a96b00beb66e960aaf0ca4354f0a43bd7865a6",
+          "sibling_cutoff": "2024-01-11T13:25:00+00:00",
+          "threshold": "0.2"
+        },
+        {
+          "comparator": "GT",
+          "market_ticker": "CPI-23DEC-T0.3",
+          "p9a_evidence_id": "f682246244cfe93f1b7ec0f1254ea85f8daeaba4918b22b9effa70a5721e6684",
+          "predicate_identity": "GT:0.3",
+          "request_identity": "a78538b59930622647728b757cec17b4136564a1afaec5805aa09b03e0e87467",
+          "sibling_cutoff": "2024-01-11T13:25:00+00:00",
+          "threshold": "0.3"
+        },
+        {
+          "comparator": "GT",
+          "market_ticker": "CPI-23DEC-T0.4",
+          "p9a_evidence_id": "df17c5b0981f788394cd1568401aa457e103a86b9a8829f97d880df6ce525eeb",
+          "predicate_identity": "GT:0.4",
+          "request_identity": "5ff34e2230eee59948bd0d6f9d93bf48c7320aea12b837b157d227ffe05a4436",
+          "sibling_cutoff": "2024-01-11T13:25:00+00:00",
+          "threshold": "0.4"
+        }
+      ],
+      "event_ticker": "CPI-23DEC",
+      "reference_month": "2023-12"
+    },
+    {
+      "accepted_sibling_count": 9,
+      "accepted_siblings": [
+        {
+          "comparator": "GT",
+          "market_ticker": "CPI-23FEB-T0.0",
+          "p9a_evidence_id": "28fba8de602910e1692820d2a65cfe4cde5a40154b5b081fa408a98b1d411e96",
+          "predicate_identity": "GT:0.0",
+          "request_identity": "c2b934604d223dadeefc18a878198267914c38524f701a17bab937887862ebe2",
+          "sibling_cutoff": "2023-03-14T12:25:00+00:00",
+          "threshold": "0.0"
+        },
+        {
+          "comparator": "GT",
+          "market_ticker": "CPI-23FEB-T0.1",
+          "p9a_evidence_id": "1009dfa082e033d489a3ff69a40742733f96b97df8d143945e750aaaa532acb2",
+          "predicate_identity": "GT:0.1",
+          "request_identity": "5d17349016dddfed5ffbd59217df26f8696ca4aa59c9103be78e9350bb82c1ad",
+          "sibling_cutoff": "2023-03-14T12:25:00+00:00",
+          "threshold": "0.1"
+        },
+        {
+          "comparator": "GT",
+          "market_ticker": "CPI-23FEB-T0.2",
+          "p9a_evidence_id": "009579230870499b7ece11544e65e83772cebfd5c5504d02c7484a1dd88d4a38",
+          "predicate_identity": "GT:0.2",
+          "request_identity": "139b7cccbee3e507cd1ec7eddcde4aff3d31c8653c88348fd2740cd2e5b25c2e",
+          "sibling_cutoff": "2023-03-14T12:25:00+00:00",
+          "threshold": "0.2"
+        },
+        {
+          "comparator": "GT",
+          "market_ticker": "CPI-23FEB-T0.3",
+          "p9a_evidence_id": "bb59cd79108d0053c23c1a8407ab460dbd866ede1b433f48e666c2bcc8bfe6a4",
+          "predicate_identity": "GT:0.3",
+          "request_identity": "16bbe17244f8f5dc42a05d83da5b7eb356f3befe7e0ecb6ba3b914fb73f26c2b",
+          "sibling_cutoff": "2023-03-14T12:25:00+00:00",
+          "threshold": "0.3"
+        },
+        {
+          "comparator": "GT",
+          "market_ticker": "CPI-23FEB-T0.4",
+          "p9a_evidence_id": "77c4a91be058330613d9ac8a16cba490421c64cd348fd649710cdf84299a7e5d",
+          "predicate_identity": "GT:0.4",
+          "request_identity": "7b1b78e41b63d78f07682eb543ae585c56f211332d2fdafb41f5a916067c5c77",
+          "sibling_cutoff": "2023-03-14T12:25:00+00:00",
+          "threshold": "0.4"
+        },
+        {
+          "comparator": "GT",
+          "market_ticker": "CPI-23FEB-T0.5",
+          "p9a_evidence_id": "b3b3fffb5d358bf10d87b55b6457d01dde91023831d9ecdef13bc6c7cc29c43b",
+          "predicate_identity": "GT:0.5",
+          "request_identity": "6352618a354d82e2558626d2047f8ae4a2e701f20923f9658fc551e48bf8c3ea",
+          "sibling_cutoff": "2023-03-14T12:25:00+00:00",
+          "threshold": "0.5"
+        },
+        {
+          "comparator": "GT",
+          "market_ticker": "CPI-23FEB-T0.6",
+          "p9a_evidence_id": "4b22c32a87f8bebbbfb6727a6523c41c70f4e5f9d9c8891e0f9a6aaa9411d9a2",
+          "predicate_identity": "GT:0.6",
+          "request_identity": "b3a91c793654e46a44c49e16244c7f4336880b09344a2f4dc6752646e14cf365",
+          "sibling_cutoff": "2023-03-14T12:25:00+00:00",
+          "threshold": "0.6"
+        },
+        {
+          "comparator": "GT",
+          "market_ticker": "CPI-23FEB-T0.7",
+          "p9a_evidence_id": "c627ae1f570f897907dbaf5f9321f83c6d09ef873f3bf41795b846477afec625",
+          "predicate_identity": "GT:0.7",
+          "request_identity": "a084a13000deea4766220eaa35703434036f9ecb0e39872a62b4643d67b8cee7",
+          "sibling_cutoff": "2023-03-14T12:25:00+00:00",
+          "threshold": "0.7"
+        },
+        {
+          "comparator": "GT",
+          "market_ticker": "CPI-23FEB-T0.8",
+          "p9a_evidence_id": "b3599d2f065fd04cf178ff3b1c8d5fadef96a39268e523851735ce6b59c50666",
+          "predicate_identity": "GT:0.8",
+          "request_identity": "763c05591cd36519a73bf8bece4261a35381867cb1c191575d21ff20cb7fc742",
+          "sibling_cutoff": "2023-03-14T12:25:00+00:00",
+          "threshold": "0.8"
+        }
+      ],
+      "event_ticker": "CPI-23FEB",
+      "reference_month": "2023-02"
+    },
+    {
+      "accepted_sibling_count": 9,
+      "accepted_siblings": [
+        {
+          "comparator": "GT",
+          "market_ticker": "CPI-23JAN-T0.0",
+          "p9a_evidence_id": "5d8be356a2f98780f52030bc69d3d385f4c63d2f63031051c782f7c073781a06",
+          "predicate_identity": "GT:0.0",
+          "request_identity": "1c5f96d01aeb5f776d54c180b351f492d8d97aa46d550ef5cc552906823ca9ae",
+          "sibling_cutoff": "2023-02-14T13:25:00+00:00",
+          "threshold": "0.0"
+        },
+        {
+          "comparator": "GT",
+          "market_ticker": "CPI-23JAN-T0.1",
+          "p9a_evidence_id": "ccae6a40ca8b4990718305ad28d5ae15cf430f7c811046a6babb0a22366450d0",
+          "predicate_identity": "GT:0.1",
+          "request_identity": "7aa5b75c972e2f6d6c73e88a0b9d4b652a3ff78afdbf34a9de3cbf15d719abbe",
+          "sibling_cutoff": "2023-02-14T13:25:00+00:00",
+          "threshold": "0.1"
+        },
+        {
+          "comparator": "GT",
+          "market_ticker": "CPI-23JAN-T0.2",
+          "p9a_evidence_id": "8ed08128198896be5ff7be858b92e6474168dc37a6f35025ced33a0c6f2d7a8e",
+          "predicate_identity": "GT:0.2",
+          "request_identity": "50a64fc90b77837a780d1021905eb96ece2bb35c1a803c6a21096e236d3455fa",
+          "sibling_cutoff": "2023-02-14T13:25:00+00:00",
+          "threshold": "0.2"
+        },
+        {
+          "comparator": "GT",
+          "market_ticker": "CPI-23JAN-T0.3",
+          "p9a_evidence_id": "55b6144dee1b9027efcebabc4795dd84a52dcfb4a73866411efd9e40e5669363",
+          "predicate_identity": "GT:0.3",
+          "request_identity": "36cf50a6667ba3304f6733198d5887facce6e2a32d390738f401fd09baf62a3a",
+          "sibling_cutoff": "2023-02-14T13:25:00+00:00",
+          "threshold": "0.3"
+        },
+        {
+          "comparator": "GT",
+          "market_ticker": "CPI-23JAN-T0.4",
+          "p9a_evidence_id": "55535208653c95b2bf01a9a076b4dfe30b41afd0596c4711d183556113e6edf9",
+          "predicate_identity": "GT:0.4",
+          "request_identity": "6c63a331e86d613df67548b81bd412d47a782128dd58dce11aad2d3bba5c19e7",
+          "sibling_cutoff": "2023-02-14T13:25:00+00:00",
+          "threshold": "0.4"
+        },
+        {
+          "comparator": "GT",
+          "market_ticker": "CPI-23JAN-T0.5",
+          "p9a_evidence_id": "e061d62dc31f6577756089fbac7f8baf4d39322457dd6bbeafa9ae98e73c7223",
+          "predicate_identity": "GT:0.5",
+          "request_identity": "a3ec648d96c4a2e9acb9220583db958615754820e53369bfc5cadbfd38214fc8",
+          "sibling_cutoff": "2023-02-14T13:25:00+00:00",
+          "threshold": "0.5"
+        },
+        {
+          "comparator": "GT",
+          "market_ticker": "CPI-23JAN-T0.6",
+          "p9a_evidence_id": "4bfc994520b3a6be3d9c17296bab013542f6d0ac599844b76f67a87870cf8934",
+          "predicate_identity": "GT:0.6",
+          "request_identity": "b53015404c08aadd24937bc1ce855bbfa6932743967c3ffc1bbbac3c3b99cd61",
+          "sibling_cutoff": "2023-02-14T13:25:00+00:00",
+          "threshold": "0.6"
+        },
+        {
+          "comparator": "GT",
+          "market_ticker": "CPI-23JAN-T0.7",
+          "p9a_evidence_id": "356e8a92a0ad41cd96587cf6259bfe65c0688b7a415775f66bacfdf624d6f0ba",
+          "predicate_identity": "GT:0.7",
+          "request_identity": "1149f8d25c5d5e497d84cbddc85bf85e23938c3e4cfcc163c246672b76cf7b60",
+          "sibling_cutoff": "2023-02-14T13:25:00+00:00",
+          "threshold": "0.7"
+        },
+        {
+          "comparator": "GT",
+          "market_ticker": "CPI-23JAN-T0.8",
+          "p9a_evidence_id": "6c9a158052ac1f4697d1fd214741cbd05c4ec7e6bcc78bef12c523679f7a79ea",
+          "predicate_identity": "GT:0.8",
+          "request_identity": "97303b03452d0efbcccb62b0fc589f56e45ff1e58dd37eaa05daecc1e53d6724",
+          "sibling_cutoff": "2023-02-14T13:25:00+00:00",
+          "threshold": "0.8"
+        }
+      ],
+      "event_ticker": "CPI-23JAN",
+      "reference_month": "2023-01"
+    },
+    {
+      "accepted_sibling_count": 13,
+      "accepted_siblings": [
+        {
+          "comparator": "GT",
+          "market_ticker": "CPI-23JUL-T-0.1",
+          "p9a_evidence_id": "610600437161d97402d4f139f49f59ded01e82c9728690b98b21fe2d54b1c8e1",
+          "predicate_identity": "GT:-0.1",
+          "request_identity": "3d0c13cc920ce3ea9d9cc5fd85c172fc96c4a92423462ee0b777b21f604370c2",
+          "sibling_cutoff": "2023-08-10T12:25:00+00:00",
+          "threshold": "-0.1"
+        },
+        {
+          "comparator": "GT",
+          "market_ticker": "CPI-23JUL-T-0.2",
+          "p9a_evidence_id": "50364eb1a62bd4b1885ee71e98ae071617c91666f5a52edd2166ddb9e7583141",
+          "predicate_identity": "GT:-0.2",
+          "request_identity": "33892798759a292dee2d4b73912f07ad5d716b218843d4e9e45f8dfc435c3d3f",
+          "sibling_cutoff": "2023-08-10T12:25:00+00:00",
+          "threshold": "-0.2"
+        },
+        {
+          "comparator": "GT",
+          "market_ticker": "CPI-23JUL-T-0.3",
+          "p9a_evidence_id": "745ab66f9c821fd3465f31df2badab0b18cb76c743a1a2e52f453f1dfca6eb8a",
+          "predicate_identity": "GT:-0.3",
+          "request_identity": "d647efc2ea2e047f15e3cdca2cf5b9f93c1ca4e9db3a8be82d96977b177e18b2",
+          "sibling_cutoff": "2023-08-10T12:25:00+00:00",
+          "threshold": "-0.3"
+        },
+        {
+          "comparator": "GT",
+          "market_ticker": "CPI-23JUL-T0.0",
+          "p9a_evidence_id": "4b8414a1df9e5c7ae61fd8ced92dd4630923bfbd4fdf46d8525a15661eb14931",
+          "predicate_identity": "GT:0.0",
+          "request_identity": "3b15920356838122fb3e8bc77ad2c22bf3c74a3780f3e1b74e393efb119a332a",
+          "sibling_cutoff": "2023-08-10T12:25:00+00:00",
+          "threshold": "0.0"
+        },
+        {
+          "comparator": "GT",
+          "market_ticker": "CPI-23JUL-T0.1",
+          "p9a_evidence_id": "d4e684843d5cb6a384e1a953c832efe56104bfa762f8bc4c5272abfc5fc0ca6a",
+          "predicate_identity": "GT:0.1",
+          "request_identity": "69ea1b5afbb5d1e0db05b9ca373d275235c771a462d8b7cdcc08f42f1f76305b",
+          "sibling_cutoff": "2023-08-10T12:25:00+00:00",
+          "threshold": "0.1"
+        },
+        {
+          "comparator": "GT",
+          "market_ticker": "CPI-23JUL-T0.2",
+          "p9a_evidence_id": "13f76f54d9083b28ba8a4e98675f7b3987c59a6dbfcbd1e26ef9edbb9ca456d6",
+          "predicate_identity": "GT:0.2",
+          "request_identity": "00e276ffe00cd71d97c683cb6f0b13b3f5ce1304f5d3c167be78d7821a1ec753",
+          "sibling_cutoff": "2023-08-10T12:25:00+00:00",
+          "threshold": "0.2"
+        },
+        {
+          "comparator": "GT",
+          "market_ticker": "CPI-23JUL-T0.3",
+          "p9a_evidence_id": "44d4957d3b9404bfffff92335d4542866b404a6816821f04f6b41f905bec3dff",
+          "predicate_identity": "GT:0.3",
+          "request_identity": "3ea9f72d4be2e30e36b3f82cfacac406e070ce4e174e2cea2bd1980c15de7bed",
+          "sibling_cutoff": "2023-08-10T12:25:00+00:00",
+          "threshold": "0.3"
+        },
+        {
+          "comparator": "GT",
+          "market_ticker": "CPI-23JUL-T0.4",
+          "p9a_evidence_id": "4aa4c1c923c0744e3984c97b4acd22a49087489a4b9194ddf0369a189f10e8dc",
+          "predicate_identity": "GT:0.4",
+          "request_identity": "aa5b0e527de654bf2cb08d7d92cc6dc76a7ff8ae0094d18fa4ccc9c37b7714ac",
+          "sibling_cutoff": "2023-08-10T12:25:00+00:00",
+          "threshold": "0.4"
+        },
+        {
+          "comparator": "GT",
+          "market_ticker": "CPI-23JUL-T0.5",
+          "p9a_evidence_id": "c7cc059a12deee7ac8ed7392aed36a22381c7b442219fb86bd5184d5e7dd8af0",
+          "predicate_identity": "GT:0.5",
+          "request_identity": "40b44c79fa6100e390fad4ee9f783022c3082b1d71255474a7356e2231911c0f",
+          "sibling_cutoff": "2023-08-10T12:25:00+00:00",
+          "threshold": "0.5"
+        },
+        {
+          "comparator": "GT",
+          "market_ticker": "CPI-23JUL-T0.6",
+          "p9a_evidence_id": "b1575035b41893cd8b21ac19da7089852b0d263ed527abeba2ff67c67b006f8a",
+          "predicate_identity": "GT:0.6",
+          "request_identity": "6f27a4a9907252d324e7a50baee1e1ab9b5aa6ef1caa9c6d689c9b3271e9d69d",
+          "sibling_cutoff": "2023-08-10T12:25:00+00:00",
+          "threshold": "0.6"
+        },
+        {
+          "comparator": "GT",
+          "market_ticker": "CPI-23JUL-T0.7",
+          "p9a_evidence_id": "adcc3e3c2d24b8f1b7e6b75ff9800306bce85bbc642fbf8b8743d14f8762a89c",
+          "predicate_identity": "GT:0.7",
+          "request_identity": "2879b09a23016d6e1e32eed17ec2db96eb41e75dfb5c5b5882052d97760c468f",
+          "sibling_cutoff": "2023-08-10T12:25:00+00:00",
+          "threshold": "0.7"
+        },
+        {
+          "comparator": "GT",
+          "market_ticker": "CPI-23JUL-T0.8",
+          "p9a_evidence_id": "a712155aa333812115235e2fe0c5138f7badac67e5999add14487ff990ff9103",
+          "predicate_identity": "GT:0.8",
+          "request_identity": "c1e70cc08f49209e364dd8e115ef26b641626c3750dbc17c6fafc77946df8c32",
+          "sibling_cutoff": "2023-08-10T12:25:00+00:00",
+          "threshold": "0.8"
+        },
+        {
+          "comparator": "GT",
+          "market_ticker": "CPI-23JUL-T0.9",
+          "p9a_evidence_id": "d5289d5e4b0358cb30223de8bea4f8827375a9b42fa55d0819297e241baf41a1",
+          "predicate_identity": "GT:0.9",
+          "request_identity": "1f38de87cd013c675695cbc59623e689dd46fb0c8e3f804bbd08b3de8c9daebf",
+          "sibling_cutoff": "2023-08-10T12:25:00+00:00",
+          "threshold": "0.9"
+        }
+      ],
+      "event_ticker": "CPI-23JUL",
+      "reference_month": "2023-07"
+    },
+    {
+      "accepted_sibling_count": 9,
+      "accepted_siblings": [
+        {
+          "comparator": "GT",
+          "market_ticker": "CPI-23JUN-T0.0",
+          "p9a_evidence_id": "6761ff54c89570b4875bb6cd026cca69349a5d8fd6d15189101fa6ee9f8584d6",
+          "predicate_identity": "GT:0.0",
+          "request_identity": "22f2e862f7e2973a88998fac3823398b5aa6021b825e7a48a0104f0bee6c8f79",
+          "sibling_cutoff": "2023-07-12T12:25:00+00:00",
+          "threshold": "0.0"
+        },
+        {
+          "comparator": "GT",
+          "market_ticker": "CPI-23JUN-T0.1",
+          "p9a_evidence_id": "499508f06039203923e778eaa48bda155eca1b075881481e311472977738f90c",
+          "predicate_identity": "GT:0.1",
+          "request_identity": "618407d5b18971f897a11df088d42ca0d59890805f2fe2dbd52f5bbb0f7abfd7",
+          "sibling_cutoff": "2023-07-12T12:25:00+00:00",
+          "threshold": "0.1"
+        },
+        {
+          "comparator": "GT",
+          "market_ticker": "CPI-23JUN-T0.2",
+          "p9a_evidence_id": "eb76cb98318b9c95c1b17725228f6ec33badf6e4bee6887952461480d947139c",
+          "predicate_identity": "GT:0.2",
+          "request_identity": "3de052c6f9a2527b8b2c02289952377e4b7bde5341ac34120cf4ca861cdb4a7e",
+          "sibling_cutoff": "2023-07-12T12:25:00+00:00",
+          "threshold": "0.2"
+        },
+        {
+          "comparator": "GT",
+          "market_ticker": "CPI-23JUN-T0.3",
+          "p9a_evidence_id": "0ad32d85def7d4ecfa52b63dc0d5b4460b5e85a37d5bbf4085d168420cb40bf3",
+          "predicate_identity": "GT:0.3",
+          "request_identity": "a72f768a53440603a1735abab8923454cea0336fd4823b4454f8d4421f5553de",
+          "sibling_cutoff": "2023-07-12T12:25:00+00:00",
+          "threshold": "0.3"
+        },
+        {
+          "comparator": "GT",
+          "market_ticker": "CPI-23JUN-T0.4",
+          "p9a_evidence_id": "5000411025183ef894499549301935f16d279dd80fa8bce19ea06ad525d4f7a8",
+          "predicate_identity": "GT:0.4",
+          "request_identity": "43346a11de4fba7d0000ac1d95a4776f278152c19ac4217ed823e25cc5b15ce3",
+          "sibling_cutoff": "2023-07-12T12:25:00+00:00",
+          "threshold": "0.4"
+        },
+        {
+          "comparator": "GT",
+          "market_ticker": "CPI-23JUN-T0.5",
+          "p9a_evidence_id": "9f8623c79b8ed5751b61160c84588e3b5b245a300403393e37572b38eb5c7098",
+          "predicate_identity": "GT:0.5",
+          "request_identity": "a1f88a4a88694f7454ad14721934df5c6cc9650dfbb0d34917af2fa9b1505715",
+          "sibling_cutoff": "2023-07-12T12:25:00+00:00",
+          "threshold": "0.5"
+        },
+        {
+          "comparator": "GT",
+          "market_ticker": "CPI-23JUN-T0.6",
+          "p9a_evidence_id": "c1227897f91f9e19e688c732fa4d34f7c536751ca21cbdf960ed789f3169942b",
+          "predicate_identity": "GT:0.6",
+          "request_identity": "a9bde85ba724bf0519915bf4472e45e7b294d84a201e3ec51722be1626785a76",
+          "sibling_cutoff": "2023-07-12T12:25:00+00:00",
+          "threshold": "0.6"
+        },
+        {
+          "comparator": "GT",
+          "market_ticker": "CPI-23JUN-T0.7",
+          "p9a_evidence_id": "f4eadf10095c2b95feef1b44f7a0fe985bf8c38655943270accc21ffe632bcac",
+          "predicate_identity": "GT:0.7",
+          "request_identity": "ea20cc8f55e81766a490e49fdcc6984ce6a30c3f2e86352442434c2d01b47081",
+          "sibling_cutoff": "2023-07-12T12:25:00+00:00",
+          "threshold": "0.7"
+        },
+        {
+          "comparator": "GT",
+          "market_ticker": "CPI-23JUN-T0.8",
+          "p9a_evidence_id": "d334eaa3fde11e210db9465843e423f9be7366a603c682a81c609df44e02b361",
+          "predicate_identity": "GT:0.8",
+          "request_identity": "2fda122f7be96c1e0f4f8a3796ac28ed2d5e4aa2e903b4263a829998148a2b08",
+          "sibling_cutoff": "2023-07-12T12:25:00+00:00",
+          "threshold": "0.8"
+        }
+      ],
+      "event_ticker": "CPI-23JUN",
+      "reference_month": "2023-06"
+    },
+    {
+      "accepted_sibling_count": 9,
+      "accepted_siblings": [
+        {
+          "comparator": "GT",
+          "market_ticker": "CPI-23MAR-T0.0",
+          "p9a_evidence_id": "47a87d8073246db16505cdc9c9fdf50e852ae34669393553653b5bcf4013ff41",
+          "predicate_identity": "GT:0.0",
+          "request_identity": "d7671e92db4220b149fdfb2c60bd7331a85803ce0854cbbb341cefa0f903c2dc",
+          "sibling_cutoff": "2023-04-12T12:25:00+00:00",
+          "threshold": "0.0"
+        },
+        {
+          "comparator": "GT",
+          "market_ticker": "CPI-23MAR-T0.1",
+          "p9a_evidence_id": "17c9ad84d523a5a4400bc8addfd979bda295c5851980bd8ddf6d1703db95deb8",
+          "predicate_identity": "GT:0.1",
+          "request_identity": "b9003acc31432c235b4e9e2c14c309e63fb0c82d5ea2911e28de72323aac938f",
+          "sibling_cutoff": "2023-04-12T12:25:00+00:00",
+          "threshold": "0.1"
+        },
+        {
+          "comparator": "GT",
+          "market_ticker": "CPI-23MAR-T0.2",
+          "p9a_evidence_id": "db8d4c46121ca07b96e0b4490f2988cee15b9d07acbd7f6c2c54ee042cb95362",
+          "predicate_identity": "GT:0.2",
+          "request_identity": "e08fc1e23e684a7fd2f63abc6b162989bb6efa4c14cdbcbe4d826f2aee892508",
+          "sibling_cutoff": "2023-04-12T12:25:00+00:00",
+          "threshold": "0.2"
+        },
+        {
+          "comparator": "GT",
+          "market_ticker": "CPI-23MAR-T0.3",
+          "p9a_evidence_id": "6046064d856b45cc3ec9fc7df2be520c9c07f4ec5ba0892fdb4bf3cdcd753d6c",
+          "predicate_identity": "GT:0.3",
+          "request_identity": "3679082b8ce852d313465950bae842d856f28b66497a265aa91e74d69fcaaa5b",
+          "sibling_cutoff": "2023-04-12T12:25:00+00:00",
+          "threshold": "0.3"
+        },
+        {
+          "comparator": "GT",
+          "market_ticker": "CPI-23MAR-T0.4",
+          "p9a_evidence_id": "9e2d63ce61d903c8763229f3ddb35594e6f72f45f6549c82c1660af7223ed2c2",
+          "predicate_identity": "GT:0.4",
+          "request_identity": "edb6280d584b499c4c66e4f8c62f43fa68eeffed2d24c84df83ea82d06abd347",
+          "sibling_cutoff": "2023-04-12T12:25:00+00:00",
+          "threshold": "0.4"
+        },
+        {
+          "comparator": "GT",
+          "market_ticker": "CPI-23MAR-T0.5",
+          "p9a_evidence_id": "9963afa893387cb3561b85414bbb86706ab49b5244f1699814b57007a4ff902b",
+          "predicate_identity": "GT:0.5",
+          "request_identity": "36807ec6af4d7bf7e4b12b8ca2bbd8f88b7d2ff83e8796cf0d72079d087363a6",
+          "sibling_cutoff": "2023-04-12T12:25:00+00:00",
+          "threshold": "0.5"
+        },
+        {
+          "comparator": "GT",
+          "market_ticker": "CPI-23MAR-T0.6",
+          "p9a_evidence_id": "86778e0863c1ce92906485818ccef69bb81ab2c55a117ab90ee452c90f64e478",
+          "predicate_identity": "GT:0.6",
+          "request_identity": "6ce2f2d312b3ae5b6caa4e01af9824bc12508c0692c5fa45cfa0f3ead8d4db98",
+          "sibling_cutoff": "2023-04-12T12:25:00+00:00",
+          "threshold": "0.6"
+        },
+        {
+          "comparator": "GT",
+          "market_ticker": "CPI-23MAR-T0.7",
+          "p9a_evidence_id": "65627cbd982cc1d7e237d312fd55fe95a5c1c659ef54c719894b7537c2b2b627",
+          "predicate_identity": "GT:0.7",
+          "request_identity": "532cd85d75ccc3c77555a34fa6dd717667ca61966965bcd6843c78eb804f76ea",
+          "sibling_cutoff": "2023-04-12T12:25:00+00:00",
+          "threshold": "0.7"
+        },
+        {
+          "comparator": "GT",
+          "market_ticker": "CPI-23MAR-T0.8",
+          "p9a_evidence_id": "2e18e7e74870b7e91c9c08f7ed77fbb05b47d2fb8520c36edce90e596383d6f5",
+          "predicate_identity": "GT:0.8",
+          "request_identity": "618060ef1d0aa0f36695659d90a4d56f076782985d31858846094c378716d09f",
+          "sibling_cutoff": "2023-04-12T12:25:00+00:00",
+          "threshold": "0.8"
+        }
+      ],
+      "event_ticker": "CPI-23MAR",
+      "reference_month": "2023-03"
+    },
+    {
+      "accepted_sibling_count": 11,
+      "accepted_siblings": [
+        {
+          "comparator": "GT",
+          "market_ticker": "CPI-23MAY-T-0.1",
+          "p9a_evidence_id": "0879f2c9187600f71465ecfee30851b040eb90e75610e5751f05e3780c3eb925",
+          "predicate_identity": "GT:-0.1",
+          "request_identity": "0c0799fd8bd1e5e03fc252dfed0cf586e7b8db45a7c7dbaab89f3d1a0a652eab",
+          "sibling_cutoff": "2023-06-13T12:25:00+00:00",
+          "threshold": "-0.1"
+        },
+        {
+          "comparator": "GT",
+          "market_ticker": "CPI-23MAY-T-0.2",
+          "p9a_evidence_id": "8d6a5335d2ef61873bb8d5b34e2b21857fe656e61b99ccbe4257e2bcd88c0e9e",
+          "predicate_identity": "GT:-0.2",
+          "request_identity": "3e98cd593207ee5ad9cc50ae2760db9c5e8b9184ff93e6715b80a443060351ad",
+          "sibling_cutoff": "2023-06-13T12:25:00+00:00",
+          "threshold": "-0.2"
+        },
+        {
+          "comparator": "GT",
+          "market_ticker": "CPI-23MAY-T0.0",
+          "p9a_evidence_id": "1a12fe100cc8fce1a40a69800eccc9576c5bfeb555c73d387428ab5160c03b63",
+          "predicate_identity": "GT:0.0",
+          "request_identity": "a6d84767db45c57c26a08132f09f55a047be48ce25ede5a0a3435c41101aece8",
+          "sibling_cutoff": "2023-06-13T12:25:00+00:00",
+          "threshold": "0.0"
+        },
+        {
+          "comparator": "GT",
+          "market_ticker": "CPI-23MAY-T0.1",
+          "p9a_evidence_id": "a0a2065de1d4d0eb0196fb159f3415a729af5523dd9824e0d0e6c7a33efaeb07",
+          "predicate_identity": "GT:0.1",
+          "request_identity": "de9a92b6f16d877e10084ee9c39435e62e8ae730345cb3ae6dcb070216e663bd",
+          "sibling_cutoff": "2023-06-13T12:25:00+00:00",
+          "threshold": "0.1"
+        },
+        {
+          "comparator": "GT",
+          "market_ticker": "CPI-23MAY-T0.2",
+          "p9a_evidence_id": "bafa552e81fa166f5c1c3d8345336195e20f6675684fe023987eca8192d68e84",
+          "predicate_identity": "GT:0.2",
+          "request_identity": "612426d44bcd98a868914972032a40c7e3d2e2d0266c8baba2f5a1f521641116",
+          "sibling_cutoff": "2023-06-13T12:25:00+00:00",
+          "threshold": "0.2"
+        },
+        {
+          "comparator": "GT",
+          "market_ticker": "CPI-23MAY-T0.3",
+          "p9a_evidence_id": "605aa2da1f0623a83dd98840a32124ab862cc1fe01a65933f0c985d70ff5eac1",
+          "predicate_identity": "GT:0.3",
+          "request_identity": "520da3dc3585b7efe30ec14700150c47c1ca78b0e601361e67c7a0d6d619eb53",
+          "sibling_cutoff": "2023-06-13T12:25:00+00:00",
+          "threshold": "0.3"
+        },
+        {
+          "comparator": "GT",
+          "market_ticker": "CPI-23MAY-T0.4",
+          "p9a_evidence_id": "a14dde900a9772739ce1b31d0168628d64c8dcda947baf07795decb295a28e9e",
+          "predicate_identity": "GT:0.4",
+          "request_identity": "7fbe848ef17cb068cfbb3aaca99d4d2cf0deefec2ee5e96944d27f0909865054",
+          "sibling_cutoff": "2023-06-13T12:25:00+00:00",
+          "threshold": "0.4"
+        },
+        {
+          "comparator": "GT",
+          "market_ticker": "CPI-23MAY-T0.5",
+          "p9a_evidence_id": "616d4e3e35132348a46ade92881c15c2a65ad892c64b6785fbe3a1838e98e737",
+          "predicate_identity": "GT:0.5",
+          "request_identity": "a73f277718c123258b1708e00228ac9ea9ca0d3e5515c846b3508e27a41a4190",
+          "sibling_cutoff": "2023-06-13T12:25:00+00:00",
+          "threshold": "0.5"
+        },
+        {
+          "comparator": "GT",
+          "market_ticker": "CPI-23MAY-T0.6",
+          "p9a_evidence_id": "8b1c6d2fbca00ccf4c3384331d32c85c9b47178ac776bca11ce5c944d73b50b9",
+          "predicate_identity": "GT:0.6",
+          "request_identity": "f8da26e4aab8ca56963b27fdf1ca09160ee38d2fed17fced865954002a604fd0",
+          "sibling_cutoff": "2023-06-13T12:25:00+00:00",
+          "threshold": "0.6"
+        },
+        {
+          "comparator": "GT",
+          "market_ticker": "CPI-23MAY-T0.7",
+          "p9a_evidence_id": "48c4a09347a78bfc53b9c7958f2f235bad49c5d0ee93caa618c3ecccec0a1e57",
+          "predicate_identity": "GT:0.7",
+          "request_identity": "9cb266f319f2b4a29d6ff289b867f69b9a2837e1d2fc09f5488fd055425aaf63",
+          "sibling_cutoff": "2023-06-13T12:25:00+00:00",
+          "threshold": "0.7"
+        },
+        {
+          "comparator": "GT",
+          "market_ticker": "CPI-23MAY-T0.8",
+          "p9a_evidence_id": "4a1aa92017605201054ffbfffb6dc3310453ff8e119c3df359666a74530baf30",
+          "predicate_identity": "GT:0.8",
+          "request_identity": "786f2df1866cce4ade055ceeb1a366cfd59d03c75cf98fb1ca3660be318dd38d",
+          "sibling_cutoff": "2023-06-13T12:25:00+00:00",
+          "threshold": "0.8"
+        }
+      ],
+      "event_ticker": "CPI-23MAY",
+      "reference_month": "2023-05"
+    },
+    {
+      "accepted_sibling_count": 11,
+      "accepted_siblings": [
+        {
+          "comparator": "GT",
+          "market_ticker": "CPI-23NOV-T-0.1",
+          "p9a_evidence_id": "aaeafb33fb6da21027d0c633b924d2d3efbd00f88f4cfcf6e52cb4d284639f5b",
+          "predicate_identity": "GT:-0.1",
+          "request_identity": "e83efc39582b79077501b56fb65f0921aa60e3eb1b53b866da746b494a8f22bb",
+          "sibling_cutoff": "2023-12-12T13:25:00+00:00",
+          "threshold": "-0.1"
+        },
+        {
+          "comparator": "GT",
+          "market_ticker": "CPI-23NOV-T-0.2",
+          "p9a_evidence_id": "e717406066bf7a5aab34f95fde14103c654f80cbdbbeb31dfcfd5e69c11f847f",
+          "predicate_identity": "GT:-0.2",
+          "request_identity": "82210d1f221fc04695943a2fed33b0b58c3874febfa9a4891cb2e41384ad969b",
+          "sibling_cutoff": "2023-12-12T13:25:00+00:00",
+          "threshold": "-0.2"
+        },
+        {
+          "comparator": "GT",
+          "market_ticker": "CPI-23NOV-T0.0",
+          "p9a_evidence_id": "ea4d2c447058da8cc758c5cd53b81e201c1c7277855a9329b0f2f7f1367eb951",
+          "predicate_identity": "GT:0.0",
+          "request_identity": "4e5d667defb5f780f8ee181b636b537ccf5a2d97e9e27361e89b2e927ea43898",
+          "sibling_cutoff": "2023-12-12T13:25:00+00:00",
+          "threshold": "0.0"
+        },
+        {
+          "comparator": "GT",
+          "market_ticker": "CPI-23NOV-T0.1",
+          "p9a_evidence_id": "b88d5ad2e680c4fbbf283abecd9d3a227c4313b2d31b655211261c72e0c151e1",
+          "predicate_identity": "GT:0.1",
+          "request_identity": "fb1eaa024fc31fa30cf14c1bf1a4425770a3186a916859a0967f737c32ae7ec6",
+          "sibling_cutoff": "2023-12-12T13:25:00+00:00",
+          "threshold": "0.1"
+        },
+        {
+          "comparator": "GT",
+          "market_ticker": "CPI-23NOV-T0.2",
+          "p9a_evidence_id": "12aca2cd4637fda6f02ae2e5a3647beb83ef5086df3d757f8880d42953353f61",
+          "predicate_identity": "GT:0.2",
+          "request_identity": "38acda877ceb87eddec4a009a12407b72a86aee67bb6e42e06db6180a95e12cb",
+          "sibling_cutoff": "2023-12-12T13:25:00+00:00",
+          "threshold": "0.2"
+        },
+        {
+          "comparator": "GT",
+          "market_ticker": "CPI-23NOV-T0.3",
+          "p9a_evidence_id": "38921610cdab11f46aaaea9365f938f2780484d6ac76ff4928359f4407305893",
+          "predicate_identity": "GT:0.3",
+          "request_identity": "e01bcb63ee260292f4473c45b62421c98b68dca0e5ca6f6b20c82bad0e21ac8b",
+          "sibling_cutoff": "2023-12-12T13:25:00+00:00",
+          "threshold": "0.3"
+        },
+        {
+          "comparator": "GT",
+          "market_ticker": "CPI-23NOV-T0.4",
+          "p9a_evidence_id": "dddcd589cb129e93153438c10a4933d4a4a099948bd9b54b0dd81cd1c466ad16",
+          "predicate_identity": "GT:0.4",
+          "request_identity": "14e936bb31bf717fa71f25944f05c810c2e4d86bb12f163d4635cc8de31ce05d",
+          "sibling_cutoff": "2023-12-12T13:25:00+00:00",
+          "threshold": "0.4"
+        },
+        {
+          "comparator": "GT",
+          "market_ticker": "CPI-23NOV-T0.5",
+          "p9a_evidence_id": "bfe77575d266c651cfd5cbb7e05e98ae338ac9ba64cabf20cbba5434c321c92e",
+          "predicate_identity": "GT:0.5",
+          "request_identity": "72a1649a03c3480fb07e971905829ced0f03a783662996ee7fba6f2fbb5eff8c",
+          "sibling_cutoff": "2023-12-12T13:25:00+00:00",
+          "threshold": "0.5"
+        },
+        {
+          "comparator": "GT",
+          "market_ticker": "CPI-23NOV-T0.6",
+          "p9a_evidence_id": "a80f14962c89bbea16305bc5b821fc6d9f24ef33e8a89f23430007b95cc363d1",
+          "predicate_identity": "GT:0.6",
+          "request_identity": "663a234e82f6d67b4782b81dcc30d36b532a9baf5b176038140b4332f242c499",
+          "sibling_cutoff": "2023-12-12T13:25:00+00:00",
+          "threshold": "0.6"
+        },
+        {
+          "comparator": "GT",
+          "market_ticker": "CPI-23NOV-T0.7",
+          "p9a_evidence_id": "458a6782c5deddbc8cdb6dcb3b8fcb50fa0b9514e471c18891e5759fdae49284",
+          "predicate_identity": "GT:0.7",
+          "request_identity": "e5b925162588ec8085767d6a18170047da1d5c5a871d87bea8ce05e312b63c81",
+          "sibling_cutoff": "2023-12-12T13:25:00+00:00",
+          "threshold": "0.7"
+        },
+        {
+          "comparator": "GT",
+          "market_ticker": "CPI-23NOV-T0.8",
+          "p9a_evidence_id": "6e623116dc49ac787b8a9e880be90df538449e590ff1301e30a95f5a2d767405",
+          "predicate_identity": "GT:0.8",
+          "request_identity": "b2c45af9ce29a7d230297c70b317b60a059ca998afb9f3c94df06b83bfa8e78b",
+          "sibling_cutoff": "2023-12-12T13:25:00+00:00",
+          "threshold": "0.8"
+        }
+      ],
+      "event_ticker": "CPI-23NOV",
+      "reference_month": "2023-11"
+    },
+    {
+      "accepted_sibling_count": 12,
+      "accepted_siblings": [
+        {
+          "comparator": "GT",
+          "market_ticker": "CPI-23OCT-T-0.1",
+          "p9a_evidence_id": "eb0a7f86d6e34d620d91c6a2ef8cf49464e571f44954505d6e06897ee93bb43b",
+          "predicate_identity": "GT:-0.1",
+          "request_identity": "fd4bf274d60715e1d6b7ad9c9762b52c07e8e1912b79d78e4222179ca28203f7",
+          "sibling_cutoff": "2023-11-14T13:25:00+00:00",
+          "threshold": "-0.1"
+        },
+        {
+          "comparator": "GT",
+          "market_ticker": "CPI-23OCT-T-0.2",
+          "p9a_evidence_id": "5255802bedacc62156bec3fa938c2d32ef7a9f046b91ed94bc84400a71f124b2",
+          "predicate_identity": "GT:-0.2",
+          "request_identity": "c543f0313f2998d99ebb68f6a7f7fd78677edd97b26bdd508963fd7b5944ebac",
+          "sibling_cutoff": "2023-11-14T13:25:00+00:00",
+          "threshold": "-0.2"
+        },
+        {
+          "comparator": "GT",
+          "market_ticker": "CPI-23OCT-T-0.3",
+          "p9a_evidence_id": "73f15a2bf07d7b741468aa96fd847f7a370eb04952146f5c72bf4d5fc58a04f7",
+          "predicate_identity": "GT:-0.3",
+          "request_identity": "006e5219dee0f580a1bd3315b400eabdde005c5f384ad35c71da788cb3a57d72",
+          "sibling_cutoff": "2023-11-14T13:25:00+00:00",
+          "threshold": "-0.3"
+        },
+        {
+          "comparator": "GT",
+          "market_ticker": "CPI-23OCT-T0.0",
+          "p9a_evidence_id": "4359192ebbe6b2ca32e7b33c70d8b2ddfd8a31b71b7d0118122737fe2fe39788",
+          "predicate_identity": "GT:0.0",
+          "request_identity": "c0e8dacf4648b397331a2526f0bc258eeb959790cd1dac63524b52d61127597c",
+          "sibling_cutoff": "2023-11-14T13:25:00+00:00",
+          "threshold": "0.0"
+        },
+        {
+          "comparator": "GT",
+          "market_ticker": "CPI-23OCT-T0.1",
+          "p9a_evidence_id": "a6177feaaee49f37c3a8d5941b37314757a4a8f278cf5126bd4972d2f27cb543",
+          "predicate_identity": "GT:0.1",
+          "request_identity": "9e04350764268a27d8bcb6f84698c44dadc1436fb4b257f2319ca3f5df055774",
+          "sibling_cutoff": "2023-11-14T13:25:00+00:00",
+          "threshold": "0.1"
+        },
+        {
+          "comparator": "GT",
+          "market_ticker": "CPI-23OCT-T0.2",
+          "p9a_evidence_id": "1a0d6cdfb09418faf2c04552df24678e71463c8cbd60e0f87da6d94b04b8168f",
+          "predicate_identity": "GT:0.2",
+          "request_identity": "30e3437b9b0e3b1659ae96f879ab0c810bda4405fb51a1d4567cb1a3d3f46672",
+          "sibling_cutoff": "2023-11-14T13:25:00+00:00",
+          "threshold": "0.2"
+        },
+        {
+          "comparator": "GT",
+          "market_ticker": "CPI-23OCT-T0.3",
+          "p9a_evidence_id": "6c1aa8af3eae8f6969ea24af64b73e0c7544f3bb9f0202ebb7e428ca4ee34f6e",
+          "predicate_identity": "GT:0.3",
+          "request_identity": "d0f27b04fc961454a0ff4f13f1c823b60c77a1426538cd133bd4887543e3d4fd",
+          "sibling_cutoff": "2023-11-14T13:25:00+00:00",
+          "threshold": "0.3"
+        },
+        {
+          "comparator": "GT",
+          "market_ticker": "CPI-23OCT-T0.4",
+          "p9a_evidence_id": "e31911b36a2f5bd7a4606bdb1820d2e663ce86222952db83e540e7a539ac8cbd",
+          "predicate_identity": "GT:0.4",
+          "request_identity": "588d5ac9246d65f8775ecb688cf97de5a149a84e4dcdba428efc2ef2b7f61aca",
+          "sibling_cutoff": "2023-11-14T13:25:00+00:00",
+          "threshold": "0.4"
+        },
+        {
+          "comparator": "GT",
+          "market_ticker": "CPI-23OCT-T0.5",
+          "p9a_evidence_id": "a5728dab049998560c707347b295bbf8d17e49d268bbf09bfc7a4b348d2483c2",
+          "predicate_identity": "GT:0.5",
+          "request_identity": "d1b72a4230482f950adde96a6a40ae015c7590b4fa46a2d683a6ad33719ba09b",
+          "sibling_cutoff": "2023-11-14T13:25:00+00:00",
+          "threshold": "0.5"
+        },
+        {
+          "comparator": "GT",
+          "market_ticker": "CPI-23OCT-T0.6",
+          "p9a_evidence_id": "e9c5f657b53bb2b82731e64f0a354c83dd1b142be6bc26573f6c3dd37f736c37",
+          "predicate_identity": "GT:0.6",
+          "request_identity": "28afe67f55861172098dad89c6db0cf494a602b7c3bdd66d7e64156d6ae35611",
+          "sibling_cutoff": "2023-11-14T13:25:00+00:00",
+          "threshold": "0.6"
+        },
+        {
+          "comparator": "GT",
+          "market_ticker": "CPI-23OCT-T0.7",
+          "p9a_evidence_id": "1345cc429e36303256028d3d5466b1961d6e9c234bf0c26f6e426af4108bb2cc",
+          "predicate_identity": "GT:0.7",
+          "request_identity": "82a460f9f32b9712d28b7e919beb89e2e2d588f55369b3701195f2bd87da6c65",
+          "sibling_cutoff": "2023-11-14T13:25:00+00:00",
+          "threshold": "0.7"
+        },
+        {
+          "comparator": "GT",
+          "market_ticker": "CPI-23OCT-T0.8",
+          "p9a_evidence_id": "266474881ef39e12c3f86a8cdf3543fa9e84a3f19285c7103bb3fe982a147864",
+          "predicate_identity": "GT:0.8",
+          "request_identity": "d33e8cf85c555a54def50eefdd545900a821ab758ebeeb2c6c55bf995e84d07d",
+          "sibling_cutoff": "2023-11-14T13:25:00+00:00",
+          "threshold": "0.8"
+        }
+      ],
+      "event_ticker": "CPI-23OCT",
+      "reference_month": "2023-10"
+    },
+    {
+      "accepted_sibling_count": 12,
+      "accepted_siblings": [
+        {
+          "comparator": "GT",
+          "market_ticker": "CPI-23SEP-T-0.1",
+          "p9a_evidence_id": "94d010e2ccd84d99997a85030a5b6150c9cdf3e9ef9be0b554e630f1895efa71",
+          "predicate_identity": "GT:-0.1",
+          "request_identity": "f9285ec8c1efa4475939be432eccd5d6b7cf31c9077c3d4cd360ef901209092e",
+          "sibling_cutoff": "2023-10-12T12:25:00+00:00",
+          "threshold": "-0.1"
+        },
+        {
+          "comparator": "GT",
+          "market_ticker": "CPI-23SEP-T-0.2",
+          "p9a_evidence_id": "889be9431a5844205ac7a172447194e3b41d81a24d8eb84d2a3eabd46c52b925",
+          "predicate_identity": "GT:-0.2",
+          "request_identity": "2da1c909e6aa1e9c16b8277e072476697255eeba9a3885e62a04642613de1f82",
+          "sibling_cutoff": "2023-10-12T12:25:00+00:00",
+          "threshold": "-0.2"
+        },
+        {
+          "comparator": "GT",
+          "market_ticker": "CPI-23SEP-T-0.3",
+          "p9a_evidence_id": "336ecbbb3289a76db0d88008b2e2e357791038bdf0c24344abdcd24866560ab7",
+          "predicate_identity": "GT:-0.3",
+          "request_identity": "a9d4d856e62a2a905d826630487f1de669aff1223ca3714b63482ef1f21dbdc5",
+          "sibling_cutoff": "2023-10-12T12:25:00+00:00",
+          "threshold": "-0.3"
+        },
+        {
+          "comparator": "GT",
+          "market_ticker": "CPI-23SEP-T0.0",
+          "p9a_evidence_id": "bdcf5b7c259ddf340b7d3b0c710611412e0c41795bb529a93dc3a74be08997a4",
+          "predicate_identity": "GT:0.0",
+          "request_identity": "a4d3414da322c23124193d2ff1a2cddf7a8878107a144ec3e2cb87363ecc08a7",
+          "sibling_cutoff": "2023-10-12T12:25:00+00:00",
+          "threshold": "0.0"
+        },
+        {
+          "comparator": "GT",
+          "market_ticker": "CPI-23SEP-T0.1",
+          "p9a_evidence_id": "d29d02b315b6ef2b61d8ccc8cc407643853b10e6cafa3a0ae989746faded4da8",
+          "predicate_identity": "GT:0.1",
+          "request_identity": "b3974d7683240b8e42dda09c4bb04180c1a19989c2759fd2215df9b68b794799",
+          "sibling_cutoff": "2023-10-12T12:25:00+00:00",
+          "threshold": "0.1"
+        },
+        {
+          "comparator": "GT",
+          "market_ticker": "CPI-23SEP-T0.2",
+          "p9a_evidence_id": "723ce25dd788bff3d0575e5996f6fcb85a8759297826da0d356858f75234b2fd",
+          "predicate_identity": "GT:0.2",
+          "request_identity": "c00046f9f34c06470edd2a74128baf0300a9f781da68c508ff455075efb39579",
+          "sibling_cutoff": "2023-10-12T12:25:00+00:00",
+          "threshold": "0.2"
+        },
+        {
+          "comparator": "GT",
+          "market_ticker": "CPI-23SEP-T0.3",
+          "p9a_evidence_id": "563ff57f956e5ebb30ff987bdd47d03a6f2e39fde272cd57960ce4591b7037f0",
+          "predicate_identity": "GT:0.3",
+          "request_identity": "eceebc29efdae3005a1a362864b74012e18be28b8c22179a43ea2053c2dcda19",
+          "sibling_cutoff": "2023-10-12T12:25:00+00:00",
+          "threshold": "0.3"
+        },
+        {
+          "comparator": "GT",
+          "market_ticker": "CPI-23SEP-T0.4",
+          "p9a_evidence_id": "7a1dbe6a5f363aec54f0c99d3a5c91c7cae8e6d8c24a70a565b884848be6d087",
+          "predicate_identity": "GT:0.4",
+          "request_identity": "4e5a0ffcec14022ff5a6a3a0e30c9a527a0609b2ca29d64df9f6903c8716e352",
+          "sibling_cutoff": "2023-10-12T12:25:00+00:00",
+          "threshold": "0.4"
+        },
+        {
+          "comparator": "GT",
+          "market_ticker": "CPI-23SEP-T0.5",
+          "p9a_evidence_id": "b1caad5899e82675edf303f1fd741066b9c2d5d01b7cafc60911ac336d724ad1",
+          "predicate_identity": "GT:0.5",
+          "request_identity": "9a398d61a5109866c508fcf043b38ca5707a8514626a1a08a2a9461cb79200b2",
+          "sibling_cutoff": "2023-10-12T12:25:00+00:00",
+          "threshold": "0.5"
+        },
+        {
+          "comparator": "GT",
+          "market_ticker": "CPI-23SEP-T0.6",
+          "p9a_evidence_id": "5e582eb810de53ba5800ca7023825edef99a809c093bdc473347e6caefc2a386",
+          "predicate_identity": "GT:0.6",
+          "request_identity": "00b2ce56b83910806919eb4bf371386461f206268adf66523c392e5f3e8630c6",
+          "sibling_cutoff": "2023-10-12T12:25:00+00:00",
+          "threshold": "0.6"
+        },
+        {
+          "comparator": "GT",
+          "market_ticker": "CPI-23SEP-T0.7",
+          "p9a_evidence_id": "7e8cceafcb22c67ee854b4d3ea7b7344dc8a9ea682de3468121836bdbbb011eb",
+          "predicate_identity": "GT:0.7",
+          "request_identity": "a131f7a3de3123b1b07a0d6f354ac04ed5b57079b8ddf10ab8cdcd91561095b0",
+          "sibling_cutoff": "2023-10-12T12:25:00+00:00",
+          "threshold": "0.7"
+        },
+        {
+          "comparator": "GT",
+          "market_ticker": "CPI-23SEP-T0.8",
+          "p9a_evidence_id": "b624d066a3aef6d92f7fe960630cb91e3cd1c79885345e33e855c47a6b68a741",
+          "predicate_identity": "GT:0.8",
+          "request_identity": "ed4021e0268f4d244a3944e9f1d8cd673a65d1e07e7ca1fff7305180abeca369",
+          "sibling_cutoff": "2023-10-12T12:25:00+00:00",
+          "threshold": "0.8"
+        }
+      ],
+      "event_ticker": "CPI-23SEP",
+      "reference_month": "2023-09"
+    },
+    {
+      "accepted_sibling_count": 8,
+      "accepted_siblings": [
+        {
+          "comparator": "GT",
+          "market_ticker": "CPI-24APR-T-0.1",
+          "p9a_evidence_id": "c1fd1e92fe9d98921289166df010ad962d22ab0d7a296c720bfe703a5ae7a581",
+          "predicate_identity": "GT:-0.1",
+          "request_identity": "fabeecef3ebab7d5afabc82407d96dff3f998cb59caa5b7bd3711bae4a49ad0b",
+          "sibling_cutoff": "2024-05-15T12:25:00+00:00",
+          "threshold": "-0.1"
+        },
+        {
+          "comparator": "GT",
+          "market_ticker": "CPI-24APR-T0.0",
+          "p9a_evidence_id": "71a8f6b075a955694b90fce62ba2d488b587f4b07739883b6af019a0da8e6135",
+          "predicate_identity": "GT:0.0",
+          "request_identity": "a7db7fd014e3a7d3a1ef4a9fcbd491f125cd536c13a5dcb7e5368434444266d9",
+          "sibling_cutoff": "2024-05-15T12:25:00+00:00",
+          "threshold": "0.0"
+        },
+        {
+          "comparator": "GT",
+          "market_ticker": "CPI-24APR-T0.1",
+          "p9a_evidence_id": "66b50c3307c713a3d63365a8c588019f939ed726a03a17d9a3538e365f0006ee",
+          "predicate_identity": "GT:0.1",
+          "request_identity": "c5755b7a8a1c2d8c906de243ce15ecf06ada89aa5315e65b3b6402a5c47fa9cd",
+          "sibling_cutoff": "2024-05-15T12:25:00+00:00",
+          "threshold": "0.1"
+        },
+        {
+          "comparator": "GT",
+          "market_ticker": "CPI-24APR-T0.2",
+          "p9a_evidence_id": "2964d9cbeb64fe083104043cbe8c6bd6024e2fd3b0599c8712e6730cdad0efdd",
+          "predicate_identity": "GT:0.2",
+          "request_identity": "76df53ac51396878c56b3f2167df6afb7540dade041787af0a4e177d13e391b4",
+          "sibling_cutoff": "2024-05-15T12:25:00+00:00",
+          "threshold": "0.2"
+        },
+        {
+          "comparator": "GT",
+          "market_ticker": "CPI-24APR-T0.3",
+          "p9a_evidence_id": "69d97fbfdd15e0a3583feed34cc3ae4632a898e5e3d25bd500c5b712f09faf0b",
+          "predicate_identity": "GT:0.3",
+          "request_identity": "a9357d23195882990356322af35675dc6043bb5529176c7a3ff809490576b082",
+          "sibling_cutoff": "2024-05-15T12:25:00+00:00",
+          "threshold": "0.3"
+        },
+        {
+          "comparator": "GT",
+          "market_ticker": "CPI-24APR-T0.4",
+          "p9a_evidence_id": "d6731bdc610638eafcbb33cd22331f236b18ec41ca88802861c5379962ce9e28",
+          "predicate_identity": "GT:0.4",
+          "request_identity": "8b104c9e3091c34bf19b161281e4022a4ff56de83b014e9c8bbcc6bc020b48f0",
+          "sibling_cutoff": "2024-05-15T12:25:00+00:00",
+          "threshold": "0.4"
+        },
+        {
+          "comparator": "GT",
+          "market_ticker": "CPI-24APR-T0.5",
+          "p9a_evidence_id": "918824c7dd4ca4ca7826d25cc9fac596c8ea06fac937cd0fbd391bf3122e2fbd",
+          "predicate_identity": "GT:0.5",
+          "request_identity": "1ae12adc408e8a64b8c9e3c1d008e745b2291aae25a9194a48f36d6deb3f178f",
+          "sibling_cutoff": "2024-05-15T12:25:00+00:00",
+          "threshold": "0.5"
+        },
+        {
+          "comparator": "GT",
+          "market_ticker": "CPI-24APR-T0.6",
+          "p9a_evidence_id": "4c841f15129a71853bcf1a607ec1b35c2fb11bc654af491b0e07ee9c9a5fa9f5",
+          "predicate_identity": "GT:0.6",
+          "request_identity": "ba965391a0a5383f4b1485c1d893a65c16f3cf6b6e189d2bbce8955b0e4ed7c8",
+          "sibling_cutoff": "2024-05-15T12:25:00+00:00",
+          "threshold": "0.6"
+        }
+      ],
+      "event_ticker": "CPI-24APR",
+      "reference_month": "2024-04"
+    },
+    {
+      "accepted_sibling_count": 8,
+      "accepted_siblings": [
+        {
+          "comparator": "GT",
+          "market_ticker": "CPI-24AUG-T-0.1",
+          "p9a_evidence_id": "10b91bd19641abfc7a93b73db5e25895536ca944974c1b2d2bce3fe27bc5f020",
+          "predicate_identity": "GT:-0.1",
+          "request_identity": "2b83eb2c3538b1cc5a093973781e7f8eaabb4b0b604378a236401a5bac241bf3",
+          "sibling_cutoff": "2024-09-11T12:25:00+00:00",
+          "threshold": "-0.1"
+        },
+        {
+          "comparator": "GT",
+          "market_ticker": "CPI-24AUG-T0.0",
+          "p9a_evidence_id": "04532aaa8cd4bfabfe0113e7e8b9a031ded908a58bff3af523268f7ced5a1b6c",
+          "predicate_identity": "GT:0.0",
+          "request_identity": "03ef2474b5601ab1833ef160bfe3f622c7604ed8cca0aa08586107feeeb88690",
+          "sibling_cutoff": "2024-09-11T12:25:00+00:00",
+          "threshold": "0.0"
+        },
+        {
+          "comparator": "GT",
+          "market_ticker": "CPI-24AUG-T0.1",
+          "p9a_evidence_id": "a6cbb7b33d38b59ed34e3431f463cdb54d4c7da7d92085ccedb478e176d14ccf",
+          "predicate_identity": "GT:0.1",
+          "request_identity": "fc2e4a527f68283c5813fa6ba8ff2b9ce26f170fb1fab145909ee898cf013430",
+          "sibling_cutoff": "2024-09-11T12:25:00+00:00",
+          "threshold": "0.1"
+        },
+        {
+          "comparator": "GT",
+          "market_ticker": "CPI-24AUG-T0.2",
+          "p9a_evidence_id": "8b1d403b217ba22606b89ccae3844ce1defeb5e760957f0108a22eb0a04b171e",
+          "predicate_identity": "GT:0.2",
+          "request_identity": "1f643b4952f7b79055d1c505e06d90571a9125442d73a5046a3d9f48b4bb957c",
+          "sibling_cutoff": "2024-09-11T12:25:00+00:00",
+          "threshold": "0.2"
+        },
+        {
+          "comparator": "GT",
+          "market_ticker": "CPI-24AUG-T0.3",
+          "p9a_evidence_id": "b6d5a6f62c670fc8bc229eedb8169eab79e1eb41b43c9288364bb53796b23008",
+          "predicate_identity": "GT:0.3",
+          "request_identity": "e50361b251f99685cbf3d6c85fdfbbf1ac7b434a393b000ce456b2c7d31e242b",
+          "sibling_cutoff": "2024-09-11T12:25:00+00:00",
+          "threshold": "0.3"
+        },
+        {
+          "comparator": "GT",
+          "market_ticker": "CPI-24AUG-T0.4",
+          "p9a_evidence_id": "b3c7e1fc6a29398e7e6303f69ba06b10db36ec7f8e411007b6f62a1dd4f70e6e",
+          "predicate_identity": "GT:0.4",
+          "request_identity": "4d28a784a7722422c9de026b4151678cdbf360d6e6847479b6b86e1e0a5cc721",
+          "sibling_cutoff": "2024-09-11T12:25:00+00:00",
+          "threshold": "0.4"
+        },
+        {
+          "comparator": "GT",
+          "market_ticker": "CPI-24AUG-T0.5",
+          "p9a_evidence_id": "0815e38b5b81a0eeb1b639799fa6943f07cd7f2344e208047072ea800cf82153",
+          "predicate_identity": "GT:0.5",
+          "request_identity": "f964bd8a7777067851998dd00ff6e8659a5218c6689fd771b5a7308a53b3a491",
+          "sibling_cutoff": "2024-09-11T12:25:00+00:00",
+          "threshold": "0.5"
+        },
+        {
+          "comparator": "GT",
+          "market_ticker": "CPI-24AUG-T0.6",
+          "p9a_evidence_id": "e75b4ce8ff99e9ae770cbf75cc33bb444d80000f7efaea462414cfe925d6012f",
+          "predicate_identity": "GT:0.6",
+          "request_identity": "aa737f5e1e6660034b43fd349c2ed83e676b00a7bb2d8472ca565e5564dd40c3",
+          "sibling_cutoff": "2024-09-11T12:25:00+00:00",
+          "threshold": "0.6"
+        }
+      ],
+      "event_ticker": "CPI-24AUG",
+      "reference_month": "2024-08"
+    },
+    {
+      "accepted_sibling_count": 8,
+      "accepted_siblings": [
+        {
+          "comparator": "GT",
+          "market_ticker": "CPI-24FEB-T-0.1",
+          "p9a_evidence_id": "805fac27a0b3c3aee6b17fe088eb876cd199ee6e39870c62894478d0236c743d",
+          "predicate_identity": "GT:-0.1",
+          "request_identity": "8ec84459c127a6cbd9deceed6f3080cb3d182d08ca0b617158f2e2317a1dea89",
+          "sibling_cutoff": "2024-03-12T12:25:00+00:00",
+          "threshold": "-0.1"
+        },
+        {
+          "comparator": "GT",
+          "market_ticker": "CPI-24FEB-T0.0",
+          "p9a_evidence_id": "c63d29b4e38772485fa236d01dc90c808a09751b3c02e1eb5b36dc2b334e22df",
+          "predicate_identity": "GT:0.0",
+          "request_identity": "71c67bfc7cbf8ed7658e87d49d81e1bf5f22e989022c39d027017c275937dd9f",
+          "sibling_cutoff": "2024-03-12T12:25:00+00:00",
+          "threshold": "0.0"
+        },
+        {
+          "comparator": "GT",
+          "market_ticker": "CPI-24FEB-T0.1",
+          "p9a_evidence_id": "b42a82ef74467ff927a283b79bb6c338e50cdcd07268243818330bc56f76e5f8",
+          "predicate_identity": "GT:0.1",
+          "request_identity": "3339eb90a0c967dad3b37c4cc120eb7dea708038ff8223ead365a10e47c4e01e",
+          "sibling_cutoff": "2024-03-12T12:25:00+00:00",
+          "threshold": "0.1"
+        },
+        {
+          "comparator": "GT",
+          "market_ticker": "CPI-24FEB-T0.2",
+          "p9a_evidence_id": "06bb0bb6781051ef569279be19fa1efa506c119c36f72fad5e0aa565b9e30d7f",
+          "predicate_identity": "GT:0.2",
+          "request_identity": "a4399ba25a9f037b180a26794378e93507892e6ce959dc008ec0966ea77e1a6f",
+          "sibling_cutoff": "2024-03-12T12:25:00+00:00",
+          "threshold": "0.2"
+        },
+        {
+          "comparator": "GT",
+          "market_ticker": "CPI-24FEB-T0.3",
+          "p9a_evidence_id": "52bbdd0a5f18276467b65821c2a781966eabe906a83f0562a7a23d74c96bc12d",
+          "predicate_identity": "GT:0.3",
+          "request_identity": "ea81c6d1a549fb4c03d1f4f450afc69234f9cd7d50b062ddd91d69603f2f3060",
+          "sibling_cutoff": "2024-03-12T12:25:00+00:00",
+          "threshold": "0.3"
+        },
+        {
+          "comparator": "GT",
+          "market_ticker": "CPI-24FEB-T0.4",
+          "p9a_evidence_id": "f98b673e9babb337375ce8b935f1dd6a16387d77dd05f951cf4a9a4bd4c3e97e",
+          "predicate_identity": "GT:0.4",
+          "request_identity": "daff19f28e1bfe886c80ab6a74d1c6a23a359428fe435c1fdaecc916221df905",
+          "sibling_cutoff": "2024-03-12T12:25:00+00:00",
+          "threshold": "0.4"
+        },
+        {
+          "comparator": "GT",
+          "market_ticker": "CPI-24FEB-T0.5",
+          "p9a_evidence_id": "74662942da06643d4731b5d1446dc2114a839e030c46f0cce7814e1f39464088",
+          "predicate_identity": "GT:0.5",
+          "request_identity": "3106a5baf52878af6da5153c772fd6ff2ee2ba8d75729e053ad030b76335f6e6",
+          "sibling_cutoff": "2024-03-12T12:25:00+00:00",
+          "threshold": "0.5"
+        },
+        {
+          "comparator": "GT",
+          "market_ticker": "CPI-24FEB-T0.6",
+          "p9a_evidence_id": "01815df42c570cb3364c79bde2504fe173c17ff969a087c2f4dd46067ecf2645",
+          "predicate_identity": "GT:0.6",
+          "request_identity": "dc03f67b4a4bb76abb739a181b6842ff2fd8642cc0da0bffb026b7d41d27f13c",
+          "sibling_cutoff": "2024-03-12T12:25:00+00:00",
+          "threshold": "0.6"
+        }
+      ],
+      "event_ticker": "CPI-24FEB",
+      "reference_month": "2024-02"
+    },
+    {
+      "accepted_sibling_count": 6,
+      "accepted_siblings": [
+        {
+          "comparator": "GT",
+          "market_ticker": "CPI-24JAN-T-0.1",
+          "p9a_evidence_id": "8dfc690385ea84abbdd7b26c4f9ef187626d72daa812e957d047d52be0b6db42",
+          "predicate_identity": "GT:-0.1",
+          "request_identity": "df98c53c8847acb072115931822f959619b1c43a74e9a889f5404e0c1f1bb0d7",
+          "sibling_cutoff": "2024-02-13T13:25:00+00:00",
+          "threshold": "-0.1"
+        },
+        {
+          "comparator": "GT",
+          "market_ticker": "CPI-24JAN-T-0.2",
+          "p9a_evidence_id": "a6a6f59b2df84eccb5a59c1b55c0dc310ae9693c0925dc3334366738c98a12e7",
+          "predicate_identity": "GT:-0.2",
+          "request_identity": "1da7f76275fdff4e8bb589ca1fc1f6a822e8b23ca3d64045e28f4140ed840b2f",
+          "sibling_cutoff": "2024-02-13T13:25:00+00:00",
+          "threshold": "-0.2"
+        },
+        {
+          "comparator": "GT",
+          "market_ticker": "CPI-24JAN-T0.0",
+          "p9a_evidence_id": "827b8ca866c31ad07e311baeff1b46eff9d40a96411307463d3284abeb97a0d2",
+          "predicate_identity": "GT:0.0",
+          "request_identity": "28fd9f929d68db200117271f572db0a8032bbf9c505b872fb9969d640a046800",
+          "sibling_cutoff": "2024-02-13T13:25:00+00:00",
+          "threshold": "0.0"
+        },
+        {
+          "comparator": "GT",
+          "market_ticker": "CPI-24JAN-T0.1",
+          "p9a_evidence_id": "c033823567af2203a0a575b214962c26d2cc24beac1525f47e3e96c832ffc7d4",
+          "predicate_identity": "GT:0.1",
+          "request_identity": "c2cae83bb2bd2d47b519132bdd50b5070c364a7b36a4b8837ad757e050d81991",
+          "sibling_cutoff": "2024-02-13T13:25:00+00:00",
+          "threshold": "0.1"
+        },
+        {
+          "comparator": "GT",
+          "market_ticker": "CPI-24JAN-T0.2",
+          "p9a_evidence_id": "20d78f416f7588781150fb5353de9a6f82795ee5f8469aac73c70c1821749607",
+          "predicate_identity": "GT:0.2",
+          "request_identity": "83045be4921ddfb67506213aa46905b11fc3894021caa022370465a495fa7634",
+          "sibling_cutoff": "2024-02-13T13:25:00+00:00",
+          "threshold": "0.2"
+        },
+        {
+          "comparator": "GT",
+          "market_ticker": "CPI-24JAN-T0.3",
+          "p9a_evidence_id": "0ccc891ee4ce7b36b67b7e9f48447c3961774e8b18ec9c2cc4915a7ad9f45a1b",
+          "predicate_identity": "GT:0.3",
+          "request_identity": "af610e68894840cc84ff91097f8a0dab7a100f3bf3861f51fd882893a94b4947",
+          "sibling_cutoff": "2024-02-13T13:25:00+00:00",
+          "threshold": "0.3"
+        }
+      ],
+      "event_ticker": "CPI-24JAN",
+      "reference_month": "2024-01"
+    },
+    {
+      "accepted_sibling_count": 8,
+      "accepted_siblings": [
+        {
+          "comparator": "GT",
+          "market_ticker": "CPI-24JUL-T-0.1",
+          "p9a_evidence_id": "c4162a2d358fb34d50754cde12e7468777d004c88dd7d4f818e54324a39f0fc2",
+          "predicate_identity": "GT:-0.1",
+          "request_identity": "4758cd18b3ea1cc0d0e5faabd9bdc86c17ed2c7ccdf928f8c6e5fcc8b4005319",
+          "sibling_cutoff": "2024-08-14T12:25:00+00:00",
+          "threshold": "-0.1"
+        },
+        {
+          "comparator": "GT",
+          "market_ticker": "CPI-24JUL-T0.0",
+          "p9a_evidence_id": "8f9725aa664884e26ac2e84347cf5c7e97d6815dab527a4742c38401c3894001",
+          "predicate_identity": "GT:0.0",
+          "request_identity": "13965e60aac000d3e245a9aecbc66c979e8e46f9d6f14d33e25c78131ad4d7bf",
+          "sibling_cutoff": "2024-08-14T12:25:00+00:00",
+          "threshold": "0.0"
+        },
+        {
+          "comparator": "GT",
+          "market_ticker": "CPI-24JUL-T0.1",
+          "p9a_evidence_id": "e8395e859eae3964ffb113efe5248468e970d398c0c077bbbe35d97c1234c6d8",
+          "predicate_identity": "GT:0.1",
+          "request_identity": "7868a9034770807c8c2c9adaa99e355bc9c7500383742160f0c569475b21baf3",
+          "sibling_cutoff": "2024-08-14T12:25:00+00:00",
+          "threshold": "0.1"
+        },
+        {
+          "comparator": "GT",
+          "market_ticker": "CPI-24JUL-T0.2",
+          "p9a_evidence_id": "a61aa3904a9f2d8a406343cd0a56b6878570313d10183b0ba0161d0435ad17d3",
+          "predicate_identity": "GT:0.2",
+          "request_identity": "8182d11e08cc5f988cb897e2b8b0a9935174694d335420eb2821c040a6dd44b8",
+          "sibling_cutoff": "2024-08-14T12:25:00+00:00",
+          "threshold": "0.2"
+        },
+        {
+          "comparator": "GT",
+          "market_ticker": "CPI-24JUL-T0.3",
+          "p9a_evidence_id": "b43d24f2535b1b6926e3d45b6a30938bde614c52e4aab88da0f8e8a31e63171b",
+          "predicate_identity": "GT:0.3",
+          "request_identity": "88cba5fc1dd981126e258e3d6f0b01b1520af466a449be26b98f59298778e29d",
+          "sibling_cutoff": "2024-08-14T12:25:00+00:00",
+          "threshold": "0.3"
+        },
+        {
+          "comparator": "GT",
+          "market_ticker": "CPI-24JUL-T0.4",
+          "p9a_evidence_id": "6c7d50a0b3d3b0f39ca5d9fd43e07b71cd2f4fbff7fb5be64f13c168d6cf42ec",
+          "predicate_identity": "GT:0.4",
+          "request_identity": "1a92389c7bbed5e89136657191f3804d1315135587d24e8f2e1459b094645fbd",
+          "sibling_cutoff": "2024-08-14T12:25:00+00:00",
+          "threshold": "0.4"
+        },
+        {
+          "comparator": "GT",
+          "market_ticker": "CPI-24JUL-T0.5",
+          "p9a_evidence_id": "cf90d6ec5ef9410a057be3a9dc2a2b94e3016b1d323ccbdbf5afc78881382689",
+          "predicate_identity": "GT:0.5",
+          "request_identity": "ce266d435cf208bd9eeefa80c2efea8ce554d88f7be79948e0254802f3c9122b",
+          "sibling_cutoff": "2024-08-14T12:25:00+00:00",
+          "threshold": "0.5"
+        },
+        {
+          "comparator": "GT",
+          "market_ticker": "CPI-24JUL-T0.6",
+          "p9a_evidence_id": "591eb9eef1a71f691a4972759f13d05c5990fa82d021fa8df3a5194dd31a3c5f",
+          "predicate_identity": "GT:0.6",
+          "request_identity": "2cb3619f92b74750c8dd9e6fd320c83b59370db26f5a3ca30114d045cc369a4b",
+          "sibling_cutoff": "2024-08-14T12:25:00+00:00",
+          "threshold": "0.6"
+        }
+      ],
+      "event_ticker": "CPI-24JUL",
+      "reference_month": "2024-07"
+    },
+    {
+      "accepted_sibling_count": 8,
+      "accepted_siblings": [
+        {
+          "comparator": "GT",
+          "market_ticker": "CPI-24JUN-T-0.1",
+          "p9a_evidence_id": "e11f91f1a6d0d3971d41a06b57986faf8e7d8931a73dea62b22aa7a757230e16",
+          "predicate_identity": "GT:-0.1",
+          "request_identity": "a84e1aacc881f1b0a50fef77bbae1b346c0af282233ec5f59156dec4a52709a9",
+          "sibling_cutoff": "2024-07-11T12:25:00+00:00",
+          "threshold": "-0.1"
+        },
+        {
+          "comparator": "GT",
+          "market_ticker": "CPI-24JUN-T0.0",
+          "p9a_evidence_id": "ba3734866630aa4befc80c046e0ee87b20b463073db0aa4967aafac8c9cc7480",
+          "predicate_identity": "GT:0.0",
+          "request_identity": "c1575876903e9e6df539622ed2fc46e8844b04a5150e4ead8b528e4c690580e9",
+          "sibling_cutoff": "2024-07-11T12:25:00+00:00",
+          "threshold": "0.0"
+        },
+        {
+          "comparator": "GT",
+          "market_ticker": "CPI-24JUN-T0.1",
+          "p9a_evidence_id": "863201771e2d2bafc2299c2d7d6b7382061559ab82855eb5041c5be2f7e4e1a1",
+          "predicate_identity": "GT:0.1",
+          "request_identity": "8765f744b457db12f83ce270d1d2c954819032eb9179b37ac9b58373483d46eb",
+          "sibling_cutoff": "2024-07-11T12:25:00+00:00",
+          "threshold": "0.1"
+        },
+        {
+          "comparator": "GT",
+          "market_ticker": "CPI-24JUN-T0.2",
+          "p9a_evidence_id": "0815d1572d988e6288cf61e848c67bd48e8325411c5787b638e822bc030bacdd",
+          "predicate_identity": "GT:0.2",
+          "request_identity": "b4e870137fbfb29516db93c1777855707f1a8e85b83f33b69b3c7d3d869ade68",
+          "sibling_cutoff": "2024-07-11T12:25:00+00:00",
+          "threshold": "0.2"
+        },
+        {
+          "comparator": "GT",
+          "market_ticker": "CPI-24JUN-T0.3",
+          "p9a_evidence_id": "c94dd8e179c3c7feb1eb22ef9b7abadc24dceb8f1b7f2171e69e8cae9b17c35d",
+          "predicate_identity": "GT:0.3",
+          "request_identity": "512bad265482369b471c86c54a37740b0642f1fc44c2bbbb3bdf9961bfe142b6",
+          "sibling_cutoff": "2024-07-11T12:25:00+00:00",
+          "threshold": "0.3"
+        },
+        {
+          "comparator": "GT",
+          "market_ticker": "CPI-24JUN-T0.4",
+          "p9a_evidence_id": "7256cee3f8ab26da347001a12d4fb8c3cb34ba25725e36f9fe2e1f338bc5ce2f",
+          "predicate_identity": "GT:0.4",
+          "request_identity": "03434b4bd20443c66c7d871ead82383a68414eae36250c1888042549c3985a6b",
+          "sibling_cutoff": "2024-07-11T12:25:00+00:00",
+          "threshold": "0.4"
+        },
+        {
+          "comparator": "GT",
+          "market_ticker": "CPI-24JUN-T0.5",
+          "p9a_evidence_id": "569c51f9b90203d97da8f35f6a07c47ae02dc44067f5b5da2f61fd8ff2a62309",
+          "predicate_identity": "GT:0.5",
+          "request_identity": "e9b5c1df9d7c7d784afdf82af8dfbe501256eae673516f83e159db013d763008",
+          "sibling_cutoff": "2024-07-11T12:25:00+00:00",
+          "threshold": "0.5"
+        },
+        {
+          "comparator": "GT",
+          "market_ticker": "CPI-24JUN-T0.6",
+          "p9a_evidence_id": "338ec336e7bdadf03c5200aadf9ef8f0e53a345225cde58e5c20c9367439763c",
+          "predicate_identity": "GT:0.6",
+          "request_identity": "9dc86403b8ef7979e911a770783b497385110636c8b4f2d2fb7d5b7f1aea23ac",
+          "sibling_cutoff": "2024-07-11T12:25:00+00:00",
+          "threshold": "0.6"
+        }
+      ],
+      "event_ticker": "CPI-24JUN",
+      "reference_month": "2024-06"
+    },
+    {
+      "accepted_sibling_count": 7,
+      "accepted_siblings": [
+        {
+          "comparator": "GT",
+          "market_ticker": "CPI-24MAR-T-0.1",
+          "p9a_evidence_id": "a3748e314e7919decc96a5aa3c5031e3b8da71f3e45c7693c45f7775efb76471",
+          "predicate_identity": "GT:-0.1",
+          "request_identity": "f61f732f4666bdb7e4da19a633d78c08ded80fc0f1f01e41c04b4459dd76f9df",
+          "sibling_cutoff": "2024-04-10T12:25:00+00:00",
+          "threshold": "-0.1"
+        },
+        {
+          "comparator": "GT",
+          "market_ticker": "CPI-24MAR-T0.0",
+          "p9a_evidence_id": "9bfe993bc35f9ceddee435e5825dd13d65b0bacd4fda65c2702c3c00ba205548",
+          "predicate_identity": "GT:0.0",
+          "request_identity": "01e30d54b01b45daed25f64653beb493ceb0725c880c3f38457a78bc9b5b0357",
+          "sibling_cutoff": "2024-04-10T12:25:00+00:00",
+          "threshold": "0.0"
+        },
+        {
+          "comparator": "GT",
+          "market_ticker": "CPI-24MAR-T0.1",
+          "p9a_evidence_id": "e8b27e8077261f8e4dc2b5ddf86c91668ac07e34822b80131920325bea79e2d9",
+          "predicate_identity": "GT:0.1",
+          "request_identity": "6a59d4e2d5a31604131ba8deeb333ea51348ccb3c26923bf715f58fc52809786",
+          "sibling_cutoff": "2024-04-10T12:25:00+00:00",
+          "threshold": "0.1"
+        },
+        {
+          "comparator": "GT",
+          "market_ticker": "CPI-24MAR-T0.2",
+          "p9a_evidence_id": "7394f6b9095f781f0916b0bca09a6be7b4c4010c772cf3767e008b97657c4e89",
+          "predicate_identity": "GT:0.2",
+          "request_identity": "c3540a830f288af1beaff605fdb243af92ed88375c3d8d7928b27ec2b501b80c",
+          "sibling_cutoff": "2024-04-10T12:25:00+00:00",
+          "threshold": "0.2"
+        },
+        {
+          "comparator": "GT",
+          "market_ticker": "CPI-24MAR-T0.3",
+          "p9a_evidence_id": "411001a8fca30279a9ef7ddfc5f1c283d98e49277c8616d5e91674a51fc9a514",
+          "predicate_identity": "GT:0.3",
+          "request_identity": "c2c9a1f422d8d771276e48b2eaeeb7d2b5531161bd182bcb4aea00db5d6dc138",
+          "sibling_cutoff": "2024-04-10T12:25:00+00:00",
+          "threshold": "0.3"
+        },
+        {
+          "comparator": "GT",
+          "market_ticker": "CPI-24MAR-T0.4",
+          "p9a_evidence_id": "cd04c6962a0c17eb20aa560e28ed9e7da97c6305894574e91c9c0f5c75b7e1f4",
+          "predicate_identity": "GT:0.4",
+          "request_identity": "12d20cd44ddf57154b371bc4e06a3d16a82898166b72cb7111d290c24ccd463b",
+          "sibling_cutoff": "2024-04-10T12:25:00+00:00",
+          "threshold": "0.4"
+        },
+        {
+          "comparator": "GT",
+          "market_ticker": "CPI-24MAR-T0.5",
+          "p9a_evidence_id": "fe008ea9c41c4d65eabaa22718cb290951c43734ead8a83144c1aab2b12b0fda",
+          "predicate_identity": "GT:0.5",
+          "request_identity": "1dcb8341ad4d5ea25afdbaf7d6d238205b663a5074bffce794dab0bb2acfe174",
+          "sibling_cutoff": "2024-04-10T12:25:00+00:00",
+          "threshold": "0.5"
+        }
+      ],
+      "event_ticker": "CPI-24MAR",
+      "reference_month": "2024-03"
+    },
+    {
+      "accepted_sibling_count": 8,
+      "accepted_siblings": [
+        {
+          "comparator": "GT",
+          "market_ticker": "CPI-24MAY-T-0.1",
+          "p9a_evidence_id": "b697b187d11b84c375a4c95f7c74b33f3e635b628f9f4b0b231c104b48ccf594",
+          "predicate_identity": "GT:-0.1",
+          "request_identity": "de0210881987e9aa51459d89fd98fbee718435d28cf43983b875df52e3977992",
+          "sibling_cutoff": "2024-06-12T12:25:00+00:00",
+          "threshold": "-0.1"
+        },
+        {
+          "comparator": "GT",
+          "market_ticker": "CPI-24MAY-T0.0",
+          "p9a_evidence_id": "3c1dc172ccfe0b2cf7d603e5d7f6aba9e2570275587894b28d65c0d60f6d2bfe",
+          "predicate_identity": "GT:0.0",
+          "request_identity": "5ef7e50fcb5df4a1454f1ec01901048de29f76be9edf4db5fcdd95a174af64b5",
+          "sibling_cutoff": "2024-06-12T12:25:00+00:00",
+          "threshold": "0.0"
+        },
+        {
+          "comparator": "GT",
+          "market_ticker": "CPI-24MAY-T0.1",
+          "p9a_evidence_id": "28c361cc4d28a1d6723b566dd7f44be92192885f60c06261d2a00f493bf60521",
+          "predicate_identity": "GT:0.1",
+          "request_identity": "41ff65fabdd22f0f375ce03389a95366090d88728c79f7d9677cc115306bb6f0",
+          "sibling_cutoff": "2024-06-12T12:25:00+00:00",
+          "threshold": "0.1"
+        },
+        {
+          "comparator": "GT",
+          "market_ticker": "CPI-24MAY-T0.2",
+          "p9a_evidence_id": "f23f485a9e980fcc4bae3cfec0ac781885dfd6a7db316b938454846f5a8fdde0",
+          "predicate_identity": "GT:0.2",
+          "request_identity": "26275a46c751090673986b4480deda936870ac39c5fde4108cdfa5cc1fa6fa1e",
+          "sibling_cutoff": "2024-06-12T12:25:00+00:00",
+          "threshold": "0.2"
+        },
+        {
+          "comparator": "GT",
+          "market_ticker": "CPI-24MAY-T0.3",
+          "p9a_evidence_id": "99b01eed93766ae6bd3b658791d1b1ad9b77d07cf3b7b50b74e34bdb0c9c8c95",
+          "predicate_identity": "GT:0.3",
+          "request_identity": "4adebc7eaf6dc45d042b0d42e15745f4e756d4916f448b5e12a1eed3b368f390",
+          "sibling_cutoff": "2024-06-12T12:25:00+00:00",
+          "threshold": "0.3"
+        },
+        {
+          "comparator": "GT",
+          "market_ticker": "CPI-24MAY-T0.4",
+          "p9a_evidence_id": "408fb5a52e2cc59efccaae9452b8a0adec03d453c9752d5697bfc5bc1cd0d5bc",
+          "predicate_identity": "GT:0.4",
+          "request_identity": "4b4b0ceaf4dc3e78ca271bd6005f2393a845330a0b110a0309503143a02e0453",
+          "sibling_cutoff": "2024-06-12T12:25:00+00:00",
+          "threshold": "0.4"
+        },
+        {
+          "comparator": "GT",
+          "market_ticker": "CPI-24MAY-T0.5",
+          "p9a_evidence_id": "5c9f798216bde77b23e34fabd7959e0fb858527e00414043e8a355c1965af2e0",
+          "predicate_identity": "GT:0.5",
+          "request_identity": "9fe114e877a5a9599bf7013aa31aec18220a7c3fc6c20ba467968a67baca193f",
+          "sibling_cutoff": "2024-06-12T12:25:00+00:00",
+          "threshold": "0.5"
+        },
+        {
+          "comparator": "GT",
+          "market_ticker": "CPI-24MAY-T0.6",
+          "p9a_evidence_id": "633f655943f905e6314031fd4728985b4bb164a1387a8ee39b8c348a9c900096",
+          "predicate_identity": "GT:0.6",
+          "request_identity": "1620da1129660a91cd1ff76861d36cb9ad79592c6f38d6640f83d5691f31f7a8",
+          "sibling_cutoff": "2024-06-12T12:25:00+00:00",
+          "threshold": "0.6"
+        }
+      ],
+      "event_ticker": "CPI-24MAY",
+      "reference_month": "2024-05"
+    },
+    {
+      "accepted_sibling_count": 8,
+      "accepted_siblings": [
+        {
+          "comparator": "GT",
+          "market_ticker": "CPI-24OCT-T-0.1",
+          "p9a_evidence_id": "e1389f5e35c23e2346402a4a7219f897263af49e55a58035880dabe65d6ccf7c",
+          "predicate_identity": "GT:-0.1",
+          "request_identity": "9d498fcf7919d23b111e8cf2dc252781834cda0f6b8b9efc36aecd2da87b41dc",
+          "sibling_cutoff": "2024-11-13T13:25:00+00:00",
+          "threshold": "-0.1"
+        },
+        {
+          "comparator": "GT",
+          "market_ticker": "CPI-24OCT-T0.0",
+          "p9a_evidence_id": "3b560afc846248dea443d903f5d5b4620db0e0af1493f906503e76f97a0720e3",
+          "predicate_identity": "GT:0.0",
+          "request_identity": "8d1c256692c5b50fb5710688e923b9b50d87d6a4ffba5db6d9fae207a3bef067",
+          "sibling_cutoff": "2024-11-13T13:25:00+00:00",
+          "threshold": "0.0"
+        },
+        {
+          "comparator": "GT",
+          "market_ticker": "CPI-24OCT-T0.1",
+          "p9a_evidence_id": "d12bbe080997f50d6a236e81c47768bba5e76712372a9e809190d4214f53df87",
+          "predicate_identity": "GT:0.1",
+          "request_identity": "914a57b64b6485876dcdef8c3485ab8baf339daf3214ca9646031be3a12d0a5e",
+          "sibling_cutoff": "2024-11-13T13:25:00+00:00",
+          "threshold": "0.1"
+        },
+        {
+          "comparator": "GT",
+          "market_ticker": "CPI-24OCT-T0.2",
+          "p9a_evidence_id": "8a551d05a7445bb3c5617f4e54f68848ec767d95f3cb4f471c2fc3730a42fcf4",
+          "predicate_identity": "GT:0.2",
+          "request_identity": "afae1b5217056c5c232680cac560c53d004058b8930a3063374fe8b1d1e337c8",
+          "sibling_cutoff": "2024-11-13T13:25:00+00:00",
+          "threshold": "0.2"
+        },
+        {
+          "comparator": "GT",
+          "market_ticker": "CPI-24OCT-T0.3",
+          "p9a_evidence_id": "a5649f7ac410277567830e88348798628d91cd4dcd995b46d0be497cbd942eb1",
+          "predicate_identity": "GT:0.3",
+          "request_identity": "b3213e3ca690af4c20de7253ca391c86f0b2e183ca0180ff29c0990ca48d5e5d",
+          "sibling_cutoff": "2024-11-13T13:25:00+00:00",
+          "threshold": "0.3"
+        },
+        {
+          "comparator": "GT",
+          "market_ticker": "CPI-24OCT-T0.4",
+          "p9a_evidence_id": "951ecfeff759b6f3101623b8a4e04bb8000f72e0800b6803e0c78a346918f015",
+          "predicate_identity": "GT:0.4",
+          "request_identity": "889cd1b1ae3421e5aef106367b230d0a0eb8d98a4b139fc1175024c74aab214a",
+          "sibling_cutoff": "2024-11-13T13:25:00+00:00",
+          "threshold": "0.4"
+        },
+        {
+          "comparator": "GT",
+          "market_ticker": "CPI-24OCT-T0.5",
+          "p9a_evidence_id": "1eb579ff06a0da569fd801619328c357e74a66450244432be1abffffaa0bb80a",
+          "predicate_identity": "GT:0.5",
+          "request_identity": "2c514b2a29ceb8cd411a5152d491d5e1d64a83e731b64f5e78bfa241a3d686e4",
+          "sibling_cutoff": "2024-11-13T13:25:00+00:00",
+          "threshold": "0.5"
+        },
+        {
+          "comparator": "GT",
+          "market_ticker": "CPI-24OCT-T0.6",
+          "p9a_evidence_id": "c724f5d7b0733517c4181dac748eccbdf38ffdbed13b8e5ed013a9ae1addabe2",
+          "predicate_identity": "GT:0.6",
+          "request_identity": "3ba1444a02bd7fe73a45e23a272107637c2918906095d8d6d18dd10f47f08fc5",
+          "sibling_cutoff": "2024-11-13T13:25:00+00:00",
+          "threshold": "0.6"
+        }
+      ],
+      "event_ticker": "CPI-24OCT",
+      "reference_month": "2024-10"
+    },
+    {
+      "accepted_sibling_count": 8,
+      "accepted_siblings": [
+        {
+          "comparator": "GT",
+          "market_ticker": "CPI-24SEP-T-0.1",
+          "p9a_evidence_id": "d5555828e7752794c4d298163030b28a43b4fa39049c0102967ce0286c71f632",
+          "predicate_identity": "GT:-0.1",
+          "request_identity": "7e072643125e0b1c2da67d2e22e714fd275a054833545a5ff684952f2beee9b4",
+          "sibling_cutoff": "2024-10-10T12:25:00+00:00",
+          "threshold": "-0.1"
+        },
+        {
+          "comparator": "GT",
+          "market_ticker": "CPI-24SEP-T0.0",
+          "p9a_evidence_id": "f7f74256e9201ce461421127528f9fb3229ca952890233839f6b5050b723948d",
+          "predicate_identity": "GT:0.0",
+          "request_identity": "4d67c2b7513c240fb8399f0ce72e45af2d44192c6cbcc1406f056320d12cfe62",
+          "sibling_cutoff": "2024-10-10T12:25:00+00:00",
+          "threshold": "0.0"
+        },
+        {
+          "comparator": "GT",
+          "market_ticker": "CPI-24SEP-T0.1",
+          "p9a_evidence_id": "c0f161274a21a85d93e66d26324dc7267700950b7f86dd2dddb05286e62ffb32",
+          "predicate_identity": "GT:0.1",
+          "request_identity": "a0ee1e5edc9c20a56447b0d2f89ec00f8ec3d392e5ba0018a20d64ef64977b44",
+          "sibling_cutoff": "2024-10-10T12:25:00+00:00",
+          "threshold": "0.1"
+        },
+        {
+          "comparator": "GT",
+          "market_ticker": "CPI-24SEP-T0.2",
+          "p9a_evidence_id": "2e61cdc1e4189a9c23cbeeb8fa3a9a76775fc7623530b575d3bd765b62271603",
+          "predicate_identity": "GT:0.2",
+          "request_identity": "fc8730852de7529a848e942276ad6213a5d3312d5b107a5af0d1092cbe2e8a0e",
+          "sibling_cutoff": "2024-10-10T12:25:00+00:00",
+          "threshold": "0.2"
+        },
+        {
+          "comparator": "GT",
+          "market_ticker": "CPI-24SEP-T0.3",
+          "p9a_evidence_id": "ffb82bae91db828bcd67cd71a77a62f2d917303daf05250cfc7fba92bbbfddba",
+          "predicate_identity": "GT:0.3",
+          "request_identity": "fe9af4cdf231c1118cb9dd6b2ca0d3bce828a0d6fbefca6a869b7206023a1dfe",
+          "sibling_cutoff": "2024-10-10T12:25:00+00:00",
+          "threshold": "0.3"
+        },
+        {
+          "comparator": "GT",
+          "market_ticker": "CPI-24SEP-T0.4",
+          "p9a_evidence_id": "af0193cfc6874962600e88998b2a10505f9c46908341eca44b60a0c5c143dcf9",
+          "predicate_identity": "GT:0.4",
+          "request_identity": "4631d58a5d3f720076c27ab4066dedce57afd90c7f9f11d1ee9aff71c4d0e238",
+          "sibling_cutoff": "2024-10-10T12:25:00+00:00",
+          "threshold": "0.4"
+        },
+        {
+          "comparator": "GT",
+          "market_ticker": "CPI-24SEP-T0.5",
+          "p9a_evidence_id": "c343563f9ae1fca9180d9eaf9c6dcd418378a65e68288e43337925ad883598c1",
+          "predicate_identity": "GT:0.5",
+          "request_identity": "15daf2d4c123fc74ba1a6943f718841d91b45feeb728e6b293ca39715f7de6e4",
+          "sibling_cutoff": "2024-10-10T12:25:00+00:00",
+          "threshold": "0.5"
+        },
+        {
+          "comparator": "GT",
+          "market_ticker": "CPI-24SEP-T0.6",
+          "p9a_evidence_id": "b2ad0d092df24611d8e906e95c3644a56d8d407f150154647b848e18511da85f",
+          "predicate_identity": "GT:0.6",
+          "request_identity": "02ffb875d27dcfd3b91053e7f1790c367f4b7107aca118defeedf87635f0a484",
+          "sibling_cutoff": "2024-10-10T12:25:00+00:00",
+          "threshold": "0.6"
+        }
+      ],
+      "event_ticker": "CPI-24SEP",
+      "reference_month": "2024-09"
+    },
+    {
+      "accepted_sibling_count": 7,
+      "accepted_siblings": [
+        {
+          "comparator": "GT",
+          "market_ticker": "KXCPI-24DEC-T-0.1",
+          "p9a_evidence_id": "0e19abe793fb9514bbaf425cb0abe44a6ce7fcfbbc3b23090c39eaa26190a041",
+          "predicate_identity": "GT:-0.1",
+          "request_identity": "ac20ed77124170997cbca92fdd74145d34cea6bc88d864ad73e92ce0a6df51e2",
+          "sibling_cutoff": "2025-01-15T13:25:00+00:00",
+          "threshold": "-0.1"
+        },
+        {
+          "comparator": "GT",
+          "market_ticker": "KXCPI-24DEC-T0.0",
+          "p9a_evidence_id": "1a2843d7117bd105207a3ef25c3c25e829bba4856f2c5cb50444f8a8401db335",
+          "predicate_identity": "GT:0.0",
+          "request_identity": "f5dac8cd8203cda175bebe8d018ab743130b1d0b61e6f7f19aa947f58433009c",
+          "sibling_cutoff": "2025-01-15T13:25:00+00:00",
+          "threshold": "0.0"
+        },
+        {
+          "comparator": "GT",
+          "market_ticker": "KXCPI-24DEC-T0.1",
+          "p9a_evidence_id": "f771df25068b44df0aa4c707411dfe185f3598092c29373fd38f7f58672b2c28",
+          "predicate_identity": "GT:0.1",
+          "request_identity": "ff3543ccf12f30b0706a28a51dbb9f0827c7f8fe71a7a98b45cad8bd64159c3d",
+          "sibling_cutoff": "2025-01-15T13:25:00+00:00",
+          "threshold": "0.1"
+        },
+        {
+          "comparator": "GT",
+          "market_ticker": "KXCPI-24DEC-T0.2",
+          "p9a_evidence_id": "8a3ced2486fdc77e3b0304ab06370e3f9df235022665657ec657a5baaaf021d9",
+          "predicate_identity": "GT:0.2",
+          "request_identity": "702013ed4e24331480ecc0e99abadf1f1af05fe2ddb53aac5d67baab62d3a7fb",
+          "sibling_cutoff": "2025-01-15T13:25:00+00:00",
+          "threshold": "0.2"
+        },
+        {
+          "comparator": "GT",
+          "market_ticker": "KXCPI-24DEC-T0.3",
+          "p9a_evidence_id": "24cc9830b035c129fb590b2cc24dbc7620ac64d24b7fef4dc68eabe05d7e54e8",
+          "predicate_identity": "GT:0.3",
+          "request_identity": "9dc154c447ba097002b82cf07714a6426f5d1e5a5f1c95abbd35c8f56dbb155d",
+          "sibling_cutoff": "2025-01-15T13:25:00+00:00",
+          "threshold": "0.3"
+        },
+        {
+          "comparator": "GT",
+          "market_ticker": "KXCPI-24DEC-T0.4",
+          "p9a_evidence_id": "39178f5e34abcd541e4c6af73a27bb8be845b7ab91e5f8512c5ac7b68e035c5d",
+          "predicate_identity": "GT:0.4",
+          "request_identity": "6eb3916c7b1c4c1762f10ea2fdad62f38649a521f749e9b810f33bdc89bae794",
+          "sibling_cutoff": "2025-01-15T13:25:00+00:00",
+          "threshold": "0.4"
+        },
+        {
+          "comparator": "GT",
+          "market_ticker": "KXCPI-24DEC-T0.5",
+          "p9a_evidence_id": "b077bbda59d3d78e1d6a8118b12f3902379cce552d24c2dd5bad3a4867ff8b10",
+          "predicate_identity": "GT:0.5",
+          "request_identity": "63f4108540b8130a8ffbdeb199398b9c6ecc06d9fd92f4d11e8f6647de52ad54",
+          "sibling_cutoff": "2025-01-15T13:25:00+00:00",
+          "threshold": "0.5"
+        }
+      ],
+      "event_ticker": "KXCPI-24DEC",
+      "reference_month": "2024-12"
+    },
+    {
+      "accepted_sibling_count": 8,
+      "accepted_siblings": [
+        {
+          "comparator": "GT",
+          "market_ticker": "KXCPI-24NOV-T-0.1",
+          "p9a_evidence_id": "a1bff9857ff33ccf9b15ca0e74f525d42ab4d6e111a710faa676df2c34890ca6",
+          "predicate_identity": "GT:-0.1",
+          "request_identity": "524cd1773916cf020d0bce6e4a84c5e2db9ce3e73109404a39c24d8ffccb831d",
+          "sibling_cutoff": "2024-12-11T13:25:00+00:00",
+          "threshold": "-0.1"
+        },
+        {
+          "comparator": "GT",
+          "market_ticker": "KXCPI-24NOV-T0.0",
+          "p9a_evidence_id": "b221fff9137cd43f56b4dfdcf8f242523618b8f3597743cac1aa0d375ea060d7",
+          "predicate_identity": "GT:0.0",
+          "request_identity": "8a5888fb00c175a26791f0a7018bad9cb457c100257748fa66b1b55fac3ead4c",
+          "sibling_cutoff": "2024-12-11T13:25:00+00:00",
+          "threshold": "0.0"
+        },
+        {
+          "comparator": "GT",
+          "market_ticker": "KXCPI-24NOV-T0.1",
+          "p9a_evidence_id": "24cda31be77943260ef39d8bc1bb7dbc3e4e2109916cbedd4f4690f1b8a04d5e",
+          "predicate_identity": "GT:0.1",
+          "request_identity": "06735108eb96041010608699223557d339f6e4992ac0721bb420f35a81ef53d2",
+          "sibling_cutoff": "2024-12-11T13:25:00+00:00",
+          "threshold": "0.1"
+        },
+        {
+          "comparator": "GT",
+          "market_ticker": "KXCPI-24NOV-T0.2",
+          "p9a_evidence_id": "665f09a3a772062389a4b551c840b09877f85fd39ba6c4292ba3b283f1de34a9",
+          "predicate_identity": "GT:0.2",
+          "request_identity": "52aad0275fe1e9d6ba004e92ca1a1e918e098a708be3601684cc4d06bfac9f1d",
+          "sibling_cutoff": "2024-12-11T13:25:00+00:00",
+          "threshold": "0.2"
+        },
+        {
+          "comparator": "GT",
+          "market_ticker": "KXCPI-24NOV-T0.3",
+          "p9a_evidence_id": "ef0245afa7ec253aec3e60a70b53e6b6eb2156e8ad06495bc2afee9927c87553",
+          "predicate_identity": "GT:0.3",
+          "request_identity": "8e98c6f2d215db1e800b02cb30da1095ed6a1d2fc58b278eb13ee049e8152043",
+          "sibling_cutoff": "2024-12-11T13:25:00+00:00",
+          "threshold": "0.3"
+        },
+        {
+          "comparator": "GT",
+          "market_ticker": "KXCPI-24NOV-T0.4",
+          "p9a_evidence_id": "2ed781ef14b66a57648c4272e1ec35ee1294516c6b0abc0ccbe94e4231983a27",
+          "predicate_identity": "GT:0.4",
+          "request_identity": "7cf7e9aae03907a5fd142a34abe87c5f054adf7b1de211bfe93ebf95273e82ef",
+          "sibling_cutoff": "2024-12-11T13:25:00+00:00",
+          "threshold": "0.4"
+        },
+        {
+          "comparator": "GT",
+          "market_ticker": "KXCPI-24NOV-T0.5",
+          "p9a_evidence_id": "4095b69860a03b233e71df43347149d098128ad0e87881492a074feb648c64e3",
+          "predicate_identity": "GT:0.5",
+          "request_identity": "86a6a491c421ef16ac2230dfed4a64ebb27eb1f93eb1f24e831838c9e0b74d23",
+          "sibling_cutoff": "2024-12-11T13:25:00+00:00",
+          "threshold": "0.5"
+        },
+        {
+          "comparator": "GT",
+          "market_ticker": "KXCPI-24NOV-T0.6",
+          "p9a_evidence_id": "8aae2073254bd732ecbf4fe73974e0273f5bb5fc0820b1161bd1e49955a250ee",
+          "predicate_identity": "GT:0.6",
+          "request_identity": "5ff7024b33cb89422c1364c6eee67534eab8d51b792c9b3f2fe1916b9014bfdd",
+          "sibling_cutoff": "2024-12-11T13:25:00+00:00",
+          "threshold": "0.6"
+        }
+      ],
+      "event_ticker": "KXCPI-24NOV",
+      "reference_month": "2024-11"
+    },
+    {
+      "accepted_sibling_count": 6,
+      "accepted_siblings": [
+        {
+          "comparator": "GT",
+          "market_ticker": "KXCPI-25DEC-T-0.1",
+          "p9a_evidence_id": "f8609d91b9b7b5c2edc7878a2e8a378441b455866da2792024db5d4792559c9b",
+          "predicate_identity": "GT:-0.1",
+          "request_identity": "baa6962076b8ab0ffa9d586d4c44ad8258ee321697969d5df31bfe53bf179e22",
+          "sibling_cutoff": "2026-01-13T13:29:00+00:00",
+          "threshold": "-0.1"
+        },
+        {
+          "comparator": "GT",
+          "market_ticker": "KXCPI-25DEC-T0.0",
+          "p9a_evidence_id": "6f3137abbfa4fa8c1b0771f031bfcbffa39e420a6da4edc6bfa30bce50e8d93e",
+          "predicate_identity": "GT:0.0",
+          "request_identity": "b7f1109d5aff5ed549d331a57da58042f870198530abdd76253f2fdb841ee688",
+          "sibling_cutoff": "2026-01-13T13:29:00+00:00",
+          "threshold": "0.0"
+        },
+        {
+          "comparator": "GT",
+          "market_ticker": "KXCPI-25DEC-T0.1",
+          "p9a_evidence_id": "a595e6929615357f8a59fd869ba864395d6c6e937d9a3e0f2b610a152b600d38",
+          "predicate_identity": "GT:0.1",
+          "request_identity": "a1f1d447a7efa9d8d8c294df0a2a25f2c0da67811100377d59ce967a9d85678c",
+          "sibling_cutoff": "2026-01-13T13:29:00+00:00",
+          "threshold": "0.1"
+        },
+        {
+          "comparator": "GT",
+          "market_ticker": "KXCPI-25DEC-T0.2",
+          "p9a_evidence_id": "c3b5a924ecc474497d9c6bf61355028be78fef8fe16eba2852e76a5a87ad51d0",
+          "predicate_identity": "GT:0.2",
+          "request_identity": "e1ad5eef88ffcdde5a08965c8bd7133308b92ee29f115dfdd1a0dde589ec82e3",
+          "sibling_cutoff": "2026-01-13T13:29:00+00:00",
+          "threshold": "0.2"
+        },
+        {
+          "comparator": "GT",
+          "market_ticker": "KXCPI-25DEC-T0.3",
+          "p9a_evidence_id": "48980097d3ea67d1230dc19318edb25f12197a6fbbca81915c483aa9e3fa462e",
+          "predicate_identity": "GT:0.3",
+          "request_identity": "cba8170dff646a63564f2271b59299ba37a2c708e8e62ba4147600e3ea2ffe6f",
+          "sibling_cutoff": "2026-01-13T13:29:00+00:00",
+          "threshold": "0.3"
+        },
+        {
+          "comparator": "GT",
+          "market_ticker": "KXCPI-25DEC-T0.4",
+          "p9a_evidence_id": "80c12fa26368e8229c25f48a6539009b646f74d989f18d3d1af73e664dc8c727",
+          "predicate_identity": "GT:0.4",
+          "request_identity": "9188b0c4202ff3799b2676ada198d5775c5c9068300019ed1ed7ca1a192353cd",
+          "sibling_cutoff": "2026-01-13T13:29:00+00:00",
+          "threshold": "0.4"
+        }
+      ],
+      "event_ticker": "KXCPI-25DEC",
+      "reference_month": "2025-12"
+    },
+    {
+      "accepted_sibling_count": 6,
+      "accepted_siblings": [
+        {
+          "comparator": "GT",
+          "market_ticker": "KXCPI-25JUL-T-0.1",
+          "p9a_evidence_id": "2d15a94200a9e155bc414606e4052e44350e09ed5173887f7615e223e01a0e76",
+          "predicate_identity": "GT:-0.1",
+          "request_identity": "c6b465cfbe34f27924423ffe5797fb83e85f80705a86e96bacc10ab933f3ed72",
+          "sibling_cutoff": "2025-08-12T12:29:00+00:00",
+          "threshold": "-0.1"
+        },
+        {
+          "comparator": "GT",
+          "market_ticker": "KXCPI-25JUL-T0.0",
+          "p9a_evidence_id": "472c414ae89f0d15bb6553bd6a6af5ed5c1cc0417f9f771fe314cc5d43860e8a",
+          "predicate_identity": "GT:0.0",
+          "request_identity": "0cd9dbfea52a9c373d8660e7814e45515d7e541e93ef81a0d1781ec1812706a2",
+          "sibling_cutoff": "2025-08-12T12:29:00+00:00",
+          "threshold": "0.0"
+        },
+        {
+          "comparator": "GT",
+          "market_ticker": "KXCPI-25JUL-T0.1",
+          "p9a_evidence_id": "f1bedbebf017d59951b652fe4894302521d75d4740afab29dba8093c9142d2a2",
+          "predicate_identity": "GT:0.1",
+          "request_identity": "36405f0a39d0ab76f4fde12d2d75efc6da2a5b6aaff85411cb7324910c38bb2b",
+          "sibling_cutoff": "2025-08-12T12:29:00+00:00",
+          "threshold": "0.1"
+        },
+        {
+          "comparator": "GT",
+          "market_ticker": "KXCPI-25JUL-T0.2",
+          "p9a_evidence_id": "98dc48fad31bc4df11541a77ef7a53c93834fcab00f6e6dd2d619efca542f55f",
+          "predicate_identity": "GT:0.2",
+          "request_identity": "1c77a622d60d3f2181f422c70181eaa231717db421ee1079205f65e7b0aabf7b",
+          "sibling_cutoff": "2025-08-12T12:29:00+00:00",
+          "threshold": "0.2"
+        },
+        {
+          "comparator": "GT",
+          "market_ticker": "KXCPI-25JUL-T0.3",
+          "p9a_evidence_id": "00185e22cd243388c735e7d549701fa88304358001ea28c9910570c1bb584fd1",
+          "predicate_identity": "GT:0.3",
+          "request_identity": "a95a0c4d0a74e8469dc1131fe60bbfaab3fbeb4b8f160dd4eb77b3645f35c973",
+          "sibling_cutoff": "2025-08-12T12:29:00+00:00",
+          "threshold": "0.3"
+        },
+        {
+          "comparator": "GT",
+          "market_ticker": "KXCPI-25JUL-T0.4",
+          "p9a_evidence_id": "7636f166a482f0ce7c8521307105d6e1483c0f0fc0bd30f740e7b672c755d2cb",
+          "predicate_identity": "GT:0.4",
+          "request_identity": "a08c31f07dce162ee667158f263eb4308a2b7ec1a5b5ff3515b48b3a6ae1a96e",
+          "sibling_cutoff": "2025-08-12T12:29:00+00:00",
+          "threshold": "0.4"
+        }
+      ],
+      "event_ticker": "KXCPI-25JUL",
+      "reference_month": "2025-07"
+    },
+    {
+      "accepted_sibling_count": 6,
+      "accepted_siblings": [
+        {
+          "comparator": "GT",
+          "market_ticker": "KXCPI-26JAN-T-0.1",
+          "p9a_evidence_id": "e092771a38e4e3170fefe13914791f1140ac56a99e1e10fceee559521cd6aa94",
+          "predicate_identity": "GT:-0.1",
+          "request_identity": "56bf17ead785c3ddd2562ec655a9d57f30045889bd6b5634ab5232b031f1529c",
+          "sibling_cutoff": "2026-02-13T13:29:00+00:00",
+          "threshold": "-0.1"
+        },
+        {
+          "comparator": "GT",
+          "market_ticker": "KXCPI-26JAN-T0.0",
+          "p9a_evidence_id": "95cff5fc23a093f56543b5cab9abe1d7fa3a9c1bbf8912a361657c3742b7d841",
+          "predicate_identity": "GT:0.0",
+          "request_identity": "c2e8f863eb30950ab13afe9cb170a6f8a8273c90dee24c43bff1ed8d448a878b",
+          "sibling_cutoff": "2026-02-13T13:29:00+00:00",
+          "threshold": "0.0"
+        },
+        {
+          "comparator": "GT",
+          "market_ticker": "KXCPI-26JAN-T0.1",
+          "p9a_evidence_id": "e267095bbdb0eff0f550553069d27c21d9d2c8ec4037a5ddd83ddb3b9feb47d9",
+          "predicate_identity": "GT:0.1",
+          "request_identity": "8dbe363b216f160de1eb7fbf86afac75cc2e5c6eab7b7a71b208eeee3fb6b6b3",
+          "sibling_cutoff": "2026-02-13T13:29:00+00:00",
+          "threshold": "0.1"
+        },
+        {
+          "comparator": "GT",
+          "market_ticker": "KXCPI-26JAN-T0.2",
+          "p9a_evidence_id": "6675c70e69620e04926442a1c3a20de8346eb10718d1b8d9a098ec5f90e29084",
+          "predicate_identity": "GT:0.2",
+          "request_identity": "01098144d676ed6709486212fd89fea31d5956cfd5cf7626f9e091eb2ac2d137",
+          "sibling_cutoff": "2026-02-13T13:29:00+00:00",
+          "threshold": "0.2"
+        },
+        {
+          "comparator": "GT",
+          "market_ticker": "KXCPI-26JAN-T0.3",
+          "p9a_evidence_id": "1188da5c35bf3e01dcbfc27b63fcb5895683e262cec43741dd54760f6f8022d7",
+          "predicate_identity": "GT:0.3",
+          "request_identity": "dbfaa4f5ed1df84dd66e627039c04e4ab9adcd02855345dc730b0fee72905cd2",
+          "sibling_cutoff": "2026-02-13T13:29:00+00:00",
+          "threshold": "0.3"
+        },
+        {
+          "comparator": "GT",
+          "market_ticker": "KXCPI-26JAN-T0.4",
+          "p9a_evidence_id": "9818867cff6f1cbfa91d4b91f7b5615dac5fffeeb0d7126ae8d5419c60393c76",
+          "predicate_identity": "GT:0.4",
+          "request_identity": "397d5aecaa55be53677c2a074734d7a86f6f00487311adb8fa4b27886f99cc86",
+          "sibling_cutoff": "2026-02-13T13:29:00+00:00",
+          "threshold": "0.4"
+        }
+      ],
+      "event_ticker": "KXCPI-26JAN",
+      "reference_month": "2026-01"
+    }
+  ],
+  "frozen_accepted_threshold_identity_digest": "11bc2723d0b75d0ab059f5c677ef061456f54d264592016b9e67402adffedec9",
+  "kalshi_scoring_performed": false,
+  "manifest_digest_sha256": "ff1e54a47cddac3a44e987ea3e099e8a8a339f8d2749c25ddbd961f0c4a6b1be",
+  "outcome_blind": true,
+  "p10a_authority_branch_head_sha": "2d8d485b5b4fd533331a489d4a2b91248157e632",
+  "p10a_authority_merged_into_main": true,
+  "p10a_binder_blob_sha": "f790657cf5f8fe4a627335839e47b6dfb090eefe",
+  "p10a_binder_module": "services/forecasting/cpi_p10a_binding.py",
+  "phase": "CPI-E1-P10C Phase 1B - per-sibling cutoff manifest freeze",
+  "reuters_acquisition_performed": false,
+  "schema": "cpi-e1-p10c-phase1b-per-sibling-manifest/v1"
+}
