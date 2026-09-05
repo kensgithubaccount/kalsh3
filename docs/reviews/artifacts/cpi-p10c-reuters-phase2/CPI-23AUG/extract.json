@@ -1,0 +1,16 @@
+{
+  "event_ticker": "CPI-23AUG",
+  "title": "Marketmind: CPI to set the tone",
+  "byline": "Samuel Indyk",
+  "dateline": "(Reuters) -",
+  "provider": {"name": "Reuters", "url": "https://www.reuters.com/"},
+  "datePublished": "2023-09-13T10:07:35Z",
+  "dateModified": "2023-09-13T10:07:35Z",
+  "reference_month": "2023-08",
+  "load_bearing_forecast_sentence": "The data are expected to show that consumer prices increased by 0.6% in August, the most in 14 months, driven by a surge in the cost of gasoline, but the focus could well fall on the core measure, which strips out volatile food and energy prices. Core prices are forecast to have risen by a more acceptable 0.2% for a third straight month. That would take the annual rate down to 4.3%, the smallest year-on-year rise since September 2021.",
+  "core_forecast_sentence": "Core prices are forecast to have risen by a more acceptable 0.2% for a third straight month.",
+  "yoy_forecast_sentence": "That would take the annual rate down to 4.3%, the smallest year-on-year rise since September 2021.",
+  "target_disambiguation": "headline MoM = 0.6% (unqualified 'consumer prices'); core MoM = 0.2% (explicitly 'core prices'); headline YoY = 4.3% (comparison baseline, not the MoM forecast itself)",
+  "prospective_tense_markers": ["are expected to show", "are forecast to have risen", "would take"],
+  "retrospective_language_found": false
+}
