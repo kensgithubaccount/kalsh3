@@ -13,8 +13,8 @@
   "edge_pnl_fees_computed": false,
   "outcome_blind": true,
   "coverage_arithmetic": {
-    "positively_proven_observations": 5,
-    "searched_no_qualifying_observation_found": 37,
+    "positively_proven_observations": 4,
+    "searched_no_qualifying_observation_found": 38,
     "acquisition_authority_failures": 0,
     "total_attempted": 42,
     "total_terminal_states": 42
@@ -61,7 +61,7 @@
     {"event_ticker": "CPI-23OCT", "reference_month": "2023-10", "terminal_state": "UNKNOWN", "source": "Batch D2 (v2 ladder, retry)", "reason": "Genuine day-before Reuters piece found (nasdaq.com) states YoY (3.3%) only, not MoM; retrospective piece confirms MoM forecast was 0.1% but in disqualifying past tense."},
     {"event_ticker": "CPI-23NOV", "reference_month": "2023-11", "terminal_state": "UNKNOWN", "source": "Batch D2 (v2 ladder, retry)", "reason": "Recurring Reuters market-wrap candidates found state only qualitative language ('remaining unchanged'), not a specific numeric MoM forecast, and never attribute the figure to an economist poll."},
     {"event_ticker": "CPI-23DEC", "reference_month": "2023-12", "terminal_state": "UNKNOWN", "source": "Batch D2 (v2 ladder, retry)", "reason": "Two individually-admissible Reuters candidates found (0.2% MoM forecast) but both on the same host (tradingview.com); fails the >=2-independently-operated-hosts corroboration gate. kfgo.com's likely-matching copy is HTTP-403-blocked in Wayback."},
-    {"event_ticker": "CPI-24JAN", "reference_month": "2024-01", "terminal_state": "PASS", "value": "0.2", "source": "Batch D2 (v2 ladder, retry) -- independently re-verified by the acquiring session via direct re-fetch of both hosts before durable receipt was written", "evidence_path": "docs/reviews/artifacts/cpi-p10c-reuters-phase2/CPI-24JAN/"}
+    {"event_ticker": "CPI-24JAN", "reference_month": "2024-01", "terminal_state": "UNKNOWN", "source": "Batch D2 (v2 ladder, retry); reclassified from PASS on P10C Phase 2-R1 oversight audit (2026-09-05)", "reason": "The admitted two-host Reuters wire item ('BUZZ-COMMENT-U.S. CPI data preview and expectations for FX market', tradingview.com + nasdaq.com, published 2024-02-12T08:19:09Z) never states the reference month in its own body text or dateline -- it says only 'Tuesday's U.S. CPI' and cites 'the January 11 U.S. CPI data' solely as a prior-release volatility comparison (the December-2023 print, released Jan 11 2024), not as the reference month of the upcoming report. The January-2024 reference month was originally established only via release-schedule inference (Tuesday Feb 13 = the January CPI release date) and a companion Reuters article, both of which the frozen v2 admission filter prohibits as substitutes for positive body-text/dateline confirmation. Re-audited in full on re-fetch of both hosts; no such positive text exists. UNRESOLVED per the frozen procedure -- downgraded from PASS to UNKNOWN. The disqualified candidate's forecast content (0.2% MoM) is preserved here for the record but is not evidence of anything beyond a disqualified candidate."}
   ],
   "not_established": [
     "predictor-vs-Kalshi scoring or comparison",

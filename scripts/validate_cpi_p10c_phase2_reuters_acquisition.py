@@ -6,7 +6,11 @@ Verifies, from committed artifacts only:
 - every manifest-listed artifact hash matches the file on disk;
 - the coverage ledger reconciles to exactly 42 terminal states, matching the
   frozen Phase 1 42-event cohort exactly;
-- every PASS row's published_at precedes its frozen sibling_cutoff;
+- no new Phase 2 PASS receipt carries an event-level decision_cutoff;
+- every new Phase 2 PASS receipt's sibling_temporal_eligibility has exactly
+  one record per frozen accepted sibling, with exact market-ticker and
+  sibling_cutoff equality against the frozen manifest, and an independently
+  recomputed available_before_cutoff comparison;
 - Decimal precision is exactly as published, never promoted;
 - no event outside the frozen cohort appears in the ledger.
 
@@ -32,9 +36,11 @@ BUNDLE = ROOT / "docs/reviews/artifacts/cpi-p10c-reuters-phase2"
 FREEZE = ROOT / "docs/reviews/artifacts/cpi-p10c-manifest-freeze/manifest.json"
 P10B_BUNDLE = ROOT / "docs/reviews/artifacts/cpi-p10b-reuters"
 
+# New Phase 2 PASS events only. P10B's reused PASS events (KXCPI-25JUL,
+# KXCPI-26JAN, KXCPI-25DEC) are separate, already-reviewed evidence from a
+# merged PR and are out of scope for the per-sibling-eligibility repair.
 EXPECTED_VALUE = {
     "CPI-23AUG": Decimal("0.6"),
-    "CPI-24JAN": Decimal("0.2"),
 }
 
 
@@ -120,6 +126,83 @@ def check_coverage(coverage: dict[str, Any], freeze: dict[str, Any]) -> list[Fin
             f"PASS + UNKNOWN + FAILURE reconciles to {total} (must equal 42)",
         )
     )
+    findings.append(
+        Finding(
+            "CPI-24JAN" not in {e["event_ticker"] for e in pass_rows},
+            "CPI-24JAN is not a PASS row (R1 repair: reclassified to UNKNOWN)",
+        )
+    )
+
+    return findings
+
+
+def check_no_event_level_cutoff(event_ticker: str, receipt: dict[str, Any]) -> list[Finding]:
+    return [
+        Finding(
+            "decision_cutoff" not in receipt,
+            f"{event_ticker} receipt has no event-level decision_cutoff field",
+        ),
+        Finding(
+            "temporal_comparison" not in receipt,
+            f"{event_ticker} receipt has no event-level temporal_comparison field",
+        ),
+    ]
+
+
+def check_sibling_eligibility(
+    event_ticker: str, receipt: dict[str, Any], freeze: dict[str, Any]
+) -> list[Finding]:
+    findings: list[Finding] = []
+    event = next(e for e in freeze["events"] if e["event_ticker"] == event_ticker)
+    frozen_siblings = event["accepted_siblings"]
+    frozen_tickers = [s["market_ticker"] for s in frozen_siblings]
+    frozen_cutoffs = {s["market_ticker"]: s["sibling_cutoff"] for s in frozen_siblings}
+
+    eligibility = receipt.get("sibling_temporal_eligibility", [])
+    eligibility_tickers = [r["market_ticker"] for r in eligibility]
+
+    findings.append(
+        Finding(
+            len(eligibility) == len(frozen_siblings),
+            f"{event_ticker} has {len(eligibility)} eligibility records "
+            f"(frozen manifest has {len(frozen_siblings)} accepted siblings)",
+        )
+    )
+    findings.append(
+        Finding(
+            set(eligibility_tickers) == set(frozen_tickers)
+            and len(eligibility_tickers) == len(frozen_tickers),
+            f"{event_ticker} eligibility market_ticker set exactly equals frozen accepted siblings "
+            "(no collapsing of repeated cutoffs)",
+        )
+    )
+
+    published_at = _parse_ts(receipt["published_at"])
+    all_cutoffs_match = True
+    all_flags_correct = True
+    for record in eligibility:
+        ticker = record["market_ticker"]
+        frozen_cutoff = frozen_cutoffs.get(ticker)
+        if record.get("sibling_cutoff") != frozen_cutoff:
+            all_cutoffs_match = False
+        recomputed = published_at < _parse_ts(record["sibling_cutoff"])
+        if record.get("available_before_cutoff") != recomputed:
+            all_flags_correct = False
+
+    findings.append(
+        Finding(
+            all_cutoffs_match,
+            f"{event_ticker} every eligibility record's sibling_cutoff exactly equals "
+            "the frozen manifest value for that market_ticker",
+        )
+    )
+    findings.append(
+        Finding(
+            all_flags_correct,
+            f"{event_ticker} every available_before_cutoff flag independently recomputed "
+            "(published_at vs. that record's sibling_cutoff) matches the declared value",
+        )
+    )
 
     return findings
 
@@ -135,16 +218,6 @@ def check_receipt(
         Finding(
             value == expected and str(value) == str(expected),
             f"{event_ticker} value {value} matches expected {expected} at exact precision",
-        )
-    )
-
-    published_at = _parse_ts(receipt["published_at"])
-    event = next(e for e in freeze["events"] if e["event_ticker"] == event_ticker)
-    cutoffs = [_parse_ts(s["sibling_cutoff"]) for s in event["accepted_siblings"]]
-    findings.append(
-        Finding(
-            all(published_at < c for c in cutoffs),
-            f"{event_ticker} published_at precedes all {len(cutoffs)} frozen sibling_cutoff(s)",
         )
     )
 
@@ -166,6 +239,9 @@ def check_receipt(
         )
     )
 
+    findings += check_no_event_level_cutoff(event_ticker, receipt)
+    findings += check_sibling_eligibility(event_ticker, receipt, freeze)
+
     return findings
 
 
@@ -178,7 +254,7 @@ def main() -> int:
     all_findings += check_manifest_hashes(manifest)
     all_findings += check_coverage(coverage, freeze)
 
-    for event_ticker in ("CPI-23AUG", "CPI-24JAN"):
+    for event_ticker in EXPECTED_VALUE:
         receipt = load_json(BUNDLE / event_ticker / "receipt.json")
         all_findings += check_receipt(event_ticker, receipt, freeze)
 

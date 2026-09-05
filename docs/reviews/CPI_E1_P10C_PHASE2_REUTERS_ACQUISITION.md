@@ -6,11 +6,14 @@ Attempted deterministic, outcome-blind Reuters historical predictor evidence
 acquisition against the exact frozen 42-event CPI-E1-P10C cohort. All 42
 events reached an explicit terminal state:
 
-- **5 positively proven** Reuters observations (PASS)
-- **37 searched, no qualifying observation found** (UNKNOWN)
+- **4 positively proven** Reuters observations (PASS)
+- **38 searched, no qualifying observation found** (UNKNOWN)
 - **0 acquisition/authority failures**
 
-5 + 37 + 0 = 42. This is historical predictor evidence acquisition only: no
+4 + 38 + 0 = 42. (An initial pass reported 5/37/0; a subsequent oversight
+audit reclassified `CPI-24JAN` from PASS to UNKNOWN -- see "Phase 2-R1
+repair" below. Counts here are final, post-repair.) This is historical
+predictor evidence acquisition only: no
 Reuters-vs-Kalshi scoring, no Brier/log-loss/hit-rate/calibration, no edge,
 P&L, fee, or after-cost calculation, and no change to trading/capital/
 execution/production authority (`production_influence: 0` throughout).
@@ -96,26 +99,60 @@ and all 17 affected events were re-run from a clean start under the identical
 v2 procedure once the rate limit reset. No event was classified as UNKNOWN
 merely because of the interruption.
 
-## Positively proven observations (2 new + 3 reused)
+## Phase 2-R1 repair (2026-09-05, oversight audit)
 
-| Event | Reference month | Value | Published (UTC) | Cutoff (UTC) | Hosts |
-|---|---|---|---|---|---|
-| KXCPI-25JUL | 2025-07 | 0.2 | 2025-08-12T04:02:11Z | 2025-08-12T12:29:00Z | Yahoo, kfgo.com (P10B) |
-| KXCPI-25DEC | 2025-12 | 0.3 | 2026-01-13T05:03:53Z | 2026-01-13T13:29:00Z | Yahoo, WMBD, TradingView (P10B) |
-| KXCPI-26JAN | 2026-01 | 0.3 | 2026-02-13T05:12:31Z | 2026-02-13T13:29:00Z | TradingView, Yahoo (P10B) |
-| **CPI-23AUG** | 2023-08 | **0.6** | 2023-09-13T10:07:35Z | 2023-09-13T12:25:00Z | finance.yahoo.com, kfgo.com |
-| **CPI-24JAN** | 2024-01 | **0.2** | 2024-02-12T08:19:09Z | 2024-02-13T13:25:00Z | tradingview.com, nasdaq.com |
+Oversight audited the originally-committed `CPI-24JAN` PASS and the
+event-level `decision_cutoff` field on new PASS receipts:
 
-Both new PASS receipts were independently re-verified by the acquiring
-session -- a fresh direct re-fetch of every corroborating host, before the
-receipt was written -- reproducing the exact attribution, timestamp, value,
-and load-bearing sentence hash reported by the research process. Full
-receipts: `docs/reviews/artifacts/cpi-p10c-reuters-phase2/{CPI-23AUG,CPI-24JAN}/`.
+1. **CPI-24JAN reference-month authority -- UNRESOLVED.** The frozen v2
+   admission filter requires the admitted candidate's own body text/dateline
+   to positively state the exact reference month -- never inferred from
+   release-schedule timing or a companion article. Re-reading both admitted
+   hosts (tradingview.com, nasdaq.com) in full found no such statement: the
+   piece says only "Tuesday's U.S. CPI" and cites "the January 11 U.S. CPI
+   data" solely as a prior-release volatility comparison (the December-2023
+   print, released Jan 11 2024), not as the reference month of the upcoming
+   report. The January-2024 reference month had originally been established
+   only via release-schedule inference plus a companion Reuters article --
+   both explicitly disallowed as substitutes for positive body-text proof.
+   **CPI-24JAN is reclassified from PASS to UNKNOWN**; its receipt/extract
+   files were removed entirely rather than left in place implying a PASS.
+2. **Event-level cutoff removed from new PASS receipts.** `CPI-23AUG`'s
+   receipt no longer carries a singular `decision_cutoff`/`temporal_comparison`/
+   `lead_time`. It now carries `sibling_temporal_eligibility`: one record per
+   frozen accepted sibling market (9 for `CPI-23AUG`, all sharing the
+   identical frozen cutoff `2023-09-13T12:25:00+00:00` -- not collapsed),
+   each with the exact frozen `sibling_cutoff`, the proven Reuters
+   `published_at`, and an `available_before_cutoff` flag. This is a timing
+   fact only, not a predictor score, and matches `cutoff_semantics:
+   per_sibling_market` exactly.
 
-## 37 UNKNOWN events
+Full detail: `manifest.json`'s `phase2_r1_repair` field.
+
+## Positively proven observations (1 new + 3 reused)
+
+| Event | Reference month | Value | Published (UTC) | Hosts |
+|---|---|---|---|---|
+| KXCPI-25JUL | 2025-07 | 0.2 | 2025-08-12T04:02:11Z | Yahoo, kfgo.com (P10B) |
+| KXCPI-25DEC | 2025-12 | 0.3 | 2026-01-13T05:03:53Z | Yahoo, WMBD, TradingView (P10B) |
+| KXCPI-26JAN | 2026-01 | 0.3 | 2026-02-13T05:12:31Z | TradingView, Yahoo (P10B) |
+| **CPI-23AUG** | 2023-08 | **0.6** | 2023-09-13T10:07:35Z | finance.yahoo.com, kfgo.com |
+
+(P10B's reused receipts still carry their own event-level `decision_cutoff`
+field -- that bundle is separate, already-reviewed evidence from a merged PR
+and out of scope for the R1 per-sibling-eligibility repair, which applies
+only to new Phase 2 receipts.)
+
+The new PASS receipt was independently re-verified by the acquiring session
+-- a fresh direct re-fetch of every corroborating host, before the receipt
+was written -- reproducing the exact attribution, timestamp, value, and
+load-bearing sentence hash reported by the research process. Full receipt:
+`docs/reviews/artifacts/cpi-p10c-reuters-phase2/CPI-23AUG/`.
+
+## 38 UNKNOWN events
 
 Full per-event reasons: `docs/reviews/artifacts/cpi-p10c-reuters-phase2/coverage.json`.
-Recurring, disclosed failure modes across the 37: (1) the only Reuters MoM
+Recurring, disclosed failure modes across the 38: (1) the only Reuters MoM
 figure found is stated in a post-release, retrospective article ("economists
 polled by Reuters had forecast..."), which fails the prospective-tense
 admission requirement even though it accurately reports what was forecast;
@@ -127,7 +164,8 @@ kfgo.com is bulk-blocked (HTTP 403) in the Internet Archive for large windows
 of 2022, and Wayback's own crawl coverage for `finance.yahoo.com`/other hosts
 is sparse or times out for some historical windows -- a genuine corpus/tooling
 coverage gap, disclosed per event, never silently converted to a false PASS
-or a fabricated failure.
+or a fabricated failure; (5) `CPI-24JAN`'s originally-admitted candidate
+never stated its reference month in body text -- see the R1 repair above.
 
 ## Confirmations
 
