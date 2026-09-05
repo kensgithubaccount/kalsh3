@@ -35,6 +35,20 @@ ROOT = Path(__file__).resolve().parents[1]
 BUNDLE = ROOT / "docs/reviews/artifacts/cpi-p10c-reuters-phase2"
 FREEZE = ROOT / "docs/reviews/artifacts/cpi-p10c-manifest-freeze/manifest.json"
 P10B_BUNDLE = ROOT / "docs/reviews/artifacts/cpi-p10b-reuters"
+SEARCH_PROCEDURE = BUNDLE / "SEARCH_PROCEDURE.md"
+
+# The approved Rung-2/Rung-3 syndication host set (P10C Phase 2-R3 repair:
+# the prose host set and the literal query/Rung-3 host-set text must never
+# diverge again -- this list is the single source of truth for that check).
+APPROVED_SITE_HOSTS = [
+    "yahoo.com",
+    "kfgo.com",
+    "tradingview.com",
+    "nasdaq.com",
+    "investing.com",
+    "wmbd.com",
+    "aol.com",
+]
 
 # New Phase 2 PASS events only. P10B's reused PASS events (KXCPI-25JUL,
 # KXCPI-26JAN, KXCPI-25DEC) are separate, already-reviewed evidence from a
@@ -207,6 +221,51 @@ def check_sibling_eligibility(
     return findings
 
 
+def check_search_procedure_host_set(manifest: dict[str, Any]) -> list[Finding]:
+    """P10C Phase 2-R3 repair: fail closed if the prose approved host set,
+    the literal R2a/R2b query strings, and the Rung-3 host-set text ever
+    diverge again (the specific defect this repair fixed)."""
+    findings: list[Finding] = []
+    findings.append(Finding(SEARCH_PROCEDURE.is_file(), "SEARCH_PROCEDURE.md exists"))
+    if not SEARCH_PROCEDURE.is_file():
+        return findings
+
+    actual_hash = hashlib.sha256(SEARCH_PROCEDURE.read_bytes()).hexdigest()
+    declared_hash = manifest["acquisition_procedure"]["sha256"]
+    findings.append(
+        Finding(
+            actual_hash == declared_hash,
+            "manifest.json acquisition_procedure.sha256 matches SEARCH_PROCEDURE.md on disk",
+        )
+    )
+
+    text = SEARCH_PROCEDURE.read_text()
+    findings.append(
+        Finding("WMBD" in text, "SEARCH_PROCEDURE.md's approved host set prose names WMBD")
+    )
+
+    rung2_start = text.index("## Rung 2")
+    rung3_start = text.index("## Rung 3")
+    admission_start = text.index("## Candidate admission filter")
+    rung2_section = text[rung2_start:rung3_start]
+    rung3_section = text[rung3_start:admission_start]
+
+    r2a_line = next(
+        line for line in rung2_section.splitlines() if line.strip().startswith("- R2a:")
+    )
+    r2b_line = next(
+        line for line in rung2_section.splitlines() if line.strip().startswith("- R2b:")
+    )
+
+    for host in APPROVED_SITE_HOSTS:
+        token = f"site:{host}"
+        findings.append(Finding(token in r2a_line, f"R2a query string includes {token}"))
+        findings.append(Finding(token in r2b_line, f"R2b query string includes {token}"))
+        findings.append(Finding(host in rung3_section, f"Rung-3 host-set text includes {host}"))
+
+    return findings
+
+
 def check_wmbd_rung2_sweep(coverage: dict[str, Any], freeze: dict[str, Any]) -> list[Finding]:
     findings: list[Finding] = []
     sweep = coverage.get("wmbd_rung2_sweep")
@@ -302,6 +361,7 @@ def main() -> int:
     all_findings: list[Finding] = []
     all_findings += check_manifest_hashes(manifest)
     all_findings += check_coverage(coverage, freeze)
+    all_findings += check_search_procedure_host_set(manifest)
     all_findings += check_wmbd_rung2_sweep(coverage, freeze)
 
     for event_ticker in EXPECTED_VALUE:

@@ -63,15 +63,22 @@ reduce the recency-aliasing failure mode observed in the v1 pilot.
   (200 with content, or bot-wall/401/etc.) exactly as P10B's receipts do.
 
 ## Rung 2 — approved syndication hosts, exact-date queries
-- R2a: `Reuters "consumer prices" "{release_date as Month D, YYYY}" site:yahoo.com OR site:kfgo.com OR site:tradingview.com OR site:nasdaq.com OR site:investing.com OR site:aol.com`
-- R2b: `Reuters "consumer prices" "{day_before as Month D, YYYY}" site:yahoo.com OR site:kfgo.com OR site:tradingview.com OR site:nasdaq.com OR site:investing.com OR site:aol.com`
+The approved Rung-2 host set (identical to the bounded acquisition-path
+audit's enumerated set above) is: yahoo.com, ca.finance.yahoo.com,
+finance.yahoo.com, kfgo.com, tradingview.com, nasdaq.com, investing.com,
+**wmbd.com**, aol.com. Every host named in the audit prose above MUST appear
+in the literal query strings below — the two must never diverge.
+- R2a: `Reuters "consumer prices" "{release_date as Month D, YYYY}" site:yahoo.com OR site:kfgo.com OR site:tradingview.com OR site:nasdaq.com OR site:investing.com OR site:wmbd.com OR site:aol.com`
+- R2b: `Reuters "consumer prices" "{day_before as Month D, YYYY}" site:yahoo.com OR site:kfgo.com OR site:tradingview.com OR site:nasdaq.com OR site:investing.com OR site:wmbd.com OR site:aol.com`
 - Every candidate must still pass the full admission filter (section below),
   including explicit in-body year verification — exact-date phrasing reduces
   but does not eliminate wrong-year aliasing, so the check stays mandatory.
 
-## Rung 3 — Wayback/Internet Archive CDX lookup, same host set
-For each host in the rung-2 set, query the CDX API scoped to a narrow window
-around `release_date`:
+## Rung 3 — Wayback/Internet Archive CDX lookup, same enumerated host set
+The Rung-3 host set is identical to the Rung-2 host set above: yahoo.com,
+ca.finance.yahoo.com, finance.yahoo.com, kfgo.com, tradingview.com,
+nasdaq.com, investing.com, **wmbd.com**, aol.com. For each of these hosts,
+query the CDX API scoped to a narrow window around `release_date`:
 `https://web.archive.org/cdx/search/cdx?url={host}&matchType=domain&from={release_date-2d}&to={release_date+2d}&output=json&filter=urlkey:.*(consumer|cpi|inflation).*&collapse=urlkey&limit=100`
 Fetch promising snapshot URLs (via `http://web.archive.org/web/{timestamp}/{original_url}`) and verify per the same admission filter.
 

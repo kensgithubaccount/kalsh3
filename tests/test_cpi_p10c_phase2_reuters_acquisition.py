@@ -20,6 +20,21 @@ from typing import Any
 ROOT = Path(__file__).resolve().parents[1]
 BUNDLE = ROOT / "docs/reviews/artifacts/cpi-p10c-reuters-phase2"
 FREEZE = ROOT / "docs/reviews/artifacts/cpi-p10c-manifest-freeze/manifest.json"
+SEARCH_PROCEDURE = BUNDLE / "SEARCH_PROCEDURE.md"
+
+# Mirrors scripts/validate_cpi_p10c_phase2_reuters_acquisition.py's
+# APPROVED_SITE_HOSTS -- the single source of truth for the P10C Phase 2-R3
+# repair (prose host set, literal R2a/R2b queries, and Rung-3 host-set text
+# must never diverge again).
+APPROVED_SITE_HOSTS = [
+    "yahoo.com",
+    "kfgo.com",
+    "tradingview.com",
+    "nasdaq.com",
+    "investing.com",
+    "wmbd.com",
+    "aol.com",
+]
 
 # New Phase 2 PASS events only (P10B's reused PASS events are separate,
 # already-reviewed evidence from a merged PR and out of scope for the
@@ -126,6 +141,40 @@ def test_new_pass_receipts_sibling_eligibility_matches_frozen_manifest_exactly()
 
         hosts = {f["host"] for f in receipt["fetches"] if f.get("http_status") == 200}
         assert len(hosts) >= 2
+
+
+def test_search_procedure_host_set_consistency() -> None:
+    """P10C Phase 2-R3 repair: the prose approved host set, the literal
+    R2a/R2b query strings, and the Rung-3 host-set text must all agree --
+    this is the exact defect where WMBD was named in prose but omitted from
+    the R2a/R2b query strings."""
+    assert SEARCH_PROCEDURE.is_file()
+
+    manifest = _load(BUNDLE / "manifest.json")
+    actual_hash = hashlib.sha256(SEARCH_PROCEDURE.read_bytes()).hexdigest()
+    assert actual_hash == manifest["acquisition_procedure"]["sha256"]
+
+    text = SEARCH_PROCEDURE.read_text()
+    assert "WMBD" in text
+
+    rung2_start = text.index("## Rung 2")
+    rung3_start = text.index("## Rung 3")
+    admission_start = text.index("## Candidate admission filter")
+    rung2_section = text[rung2_start:rung3_start]
+    rung3_section = text[rung3_start:admission_start]
+
+    r2a_line = next(
+        line for line in rung2_section.splitlines() if line.strip().startswith("- R2a:")
+    )
+    r2b_line = next(
+        line for line in rung2_section.splitlines() if line.strip().startswith("- R2b:")
+    )
+
+    for host in APPROVED_SITE_HOSTS:
+        token = f"site:{host}"
+        assert token in r2a_line, f"R2a missing {token}"
+        assert token in r2b_line, f"R2b missing {token}"
+        assert host in rung3_section, f"Rung-3 host-set text missing {host}"
 
 
 def test_wmbd_rung2_sweep_complete() -> None:

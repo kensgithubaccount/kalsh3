@@ -28,7 +28,7 @@
   "acquisition_procedure": {
     "version": "cpi-e1-p10c-phase2-reuters-acquisition-v2",
     "path": "docs/reviews/artifacts/cpi-p10c-reuters-phase2/SEARCH_PROCEDURE.md",
-    "sha256": "638924176ef13f33df896f168d072cf1571903968c5530117e7b7f7aabfcce00",
+    "sha256": "76fa5a93496026e975ea41e240518a43ec2c04b8439d35a5109345d7229ec663",
     "summary": "Fixed 3-rung fallback ladder (Rung 1: reuters.com direct; Rung 2: approved P10B-reviewed syndication host set with exact-release-date queries; Rung 3: Internet Archive Wayback/CDX lookup of the same host set), a fixed candidate admission filter (Reuters attribution, exact reference-month/year verified in body text, prospective/forecast tense, specific numeric headline-CPI-MoM value), and a >=2-independently-operated-host corroboration gate for PASS. Piloted on 4 events before being applied to the remaining 33; the >=2-host gate was explicitly confirmed unchanged after the pilot surfaced a single-host near-miss (KXCPI-24NOV). Unchanged by the P10C Phase 2-R1 repair below.",
     "unchanged_by_r1_repair": true
   },
@@ -106,5 +106,16 @@
       "branch_head_at_start": "7d91fc69e8d70ff955eeef7082a07d2df540d78e",
       "verified_via": "git ls-remote against origin, cross-checked with a fresh isolated clone checkout of cpi-e1-p10c-reuters -- unchanged from Phase 2-R1's recorded canonical_base"
     }
+  },
+  "phase2_r3_procedure_repair": {
+    "date": "2026-09-05",
+    "trigger": "Oversight found SEARCH_PROCEDURE.md's bounded acquisition-path audit named WMBD as an approved Rung-2 host, but the literal R2a/R2b query strings omitted site:wmbd.com, and the Rung-3 section referenced the Rung-2 host set only implicitly ('same host set from rungs 1-2') rather than enumerating it -- a prose/executable-query divergence risk, distinct from and in addition to the already-accepted WMBD Rung-2 supplemental sweep (P10C Phase 2-R2).",
+    "action": "Smallest possible repair to docs/reviews/artifacts/cpi-p10c-reuters-phase2/SEARCH_PROCEDURE.md only: added 'OR site:wmbd.com' to both R2a and R2b query strings; made the Rung-2 and Rung-3 host sets each an explicit enumerated list naming wmbd.com, so the two sections cannot silently diverge from the audit prose or each other. No change to the admission filter, the >=2-host corroboration rule, the acquisition rungs' order/count, or any other procedure text.",
+    "scope": "Documentation/procedure-text repair only. No new acquisition performed, no event reclassified, no evidence receipt touched, no coverage count changed, no cohort/sibling/cutoff-semantics change.",
+    "search_procedure_sha256": {
+      "old": "638924176ef13f33df896f168d072cf1571903968c5530117e7b7f7aabfcce00",
+      "new": "76fa5a93496026e975ea41e240518a43ec2c04b8439d35a5109345d7229ec663"
+    },
+    "new_fail_closed_check": "check_search_procedure_host_set() in scripts/validate_cpi_p10c_phase2_reuters_acquisition.py and test_search_procedure_host_set_consistency() in tests/test_cpi_p10c_phase2_reuters_acquisition.py: for each host in the canonical APPROVED_SITE_HOSTS list (including wmbd.com), asserts site:<host> appears in both the R2a and R2b query strings and <host> appears in the Rung-3 host-set text, and asserts 'WMBD' appears in the prose approved host set -- fails closed if the prose host set and the literal query/Rung-3 host-set text ever diverge again."
   }
 }
