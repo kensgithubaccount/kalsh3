@@ -1,0 +1,16 @@
+{
+  "event_ticker": "CPI-24JAN",
+  "title": "BUZZ-COMMENT-U.S. CPI data preview and expectations for FX market",
+  "byline": "Richard Pace",
+  "dateline": "Feb 12 (Reuters) -",
+  "provider": {"name": "Reuters", "url": "https://www.reuters.com/"},
+  "datePublished": "2024-02-12T08:19:09Z",
+  "dateModified": null,
+  "reference_month": "2024-01",
+  "load_bearing_forecast_sentence": "Headline CPI is forecast to rise 0.2% month-on-month, with core up 0.3%. The annual CPI would return to 3.0%, where it was in the middle of last year, while core is seen slowing to 3.8%, the lowest since mid-2021.",
+  "core_forecast_sentence": "Core up 0.3% [month-on-month]; core is seen slowing to 3.8% [year-on-year].",
+  "yoy_forecast_sentence": "The annual CPI would return to 3.0%, where it was in the middle of last year.",
+  "target_disambiguation": "headline MoM = 0.2% (unqualified 'Headline CPI'); core MoM = 0.3% (explicitly 'core up'); headline YoY = 3.0%; core YoY = 3.8%",
+  "prospective_tense_markers": ["is forecast to rise", "would return to", "is seen slowing"],
+  "retrospective_language_found": false
+}

@@ -1,0 +1,59 @@
+{
+  "schema_version": "1.0.0",
+  "title": "CPI-E1-P10C Phase 2 -- 42-event Reuters historical predictor evidence acquisition",
+  "research_only": true,
+  "production_influence": 0,
+  "scope_boundary": [
+    "No model fit or scored.",
+    "No Reuters-vs-Kalshi comparison, edge, PnL, fees, or after-cost economics calculated.",
+    "No Brier score, log loss, hit rate, or calibration calculated.",
+    "No event-level decision_cutoff invented; cutoff_semantics remains per_sibling_market.",
+    "No trading/capital/execution/production authority altered.",
+    "Attempted all 42 frozen events; no event outside the frozen cohort acquired."
+  ],
+  "canonical_base": {
+    "main_sha": "84025da3c41fa41c036633b6718e6d72005622a6",
+    "main_tree": "514db273f2914e2ec79da824d0f1f1567a410680",
+    "verified_via": "git fetch + git ls-remote (not trusted from chat/doc text), re-verified a second time mid-task after a rate-limit interruption -- unchanged both times"
+  },
+  "phase1_manifest": {
+    "path": "docs/reviews/artifacts/cpi-p10c-manifest-freeze/manifest.json",
+    "sha256": "ff1e54a47cddac3a44e987ea3e099e8a8a339f8d2749c25ddbd961f0c4a6b1be",
+    "accepted_event_count": 42,
+    "accepted_sibling_row_count": 341,
+    "accepted_threshold_identity": "11bc2723d0b75d0ab059f5c677ef061456f54d264592016b9e67402adffedec9",
+    "cutoff_semantics": "per_sibling_market",
+    "verification": "Independently re-read from origin/main, self-reported manifest_digest_sha256 field matches, event/sibling counts recomputed programmatically (42 events, 341 accepted_siblings), no event-level decision_cutoff field present anywhere in the manifest."
+  },
+  "acquisition_procedure": {
+    "version": "cpi-e1-p10c-phase2-reuters-acquisition-v2",
+    "path": "docs/reviews/artifacts/cpi-p10c-reuters-phase2/SEARCH_PROCEDURE.md",
+    "sha256": "638924176ef13f33df896f168d072cf1571903968c5530117e7b7f7aabfcce00",
+    "summary": "Fixed 3-rung fallback ladder (Rung 1: reuters.com direct; Rung 2: approved P10B-reviewed syndication host set with exact-release-date queries; Rung 3: Internet Archive Wayback/CDX lookup of the same host set), a fixed candidate admission filter (Reuters attribution, exact reference-month/year verified in body text, prospective/forecast tense, specific numeric headline-CPI-MoM value), and a >=2-independently-operated-host corroboration gate for PASS. Piloted on 4 events before being applied to the remaining 33; the >=2-host gate was explicitly confirmed unchanged after the pilot surfaced a single-host near-miss (KXCPI-24NOV)."
+  },
+  "p10b_reused_authority": {
+    "path": "docs/reviews/artifacts/cpi-p10b-reuters/",
+    "events_reused": ["KXCPI-25JUL", "KXCPI-26JAN", "KXCPI-25DEC", "CPI-21SEP", "CPI-23JUN"],
+    "validation_performed": "Re-hashed all 7 P10B committed artifacts against manifest.json's declared sha256 values (all matched); re-ran scripts/validate_cpi_p10b_reuters_authority.py against current main (all 29 checks passed); confirmed all 5 P10B-sampled events fall inside the frozen 42-event cohort by event_ticker; confirmed P10B's admission filter and >=2-host corroboration standard is identical in substance to the Phase 2 v2 procedure (v2 was in fact modeled on it)."
+  },
+  "committed_artifacts": [
+    {"path": "docs/reviews/artifacts/cpi-p10c-reuters-phase2/coverage.json", "sha256": "91280a20050b90ae555e9bef4f6602d1d50be9d10aeb6e24ac03dee1ea3c848a"},
+    {"path": "docs/reviews/artifacts/cpi-p10c-reuters-phase2/CPI-23AUG/receipt.json", "sha256": "ff44ec7b7c0a9f3bf3748fc9df1cd7d3da3c2619204281a4312355afe67beb70"},
+    {"path": "docs/reviews/artifacts/cpi-p10c-reuters-phase2/CPI-23AUG/extract.json", "sha256": "fb8fc37cc6394f523651b5078de8d6358fd528005af0939de67b139e0f27b6b2"},
+    {"path": "docs/reviews/artifacts/cpi-p10c-reuters-phase2/CPI-24JAN/receipt.json", "sha256": "c9de69afdb618e9f61d238d09f226ceadf4ef295bce6f8f995005a3d3b3dfcca"},
+    {"path": "docs/reviews/artifacts/cpi-p10c-reuters-phase2/CPI-24JAN/extract.json", "sha256": "d59e89bf6cb1a15cce23718602644d2f34cdb738f9ef670951618663665eacd5"}
+  ],
+  "durable_raw_store": {
+    "status": "NONE_AVAILABLE",
+    "explanation": "Same disclosed gap as P10B: no external durable archive/blob store is available to this working environment for third-party copyrighted Reuters wire content. Complete raw HTTP/Wayback-snapshot responses exist only in this session's local scratchpad, not committed to this repository.",
+    "assessment_of_committed_artifact_sufficiency": "For the 2 new PASS events (CPI-23AUG, CPI-24JAN), every committed fact (Reuters attribution, datePublished, load-bearing sentence, its SHA-256) was independently re-derived by the acquiring session via a fresh, direct re-fetch of both corroborating hosts -- once via the Internet Archive Wayback Machine (an independent, publicly re-fetchable archival snapshot, not merely a live page that could change) and, for CPI-23AUG, once via a live direct fetch of kfgo.com -- before this receipt was written. This is stronger than the P10B precedent in one respect: the Wayback snapshot URLs are immutable and permanently re-fetchable by any independent reviewer, not subject to the live-page drift P10B disclosed for its own raw-hash values.",
+    "reviewer_verification_path": "Re-fetch the exact Wayback snapshot URLs (and, for CPI-23AUG's kfgo.com fetch, the live URL) recorded in each event's fetches[] array; recompute the load-bearing-sentence SHA-256 and compare against load_bearing_sentence_sha256_cross_host; confirm datePublished and Reuters attribution in the page's own JSON-LD/meta fields."
+  },
+  "search_execution_summary": {
+    "total_events_attempted": 42,
+    "positively_proven": 5,
+    "searched_no_qualifying_observation_found": 37,
+    "acquisition_authority_failures": 0,
+    "rate_limit_interruption_disclosure": "During execution, 3 of 6 parallel research batches (17 of the 42 events) were cut off mid-run by an Anthropic API session rate limit. Per explicit instruction, none of the incomplete/undocumented partial claims from that interruption (including a bare, evidence-free 'PASS' assertion for 2 events) were trusted or preserved -- canonical main and the frozen Phase 1 manifest were independently re-verified as unchanged, and all 17 affected events were re-run from a clean start under the identical frozen v2 procedure once the rate limit reset. No event was ever classified as a negative/UNKNOWN result merely because of the interruption."
+  }
+}
