@@ -167,6 +167,28 @@ coverage gap, disclosed per event, never silently converted to a false PASS
 or a fabricated failure; (5) `CPI-24JAN`'s originally-admitted candidate
 never stated its reference month in body text -- see the R1 repair above.
 
+## Phase 2-R2 — WMBD Rung-2 supplemental sweep (2026-09-05)
+
+`SEARCH_PROCEDURE.md`'s bounded acquisition-path audit names WMBD as an
+approved Rung-2 syndication host, but the literal `R2a`/`R2b` query
+templates omitted `site:wmbd.com` -- WMBD was never actually queried at
+Rung 2 during the original acquisition run. This sweep closes that single
+gap for the 36 events that were UNKNOWN after R1 and are not P10B-reused
+(`CPI-21SEP`, `CPI-23JUN` excluded, out of scope).
+
+72 queries executed (36 events x `{release_date}` / `{day_before}`,
+domain-restricted to `wmbd.com`). **0 qualifying candidates found.**
+Terminal states are unchanged: **4 PASS / 38 UNKNOWN / 0 FAILURE = 42**.
+No rerun of Rung 1, Rung 2 for any other host, or Rung 3 for any host (WMBD
+Rung 3 -- Wayback CDX -- was already established negative for these 36
+events in a prior session and is reported, not repeated, here). No change
+to the v2 procedure, admission filter, >=2-host corroboration rule, the
+CPI-24JAN R1 decision, the frozen cohort, or `per_sibling_market` cutoff
+semantics. No Reuters-vs-Kalshi scoring performed.
+
+Full detail: `manifest.json`'s `phase2_r2_wmbd_sweep` field and
+`docs/reviews/artifacts/cpi-p10c-reuters-phase2/WMBD_RUNG2_SWEEP.md`.
+
 ## Confirmations
 
 - No Reuters-vs-Kalshi scoring, edge, P&L, fee, or after-cost calculation was
@@ -181,7 +203,9 @@ never stated its reference month in body text -- see the R1 repair above.
 
 ## Classification
 
-**PASS -- 42-EVENT REUTERS EVIDENCE ACQUISITION COMPLETE**
+**PASS -- 42-EVENT REUTERS EVIDENCE ACQUISITION COMPLETE (R1 repair applied,
+R2 WMBD Rung-2 supplemental sweep complete, 0 discoveries, counts
+unchanged)**
 
 Phase 2 stops here. No predictor-vs-market scoring is authorized or was
 performed.

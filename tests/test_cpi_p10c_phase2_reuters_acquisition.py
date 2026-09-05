@@ -128,6 +128,37 @@ def test_new_pass_receipts_sibling_eligibility_matches_frozen_manifest_exactly()
         assert len(hosts) >= 2
 
 
+def test_wmbd_rung2_sweep_complete() -> None:
+    """P10C Phase 2-R2: WMBD was named as an approved Rung-2 syndication host
+    but the literal R2a/R2b query templates omitted site:wmbd.com. This
+    sweep closes the gap for the 36 non-P10B-reused UNKNOWN events with 0
+    qualifying finds and no terminal-state change."""
+    coverage = _load(BUNDLE / "coverage.json")
+    sweep = coverage["wmbd_rung2_sweep"]
+    assert sweep["queries_executed"] == 72
+    assert sweep["events_covered"] == 36
+    assert sweep["qualifying_candidates_found"] == 0
+    assert sweep["terminal_state_changes"] == 0
+    assert (ROOT / sweep["evidence_path"]).is_file()
+
+    unknown_tickers = {
+        e["event_ticker"] for e in coverage["events"] if e["terminal_state"] == "UNKNOWN"
+    }
+    p10b_reused_unknown = {"CPI-21SEP", "CPI-23JUN"}
+    expected_36 = unknown_tickers - p10b_reused_unknown
+    marked_36 = {
+        e["event_ticker"] for e in coverage["events"] if "WMBD rung-2 sweep" in e.get("reason", "")
+    }
+    assert len(expected_36) == 36
+    assert marked_36 == expected_36
+
+    # reconciliation is unchanged by the sweep
+    arith = coverage["coverage_arithmetic"]
+    assert arith["positively_proven_observations"] == 4
+    assert arith["searched_no_qualifying_observation_found"] == 38
+    assert arith["acquisition_authority_failures"] == 0
+
+
 def test_manifest_artifact_hashes_match_disk() -> None:
     manifest = _load(BUNDLE / "manifest.json")
     for entry in manifest["committed_artifacts"]:

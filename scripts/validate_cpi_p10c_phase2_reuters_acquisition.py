@@ -207,6 +207,55 @@ def check_sibling_eligibility(
     return findings
 
 
+def check_wmbd_rung2_sweep(coverage: dict[str, Any], freeze: dict[str, Any]) -> list[Finding]:
+    findings: list[Finding] = []
+    sweep = coverage.get("wmbd_rung2_sweep")
+    findings.append(Finding(sweep is not None, "coverage.json has a wmbd_rung2_sweep block"))
+    if sweep is None:
+        return findings
+
+    findings.append(
+        Finding(sweep["queries_executed"] == 72, "wmbd_rung2_sweep queries_executed == 72")
+    )
+    findings.append(Finding(sweep["events_covered"] == 36, "wmbd_rung2_sweep events_covered == 36"))
+    findings.append(
+        Finding(
+            sweep["qualifying_candidates_found"] == 0,
+            "wmbd_rung2_sweep qualifying_candidates_found == 0",
+        )
+    )
+    findings.append(
+        Finding(
+            sweep["terminal_state_changes"] == 0, "wmbd_rung2_sweep terminal_state_changes == 0"
+        )
+    )
+
+    sweep_path = ROOT / sweep["evidence_path"]
+    findings.append(
+        Finding(
+            sweep_path.is_file(), f"wmbd_rung2_sweep evidence file exists: {sweep['evidence_path']}"
+        )
+    )
+
+    unknown_tickers = {
+        e["event_ticker"] for e in coverage["events"] if e["terminal_state"] == "UNKNOWN"
+    }
+    p10b_reused_unknown = {"CPI-21SEP", "CPI-23JUN"}
+    expected_36 = unknown_tickers - p10b_reused_unknown
+    marked_36 = {
+        e["event_ticker"] for e in coverage["events"] if "WMBD rung-2 sweep" in e.get("reason", "")
+    }
+    findings.append(
+        Finding(
+            len(marked_36) == 36 and marked_36 == expected_36,
+            "exactly the 36 non-P10B-reused UNKNOWN events carry a WMBD "
+            "rung-2 sweep note in their reason",
+        )
+    )
+
+    return findings
+
+
 def check_receipt(
     event_ticker: str, receipt: dict[str, Any], freeze: dict[str, Any]
 ) -> list[Finding]:
@@ -253,6 +302,7 @@ def main() -> int:
     all_findings: list[Finding] = []
     all_findings += check_manifest_hashes(manifest)
     all_findings += check_coverage(coverage, freeze)
+    all_findings += check_wmbd_rung2_sweep(coverage, freeze)
 
     for event_ticker in EXPECTED_VALUE:
         receipt = load_json(BUNDLE / event_ticker / "receipt.json")

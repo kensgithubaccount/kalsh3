@@ -34,7 +34,13 @@
   },
   "p10b_reused_authority": {
     "path": "docs/reviews/artifacts/cpi-p10b-reuters/",
-    "events_reused": ["KXCPI-25JUL", "KXCPI-26JAN", "KXCPI-25DEC", "CPI-21SEP", "CPI-23JUN"],
+    "events_reused": [
+      "KXCPI-25JUL",
+      "KXCPI-26JAN",
+      "KXCPI-25DEC",
+      "CPI-21SEP",
+      "CPI-23JUN"
+    ],
     "validation_performed": "Re-hashed all 7 P10B committed artifacts against manifest.json's declared sha256 values (all matched); re-ran scripts/validate_cpi_p10b_reuters_authority.py against current main (all 29 checks passed); confirmed all 5 P10B-sampled events fall inside the frozen 42-event cohort by event_ticker; confirmed P10B's admission filter and >=2-host corroboration standard is identical in substance to the Phase 2 v2 procedure (v2 was in fact modeled on it). P10B's own bundle is untouched by the R1 repair (out of scope: pre-existing, already-reviewed evidence from a separate merged PR)."
   },
   "phase2_r1_repair": {
@@ -54,9 +60,22 @@
     "reconciliation_after_repair": "4 PASS / 38 UNKNOWN / 0 FAILURE = 42 (was 5/37/0 before repair 1; not preserved artificially)."
   },
   "committed_artifacts": [
-    {"path": "docs/reviews/artifacts/cpi-p10c-reuters-phase2/coverage.json", "sha256": "743c2d489e1dd165973668ba4f122c31566c50b4ab3cc1cfb0d9ace150071f2d"},
-    {"path": "docs/reviews/artifacts/cpi-p10c-reuters-phase2/CPI-23AUG/receipt.json", "sha256": "d4e0cb79f7c14536bf8051effd6d62acd93aa11fcc285c54afcd05f5e1910a56"},
-    {"path": "docs/reviews/artifacts/cpi-p10c-reuters-phase2/CPI-23AUG/extract.json", "sha256": "fb8fc37cc6394f523651b5078de8d6358fd528005af0939de67b139e0f27b6b2"}
+    {
+      "path": "docs/reviews/artifacts/cpi-p10c-reuters-phase2/coverage.json",
+      "sha256": "033fa2e29890b6f3f52c0b9b96201228f787ac52841b024a613751aabda69db6"
+    },
+    {
+      "path": "docs/reviews/artifacts/cpi-p10c-reuters-phase2/CPI-23AUG/receipt.json",
+      "sha256": "d4e0cb79f7c14536bf8051effd6d62acd93aa11fcc285c54afcd05f5e1910a56"
+    },
+    {
+      "path": "docs/reviews/artifacts/cpi-p10c-reuters-phase2/CPI-23AUG/extract.json",
+      "sha256": "fb8fc37cc6394f523651b5078de8d6358fd528005af0939de67b139e0f27b6b2"
+    },
+    {
+      "path": "docs/reviews/artifacts/cpi-p10c-reuters-phase2/WMBD_RUNG2_SWEEP.md",
+      "sha256": "54630eefabe68f6bd5178c0d591228243bbbb9cee5693bd8017f4a5fca197560"
+    }
   ],
   "durable_raw_store": {
     "status": "NONE_AVAILABLE",
@@ -71,5 +90,21 @@
     "acquisition_authority_failures": 0,
     "rate_limit_interruption_disclosure": "During execution, 3 of 6 parallel research batches (17 of the 42 events) were cut off mid-run by an Anthropic API session rate limit. Per explicit instruction, none of the incomplete/undocumented partial claims from that interruption (including a bare, evidence-free 'PASS' assertion for 2 events) were trusted or preserved -- canonical main and the frozen Phase 1 manifest were independently re-verified as unchanged, and all 17 affected events were re-run from a clean start under the identical frozen v2 procedure once the rate limit reset. No event was ever classified as a negative/UNKNOWN result merely because of the interruption.",
     "r1_repair_disclosure": "A subsequent oversight audit (see phase2_r1_repair above) found that the originally-admitted CPI-24JAN candidate did not positively establish its reference month from the article's own text, and reclassified it from PASS to UNKNOWN. Final counts (4/38/0) reflect this repair and are not the originally-reported counts (5/37/0)."
+  },
+  "phase2_r2_wmbd_sweep": {
+    "date": "2026-09-05",
+    "trigger": "Handoff note: SEARCH_PROCEDURE.md's bounded acquisition-path audit names WMBD as an approved Rung-2 syndication host, but the literal R2a/R2b query templates never included site:wmbd.com -- WMBD was never actually queried at Rung 2.",
+    "scope": "WMBD Rung-2 only, for the 36 events that were UNKNOWN and not P10B-reused after Phase 2-R1 (CPI-21SEP, CPI-23JUN excluded as P10B-reused). No rerun of Rung 1, Rung 2 for any other host, or Rung 3 for any host. No change to the v2 procedure, admission filter, >=2-host corroboration rule, CPI-24JAN R1 decision, frozen cohort, or cutoff semantics. No Reuters-vs-Kalshi scoring performed.",
+    "queries_executed": 72,
+    "events_covered": 36,
+    "qualifying_candidates_found": 0,
+    "reconciliation_after_sweep": "4 PASS / 38 UNKNOWN / 0 FAILURE = 42 (unchanged from post-R1)",
+    "evidence_path": "docs/reviews/artifacts/cpi-p10c-reuters-phase2/WMBD_RUNG2_SWEEP.md",
+    "canonical_base_reverified": {
+      "main_sha": "84025da3c41fa41c036633b6718e6d72005622a6",
+      "main_tree": "514db273f2914e2ec79da824d0f1f1567a410680",
+      "branch_head_at_start": "7d91fc69e8d70ff955eeef7082a07d2df540d78e",
+      "verified_via": "git ls-remote against origin, cross-checked with a fresh isolated clone checkout of cpi-e1-p10c-reuters -- unchanged from Phase 2-R1's recorded canonical_base"
+    }
   }
 }
