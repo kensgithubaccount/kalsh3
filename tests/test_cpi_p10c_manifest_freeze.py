@@ -95,3 +95,18 @@ def test_receipt_matches_manifest() -> None:
     assert receipt["kalshi_scoring_performed"] is False
     assert receipt["edge_pnl_fees_computed"] is False
     assert receipt["production_influence"] == "0"
+
+
+def test_receipt_distinguishes_durable_freeze_phase_from_manifest_phase() -> None:
+    manifest = build_phase1_manifest(ROOT)
+    receipt = json.loads(RECEIPT_PATH.read_bytes())
+    assert receipt["phase"] == "CPI-E1-P10C Phase 1C - durable manifest freeze"
+    assert receipt["manifest_phase"] == manifest["phase"]
+    assert receipt["manifest_phase"] == "CPI-E1-P10C Phase 1B - per-sibling cutoff manifest freeze"
+
+
+def test_receipt_does_not_mislabel_git_blob_sha_as_sha256() -> None:
+    receipt = json.loads(RECEIPT_PATH.read_bytes())
+    assert "p10a_binder_blob_sha256" not in receipt
+    assert receipt["p10a_binder_git_blob_sha"] == "f790657cf5f8fe4a627335839e47b6dfb090eefe"
+    assert len(receipt["p10a_binder_git_blob_sha"]) == 40
