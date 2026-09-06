@@ -6,7 +6,7 @@ import json
 import math
 import re
 from collections import Counter
-from collections.abc import Iterable, Mapping
+from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass
 from decimal import Decimal, InvalidOperation
 from enum import StrEnum
@@ -182,10 +182,13 @@ def scan_structural_markets(
     discovery_quotes: Mapping[str, DiscoveryQuotes | None],
     source_authority: str,
     confirmations: Iterable[StructuralConfirmation] = (),
+    deadline_check: Callable[[], None] | None = None,
 ) -> StructuralScanResult:
     """Route every market and scan supported cohorts in O(N log N) time."""
     if not source_authority:
         raise OpportunityError("structural scan source authority missing")
+    if deadline_check is not None:
+        deadline_check()
     ordered_markets = sorted(markets, key=lambda market: market.ticker)
     if len({market.ticker for market in ordered_markets}) != len(ordered_markets):
         raise OpportunityError("duplicate market ticker in structural scan")
@@ -198,15 +201,20 @@ def scan_structural_markets(
         ticker: None if ticker in invalid_quote_tickers else quote
         for ticker, quote in discovery_quotes.items()
     }
-    routes = [
-        _initial_route(
-            market,
-            events.get(market.event_ticker),
-            safe_quotes.get(market.ticker),
-            source_authority,
+    routes = []
+    for market in ordered_markets:
+        if deadline_check is not None:
+            deadline_check()
+        routes.append(
+            _initial_route(
+                market,
+                events.get(market.event_ticker),
+                safe_quotes.get(market.ticker),
+                source_authority,
+            )
         )
-        for market in ordered_markets
-    ]
+    if deadline_check is not None:
+        deadline_check()
     routes = [
         _with_reason(route, RouteReason.INVALID_DISCOVERY_QUOTE)
         if route.market_ticker in invalid_quote_tickers
@@ -218,10 +226,14 @@ def scan_structural_markets(
     # populated identity inside the same Event/strike semantic group.
     presence: dict[tuple[str, str], set[bool]] = {}
     for route in routes:
+        if deadline_check is not None:
+            deadline_check()
         if route.state is RouteState.STRUCTURAL_DIRECTIONAL_THRESHOLD:
             key = (route.event_ticker, route.strike_type or "")
             presence.setdefault(key, set()).add(route.canonical_custom_strike is not None)
     mixed_keys = {key for key, values in presence.items() if len(values) > 1}
+    if deadline_check is not None:
+        deadline_check()
     routes = [
         _abstain(route, RouteReason.MIXED_CUSTOM_STRIKE_PRESENCE)
         if (route.event_ticker, route.strike_type or "") in mixed_keys

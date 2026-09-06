@@ -31,13 +31,18 @@ class PublicReadFailure(RuntimeError):
     pass
 
 
-def _get_raw(path: str) -> tuple[bytes, int, datetime]:
+def _get_raw(path: str, *, timeout_seconds: float = 10) -> tuple[bytes, int, datetime]:
     """Bounded, GET-only, TLS, no-redirect fetch of ``path`` on the fixed production host."""
     if not path.startswith(BASE + "/") or ".." in path.split("/") or "//" in path:
         raise PublicReadFailure("path is outside fixed public read authority")
     if "\r" in path or "\n" in path:
         raise PublicReadFailure("path contains a control character")
-    connection = http.client.HTTPSConnection(HOST, timeout=10, context=ssl.create_default_context())
+    if timeout_seconds <= 0:
+        raise PublicReadFailure("timeout must be positive")
+    # The default transport bound remains timeout=10; cycle callers may pass a smaller bound.
+    connection = http.client.HTTPSConnection(
+        HOST, timeout=timeout_seconds, context=ssl.create_default_context()
+    )
     observed_at = datetime.now(UTC)
     try:
         connection.request("GET", path, headers={"Accept": "application/json"})
@@ -78,18 +83,44 @@ def _evidence_from_body(
     return evidence
 
 
-def get(path: str) -> dict[str, object]:
-    body, status, observed_at = _get_raw(path)
+def _get_with_timeout(path: str, timeout_seconds: float | None) -> dict[str, object]:
+    if timeout_seconds is None:
+        body, status, observed_at = _get_raw(path)
+    else:
+        body, status, observed_at = _get_raw(path, timeout_seconds=timeout_seconds)
     return _evidence_from_body(path, body, status, observed_at)
 
 
-def get_market_with_body(ticker: str) -> tuple[dict[str, object], bytes]:
+def get(path: str) -> dict[str, object]:
+    return _get_with_timeout(path, None)
+
+
+def get_with_timeout(path: str, *, timeout_seconds: float) -> dict[str, object]:
+    return _get_with_timeout(path, timeout_seconds)
+
+
+def _get_market_with_body(
+    ticker: str, timeout_seconds: float | None
+) -> tuple[dict[str, object], bytes]:
     """Bounded GET of the exact single-market endpoint; returns evidence and exact raw bytes."""
     if not _TICKER_RE.fullmatch(ticker):
         raise PublicReadFailure("ticker is not a well-formed exact market ticker")
     path = f"{BASE}/markets/{ticker}"
-    body, status, observed_at = _get_raw(path)
+    if timeout_seconds is None:
+        body, status, observed_at = _get_raw(path)
+    else:
+        body, status, observed_at = _get_raw(path, timeout_seconds=timeout_seconds)
     return _evidence_from_body(path, body, status, observed_at), body
+
+
+def get_market_with_body(ticker: str) -> tuple[dict[str, object], bytes]:
+    return _get_market_with_body(ticker, None)
+
+
+def get_market_with_body_timeout(
+    ticker: str, *, timeout_seconds: float
+) -> tuple[dict[str, object], bytes]:
+    return _get_market_with_body(ticker, timeout_seconds)
 
 
 def get_market(ticker: str) -> dict[str, object]:
@@ -97,19 +128,49 @@ def get_market(ticker: str) -> dict[str, object]:
     return evidence
 
 
-def get_event_with_body(event_ticker: str) -> tuple[dict[str, object], bytes]:
+def _get_event_with_body(
+    event_ticker: str, timeout_seconds: float | None
+) -> tuple[dict[str, object], bytes]:
     """Bounded GET of the exact single-event endpoint; returns evidence and exact raw bytes."""
     if not _TICKER_RE.fullmatch(event_ticker):
         raise PublicReadFailure("ticker is not a well-formed exact event ticker")
     path = f"{BASE}/events/{event_ticker}"
-    body, status, observed_at = _get_raw(path)
+    if timeout_seconds is None:
+        body, status, observed_at = _get_raw(path)
+    else:
+        body, status, observed_at = _get_raw(path, timeout_seconds=timeout_seconds)
     return _evidence_from_body(path, body, status, observed_at), body
 
 
-def get_orderbook_with_body(ticker: str) -> tuple[dict[str, object], bytes]:
+def get_event_with_body(event_ticker: str) -> tuple[dict[str, object], bytes]:
+    return _get_event_with_body(event_ticker, None)
+
+
+def get_event_with_body_timeout(
+    event_ticker: str, *, timeout_seconds: float
+) -> tuple[dict[str, object], bytes]:
+    return _get_event_with_body(event_ticker, timeout_seconds)
+
+
+def _get_orderbook_with_body(
+    ticker: str, timeout_seconds: float | None
+) -> tuple[dict[str, object], bytes]:
     """Bounded GET of the orderbook endpoint for exactly one ticker."""
     if not _TICKER_RE.fullmatch(ticker):
         raise PublicReadFailure("ticker is not a well-formed exact market ticker")
     path = f"{BASE}/markets/orderbooks?" + urlencode({"tickers": ticker})
-    body, status, observed_at = _get_raw(path)
+    if timeout_seconds is None:
+        body, status, observed_at = _get_raw(path)
+    else:
+        body, status, observed_at = _get_raw(path, timeout_seconds=timeout_seconds)
     return _evidence_from_body(path, body, status, observed_at), body
+
+
+def get_orderbook_with_body(ticker: str) -> tuple[dict[str, object], bytes]:
+    return _get_orderbook_with_body(ticker, None)
+
+
+def get_orderbook_with_body_timeout(
+    ticker: str, *, timeout_seconds: float
+) -> tuple[dict[str, object], bytes]:
+    return _get_orderbook_with_body(ticker, timeout_seconds)

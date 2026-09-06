@@ -33,6 +33,7 @@ from services.market_universe.public_read import (
     BASE,
     PublicReadFailure,
     get_market_with_body,
+    get_market_with_body_timeout,
 )
 from services.market_universe.public_read import (
     HOST as _RAW_HOST,
@@ -149,6 +150,7 @@ def acquire_market_snapshot(
     *,
     clock: Callable[[], datetime] = lambda: datetime.now(UTC),
     transport: Callable[[str], tuple[dict[str, object], bytes]] = get_market_with_body,
+    timeout_seconds: float | None = None,
 ) -> AuthoritativeMarketSnapshot:
     """Single bounded PUBLIC GET of the exact-market endpoint for ``ticker``.
 
@@ -165,7 +167,12 @@ def acquire_market_snapshot(
     """
     started = clock()
     try:
-        evidence, body = transport(ticker)
+        if timeout_seconds is None:
+            evidence, body = transport(ticker)
+        elif transport is get_market_with_body:
+            evidence, body = get_market_with_body_timeout(ticker, timeout_seconds=timeout_seconds)
+        else:
+            evidence, body = transport(ticker, timeout_seconds=timeout_seconds)  # type: ignore[call-arg]
     except PublicReadFailure as exc:
         return _failed(ticker, started, "ACQUISITION_FAILURE", str(exc))
 

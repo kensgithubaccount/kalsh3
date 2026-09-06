@@ -59,7 +59,12 @@ from urllib.parse import urlencode
 
 from services.market_universe.domain import UniverseValidationError, exact
 from services.market_universe.market_snapshot import FRESHNESS
-from services.market_universe.public_read import BASE, PublicReadFailure, get_orderbook_with_body
+from services.market_universe.public_read import (
+    BASE,
+    PublicReadFailure,
+    get_orderbook_with_body,
+    get_orderbook_with_body_timeout,
+)
 from services.market_universe.public_read import HOST as _RAW_HOST
 
 SCHEMA = "kalsh3.market_universe.authoritative-orderbook-snapshot.v1"
@@ -261,6 +266,7 @@ def acquire_orderbook_snapshot(
     *,
     transport: Callable[[str], tuple[dict[str, object], bytes]] = get_orderbook_with_body,
     clock: Callable[[], datetime] = lambda: datetime.now(UTC),
+    timeout_seconds: float | None = None,
 ) -> AuthoritativeOrderbookSnapshot:
     """Single bounded PUBLIC GET of the batch orderbook endpoint for exactly one ``ticker``.
 
@@ -278,7 +284,14 @@ def acquire_orderbook_snapshot(
     """
     started = clock()
     try:
-        evidence, body = transport(ticker)
+        if timeout_seconds is None:
+            evidence, body = transport(ticker)
+        elif transport is get_orderbook_with_body:
+            evidence, body = get_orderbook_with_body_timeout(
+                ticker, timeout_seconds=timeout_seconds
+            )
+        else:
+            evidence, body = transport(ticker, timeout_seconds=timeout_seconds)  # type: ignore[call-arg]
     except PublicReadFailure as exc:
         return _failed(ticker, started, "ACQUISITION_FAILURE", str(exc))
 

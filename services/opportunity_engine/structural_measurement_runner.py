@@ -47,6 +47,7 @@ from services.contract_intelligence.specification import (
     SemanticsInputBundle,
     SemanticStatus,
 )
+from services.cycle_deadline import CycleDeadline, CycleDeadlineExceeded
 from services.market_universe import public_read
 from services.market_universe.archive import UniverseObservationArchive
 from services.market_universe.collect import (
@@ -122,6 +123,10 @@ SeriesReader = Callable[[str], dict[str, Any]]
 class UniverseRefreshResult:
     repo: MemoryUniverseRepository
     complete: bool
+    failure: str | None = None
+    market_pages: int = 0
+    event_pages: int = 0
+    exact_reconciliation_count: int = 0
 
 
 def refresh_universe(
@@ -131,6 +136,7 @@ def refresh_universe(
     transport: PublicTransport | None = None,
     clock: Callable[[], datetime] = lambda: datetime.now(UTC),
     progress: Callable[[SyncProgress], None] | None = None,
+    deadline: CycleDeadline | None = None,
 ) -> UniverseRefreshResult:
     """Bounded public-only universe refresh.
 
@@ -141,7 +147,9 @@ def refresh_universe(
     scanner needs the resulting Market/Event objects directly.
     """
     live_transport = transport if transport is not None else PublicUniverseTransport()
-    archive = UniverseObservationArchive(archive_path, compressed_evidence=compressed_evidence)
+    archive = UniverseObservationArchive(
+        archive_path, compressed_evidence=compressed_evidence, deadline=deadline
+    )
     repo = MemoryUniverseRepository()
     synchronizer = UniverseSynchronizer(
         live_transport,
@@ -150,10 +158,20 @@ def refresh_universe(
         clock=clock,
         max_pages=DEFAULT_MAX_PAGES,
         progress=progress,
+        deadline=deadline,
     )
-    market_run = synchronizer.sync("markets", parameters=dict(OPEN_NON_MVE_V2.markets_parameters))
-    event_run = synchronizer.sync("events", parameters=dict(OPEN_NON_MVE_V2.events_parameters))
+    try:
+        market_run = synchronizer.sync(
+            "markets", parameters=dict(OPEN_NON_MVE_V2.markets_parameters)
+        )
+        if deadline is not None:
+            deadline.check("CYCLE_DEADLINE_EVENT_PAGINATION")
+        event_run = synchronizer.sync("events", parameters=dict(OPEN_NON_MVE_V2.events_parameters))
+    except CycleDeadlineExceeded as exc:
+        return UniverseRefreshResult(repo, False, exc.stage)
     market_events = {item.event_ticker for item in repo.markets.values()}
+    if deadline is not None:
+        deadline.check("CYCLE_DEADLINE_EVENT_RECONCILIATION")
     missing = tuple(sorted(market_events - set(repo.events)))
     reconciliation_complete = True
     if missing:
@@ -164,14 +182,24 @@ def refresh_universe(
         ):
             reconciliation_complete = False
         else:
-            reconciliation_run = synchronizer.reconcile_events(missing)
+            try:
+                reconciliation_run = synchronizer.reconcile_events(missing)
+            except CycleDeadlineExceeded as exc:
+                return UniverseRefreshResult(repo, False, exc.stage)
             reconciliation_complete = reconciliation_run.completeness is Completeness.COMPLETE
     complete = (
         market_run.completeness is Completeness.COMPLETE
         and event_run.completeness is Completeness.COMPLETE
         and reconciliation_complete
     )
-    return UniverseRefreshResult(repo, complete)
+    return UniverseRefreshResult(
+        repo,
+        complete,
+        None if complete else "UNIVERSE_DISCOVERY_INCOMPLETE",
+        market_run.pages,
+        event_run.pages,
+        len(missing),
+    )
 
 
 def _checkpoint_sqlite_wal(path: Path) -> None:
@@ -227,15 +255,27 @@ def _discovery_quote(raw: Mapping[str, Any]) -> DiscoveryQuotes | None:
         return None
 
 
-def run_discovery(repo: MemoryUniverseRepository, *, source_authority: str) -> StructuralScanResult:
+def run_discovery(
+    repo: MemoryUniverseRepository,
+    *,
+    source_authority: str,
+    deadline_check: Callable[[], None] | None = None,
+) -> StructuralScanResult:
     """Run canonical M27B discovery over the current refreshed universe. Reuses
     :func:`scan_structural_markets` verbatim -- this is not a second scanner."""
-    quotes = {ticker: _discovery_quote(market.raw) for ticker, market in repo.markets.items()}
+    if deadline_check is not None:
+        deadline_check()
+    quotes = {}
+    for ticker, market in repo.markets.items():
+        if deadline_check is not None:
+            deadline_check()
+        quotes[ticker] = _discovery_quote(market.raw)
     return scan_structural_markets(
         repo.markets.values(),
         events=repo.events,
         discovery_quotes=quotes,
         source_authority=source_authority,
+        deadline_check=deadline_check,
     )
 
 

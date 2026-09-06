@@ -19,6 +19,8 @@ from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
+from services.cycle_deadline import CycleDeadline
+
 from .domain import Event, Market, Series, UniverseValidationError
 
 ARCHIVE_SCHEMA_VERSION = "m26f-universe-archive-schema-v1"
@@ -231,9 +233,16 @@ _UNIVERSE_ARCHIVE_CAPABILITY = object()
 class UniverseObservationArchive:
     """Read/verification facade for one durable append-only archive."""
 
-    def __init__(self, path: str | Path, *, compressed_evidence: bool = False) -> None:
+    def __init__(
+        self,
+        path: str | Path,
+        *,
+        compressed_evidence: bool = False,
+        deadline: CycleDeadline | None = None,
+    ) -> None:
         self.path = Path(path)
         self.compressed_evidence = compressed_evidence
+        self.deadline = deadline
         self.path.parent.mkdir(parents=True, exist_ok=True)
         existed = self.path.exists()
         prior_size = self.path.stat().st_size if existed else 0
@@ -258,10 +267,15 @@ class UniverseObservationArchive:
         self.path.chmod(0o600)
 
     def _connect(self, *, read_only: bool = False) -> sqlite3.Connection:
+        timeout = (
+            30.0
+            if self.deadline is None
+            else self.deadline.timeout_seconds(30.0, "CYCLE_DEADLINE_ARCHIVE_PERSISTENCE")
+        )
         if read_only:
-            db = sqlite3.connect(f"file:{self.path}?mode=ro", uri=True, timeout=30)
+            db = sqlite3.connect(f"file:{self.path}?mode=ro", uri=True, timeout=timeout)
         else:
-            db = sqlite3.connect(self.path, timeout=30)
+            db = sqlite3.connect(self.path, timeout=timeout)
         db.row_factory = sqlite3.Row
         if not read_only:
             db.execute("PRAGMA journal_mode=WAL")
@@ -362,6 +376,8 @@ class UniverseObservationArchive:
         failure: str | None = None,
     ) -> tuple[str, tuple[str, ...]]:
         """Archive one trusted transport response (internal synchronizer API)."""
+        if self.deadline is not None:
+            self.deadline.check("CYCLE_DEADLINE_ARCHIVE_PERSISTENCE")
         if capability is not _UNIVERSE_ARCHIVE_CAPABILITY:
             raise ArchiveError("authoritative archive writes require acquisition capability")
         acquired = _utc(acquired_at, "acquired_at")
@@ -514,6 +530,8 @@ class UniverseObservationArchive:
     ) -> str:
         if capability is not _UNIVERSE_ARCHIVE_CAPABILITY:
             raise ArchiveError("authoritative archive writes require acquisition capability")
+        if self.deadline is not None:
+            self.deadline.check("CYCLE_DEADLINE_ARCHIVE_PERSISTENCE")
         finished = _utc(finished_at, "finished_at")
         material = {
             "completeness": completeness,
