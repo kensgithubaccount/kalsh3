@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import argparse
 import json
+import shutil
+import subprocess
 import sys
 from datetime import UTC, date, datetime
 from pathlib import Path
@@ -13,7 +15,12 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from scripts.collect_m27c_weather_calibration_coverage import WGRIB2_VERSION, _resolve_wgrib2
 from scripts.run_m27_current_weather_evidence import compose as compose_weather
-from services.prospective_shadow.kernel import ShadowObservationStore, validate_start_receipt
+from services.prospective_shadow.kernel import (
+    ADAPTER_VERSIONS,
+    KERNEL_VERSION,
+    ShadowObservationStore,
+    validate_start_receipt,
+)
 from services.prospective_shadow.runner import (
     DEFAULT_CADENCE_SECONDS,
     WeatherAcquisitionResult,
@@ -65,6 +72,24 @@ def _weather_transport(url: str) -> bytes:
     return _public_transport(url)
 
 
+def _runtime_identity() -> tuple[str, str]:
+    root = Path(__file__).resolve().parents[1]
+    git = shutil.which("git")
+    if git is None:
+        raise RuntimeError("git executable is required for runtime identity")
+    sha = subprocess.run(  # noqa: S603 -- executable is shutil.which("git").
+        [git, "rev-parse", "HEAD"], cwd=root, check=True, capture_output=True, text=True
+    ).stdout.strip()
+    tree = subprocess.run(  # noqa: S603 -- executable is shutil.which("git").
+        [git, "rev-parse", "HEAD^{tree}"],
+        cwd=root,
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.strip()
+    return sha, tree
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--once", action="store_true")
@@ -80,6 +105,7 @@ def main() -> int:
     validate_start_receipt(receipt)
     args.run_dir.mkdir(parents=True, exist_ok=True)
     store = ShadowObservationStore(args.store, receipt)
+    runtime_sha, runtime_tree = _runtime_identity()
     kwargs = {
         "archive": args.archive,
         "store": store,
@@ -89,6 +115,18 @@ def main() -> int:
     if args.once:
         result = run_once(cycle_id=datetime.now(UTC).isoformat(), **kwargs)
         payload = {
+            "schema": "kalshi.a02.prospective-cycle.v1",
+            "runtime_main_sha": runtime_sha,
+            "runtime_main_tree": runtime_tree,
+            "kernel_version": KERNEL_VERSION,
+            "adapter_versions": ADAPTER_VERSIONS,
+            "start_receipt_digest": receipt["receipt_digest"],
+            "cadence_seconds": args.interval_seconds,
+            "run_dir": str(args.run_dir.resolve()),
+            "store": str(args.store.resolve()),
+            "source_identities": receipt["source_identities"],
+            "research_only": True,
+            "production_influence": "0",
             "complete": result.complete,
             "diagnostics": result.diagnostics,
             "summary": {"weather": len(result.weather), "structural": len(result.structural)},
