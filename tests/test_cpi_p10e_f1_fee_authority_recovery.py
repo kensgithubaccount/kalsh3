@@ -32,8 +32,7 @@ def test_coverage_digest_is_deterministic_and_no_economics_were_run() -> None:
 def test_exactly_the_two_frozen_disagreement_candidates_are_covered() -> None:
     rows = _coverage()["candidate_fee_coverage"]
     actual = [
-        (row["event_ticker"], row["market_ticker"], row["execution_timestamp"])
-        for row in rows
+        (row["event_ticker"], row["market_ticker"], row["execution_timestamp"]) for row in rows
     ]
     assert actual == [
         ("CPI-23AUG", "CPI-23AUG-T0.6", "2023-09-13T12:25:00+00:00"),
