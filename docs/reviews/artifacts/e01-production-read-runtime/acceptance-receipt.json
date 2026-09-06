@@ -1,7 +1,7 @@
 {
   "acceptance": {
-    "sha": "4c9cfc90556f3fe9d9d0d1a5b77e2a3d6b5ab6b0",
-    "tree": "6ca9b831933cce781f6f3d384d65562544a90fb3"
+    "sha": "0f671f3c4d043fd9a5b1dcb6af8b82a1cf4f2590",
+    "tree": "607d352f92e28a50835ac867c0409044e907ca1c"
   },
   "account_reconciliation": {
     "fixture": "PASS",
@@ -24,7 +24,7 @@
     "sha": "ecf52aabae7f5eeb9beb4cbebd46226103482837",
     "tree": "b19e6ed38850d39df9d7a970fef087fb85439764"
   },
-  "environment_type": "LOCAL_EPHEMERAL_NO_POSTGRES",
+  "environment_type": "LOCAL_EPHEMERAL_POSTGRES_18.6",
   "fee_policy": {
     "effective_date": "2026-07-07",
     "policy_version": "kalshi-event-fees-2026-07-07-v1",
@@ -33,15 +33,24 @@
     "status": "CURRENT_FEE_POLICY_COMPATIBLE"
   },
   "postgres_acceptance": {
-    "blocker": "KALSH3_TEST_POSTGRES_DSN is unset and no local PostgreSQL server is available",
-    "fixture": "PASS",
-    "status": "BLOCKED_NO_NONPRODUCTION_DATABASE"
+    "concurrency_idempotency": "PASS",
+    "database": "e01_r1a_acceptance",
+    "failure_modes": "PASS: connection loss/duplicate key/unique unresolved claim",
+    "journal_persistence": "PASS",
+    "mechanism": "isolated local temporary PostgreSQL cluster",
+    "schema_migrations": "PASS",
+    "status": "PASS",
+    "transaction_rollback": "PASS",
+    "version": "PostgreSQL 18.6"
   },
-  "receipt_sha256": "2ffcb64ccc80c2027af3e9690edcaadccd2ffd2f1c9ff42da3dee89d74aaf595",
+  "receipt_sha256": "12dfa4c5d16e9b2219ec954b8ae1753720573ee3bdaa85ed9e5d4daf76a77b4f",
   "restart_recovery": {
-    "fixture": "PASS",
-    "live_database": false,
-    "status": "FIXTURE_PASS_POSTGRES_BLOCKED"
+    "durable_disarmed_state": "PASS",
+    "partial_fill_persistence": "PASS",
+    "reconciliation_after_restart": "PASS",
+    "server_restart": "PASS",
+    "status": "PASS",
+    "terminal_order_persistence": "PASS"
   },
   "safety": {
     "live_mutation_count": 0,
