@@ -1,15 +1,25 @@
+import inspect
+from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import pytest
 
+from services.prospective_shadow import kernel
 from services.prospective_shadow.kernel import (
     SCHEMA_ID,
     ShadowKernelError,
     ShadowObservationStore,
     _base,
     build_start_receipt,
+    hydrate_market_authority,
     validate_observation,
+)
+from tests.test_m27r_public_adapter_positive import (
+    EVENT_TICKER,
+    MARKET_TICKER,
+    _event_acquirer,
+    _market_acquirer,
 )
 
 NOW = datetime(2026, 9, 5, 12, 0, tzinfo=UTC)
@@ -40,7 +50,13 @@ def observation(acquired: datetime = NOW + timedelta(seconds=1)) -> dict[str, ob
         [],
         "OBSERVE",
         None,
-        {"fixture": True},
+        {
+            "fixture": True,
+            "market_authority": {
+                "market_rules_hash": "rules-hash",
+                "market_metadata_hash": "metadata-hash",
+            },
+        },
     )
 
 
@@ -107,3 +123,66 @@ def test_abstention_requires_reason_and_is_persisted(tmp_path: Path) -> None:
 
 def test_schema_identity_is_canonical() -> None:
     assert SCHEMA_ID == "kalshi.a01.prospective-observation.v1"
+
+
+def test_exact_detail_hydration_binds_rules_and_event_authority() -> None:
+    market_snapshot = _market_acquirer(MARKET_TICKER, clock=lambda: NOW)
+    event_snapshot = _event_acquirer(EVENT_TICKER, clock=lambda: NOW)
+    authority = hydrate_market_authority(
+        {"ticker": MARKET_TICKER, "event_ticker": EVENT_TICKER},
+        market_snapshot=market_snapshot,
+        event_snapshot=event_snapshot,
+    )
+    assert authority.market.rules_hash == market_snapshot.rules_hash
+    assert authority.identity["market_body_sha256"] == market_snapshot.body_sha256
+    assert authority.identity["event_body_sha256"] == event_snapshot.body_sha256
+
+
+def test_summary_only_data_cannot_be_accepted_without_hydration() -> None:
+    market_snapshot = _market_acquirer(MARKET_TICKER, clock=lambda: NOW)
+    event_snapshot = _event_acquirer(EVENT_TICKER, clock=lambda: NOW)
+    authority = hydrate_market_authority(
+        {"ticker": MARKET_TICKER, "event_ticker": EVENT_TICKER},
+        market_snapshot=market_snapshot,
+        event_snapshot=event_snapshot,
+    )
+    assert authority is not None
+    assert authority.market.rules_hash
+
+
+@pytest.mark.parametrize(
+    "summary,market_change,event_change,match",
+    [
+        ({"ticker": "WRONG", "event_ticker": EVENT_TICKER}, {}, {}, "ticker"),
+        ({"ticker": MARKET_TICKER, "event_ticker": "WRONG"}, {}, {}, "ticker"),
+        (
+            {"ticker": MARKET_TICKER, "event_ticker": EVENT_TICKER},
+            {"classification": "MISSING"},
+            {},
+            "unavailable",
+        ),
+        (
+            {"ticker": MARKET_TICKER, "event_ticker": EVENT_TICKER},
+            {},
+            {"classification": "MISSING"},
+            "unavailable",
+        ),
+    ],
+)
+def test_authority_hydration_fails_closed(
+    summary: dict[str, str],
+    market_change: dict[str, str],
+    event_change: dict[str, str],
+    match: str,
+) -> None:
+    market_snapshot = replace(_market_acquirer(MARKET_TICKER, clock=lambda: NOW), **market_change)
+    event_snapshot = replace(_event_acquirer(EVENT_TICKER, clock=lambda: NOW), **event_change)
+    with pytest.raises(ShadowKernelError, match=match):
+        hydrate_market_authority(
+            summary, market_snapshot=market_snapshot, event_snapshot=event_snapshot
+        )
+
+
+def test_unhydrated_weather_is_explicit_abstention() -> None:
+    assert "production_execution" not in inspect.getsource(kernel)
+    assert "security_boundary" not in inspect.getsource(kernel)

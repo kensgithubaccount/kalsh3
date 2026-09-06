@@ -11,6 +11,7 @@ import hashlib
 import json
 import sqlite3
 from collections.abc import Mapping, Sequence
+from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from pathlib import Path
@@ -28,6 +29,8 @@ from services.forecasting.weather_prospective import (
     validate_prospective_forecast_evidence,
 )
 from services.market_universe.domain import Event, Market, stable_hash
+from services.market_universe.event_snapshot import AuthoritativeEventSnapshot
+from services.market_universe.market_snapshot import AuthoritativeMarketSnapshot
 from services.opportunity_engine.structural import (
     POLICY_VERSION as STRUCTURAL_SCANNER_VERSION,
 )
@@ -35,6 +38,11 @@ from services.opportunity_engine.structural import (
     StructuralLead,
 )
 from services.real_time_market_data.orderbook import BookState, BookView
+from services.supervised_canary.m27n2_evidence_reconstruction import (
+    EvidenceReconstructionError,
+    reconstruct_event,
+    reconstruct_market,
+)
 
 KERNEL_VERSION = "kalshi-a0.1-shadow-kernel-v1"
 SCHEMA_ID = "kalshi.a01.prospective-observation.v1"
@@ -52,6 +60,63 @@ StartReceipt = dict[str, Any]
 
 class ShadowKernelError(ValueError):
     pass
+
+
+@dataclass(frozen=True, slots=True)
+class HydratedMarketAuthority:
+    """Typed market/event objects reconstructed only from validated exact snapshots."""
+
+    market: Market
+    event: Event
+    market_snapshot: AuthoritativeMarketSnapshot
+    event_snapshot: AuthoritativeEventSnapshot
+
+    @property
+    def identity(self) -> dict[str, str]:
+        if self.market_snapshot.body_sha256 is None or self.event_snapshot.body_sha256 is None:
+            raise ShadowKernelError("successful authority snapshot is missing body hash")
+        return {
+            "market_body_sha256": self.market_snapshot.body_sha256,
+            "market_rules_hash": self.market.rules_hash,
+            "market_metadata_hash": self.market.metadata_hash,
+            "event_body_sha256": self.event_snapshot.body_sha256,
+            "event_metadata_hash": self.event.metadata_hash,
+            "market_parser_version": self.market_snapshot.parser_version,
+            "market_snapshot_schema": self.market_snapshot.schema,
+            "event_snapshot_schema": self.event_snapshot.schema,
+        }
+
+
+def hydrate_market_authority(
+    summary: Mapping[str, Any],
+    *,
+    market_snapshot: AuthoritativeMarketSnapshot,
+    event_snapshot: AuthoritativeEventSnapshot,
+) -> HydratedMarketAuthority:
+    """Hydrate discovery-only data with exact, independently validated authority snapshots."""
+    ticker = summary.get("ticker")
+    event_ticker = summary.get("event_ticker")
+    if not isinstance(ticker, str) or not isinstance(event_ticker, str):
+        raise ShadowKernelError("summary market identity is missing")
+    if market_snapshot.ticker != ticker or event_snapshot.ticker != event_ticker:
+        raise ShadowKernelError("summary/detail ticker identity mismatch")
+    if not market_snapshot.succeeded or not event_snapshot.succeeded:
+        raise ShadowKernelError(
+            "market/event authority snapshot unavailable: "
+            f"market={market_snapshot.classification} event={event_snapshot.classification}"
+        )
+    try:
+        market = reconstruct_market(
+            market_snapshot.to_json(),
+            expected_ticker=ticker,
+            expected_event_ticker=event_ticker,
+        )
+        event = reconstruct_event(event_snapshot.to_json(), expected_ticker=event_ticker)
+    except EvidenceReconstructionError as exc:
+        raise ShadowKernelError(f"canonical authority reconstruction failed: {exc}") from exc
+    if market.event_ticker != event.ticker:
+        raise ShadowKernelError("market/event authority mismatch")
+    return HydratedMarketAuthority(market, event, market_snapshot, event_snapshot)
 
 
 def _iso(value: datetime, field: str) -> str:
@@ -229,7 +294,12 @@ def capture_weather_observation(
     acquired_at: datetime,
     decision_at: datetime,
     stale_after: timedelta = timedelta(seconds=30),
+    authority: HydratedMarketAuthority | None = None,
 ) -> dict[str, Any]:
+    if authority is not None and (
+        authority.market.ticker != market.ticker or authority.event.ticker != event.ticker
+    ):
+        raise ShadowKernelError("weather authority does not match supplied market/event")
     route = route_daily_temperature(market, event)
     if route.contract is None:
         return _base(
@@ -303,6 +373,24 @@ def capture_weather_observation(
             "rules_hash": market.rules_hash,
         },
     }
+    if authority is None:
+        return _base(
+            "daily_weather",
+            acquired_at,
+            decision_at,
+            event_id,
+            event_id,
+            (market.ticker,),
+            {"market_status": market.status.value},
+            market.rules_hash,
+            contract.settlement_authority,
+            {"source_identity": route.source_identity},
+            [snapshot],
+            "ABSTAIN",
+            "MARKET_AUTHORITY_NOT_HYDRATED",
+            values,
+        )
+    values["market_authority"] = authority.identity
     return _base(
         "daily_weather",
         acquired_at,
@@ -330,6 +418,7 @@ def capture_structural_observation(
     decision_at: datetime,
     stale_after: timedelta = timedelta(seconds=30),
     raw_inconsistency: bool | None = None,
+    leg_authority: Mapping[str, HydratedMarketAuthority] | None = None,
 ) -> dict[str, Any]:
     try:
         broad = _book(broad_book, decision_at, stale_after)
@@ -356,6 +445,29 @@ def capture_structural_observation(
         or lead.narrow_market_ticker != narrow_book.ticker
     ):
         raise ShadowKernelError("structural leg ticker mismatch")
+    if leg_authority is None or set(leg_authority) != {
+        lead.broad_market_ticker,
+        lead.narrow_market_ticker,
+    }:
+        return _base(
+            "structural_threshold",
+            acquired_at,
+            decision_at,
+            lead.event_ticker,
+            stable_hash((lead.cohort_identity, lead.event_ticker)),
+            (lead.broad_market_ticker, lead.narrow_market_ticker),
+            {"state": "active"},
+            stable_hash((lead.broad_rules_hash, lead.narrow_rules_hash)),
+            lead.source_authority,
+            {"source_authority": lead.source_authority},
+            [broad, narrow],
+            "ABSTAIN",
+            "MARKET_AUTHORITY_NOT_HYDRATED",
+            {"cohort_identity": lead.cohort_identity},
+        )
+    for ticker, authority in leg_authority.items():
+        if authority.market.ticker != ticker or authority.event.ticker != lead.event_ticker:
+            raise ShadowKernelError("structural leg authority identity mismatch")
     values = {
         "structural_policy_identity": STRUCTURAL_POLICY_ID,
         "relationship_type": lead.relationship_type.value,
@@ -368,6 +480,9 @@ def capture_structural_observation(
         "leg_freshness": {
             broad["ticker"]: broad["snapshot_id"],
             narrow["ticker"]: narrow["snapshot_id"],
+        },
+        "market_authority": {
+            ticker: leg_authority[ticker].identity for ticker in sorted(leg_authority)
         },
     }
     return _base(
@@ -415,6 +530,16 @@ def validate_observation(obs: Mapping[str, Any], *, now: datetime | None = None)
         obs["evidence"]
     ):
         raise ShadowKernelError("evidence hash mismatch")
+    if obs["decision"] == "OBSERVE":
+        authority = obs["evidence"].get("market_authority")
+        if not isinstance(authority, (dict,)) or not authority:
+            raise ShadowKernelError("accepted observation lacks canonical market authority")
+        if any(
+            not isinstance(value, str) or not value
+            for value in authority.values()
+            if not isinstance(value, dict)
+        ):
+            raise ShadowKernelError("accepted observation has malformed market authority")
     if not isinstance(obs.get("books"), list):
         raise ShadowKernelError("book snapshots missing")
     for book in obs["books"]:
