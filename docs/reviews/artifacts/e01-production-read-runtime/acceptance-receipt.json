@@ -1,0 +1,54 @@
+{
+  "acceptance": {
+    "sha": "4c9cfc90556f3fe9d9d0d1a5b77e2a3d6b5ab6b0",
+    "tree": "6ca9b831933cce781f6f3d384d65562544a90fb3"
+  },
+  "account_reconciliation": {
+    "fixture": "PASS",
+    "fixture_scope": "duplicate/missing/impossible-fill/order-fill/position/pagination fail-closed cases",
+    "live_read": "BLOCKED_BY_CREDENTIAL",
+    "status": "FIXTURE_PASS_LIVE_READ_BLOCKED"
+  },
+  "api_schema_identity": {
+    "observed_at": "2026-09-06T14:00:00Z",
+    "sha256": "4f4ffb88ba34f11563aab9ba4d3124268498e6952dcb56203e4207015abcccd4",
+    "source": "https://docs.kalshi.com",
+    "status": "CURRENT_DOCUMENTATION_COMPATIBLE"
+  },
+  "authenticated_read": {
+    "blocker": "approved authenticated read-only key, private key, and authority attestation are absent",
+    "live_read": false,
+    "status": "BLOCKED_BY_CREDENTIAL"
+  },
+  "canonical": {
+    "sha": "ecf52aabae7f5eeb9beb4cbebd46226103482837",
+    "tree": "b19e6ed38850d39df9d7a970fef087fb85439764"
+  },
+  "environment_type": "LOCAL_EPHEMERAL_NO_POSTGRES",
+  "fee_policy": {
+    "effective_date": "2026-07-07",
+    "policy_version": "kalshi-event-fees-2026-07-07-v1",
+    "realized_live_fees_validated": false,
+    "source": "repository-reviewed Kalshi event fee schedule",
+    "status": "CURRENT_FEE_POLICY_COMPATIBLE"
+  },
+  "postgres_acceptance": {
+    "blocker": "KALSH3_TEST_POSTGRES_DSN is unset and no local PostgreSQL server is available",
+    "fixture": "PASS",
+    "status": "BLOCKED_NO_NONPRODUCTION_DATABASE"
+  },
+  "receipt_sha256": "2ffcb64ccc80c2027af3e9690edcaadccd2ffd2f1c9ff42da3dee89d74aaf595",
+  "restart_recovery": {
+    "fixture": "PASS",
+    "live_database": false,
+    "status": "FIXTURE_PASS_POSTGRES_BLOCKED"
+  },
+  "safety": {
+    "live_mutation_count": 0,
+    "live_orders_placed": 0,
+    "production_boundary_armed": false,
+    "production_influence": 0,
+    "write_credentials_installed": false
+  },
+  "schema": "kalsh3.e0.1.production-read-runtime-acceptance.v1"
+}
