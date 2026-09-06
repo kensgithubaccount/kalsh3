@@ -1,0 +1,117 @@
+{
+  "schema": "cpi-e1-p10e-phase0-after-cost-strategy-spec/v1",
+  "phase": "CPI-E1-P10E Phase 0 - after-cost strategy/economics methodology freeze",
+  "canonical_main_sha": "27f100f5da7e5a49044f2e4a68f6a6fecfff5216",
+  "canonical_main_tree": "b7524e9e446c289202405c6966962fdf84917fa6",
+  "p10d_authority": {
+    "phase0_spec_path": "docs/reviews/artifacts/cpi-p10d-phase0-scoring-spec/spec.json",
+    "phase0_spec_digest": "519d41bad86f3d1f4d19afa9270e62bcc1f836de7a451d9784ba4d09bb1adb77",
+    "valid_pre_score_seal": "2e993a39c371c870edffbdefab99733dc9570b2e",
+    "sealed_result_path": "docs/reviews/artifacts/cpi-p10d-phase1-sealed-score/result.json",
+    "sealed_result_digest": "f4da718b64665f7fce09db3feffe6236321a8a8ae822140d3e44b0be842efc2e",
+    "independent_events": 4,
+    "accepted_temporally_eligible_siblings": "27/27",
+    "primary_before_tie": 19,
+    "exact_ties": 0,
+    "common_directional_denominator": 19,
+    "event_equal_reuters_directional_accuracy": "0.9583333333333333333333333332",
+    "event_equal_kalshi_directional_accuracy": "0.8458333333333333333333333332",
+    "difference": "0.1125000000000000000000000000",
+    "interpretation": "PROMISING HISTORICAL DIAGNOSTIC; durable predictive edge, after-cost economics, prospective validation, and trading authority remain unestablished"
+  },
+  "exploratory_disclosure": "This strategy rule is POST-P10D / EXPLORATORY because P10D already exposed the Reuters directional diagnostic on this four-event cohort. The future P10E historical economics result must not be described as preregistered before predictor testing, independent validation, out-of-sample validation, or durable proof.",
+  "event_roster": [
+    {"event_ticker": "CPI-23AUG", "reference_month": "2023-08", "reuters_value": "0.6", "receipt_path": "docs/reviews/artifacts/cpi-p10c-reuters-phase2/CPI-23AUG/receipt.json", "accepted_siblings": 9, "p10d_primary_eligible_siblings": 5, "uniform_sibling_cutoff": "2023-09-13T12:25:00+00:00"},
+    {"event_ticker": "KXCPI-25JUL", "reference_month": "2025-07", "reuters_value": "0.2", "receipt_path": "docs/reviews/artifacts/cpi-p10b-reuters/KXCPI-25JUL/receipt.json", "accepted_siblings": 6, "p10d_primary_eligible_siblings": 4, "uniform_sibling_cutoff": "2025-08-12T12:29:00+00:00"},
+    {"event_ticker": "KXCPI-25DEC", "reference_month": "2025-12", "reuters_value": "0.3", "receipt_path": "docs/reviews/artifacts/cpi-p10b-reuters/KXCPI-25DEC/receipt.json", "accepted_siblings": 6, "p10d_primary_eligible_siblings": 4, "uniform_sibling_cutoff": "2026-01-13T13:29:00+00:00"},
+    {"event_ticker": "KXCPI-26JAN", "reference_month": "2026-01", "reuters_value": "0.3", "receipt_path": "docs/reviews/artifacts/cpi-p10b-reuters/KXCPI-26JAN/receipt.json", "accepted_siblings": 6, "p10d_primary_eligible_siblings": 6, "uniform_sibling_cutoff": "2026-02-13T13:29:00+00:00"}
+  ],
+  "strategy_hypothesis": {
+    "name": "REUTERS-vs-MARKET DISAGREEMENT CROSS",
+    "universe": "P10D primary-eligible siblings at their already-frozen P10D cutoffs",
+    "reuters_direction": "YES iff Reuters value > the strict contract threshold; otherwise NO; Reuters point forecasts are never converted to probabilities",
+    "market_direction": "YES iff yes_ask > 0.5; NO iff yes_ask < 0.5; exact 0.5 is TIE",
+    "trade_rule": "Trade only when Reuters direction differs from market direction; buy exactly one contract on the Reuters-indicated side",
+    "agree_rule": "Reuters/market agreement means NO TRADE",
+    "tie_rule": "Market TIE means NO TRADE",
+    "sizing": "ONE contract per qualifying disagreement sibling; no Kelly sizing, leverage, compounding, or outcome-dependent sizing"
+  },
+  "execution_price_authority": {
+    "source": "P10A/P9A canonical historical price evidence",
+    "yes_execution": "required canonical YES-side crossing price = positively established yes_ask at the frozen cutoff",
+    "no_execution": "required canonical NO-side crossing price = positively established no_ask, which P9A derives as 1 - yes_bid and labels DERIVED_COMPLEMENT",
+    "not_allowed": ["midpoint", "last trade", "1 - YES ask", "inferred bid/ask", "later quote", "current market data"],
+    "unavailable_rule": "If the required side-specific crossing price cannot be positively established, mark the signal TRADE SIGNAL BUT EXECUTION EVIDENCE UNAVAILABLE; do not invent a price or score it as zero P&L",
+    "authority_boundary": "P9A proves retrospective displayed quote evidence only; it does not prove contemporaneous execution, fill, queue position, or capacity"
+  },
+  "quote_depth_slippage_authority": {
+    "displayed_quote_status": "PROVEN",
+    "one_contract_displayed_size": "NOT PROVEN",
+    "historical_depth": "NOT PROVEN by the canonical P9A artifacts",
+    "primary_slippage_rule": "zero additional arbitrary slippage; use only the canonical crossing price",
+    "capacity_classification": "DISPLAYED-QUOTE AFTER-FEE HISTORICAL ECONOMICS, not fully executable capacity-proven economics",
+    "depth_consumption": "not applicable unless a future reviewed artifact positively establishes depth; no depth rule is invented in Phase 0"
+  },
+  "fee_authority": {
+    "reusable_components": [
+      "services/forecasting/cpi_p9b_authority.py: consume_taker_fee_authority",
+      "scripts/validate_cpi_p9b_fee_authority.py",
+      "evidence/cpi_p9b_fee_authority/event_coverage.json",
+      "docs/reviews/CPI_E1_P9B4R1_HISTORICAL_TAKER_CONTINUITY.md",
+      "docs/reviews/CPI_E1_P10A_HISTORICAL_EVIDENCE_BINDING.md"
+    ],
+    "formula_authority": "P9B records the 0.07 * C * P * (1-P) next-cent formula for a directly evidenced 2022 schedule, but does not establish that formula continuously or exactly for the P10D executions",
+    "exact_historical_rows": 0,
+    "coverage_status": "zero exact historical P10D execution rows; interval-unproven, locator-only, and unknown rows are not consumable",
+    "rounding_side_price_count_authority": "not consumable for the required historical executions",
+    "hard_gate": "If exact historical fee authority is unavailable for any required execution, no after-cost result may be calculated",
+    "phase1_status": "BLOCKED — HISTORICAL FEE AUTHORITY INCOMPLETE"
+  },
+  "settlement_authority": {
+    "source": "P7/P10A reviewed CPI settlement reconciliation and P9A/P10D binding",
+    "binding": "Settlement outcome must come only from the already-reviewed CPI truth / P10A binding authority; no independent inference is permitted",
+    "payoff_model": "canonical simple binary payoff",
+    "one_contract_win": "canonical contract payout ($1.0000 under the reviewed binary settlement evidence)",
+    "one_contract_loss": "$0.0000",
+    "settlement_binding": "finalized reviewed result and settlement value only"
+  },
+  "denominator_and_inclusion": {
+    "candidate_universe_inputs_only": ["P10D roster", "P10D cutoffs", "P10D temporal eligibility", "P10D quote eligibility", "Reuters direction", "Kalshi market direction", "execution-authority availability"],
+    "outcome_exclusion_forbidden": true,
+    "reason_codes_frozen_before_economics": ["P10D_PRIMARY_ELIGIBLE", "NO_TRADE_AGREE", "NO_TRADE_MARKET_TIE", "TRADE_SIGNAL_EXECUTABLE", "TRADE_SIGNAL_EXECUTION_UNAVAILABLE", "NOT_IN_P10D_PRIMARY_ELIGIBLE_UNIVERSE"],
+    "missing_execution": "signal_count includes every disagreement signal; executable_count includes only positively price-authorized signals; unavailable_execution_count is reported separately; unavailable rows are not silently zeroed or selectively removed",
+    "common_denominator_failure": "If missing execution evidence prevents a legitimate common historical economic denominator, fail closed"
+  },
+  "aggregation_and_metrics": {
+    "primary_independent_unit": "event",
+    "primary_aggregation": "Compute each qualifying sibling's one-contract net economic result; arithmetic mean executed qualifying results within each event; event result is 0 when the event has no disagreement signals; equal-weight the four event-level results",
+    "primary_metrics_to_freeze": ["event_equal_net_pnl_per_unit_trade", "event_equal_net_return_on_capital_deployed_if_canonically_definable", "gross_pnl", "exact_fees", "net_pnl", "disagreement_count", "executable_disagreement_count", "unavailable_execution_count", "event_level_results"],
+    "raw_diagnostics": ["raw_total_one_contract_pnl", "raw_per_trade_mean", "signal_count", "executable_count", "unavailable_execution_count", "event_by_event_breakdown"],
+    "raw_sibling_label": "NON-INDEPENDENT",
+    "phase0_values_computed": false,
+    "real_strategy_pnl_computed": false,
+    "after_fee_performance_computed": false
+  },
+  "interpretation_boundary": {
+    "independent_events": 4,
+    "positive_result_label": "PROMISING HISTORICAL ECONOMIC DIAGNOSTIC",
+    "negative_result_use": "may reject or weaken this strategy hypothesis",
+    "forbidden_conclusions": ["durable predictive edge", "prospective edge", "live profitability", "capacity", "canary authority", "trading authority", "independent validation", "out-of-sample validation", "durable proof"]
+  },
+  "phase1_sealed_run_plan": {
+    "execution": "designed but not executed in Phase 0",
+    "steps": ["implement/bind deterministic economics scorer", "synthetic tests", "structural authority preflight", "pre-result sealed commit", "exactly one real historical economics run", "deterministic result artifact", "no scorer modification after result exposure", "byte-identical rerun", "canonical review"],
+    "spec_path": "docs/reviews/artifacts/cpi-p10e-phase0-after-cost-spec/spec.json",
+    "result_path": "docs/reviews/artifacts/cpi-p10e-phase1-sealed-economics/result.json",
+    "digest_rule": "SHA-256 of canonical UTF-8 JSON with sorted keys and deterministic separators, computed over the artifact with its digest field omitted; result digest uses the same rule",
+    "no_real_run_in_phase0": true
+  },
+  "safety": {
+    "research_only": true,
+    "production_influence": "0",
+    "a03_checkout": "DO NOT TOUCH; frozen at 3d31eb182d12b9ceea96709db1063ecd14d29289",
+    "trading": "NONE"
+  },
+  "classification": "BLOCKED — HISTORICAL FEE AUTHORITY INCOMPLETE",
+  "spec_digest_sha256": "9b26a6b96c1b1dbb41125704953a4bc527c77e6010ee17c4fd28dd5a8a23924a"
+}
