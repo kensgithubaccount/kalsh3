@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 import sqlite3
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
@@ -29,7 +30,11 @@ from services.forecasting.weather_prospective import (
     validate_prospective_forecast_evidence,
 )
 from services.market_universe.domain import Event, Market, stable_hash
+from services.market_universe.event_snapshot import PARSER_VERSION as EVENT_PARSER_VERSION
+from services.market_universe.event_snapshot import SCHEMA as EVENT_SNAPSHOT_SCHEMA
 from services.market_universe.event_snapshot import AuthoritativeEventSnapshot
+from services.market_universe.market_snapshot import PARSER_VERSION as MARKET_PARSER_VERSION
+from services.market_universe.market_snapshot import SCHEMA as MARKET_SNAPSHOT_SCHEMA
 from services.market_universe.market_snapshot import AuthoritativeMarketSnapshot
 from services.opportunity_engine.structural import (
     POLICY_VERSION as STRUCTURAL_SCANNER_VERSION,
@@ -55,6 +60,26 @@ ADAPTER_VERSIONS = {
 }
 STRUCTURAL_POLICY_ID = stable_hash((STRUCTURAL_SCANNER_VERSION, "compatibility-positive-only-v1"))
 ZERO = "0"
+DEFAULT_FEE_POLICY_ID = "research-only-fees-v1"
+DEFAULT_EXECUTION_CONVENTION = "displayed-price-only"
+DEFAULT_SLIPPAGE_MODEL = "none-v1; no executable conclusion"
+INDEPENDENCE_RULES = "event/day/location for weather; one cohort/event relationship for structural"
+ABSTENTION_BEHAVIOR = "fail-closed; persist explicit abstention; no retroactive backfill"
+_SHA256 = re.compile(r"\A[0-9a-f]{64}\Z")
+_GIT_ID = re.compile(r"\A[0-9a-f]{40}\Z")
+_AUTHORITY_KEYS = frozenset(
+    {
+        "market_body_sha256",
+        "market_rules_hash",
+        "market_metadata_hash",
+        "event_body_sha256",
+        "event_metadata_hash",
+        "market_parser_version",
+        "event_parser_version",
+        "market_snapshot_schema",
+        "event_snapshot_schema",
+    }
+)
 StartReceipt = dict[str, Any]
 
 
@@ -81,9 +106,10 @@ class HydratedMarketAuthority:
             "market_metadata_hash": self.market.metadata_hash,
             "event_body_sha256": self.event_snapshot.body_sha256,
             "event_metadata_hash": self.event.metadata_hash,
-            "market_parser_version": self.market_snapshot.parser_version,
-            "market_snapshot_schema": self.market_snapshot.schema,
-            "event_snapshot_schema": self.event_snapshot.schema,
+            "market_parser_version": MARKET_PARSER_VERSION,
+            "event_parser_version": EVENT_PARSER_VERSION,
+            "market_snapshot_schema": MARKET_SNAPSHOT_SCHEMA,
+            "event_snapshot_schema": EVENT_SNAPSHOT_SCHEMA,
         }
 
 
@@ -117,6 +143,55 @@ def hydrate_market_authority(
     if market.event_ticker != event.ticker:
         raise ShadowKernelError("market/event authority mismatch")
     return HydratedMarketAuthority(market, event, market_snapshot, event_snapshot)
+
+
+def _validate_authority_identity(identity: object) -> None:
+    if not isinstance(identity, dict) or set(identity) != _AUTHORITY_KEYS:
+        raise ShadowKernelError("canonical market authority shape mismatch")
+    for field in (
+        "market_body_sha256",
+        "market_rules_hash",
+        "market_metadata_hash",
+        "event_body_sha256",
+        "event_metadata_hash",
+    ):
+        value = identity.get(field)
+        if not isinstance(value, str) or not _SHA256.fullmatch(value):
+            raise ShadowKernelError(f"canonical market authority {field} is malformed")
+    expected = {
+        "market_parser_version": MARKET_PARSER_VERSION,
+        "event_parser_version": EVENT_PARSER_VERSION,
+        "market_snapshot_schema": MARKET_SNAPSHOT_SCHEMA,
+        "event_snapshot_schema": EVENT_SNAPSHOT_SCHEMA,
+    }
+    for field, value in expected.items():
+        if identity.get(field) != value:
+            raise ShadowKernelError(f"canonical market authority {field} mismatch")
+
+
+def _validate_observation_authority(obs: Mapping[str, Any]) -> None:
+    evidence = obs["evidence"]
+    tickers = obs.get("market_tickers")
+    if (
+        not isinstance(tickers, list)
+        or not tickers
+        or any(not isinstance(ticker, str) or not ticker for ticker in tickers)
+        or len(set(tickers)) != len(tickers)
+    ):
+        raise ShadowKernelError("observation market ticker identity is malformed")
+    authority = evidence.get("market_authority")
+    if obs["strategy_family"] == "daily_weather":
+        if len(tickers) != 1 or not isinstance(authority, dict):
+            raise ShadowKernelError("weather authority must be one exact identity")
+        _validate_authority_identity(authority)
+        return
+    if obs["strategy_family"] == "structural_threshold":
+        if len(tickers) != 2 or not isinstance(authority, dict) or set(authority) != set(tickers):
+            raise ShadowKernelError("structural authority must cover exactly both leg tickers")
+        for ticker in tickers:
+            _validate_authority_identity(authority[ticker])
+        return
+    raise ShadowKernelError("unknown observation authority family")
 
 
 def _iso(value: datetime, field: str) -> str:
@@ -191,8 +266,8 @@ def build_start_receipt(
     start_at: datetime,
     source_identities: Mapping[str, str],
     fee_policy_id: str,
-    execution_convention: str = "research-only-no-order; displayed-price-only",
-    slippage_model: str = "none-v1; executable simulation separately labeled",
+    execution_convention: str = DEFAULT_EXECUTION_CONVENTION,
+    slippage_model: str = DEFAULT_SLIPPAGE_MODEL,
 ) -> dict[str, Any]:
     receipt = {
         "schema": RECEIPT_SCHEMA_ID,
@@ -209,10 +284,8 @@ def build_start_receipt(
         "fee_policy_identity": fee_policy_id,
         "execution_price_convention": execution_convention,
         "slippage_depth_model": slippage_model,
-        "independence_rules": (
-            "event/day/location for weather; one cohort/event relationship for structural"
-        ),
-        "abstention_behavior": "fail-closed; persist explicit abstention; no retroactive backfill",
+        "independence_rules": INDEPENDENCE_RULES,
+        "abstention_behavior": ABSTENTION_BEHAVIOR,
         "start_at": _iso(start_at, "start_at"),
         "research_only": True,
         "production_influence": ZERO,
@@ -222,8 +295,74 @@ def build_start_receipt(
 
 
 def validate_start_receipt(receipt: Mapping[str, Any]) -> None:
-    if receipt.get("schema") != RECEIPT_SCHEMA_ID or receipt.get("research_only") is not True:
+    required = {
+        "schema",
+        "kernel_version",
+        "adapter_versions",
+        "canonical_base_sha",
+        "canonical_base_tree",
+        "schema_identity",
+        "weather_protocol_identity",
+        "weather_protocol_version",
+        "structural_policy_identity",
+        "structural_scanner_version",
+        "source_identities",
+        "fee_policy_identity",
+        "execution_price_convention",
+        "slippage_depth_model",
+        "independence_rules",
+        "abstention_behavior",
+        "start_at",
+        "research_only",
+        "production_influence",
+        "receipt_digest",
+    }
+    if set(receipt) != required:
+        raise ShadowKernelError("prospective-start receipt field set mismatch")
+    if (
+        receipt.get("schema") != RECEIPT_SCHEMA_ID
+        or receipt.get("kernel_version") != KERNEL_VERSION
+    ):
         raise ShadowKernelError("invalid prospective-start receipt")
+    if receipt.get("adapter_versions") != ADAPTER_VERSIONS:
+        raise ShadowKernelError("prospective-start adapter versions drifted")
+    if receipt.get("schema_identity") != SCHEMA_ID:
+        raise ShadowKernelError("prospective-start schema identity mismatch")
+    if (
+        receipt.get("weather_protocol_identity") != WEATHER_PROTOCOL_ID
+        or receipt.get("weather_protocol_version") != WEATHER_PROTOCOL_VERSION
+    ):
+        raise ShadowKernelError("prospective-start weather protocol drifted")
+    if (
+        receipt.get("structural_policy_identity") != STRUCTURAL_POLICY_ID
+        or receipt.get("structural_scanner_version") != STRUCTURAL_SCANNER_VERSION
+    ):
+        raise ShadowKernelError("prospective-start structural policy drifted")
+    if receipt.get("research_only") is not True or receipt.get("production_influence") != ZERO:
+        raise ShadowKernelError("prospective-start safety invariant failed")
+    if not isinstance(receipt.get("canonical_base_sha"), str) or not _GIT_ID.fullmatch(
+        receipt["canonical_base_sha"]
+    ):
+        raise ShadowKernelError("prospective-start canonical base SHA is malformed")
+    if not isinstance(receipt.get("canonical_base_tree"), str) or not _GIT_ID.fullmatch(
+        receipt["canonical_base_tree"]
+    ):
+        raise ShadowKernelError("prospective-start canonical base tree is malformed")
+    if not isinstance(receipt.get("source_identities"), dict) or not receipt["source_identities"]:
+        raise ShadowKernelError("prospective-start source identities missing")
+    if any(
+        not isinstance(k, str) or not k or not isinstance(v, str) or not v
+        for k, v in receipt["source_identities"].items()
+    ):
+        raise ShadowKernelError("prospective-start source identity malformed")
+    for field in ("fee_policy_identity", "execution_price_convention", "slippage_depth_model"):
+        if not isinstance(receipt.get(field), str) or not receipt[field]:
+            raise ShadowKernelError(f"prospective-start {field} missing")
+    if (
+        receipt.get("independence_rules") != INDEPENDENCE_RULES
+        or receipt.get("abstention_behavior") != ABSTENTION_BEHAVIOR
+    ):
+        raise ShadowKernelError("prospective-start semantics drifted")
     if receipt.get("production_influence") != ZERO:
         raise ShadowKernelError("prospective-start receipt has production influence")
     digest = receipt.get("receipt_digest")
@@ -231,11 +370,13 @@ def validate_start_receipt(receipt: Mapping[str, Any]) -> None:
     body.pop("receipt_digest", None)
     if digest != content_hash(body):
         raise ShadowKernelError("prospective-start receipt digest mismatch")
-    _iso(datetime.fromisoformat(_require_text(receipt, "start_at")), "start_at")
-    if receipt.get("weather_protocol_identity") != WEATHER_PROTOCOL_ID:
-        raise ShadowKernelError("weather protocol identity mismatch")
-    if receipt.get("structural_policy_identity") != STRUCTURAL_POLICY_ID:
-        raise ShadowKernelError("structural policy identity mismatch")
+    try:
+        start = datetime.fromisoformat(_require_text(receipt, "start_at"))
+    except ValueError as exc:
+        raise ShadowKernelError("prospective-start timestamp is malformed") from exc
+    _iso(start, "start_at")
+    if not isinstance(digest, str) or not _SHA256.fullmatch(digest):
+        raise ShadowKernelError("prospective-start receipt digest is malformed")
 
 
 def _base(
@@ -253,6 +394,7 @@ def _base(
     decision: str,
     reason: str | None,
     values: Mapping[str, Any],
+    start_receipt_digest: str = "",
 ) -> dict[str, Any]:
     if decision_at < acquired_at:
         raise ShadowKernelError("decision precedes acquisition")
@@ -271,11 +413,12 @@ def _base(
         "source": _jsonable(source),
         "books": list(books),
         "realtime": {"fresh": True, "gapped": False, "reconnected": False},
-        "fee_policy_identity": "research-only-fees-v1",
-        "execution_price_convention": "displayed-price-only",
-        "slippage_depth_model": "none-v1; no executable conclusion",
+        "fee_policy_identity": DEFAULT_FEE_POLICY_ID,
+        "execution_price_convention": DEFAULT_EXECUTION_CONVENTION,
+        "slippage_depth_model": DEFAULT_SLIPPAGE_MODEL,
         "decision": decision,
         "reason_code": reason,
+        "start_receipt_digest": start_receipt_digest,
         "evidence": _jsonable(values),
         "research_only": True,
         "production_influence": ZERO,
@@ -295,6 +438,7 @@ def capture_weather_observation(
     decision_at: datetime,
     stale_after: timedelta = timedelta(seconds=30),
     authority: HydratedMarketAuthority | None = None,
+    start_receipt_digest: str = "",
 ) -> dict[str, Any]:
     if authority is not None and (
         authority.market.ticker != market.ticker or authority.event.ticker != event.ticker
@@ -317,6 +461,7 @@ def capture_weather_observation(
             "ABSTAIN",
             route.reason.value if route.reason else "WEATHER_UNSUPPORTED",
             {},
+            start_receipt_digest=start_receipt_digest,
         )
     contract = route.contract
     try:
@@ -337,6 +482,7 @@ def capture_weather_observation(
             "ABSTAIN",
             "WEATHER_AUTHORITY_OR_REVISION_GAP",
             {"detail": str(exc)},
+            start_receipt_digest=start_receipt_digest,
         )
     forecast_collected = datetime.fromisoformat(str(forecast["collection_timestamp"]))
     if forecast_collected > acquired_at or acquired_at > decision_at:
@@ -362,6 +508,7 @@ def capture_weather_observation(
             "ABSTAIN",
             "STALE_OR_GAPPED_BOOK",
             {"detail": str(exc)},
+            start_receipt_digest=start_receipt_digest,
         )
     values = {
         "weather_protocol_identity": WEATHER_PROTOCOL_ID,
@@ -389,6 +536,7 @@ def capture_weather_observation(
             "ABSTAIN",
             "MARKET_AUTHORITY_NOT_HYDRATED",
             values,
+            start_receipt_digest=start_receipt_digest,
         )
     values["market_authority"] = authority.identity
     return _base(
@@ -406,6 +554,7 @@ def capture_weather_observation(
         "OBSERVE",
         None,
         values,
+        start_receipt_digest=start_receipt_digest,
     )
 
 
@@ -419,6 +568,7 @@ def capture_structural_observation(
     stale_after: timedelta = timedelta(seconds=30),
     raw_inconsistency: bool | None = None,
     leg_authority: Mapping[str, HydratedMarketAuthority] | None = None,
+    start_receipt_digest: str = "",
 ) -> dict[str, Any]:
     try:
         broad = _book(broad_book, decision_at, stale_after)
@@ -439,6 +589,7 @@ def capture_structural_observation(
             "ABSTAIN",
             "STALE_OR_GAPPED_BOOK",
             {"detail": str(exc), "cohort_identity": lead.cohort_identity},
+            start_receipt_digest=start_receipt_digest,
         )
     if (
         lead.broad_market_ticker != broad_book.ticker
@@ -464,6 +615,7 @@ def capture_structural_observation(
             "ABSTAIN",
             "MARKET_AUTHORITY_NOT_HYDRATED",
             {"cohort_identity": lead.cohort_identity},
+            start_receipt_digest=start_receipt_digest,
         )
     for ticker, authority in leg_authority.items():
         if authority.market.ticker != ticker or authority.event.ticker != lead.event_ticker:
@@ -500,10 +652,16 @@ def capture_structural_observation(
         "OBSERVE",
         None,
         values,
+        start_receipt_digest=start_receipt_digest,
     )
 
 
-def validate_observation(obs: Mapping[str, Any], *, now: datetime | None = None) -> None:
+def validate_observation(
+    obs: Mapping[str, Any],
+    *,
+    now: datetime | None = None,
+    start_receipt: Mapping[str, Any] | None = None,
+) -> None:
     if (
         obs.get("schema") != SCHEMA_ID
         or obs.get("research_only") is not True
@@ -526,20 +684,46 @@ def validate_observation(obs: Mapping[str, Any], *, now: datetime | None = None)
     _iso(decision, "decision_timestamp")
     if decision < acquired or (now is not None and decision > now):
         raise ShadowKernelError("future or inverted observation time")
+    receipt_digest = _require_text(obs, "start_receipt_digest")
+    if not _SHA256.fullmatch(receipt_digest):
+        raise ShadowKernelError("observation start receipt digest is malformed")
+    if start_receipt is not None:
+        validate_start_receipt(start_receipt)
+        if receipt_digest != start_receipt["receipt_digest"]:
+            raise ShadowKernelError("observation start receipt binding mismatch")
+        if acquired < datetime.fromisoformat(start_receipt["start_at"]):
+            raise ShadowKernelError("observation acquisition predates prospective start")
+        if obs.get("strategy_version") != start_receipt["adapter_versions"].get(
+            obs.get("strategy_family")
+        ):
+            raise ShadowKernelError("observation adapter convention drifted")
+        for observation_field, receipt_field in (
+            ("fee_policy_identity", "fee_policy_identity"),
+            ("execution_price_convention", "execution_price_convention"),
+            ("slippage_depth_model", "slippage_depth_model"),
+        ):
+            if obs.get(observation_field) != start_receipt[receipt_field]:
+                raise ShadowKernelError(f"observation {observation_field} drifted from receipt")
     if not isinstance(obs.get("evidence"), dict) or obs.get("evidence_hash") != content_hash(
         obs["evidence"]
     ):
         raise ShadowKernelError("evidence hash mismatch")
     if obs["decision"] == "OBSERVE":
-        authority = obs["evidence"].get("market_authority")
-        if not isinstance(authority, (dict,)) or not authority:
-            raise ShadowKernelError("accepted observation lacks canonical market authority")
-        if any(
-            not isinstance(value, str) or not value
-            for value in authority.values()
-            if not isinstance(value, dict)
-        ):
-            raise ShadowKernelError("accepted observation has malformed market authority")
+        _validate_observation_authority(obs)
+        if obs["strategy_family"] == "daily_weather":
+            if obs["evidence"].get("weather_protocol_identity") != (
+                WEATHER_PROTOCOL_ID
+                if start_receipt is None
+                else start_receipt["weather_protocol_identity"]
+            ):
+                raise ShadowKernelError("weather protocol identity drifted")
+        else:
+            if obs["evidence"].get("structural_policy_identity") != (
+                STRUCTURAL_POLICY_ID
+                if start_receipt is None
+                else start_receipt["structural_policy_identity"]
+            ):
+                raise ShadowKernelError("structural policy identity drifted")
     if not isinstance(obs.get("books"), list):
         raise ShadowKernelError("book snapshots missing")
     for book in obs["books"]:
@@ -603,8 +787,20 @@ class ShadowObservationStore:
         db.execute("PRAGMA busy_timeout=30000")
         return db
 
+    def _start_receipt(self) -> dict[str, Any]:
+        with self._connect() as db:
+            row = db.execute("SELECT canonical_json FROM start_receipt WHERE id=1").fetchone()
+        if row is None:
+            raise ShadowKernelError("prospective-start receipt missing")
+        receipt = json.loads(row[0])
+        if not isinstance(receipt, dict):
+            raise ShadowKernelError("persisted prospective-start receipt is malformed")
+        validate_start_receipt(receipt)
+        return receipt
+
     def append(self, observation: Mapping[str, Any], *, now: datetime | None = None) -> int:
-        validate_observation(observation, now=now)
+        start = self._start_receipt()
+        validate_observation(observation, now=now, start_receipt=start)
         encoded = canonical_json(observation)
         digest = hashlib.sha256(encoded.encode()).hexdigest()
         with self._connect() as db:
@@ -658,12 +854,9 @@ class ShadowObservationStore:
             ):
                 raise ShadowKernelError("sequence, duplicate, or content hash failure")
             obs = json.loads(encoded)
-            validate_observation(obs, now=now)
+            validate_observation(obs, now=now, start_receipt=start)
             if oid != obs["observation_id"]:
                 raise ShadowKernelError("observation row identity mismatch")
-            boundary = datetime.fromisoformat(start["start_at"])
-            if datetime.fromisoformat(obs["acquisition_timestamp"]) < boundary:
-                raise ShadowKernelError("observation acquisition predates prospective start")
             ids.add(oid)
             previous = seq
         return {

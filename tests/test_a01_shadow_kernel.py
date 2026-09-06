@@ -8,10 +8,12 @@ import pytest
 from services.prospective_shadow import kernel
 from services.prospective_shadow.kernel import (
     SCHEMA_ID,
+    STRUCTURAL_POLICY_ID,
     ShadowKernelError,
     ShadowObservationStore,
     _base,
     build_start_receipt,
+    content_hash,
     hydrate_market_authority,
     validate_observation,
 )
@@ -23,6 +25,21 @@ from tests.test_m27r_public_adapter_positive import (
 )
 
 NOW = datetime(2026, 9, 5, 12, 0, tzinfo=UTC)
+
+
+def authority(seed: str) -> dict[str, str]:
+    digest = seed * 64
+    return {
+        "market_body_sha256": digest,
+        "market_rules_hash": digest,
+        "market_metadata_hash": digest,
+        "event_body_sha256": digest,
+        "event_metadata_hash": digest,
+        "market_parser_version": kernel.MARKET_PARSER_VERSION,
+        "event_parser_version": kernel.EVENT_PARSER_VERSION,
+        "market_snapshot_schema": kernel.MARKET_SNAPSHOT_SCHEMA,
+        "event_snapshot_schema": kernel.EVENT_SNAPSHOT_SCHEMA,
+    }
 
 
 def start_receipt() -> dict[str, object]:
@@ -52,12 +69,43 @@ def observation(acquired: datetime = NOW + timedelta(seconds=1)) -> dict[str, ob
         None,
         {
             "fixture": True,
-            "market_authority": {
-                "market_rules_hash": "rules-hash",
-                "market_metadata_hash": "metadata-hash",
-            },
+            "structural_policy_identity": STRUCTURAL_POLICY_ID,
+            "market_authority": {"A": authority("a"), "B": authority("b")},
         },
+        start_receipt_digest=start_receipt()["receipt_digest"],
     )
+
+
+def weather_observation() -> dict[str, object]:
+    return _base(
+        "daily_weather",
+        NOW + timedelta(seconds=1),
+        NOW + timedelta(seconds=1),
+        "weather-event",
+        "weather-day-location",
+        ("WX",),
+        {"state": "active"},
+        "rules-hash",
+        "settlement-authority",
+        {"source": "fixture"},
+        [],
+        "OBSERVE",
+        None,
+        {
+            "weather_protocol_identity": kernel.WEATHER_PROTOCOL_ID,
+            "market_authority": authority("c"),
+        },
+        start_receipt_digest=start_receipt()["receipt_digest"],
+    )
+
+
+def rehash(observation_value: dict[str, object]) -> dict[str, object]:
+    observation_value["evidence_hash"] = content_hash(observation_value["evidence"])
+    body = dict(observation_value)
+    body.pop("observation_id", None)
+    body.pop("evidence_hash", None)
+    observation_value["observation_id"] = content_hash(body)
+    return observation_value
 
 
 def test_start_authority_is_required_and_replayable(tmp_path: Path) -> None:
@@ -94,6 +142,112 @@ def test_missing_independence_and_nonzero_influence_fail() -> None:
         validate_observation(unsafe, now=NOW + timedelta(minutes=1))
 
 
+@pytest.mark.parametrize(
+    "field",
+    [
+        "market_body_sha256",
+        "event_body_sha256",
+        "market_rules_hash",
+        "market_metadata_hash",
+        "event_metadata_hash",
+        "market_parser_version",
+        "event_parser_version",
+        "market_snapshot_schema",
+        "event_snapshot_schema",
+    ],
+)
+def test_weather_observe_requires_complete_canonical_authority(field: str) -> None:
+    weather = weather_observation()
+    weather["evidence"] = dict(weather["evidence"])
+    weather["evidence"]["market_authority"] = dict(weather["evidence"]["market_authority"])
+    weather["evidence"]["market_authority"].pop(field)
+    rehash(weather)
+    with pytest.raises(ShadowKernelError, match="authority"):
+        validate_observation(weather, now=NOW + timedelta(minutes=1), start_receipt=start_receipt())
+
+
+def test_weather_complete_hydrated_authority_passes() -> None:
+    validate_observation(
+        weather_observation(), now=NOW + timedelta(minutes=1), start_receipt=start_receipt()
+    )
+
+
+def test_structural_authority_requires_both_exact_legs() -> None:
+    missing = observation()
+    missing["evidence"] = dict(missing["evidence"])
+    missing["evidence"]["market_authority"] = {"A": authority("a")}
+    rehash(missing)
+    with pytest.raises(ShadowKernelError, match="leg"):
+        validate_observation(missing, now=NOW + timedelta(minutes=1), start_receipt=start_receipt())
+
+    wrong = observation()
+    wrong["evidence"] = dict(wrong["evidence"])
+    wrong["evidence"]["market_authority"] = {"A": authority("a"), "C": authority("c")}
+    rehash(wrong)
+    with pytest.raises(ShadowKernelError, match="leg"):
+        validate_observation(wrong, now=NOW + timedelta(minutes=1), start_receipt=start_receipt())
+
+
+def test_structural_complete_hydrated_authority_passes() -> None:
+    validate_observation(
+        observation(), now=NOW + timedelta(minutes=1), start_receipt=start_receipt()
+    )
+
+
+@pytest.mark.parametrize(
+    "field,value",
+    [
+        ("kernel_version", "drifted"),
+        ("adapter_versions", {"daily_weather": "drifted"}),
+        ("schema_identity", "drifted"),
+    ],
+)
+def test_start_receipt_canonical_constants_are_frozen(field: str, value: object) -> None:
+    receipt = start_receipt()
+    receipt[field] = value
+    receipt["receipt_digest"] = content_hash(
+        {k: v for k, v in receipt.items() if k != "receipt_digest"}
+    )
+    with pytest.raises(ShadowKernelError):
+        kernel.validate_start_receipt(receipt)
+
+
+def test_observation_before_start_and_convention_drift_fail_at_append_or_replay(
+    tmp_path: Path,
+) -> None:
+    store = ShadowObservationStore(tmp_path / "shadow.sqlite", start_receipt())
+    before = observation(NOW - timedelta(seconds=1))
+    with pytest.raises(ShadowKernelError, match="predates"):
+        store.append(before, now=NOW + timedelta(minutes=1))
+
+    drifted = observation()
+    drifted["execution_price_convention"] = "altered"
+    rehash(drifted)
+    with pytest.raises(ShadowKernelError, match="drifted"):
+        store.append(drifted, now=NOW + timedelta(minutes=1))
+
+    for field in ("fee_policy_identity", "slippage_depth_model"):
+        convention_drift = observation()
+        convention_drift[field] = "altered"
+        rehash(convention_drift)
+        with pytest.raises(ShadowKernelError, match="drifted"):
+            store.append(convention_drift, now=NOW + timedelta(minutes=1))
+
+
+def test_receipt_binding_and_production_influence_are_fail_closed() -> None:
+    altered = observation()
+    altered["start_receipt_digest"] = "b" * 64
+    rehash(altered)
+    with pytest.raises(ShadowKernelError, match="binding"):
+        validate_observation(altered, now=NOW + timedelta(minutes=1), start_receipt=start_receipt())
+
+    unsafe = observation()
+    unsafe["production_influence"] = "1"
+    rehash(unsafe)
+    with pytest.raises(ShadowKernelError, match="safety"):
+        validate_observation(unsafe, now=NOW + timedelta(minutes=1), start_receipt=start_receipt())
+
+
 def test_abstention_requires_reason_and_is_persisted(tmp_path: Path) -> None:
     store = ShadowObservationStore(tmp_path / "shadow.sqlite", start_receipt())
     abstention = _base(
@@ -111,6 +265,7 @@ def test_abstention_requires_reason_and_is_persisted(tmp_path: Path) -> None:
         "ABSTAIN",
         "STALE_OR_GAPPED_BOOK",
         {},
+        start_receipt_digest=start_receipt()["receipt_digest"],
     )
     assert store.append(abstention, now=NOW + timedelta(minutes=1)) == 1
     assert store.validate(now=NOW + timedelta(minutes=1))["abstentions"] == 1
