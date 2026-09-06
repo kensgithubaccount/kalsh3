@@ -1,0 +1,30 @@
+{
+  "abstention_behavior": "fail-closed; persist explicit abstention; no retroactive backfill",
+  "adapter_versions": {
+    "daily_weather": "kalshi-a0.1-weather-daily-temperature-v1",
+    "structural_threshold": "kalshi-a0.1-monotonic-threshold-v1"
+  },
+  "canonical_base_sha": "9169160c4583c4a6e353c5eb6c01eb59b816d31c",
+  "canonical_base_tree": "114569cd2ab1c86f892a529d1c1b6eb24457bff7",
+  "execution_price_convention": "research-only-no-order; displayed-price-only",
+  "fee_policy_identity": "research-only-fees-v1",
+  "independence_rules": "event/day/location for weather; one cohort/event relationship for structural",
+  "kernel_version": "kalshi-a0.1-shadow-kernel-v1",
+  "production_influence": "0",
+  "receipt_digest": "0d2b42b6a6b5749aee080cb7ad5e7c7e59119670b5f7be77b405d61db3185da7",
+  "research_only": true,
+  "schema": "kalshi.a01.prospective-start.v1",
+  "schema_identity": "kalshi.a01.prospective-observation.v1",
+  "slippage_depth_model": "none-v1; executable simulation separately labeled",
+  "source_identities": {
+    "kalshi_public_market_read": "services.market_universe.public_read.v1",
+    "structural_scanner": "m27b-directional-structural-v1",
+    "weather_physical_source": "m27c-part2a-physical-weather-source-authority-v1",
+    "weather_settlement": "m27c-daily-temperature-contract-authority-v1"
+  },
+  "start_at": "2026-09-06T13:39:46.169044+00:00",
+  "structural_policy_identity": "07c40db3118e23a69c2cfd4b0a1b30d1a4fc131d12f5676ffff9b24d1388539f",
+  "structural_scanner_version": "m27b-directional-structural-v1",
+  "weather_protocol_identity": "2a5389f1771b5d33103c053eb6e3cf0467c215e139b5a54e8acd3477678d8281",
+  "weather_protocol_version": "m27c-part2b3-prospective-blind-weather-confirmation-v1"
+}
