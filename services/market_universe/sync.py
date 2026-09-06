@@ -10,6 +10,8 @@ from typing import Any, Protocol, cast
 from urllib.parse import quote, unquote, urlencode
 from uuid import uuid4
 
+from services.cycle_deadline import CycleDeadline, CycleDeadlineExceeded
+
 from .archive import (
     EntityKind,
     UniverseObservationArchive,
@@ -138,6 +140,7 @@ class UniverseSynchronizer:
         timeout: float = 15,
         max_pages: int | None = None,
         progress: Callable[[SyncProgress], None] | None = None,
+        deadline: CycleDeadline | None = None,
     ) -> None:
         if max_pages is not None:
             if isinstance(max_pages, bool) or not isinstance(max_pages, int):
@@ -156,6 +159,17 @@ class UniverseSynchronizer:
         self.timeout = timeout
         self.max_pages = max_pages
         self.progress = progress
+        self.deadline = deadline
+
+    @staticmethod
+    def _deadline_stage(endpoint: str, *, reconciliation: bool = False) -> str:
+        if reconciliation:
+            return "CYCLE_DEADLINE_EVENT_RECONCILIATION"
+        return (
+            "CYCLE_DEADLINE_MARKET_PAGINATION"
+            if endpoint == "markets"
+            else "CYCLE_DEADLINE_EVENT_PAGINATION"
+        )
 
     def _pages(
         self,
@@ -169,12 +183,22 @@ class UniverseSynchronizer:
         records = []
         fixed_parameters = dict(parameters or {})
         while True:
+            stage = self._deadline_stage(endpoint)
+            if self.deadline is not None:
+                self.deadline.check(stage)
             request_parameters = dict(fixed_parameters)
             if cursor is not None:
                 request_parameters["cursor"] = cursor
             target = f"/trade-api/v2/{endpoint}?{urlencode(request_parameters)}"
             try:
-                payload = self.transport.get(target, timeout_seconds=self.timeout)
+                timeout = (
+                    self.timeout
+                    if self.deadline is None
+                    else self.deadline.timeout_seconds(self.timeout, stage)
+                )
+                payload = self.transport.get(target, timeout_seconds=timeout)
+                if self.deadline is not None:
+                    self.deadline.check(stage)
             except Exception as exc:
                 run.failure = type(exc).__name__
                 run.completeness = Completeness.PARTIAL if run.pages else Completeness.FAILED
@@ -183,6 +207,8 @@ class UniverseSynchronizer:
             run.pages += 1
             next_cursor = payload.get("cursor")
             if self.__archive_writer is not None:
+                if self.deadline is not None:
+                    self.deadline.check(stage)
                 self.__archive_writer.append_page(
                     provider=self.provider,
                     endpoint=endpoint,
@@ -271,6 +297,8 @@ class UniverseSynchronizer:
             if incremental and run.completeness == Completeness.COMPLETE and maximum is not None:
                 self.repo.watermarks[kind] = maximum
                 run.confirmed_watermark = maximum
+        except CycleDeadlineExceeded:
+            raise
         except Exception as exc:
             if run.failure is None:
                 run.failure = type(exc).__name__
@@ -294,6 +322,8 @@ class UniverseSynchronizer:
         self.repo.runs.append(run)
         failed = False
         for ticker in tickers:
+            if self.deadline is not None:
+                self.deadline.check("CYCLE_DEADLINE_EVENT_RECONCILIATION")
             try:
                 if not ticker or not all(
                     character.isascii() and (character.isalnum() or character in "-_.")
@@ -304,7 +334,16 @@ class UniverseSynchronizer:
                 endpoint = f"events/{encoded}"
                 target = f"/trade-api/v2/{endpoint}"
                 run.requests += 1
-                payload = self.transport.get(target, timeout_seconds=self.timeout)
+                timeout = (
+                    self.timeout
+                    if self.deadline is None
+                    else self.deadline.timeout_seconds(
+                        self.timeout, "CYCLE_DEADLINE_EVENT_RECONCILIATION"
+                    )
+                )
+                payload = self.transport.get(target, timeout_seconds=timeout)
+                if self.deadline is not None:
+                    self.deadline.check("CYCLE_DEADLINE_EVENT_RECONCILIATION")
                 raw = payload.get("event")
                 valid = False
                 entity: Event | None = None
@@ -319,6 +358,8 @@ class UniverseSynchronizer:
                 run.pages += 1
                 run.records_received += int(isinstance(raw, dict))
                 if self.__archive_writer is not None:
+                    if self.deadline is not None:
+                        self.deadline.check("CYCLE_DEADLINE_EVENT_RECONCILIATION")
                     self.__archive_writer.append_page(
                         provider=self.provider,
                         endpoint=endpoint,
@@ -339,6 +380,8 @@ class UniverseSynchronizer:
                     continue
                 result = self.repo.upsert(entity)
                 setattr(run, result, getattr(run, result) + 1)
+            except CycleDeadlineExceeded:
+                raise
             except Exception as exc:
                 failed = True
                 if run.failure is None:
