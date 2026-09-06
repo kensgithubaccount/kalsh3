@@ -1,0 +1,106 @@
+{
+  "aggregation_rule": "event_equal_mean_of_per_event_sibling_mean",
+  "anti_overfitting_fail_closed_rules": [
+    "the 4-event set is exactly FROZEN_FOUR_EVENT_TICKERS; a 5th event (including any future re-classified UNKNOWN->PASS) requires a new, explicitly reviewed spec revision, never silent inclusion",
+    "each event's Reuters timestamp field name and value are bound exactly per ReutersEventBinding; a receipt field-name or value drift fails closed",
+    "temporal eligibility is recomputed from the frozen per-sibling manifest cutoff on every build, never read from a receipt's own boolean claim",
+    "the market price convention (yes_ask primary, midpoint diagnostic) is a frozen constant; changing it requires a new spec revision",
+    "sibling rows are never treated as independent events; the primary statistic is always event-equal aggregated, never a flat mean over all eligible siblings",
+    "the primary metric definition is fixed before any comparative score exists; this module contains no function that reads Reuters value, yes_ask, AND outcome/truth together -- that composition is deliberately deferred to a future, separately reviewed phase"
+  ],
+  "canonical_main_sha": "9169160c4583c4a6e353c5eb6c01eb59b816d31c",
+  "canonical_main_tree": "114569cd2ab1c86f892a529d1c1b6eb24457bff7",
+  "edge_pnl_fees_computed": false,
+  "existing_scoring_authority_reused": {
+    "aggregation_convention_reused_verbatim": true,
+    "market_price_convention_reused_verbatim": true,
+    "narrow_adaptation": "per_sibling_market cutoff semantics verified (not assumed) for the 3 P10B-reused events, which carry only a single event-level receipt timestamp field; no new event-level cutoff authority was created",
+    "new_policy_required_for": "Reuters point-forecast-vs-market comparison metric -- no reviewed P10D/P10E precedent exists in this repository at the frozen SHA above",
+    "source": "services/forecasting/cpi_p10a_binding.py (docs/reviews/CPI_E1_P10A_HISTORICAL_EVIDENCE_BINDING.md)"
+  },
+  "market_price_convention": {
+    "diagnostic": "two_sided_midpoint",
+    "primary": "yes_ask"
+  },
+  "missing_data_rule": "A sibling with no valid non-boundary yes_ask (yes_bid in (None, '0.0000') or yes_ask in (None, '1.0000'), reusing P10A's own boundary/None exclusion verbatim) is excluded from the primary metric entirely for BOTH sources on that sibling -- never imputed, never scored one-sided. A sibling whose Reuters observation is not positively proven available before that sibling's own frozen sibling_cutoff is excluded entirely. No interpolation, smoothing, or synthesized event-level cutoff is permitted at any step.",
+  "p10c_accepted_threshold_identity_digest": "11bc2723d0b75d0ab059f5c677ef061456f54d264592016b9e67402adffedec9",
+  "p10c_coverage_frozen_manifest_sha256": "ff1e54a47cddac3a44e987ea3e099e8a8a339f8d2749c25ddbd961f0c4a6b1be",
+  "p10c_phase2_branch_head_sha": "69d250e47e5f16436a4156e55a173ab54b18c023",
+  "p10c_phase2_merge_pr": 132,
+  "phase": "CPI-E1-P10D Phase 0 - predictive-edge scoring specification freeze",
+  "primary_metric": "sibling_level_threshold_directional_correctness_event_equal_aggregated",
+  "primary_metric_definition": "Per eligible sibling s of event e with strict-GT threshold t_s: reuters_direction(s) = 1 if reuters_value(e) > t_s else 0 (identical strict comparator to the contract's own settlement predicate -- no probability is synthesized from the point forecast). kalshi_direction(s) = 1 if yes_ask(s) > Decimal('0.5'), 0 if yes_ask(s) < Decimal('0.5'); yes_ask(s) == Decimal('0.5') exactly is a tie and is EXCLUDED from this metric's denominator for that sibling (see tie_rule). correctness(source, s) = int(direction(source, s) == outcome(s)). Per-event score = mean(correctness) over that event's eligible, non-tied siblings. Primary statistic = mean of per-event scores across the 4 events, computed separately for reuters_direction and kalshi_direction (event-equal weighting; NOT a single pooled mean over all eligible siblings).",
+  "production_influence": "0",
+  "research_only": true,
+  "reuters_proven_event_count": 4,
+  "reuters_proven_events": [
+    {
+      "accepted_sibling_count": 9,
+      "boundary_excluded_sibling_count": 4,
+      "event_ticker": "CPI-23AUG",
+      "primary_metric_eligible_sibling_count": 5,
+      "receipt_path": "docs/reviews/artifacts/cpi-p10c-reuters-phase2/CPI-23AUG/receipt.json",
+      "receipt_sha256": "d4e0cb79f7c14536bf8051effd6d62acd93aa11fcc285c54afcd05f5e1910a56",
+      "reference_month": "2023-08",
+      "reuters_timestamp_field": "published_at",
+      "reuters_timestamp_utc": "2023-09-13T10:07:35+00:00",
+      "reuters_value": "0.6",
+      "temporally_eligible_sibling_count": 9,
+      "uniform_sibling_cutoff": "2023-09-13T12:25:00+00:00"
+    },
+    {
+      "accepted_sibling_count": 6,
+      "boundary_excluded_sibling_count": 2,
+      "event_ticker": "KXCPI-25JUL",
+      "primary_metric_eligible_sibling_count": 4,
+      "receipt_path": "docs/reviews/artifacts/cpi-p10b-reuters/KXCPI-25JUL/receipt.json",
+      "receipt_sha256": "3a0c265dac5ffa61aadd76838a62c9948d4beb64ff4db131f3d407cd48bb69fc",
+      "reference_month": "2025-07",
+      "reuters_timestamp_field": "published_at",
+      "reuters_timestamp_utc": "2025-08-12T04:02:11+00:00",
+      "reuters_value": "0.2",
+      "temporally_eligible_sibling_count": 6,
+      "uniform_sibling_cutoff": "2025-08-12T12:29:00+00:00"
+    },
+    {
+      "accepted_sibling_count": 6,
+      "boundary_excluded_sibling_count": 2,
+      "event_ticker": "KXCPI-25DEC",
+      "primary_metric_eligible_sibling_count": 4,
+      "receipt_path": "docs/reviews/artifacts/cpi-p10b-reuters/KXCPI-25DEC/receipt.json",
+      "receipt_sha256": "0d49e5e46dc0c2c4269147ebd76de8cde7025517b325dbaa8f3deb4541e022fa",
+      "reference_month": "2025-12",
+      "reuters_timestamp_field": "governing_published_at",
+      "reuters_timestamp_utc": "2026-01-13T05:03:53+00:00",
+      "reuters_value": "0.3",
+      "temporally_eligible_sibling_count": 6,
+      "uniform_sibling_cutoff": "2026-01-13T13:29:00+00:00"
+    },
+    {
+      "accepted_sibling_count": 6,
+      "boundary_excluded_sibling_count": 0,
+      "event_ticker": "KXCPI-26JAN",
+      "primary_metric_eligible_sibling_count": 6,
+      "receipt_path": "docs/reviews/artifacts/cpi-p10b-reuters/KXCPI-26JAN/receipt.json",
+      "receipt_sha256": "95648c04529fa46095649d6f95c1191fc8884db23cb7616f9caff8df5a0a61b9",
+      "reference_month": "2026-01",
+      "reuters_timestamp_field": "conservative_admissibility_time",
+      "reuters_timestamp_utc": "2026-02-13T05:12:31+00:00",
+      "reuters_value": "0.3",
+      "temporally_eligible_sibling_count": 6,
+      "uniform_sibling_cutoff": "2026-02-13T13:29:00+00:00"
+    }
+  ],
+  "reuters_vs_kalshi_score_computed": false,
+  "schema": "cpi-e1-p10d-phase0-scoring-spec/v1",
+  "secondary_diagnostics": [
+    "kalshi_ask_crossing_brier_and_log_loss_restricted_to_the_4_event_cohort (P10A's own existing Brier/log-loss formula, unmodified, scoped to this roster only -- not computed for Reuters, which has no probability)",
+    "kalshi_midpoint_two_sided_diagnostic_where_both_quote_sides_are_valid",
+    "raw_sibling_level_hit_rate_unweighted (explicitly non-independent; diagnostic only, never the primary statistic)",
+    "per_event_breakdown_table (4 rows; never collapsed into the primary statistic without the event-equal weighting step)"
+  ],
+  "small_sample_interpretation_rule": "N=4 independent Reuters-proven events cannot by itself establish durable predictive edge. This checkpoint may conclude only one of: 'promising diagnostic', 'no apparent advantage', or 'inconclusive'. It may NOT conclude, imply, or be used as grounds for promotion to live trading, capital allocation, or any change to execution/production authority, regardless of the primary statistic's value.",
+  "spec_digest_sha256": "df91b06c665a68f338b9a190cfcbba34e45261785d2aeffeb5e2f52be6a0d650",
+  "tie_rule": "A Kalshi yes_ask of exactly Decimal('0.5000') is a directional tie and is excluded from the primary metric's denominator for that sibling only (retained in any Brier/log-loss diagnostic). Reuters never ties by this definition: reuters_value(e) == t_s resolves to direction 0, identically to how the contract's own settlement predicate (value > threshold, strict) resolves an exact-equality outcome -- no separate Reuters tie rule is introduced.",
+  "unit_of_independence": "event"
+}
