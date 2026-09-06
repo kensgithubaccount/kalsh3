@@ -1,10 +1,4 @@
-"""A0.2 read-only composition runner for the canonical A0.1 shadow kernel.
-
-This module deliberately contains orchestration only.  Market/event authority, weather
-authority, structural discovery, book validation, and append-only persistence remain in their
-reviewed modules.  A failed acquisition becomes an explicit kernel abstention; no caller can
-turn a missing forecast, market, event, or current book into an observation.
-"""
+"""Bounded A0.2 composition around the canonical A0.1 shadow kernel."""
 
 from __future__ import annotations
 
@@ -12,13 +6,16 @@ import gc
 import time
 from collections import Counter
 from collections.abc import Callable, Mapping
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass, field
 from datetime import UTC, date, datetime
 from pathlib import Path
 from typing import Any
 
 from services.forecasting.daily_temperature import route_daily_temperature
-from services.market_universe.event_snapshot import acquire_event_snapshot
+from services.market_universe.event_snapshot import (
+    AuthoritativeEventSnapshot,
+    acquire_event_snapshot,
+)
 from services.market_universe.market_snapshot import acquire_market_snapshot
 from services.market_universe.orderbook_snapshot import acquire_orderbook_snapshot
 from services.opportunity_engine.structural_measurement_runner import (
@@ -32,10 +29,48 @@ from services.prospective_shadow.kernel import (
     hydrate_market_authority,
     validate_start_receipt,
 )
-from services.real_time_market_data.orderbook import SequencedBook
+from services.real_time_market_data.orderbook import BookState, BookView, SequencedBook
 
 DEFAULT_CADENCE_SECONDS = 900
+MAX_CANDIDATE_EVENTS = 200
+MAX_STRUCTURAL_LEADS = 500
+MAX_MARKET_HYDRATIONS = 1000
+MAX_CYCLE_SECONDS = 300.0
 _PUBLIC_SOURCE = "external-api.kalshi.com"
+
+
+@dataclass(frozen=True, slots=True)
+class WeatherAcquisitionResult:
+    evidence: Mapping[str, Any] | None
+    operational_failure: bool = False
+    reason: str | None = None
+
+
+@dataclass(slots=True)
+class CycleDiagnostics:
+    markets_discovered: int = 0
+    events_discovered: int = 0
+    candidate_events: int = 0
+    candidate_leads: int = 0
+    exact_market_attempted: int = 0
+    exact_market_succeeded: int = 0
+    exact_market_failed: int = 0
+    exact_event_attempted: int = 0
+    exact_event_succeeded: int = 0
+    exact_event_failed: int = 0
+    books_attempted: int = 0
+    structural_cohorts: int = 0
+    structural_leads: int = 0
+    structural_observe: int = 0
+    structural_abstain: int = 0
+    weather_operational_failures: int = 0
+    cycle_duration_seconds: float = 0.0
+    operational_failures: list[str] = field(default_factory=list)
+
+    def as_dict(self) -> dict[str, Any]:
+        payload = asdict(self)
+        payload["operational_failures"] = list(self.operational_failures)
+        return payload
 
 
 @dataclass(frozen=True, slots=True)
@@ -43,20 +78,20 @@ class CycleResult:
     cycle_id: str
     weather: tuple[dict[str, Any], ...]
     structural: tuple[dict[str, Any], ...]
-    cohorts: int
-    leads: int
-    refresh_complete: bool
+    complete: bool
+    diagnostics: dict[str, Any]
 
     @property
     def observations(self) -> tuple[dict[str, Any], ...]:
         return self.weather + self.structural
 
 
-def _empty_book(ticker: str, now: datetime) -> Any:
+def _empty_book(ticker: str, now: datetime) -> BookView:
     return SequencedBook(ticker).view(now)
 
 
-def _book(ticker: str, now: datetime) -> Any:
+def _book(ticker: str, now: datetime, diagnostics: CycleDiagnostics) -> BookView:
+    diagnostics.books_attempted += 1
     snapshot = acquire_orderbook_snapshot(ticker, clock=lambda: now)
     if not snapshot.succeeded:
         return _empty_book(ticker, now)
@@ -72,12 +107,161 @@ def _book(ticker: str, now: datetime) -> Any:
     return book.view(now)
 
 
-def _authority(summary: Mapping[str, Any], now: datetime) -> Any:
-    market = acquire_market_snapshot(str(summary["ticker"]), clock=lambda: now)
-    event = acquire_event_snapshot(str(summary["event_ticker"]), clock=lambda: now)
-    if not market.succeeded or not event.succeeded:
+def _event_snapshot(
+    event_ticker: str,
+    now: datetime,
+    cache: dict[str, AuthoritativeEventSnapshot | None],
+    diagnostics: CycleDiagnostics,
+) -> AuthoritativeEventSnapshot | None:
+    if event_ticker in cache:
+        return cache[event_ticker]
+    diagnostics.exact_event_attempted += 1
+    snapshot = acquire_event_snapshot(event_ticker, clock=lambda: now)
+    cache[event_ticker] = snapshot if snapshot.succeeded else None
+    if snapshot.succeeded:
+        diagnostics.exact_event_succeeded += 1
+    else:
+        diagnostics.exact_event_failed += 1
+    return cache[event_ticker]
+
+
+def _authority(
+    market: Any,
+    event_snapshot: AuthoritativeEventSnapshot | None,
+    now: datetime,
+    diagnostics: CycleDiagnostics,
+) -> Any:
+    diagnostics.exact_market_attempted += 1
+    snapshot = acquire_market_snapshot(market.ticker, clock=lambda: now)
+    if not snapshot.succeeded or event_snapshot is None:
+        diagnostics.exact_market_failed += 1
         return None
-    return hydrate_market_authority(summary, market_snapshot=market, event_snapshot=event)
+    diagnostics.exact_market_succeeded += 1
+    return hydrate_market_authority(
+        {"ticker": market.ticker, "event_ticker": market.event_ticker},
+        market_snapshot=snapshot,
+        event_snapshot=event_snapshot,
+    )
+
+
+def _record_failure(diagnostics: CycleDiagnostics, reason: str) -> None:
+    diagnostics.operational_failures.append(reason)
+
+
+def _weather_cycle(
+    *,
+    repo: Any,
+    store: ShadowObservationStore,
+    start_receipt: Mapping[str, Any],
+    acquired_at: datetime,
+    weather_acquirer: Callable[[date], WeatherAcquisitionResult] | None,
+    clock: Callable[[], datetime],
+    diagnostics: CycleDiagnostics,
+) -> list[dict[str, Any]]:
+    if weather_acquirer is None:
+        diagnostics.weather_operational_failures += 1
+        _record_failure(diagnostics, "WEATHER_ACQUISITION_RUNTIME_DEPENDENCY_MISSING")
+        return []
+    forecast_cache: dict[date, WeatherAcquisitionResult] = {}
+    event_cache: dict[str, AuthoritativeEventSnapshot | None] = {}
+    rows: list[dict[str, Any]] = []
+    for market in repo.markets.values():
+        event = repo.events.get(market.event_ticker)
+        if event is None:
+            continue
+        route = route_daily_temperature(market, event)
+        if route.contract is None:
+            continue
+        target_date = route.contract.local_date
+        if target_date not in forecast_cache:
+            try:
+                forecast_cache[target_date] = weather_acquirer(target_date)
+            except Exception as exc:
+                forecast_cache[target_date] = WeatherAcquisitionResult(
+                    None, True, f"weather acquisition failed: {type(exc).__name__}"
+                )
+        result = forecast_cache[target_date]
+        if result.operational_failure:
+            diagnostics.weather_operational_failures += 1
+            _record_failure(diagnostics, result.reason or "WEATHER_ACQUISITION_FAILURE")
+            return []
+        now = clock()
+        event_snapshot = _event_snapshot(event.ticker, now, event_cache, diagnostics)
+        authority = _authority(market, event_snapshot, now, diagnostics)
+        row = capture_weather_observation(
+            market=authority.market if authority is not None else market,
+            event=authority.event if authority is not None else event,
+            forecast=result.evidence or {},
+            book=_book(market.ticker, now, diagnostics),
+            acquired_at=acquired_at,
+            decision_at=now,
+            authority=authority,
+            start_receipt_digest=str(start_receipt["receipt_digest"]),
+        )
+        store.append(row, now=now)
+        rows.append(row)
+    return rows
+
+
+def _structural_cycle(
+    *,
+    repo: Any,
+    scan: Any,
+    store: ShadowObservationStore,
+    start_receipt: Mapping[str, Any],
+    acquired_at: datetime,
+    clock: Callable[[], datetime],
+    diagnostics: CycleDiagnostics,
+) -> tuple[list[dict[str, Any]], bool]:
+    leads = tuple(scan.leads)
+    diagnostics.candidate_leads = len(leads)
+    diagnostics.candidate_events = len({lead.event_ticker for lead in leads})
+    diagnostics.structural_cohorts = scan.manifest.structural_cohorts
+    diagnostics.structural_leads = len(leads)
+    if len(leads) > MAX_STRUCTURAL_LEADS or diagnostics.candidate_events > MAX_CANDIDATE_EVENTS:
+        _record_failure(diagnostics, "STRUCTURAL_CANDIDATE_BOUND_EXCEEDED")
+        return [], False
+
+    event_cache: dict[str, AuthoritativeEventSnapshot | None] = {}
+    rows: list[dict[str, Any]] = []
+    for lead in leads:
+        if diagnostics.exact_market_attempted + 2 > MAX_MARKET_HYDRATIONS:
+            _record_failure(diagnostics, "STRUCTURAL_MARKET_HYDRATION_BOUND_EXCEEDED")
+            return rows, False
+        now = clock()
+        event_snapshot = _event_snapshot(lead.event_ticker, now, event_cache, diagnostics)
+        broad = repo.markets.get(lead.broad_market_ticker)
+        narrow = repo.markets.get(lead.narrow_market_ticker)
+        broad_authority = (
+            None if broad is None else _authority(broad, event_snapshot, now, diagnostics)
+        )
+        narrow_authority = (
+            None if narrow is None else _authority(narrow, event_snapshot, now, diagnostics)
+        )
+        if event_snapshot is None or broad_authority is None or narrow_authority is None:
+            _record_failure(diagnostics, "STRUCTURAL_EXACT_AUTHORITY_UNAVAILABLE")
+            return rows, False
+        authorities = {
+            lead.broad_market_ticker: broad_authority,
+            lead.narrow_market_ticker: narrow_authority,
+        }
+        broad_book = _book(lead.broad_market_ticker, now, diagnostics)
+        narrow_book = _book(lead.narrow_market_ticker, now, diagnostics)
+        if broad_book.state is not BookState.CURRENT or narrow_book.state is not BookState.CURRENT:
+            _record_failure(diagnostics, "STRUCTURAL_ORDERBOOK_ACQUISITION_FAILURE")
+            return rows, False
+        row = capture_structural_observation(
+            lead=lead,
+            broad_book=broad_book,
+            narrow_book=narrow_book,
+            acquired_at=acquired_at,
+            decision_at=now,
+            leg_authority=authorities,
+            start_receipt_digest=str(start_receipt["receipt_digest"]),
+        )
+        store.append(row, now=now)
+        rows.append(row)
+    return rows, True
 
 
 def run_once(
@@ -86,82 +270,66 @@ def run_once(
     store: ShadowObservationStore,
     start_receipt: Mapping[str, Any],
     cycle_id: str,
-    weather_acquirer: Callable[[date], Mapping[str, Any] | None] | None = None,
+    weather_acquirer: Callable[[date], WeatherAcquisitionResult] | None = None,
     clock: Callable[[], datetime] = lambda: datetime.now(UTC),
 ) -> CycleResult:
-    """Run one public-read cycle and append only validated kernel payloads."""
     validate_start_receipt(start_receipt)
+    started = time.monotonic()
     acquired_at = clock()
-    refresh = refresh_universe(str(archive), compressed_evidence=True, clock=clock)
-    if not refresh.complete:
-        return CycleResult(cycle_id, (), (), 0, 0, False)
-    # The canonical refresh uses short-lived SQLite connections.  Explicitly finalize any
-    # deferred connection objects before opening the independent A0.1 store, avoiding a
-    # platform-specific descriptor/WAL race after a large live universe refresh.
+    diagnostics = CycleDiagnostics()
+    try:
+        refresh = refresh_universe(str(archive), compressed_evidence=True, clock=clock)
+    except Exception as exc:
+        _record_failure(diagnostics, f"UNIVERSE_DISCOVERY_FAILURE:{type(exc).__name__}")
+        diagnostics.cycle_duration_seconds = time.monotonic() - started
+        return CycleResult(cycle_id, (), (), False, diagnostics.as_dict())
     gc.collect()
-
-    weather_rows: list[dict[str, Any]] = []
-    forecast_cache: dict[date, Mapping[str, Any] | None] = {}
-    for market in refresh.repo.markets.values():
-        event = refresh.repo.events.get(market.event_ticker)
-        if event is None:
-            continue
-        route = route_daily_temperature(market, event)
-        if route.contract is None:
-            continue
-        now = clock()
-        authority = _authority({"ticker": market.ticker, "event_ticker": event.ticker}, now)
-        target_date = route.contract.local_date
-        if target_date not in forecast_cache:
-            forecast_cache[target_date] = (
-                None if weather_acquirer is None else weather_acquirer(target_date)
-            )
-        forecast = forecast_cache[target_date]
-        row = capture_weather_observation(
-            market=authority.market if authority is not None else market,
-            event=authority.event if authority is not None else event,
-            forecast=forecast or {},
-            book=_book(market.ticker, now),
-            acquired_at=acquired_at,
-            decision_at=now,
-            authority=authority,
-            start_receipt_digest=str(start_receipt["receipt_digest"]),
-        )
-        store.append(row, now=now)
-        weather_rows.append(row)
+    diagnostics.markets_discovered = len(refresh.repo.markets)
+    diagnostics.events_discovered = len(refresh.repo.events)
+    if not refresh.complete:
+        _record_failure(diagnostics, "UNIVERSE_DISCOVERY_INCOMPLETE")
+        diagnostics.cycle_duration_seconds = time.monotonic() - started
+        return CycleResult(cycle_id, (), (), False, diagnostics.as_dict())
+    if time.monotonic() - started > MAX_CYCLE_SECONDS:
+        _record_failure(diagnostics, "CYCLE_TIMEOUT_AFTER_DISCOVERY")
+        diagnostics.cycle_duration_seconds = time.monotonic() - started
+        return CycleResult(cycle_id, (), (), False, diagnostics.as_dict())
 
     scan = run_discovery(refresh.repo, source_authority=_PUBLIC_SOURCE)
-    structural_rows: list[dict[str, Any]] = []
-    for lead in scan.leads:
-        now = clock()
-        broad_summary = {"ticker": lead.broad_market_ticker, "event_ticker": lead.event_ticker}
-        narrow_summary = {"ticker": lead.narrow_market_ticker, "event_ticker": lead.event_ticker}
-        broad_authority = _authority(broad_summary, now)
-        narrow_authority = _authority(narrow_summary, now)
-        authorities = None
-        if broad_authority is not None and narrow_authority is not None:
-            authorities = {
-                lead.broad_market_ticker: broad_authority,
-                lead.narrow_market_ticker: narrow_authority,
-            }
-        row = capture_structural_observation(
-            lead=lead,
-            broad_book=_book(lead.broad_market_ticker, now),
-            narrow_book=_book(lead.narrow_market_ticker, now),
-            acquired_at=acquired_at,
-            decision_at=now,
-            leg_authority=authorities,
-            start_receipt_digest=str(start_receipt["receipt_digest"]),
-        )
-        store.append(row, now=now)
-        structural_rows.append(row)
+    structural_rows, structural_complete = _structural_cycle(
+        repo=refresh.repo,
+        scan=scan,
+        store=store,
+        start_receipt=start_receipt,
+        acquired_at=acquired_at,
+        clock=clock,
+        diagnostics=diagnostics,
+    )
+    weather_rows = _weather_cycle(
+        repo=refresh.repo,
+        store=store,
+        start_receipt=start_receipt,
+        acquired_at=acquired_at,
+        weather_acquirer=weather_acquirer,
+        clock=clock,
+        diagnostics=diagnostics,
+    )
+    diagnostics.structural_observe = sum(
+        row["decision"] == "OBSERVE" for row in structural_rows
+    )
+    diagnostics.structural_abstain = sum(
+        row["decision"] == "ABSTAIN" for row in structural_rows
+    )
+    if time.monotonic() - started > MAX_CYCLE_SECONDS:
+        _record_failure(diagnostics, "CYCLE_TIMEOUT")
+        structural_complete = False
+    diagnostics.cycle_duration_seconds = time.monotonic() - started
     return CycleResult(
         cycle_id,
         tuple(weather_rows),
         tuple(structural_rows),
-        scan.manifest.structural_cohorts,
-        len(scan.leads),
-        True,
+        structural_complete,
+        diagnostics.as_dict(),
     )
 
 
@@ -170,19 +338,34 @@ def run_forever(*, interval_seconds: float = DEFAULT_CADENCE_SECONDS, **kwargs: 
         raise ValueError("interval_seconds must be non-negative")
     index = 0
     while True:
-        run_once(cycle_id=f"cycle-{index}", **kwargs)
+        result = run_once(cycle_id=f"cycle-{index}", **kwargs)
+        if not result.complete:
+            raise RuntimeError("A0.2 cycle was incomplete; continuous collection stopped")
         index += 1
         time.sleep(interval_seconds)
 
 
 def summarize(cycles: list[CycleResult]) -> dict[str, Any]:
     rows = [row for cycle in cycles for row in cycle.observations]
-    by_adapter: dict[str, dict[str, Any]] = {}
-    for adapter in ("daily_weather", "structural_threshold"):
-        selected = [row for row in rows if row["strategy_family"] == adapter]
-        by_adapter[adapter] = {
-            "observe": sum(row["decision"] == "OBSERVE" for row in selected),
-            "abstain": sum(row["decision"] == "ABSTAIN" for row in selected),
-            "reasons": dict(Counter(row["reason_code"] for row in selected if row["reason_code"])),
+    return {
+        adapter: {
+            "observe": sum(
+                row["decision"] == "OBSERVE"
+                for row in rows
+                if row["strategy_family"] == adapter
+            ),
+            "abstain": sum(
+                row["decision"] == "ABSTAIN"
+                for row in rows
+                if row["strategy_family"] == adapter
+            ),
+            "reasons": dict(
+                Counter(
+                    row["reason_code"]
+                    for row in rows
+                    if row["strategy_family"] == adapter and row["reason_code"]
+                )
+            ),
         }
-    return by_adapter
+        for adapter in ("daily_weather", "structural_threshold")
+    }

@@ -5,32 +5,57 @@ from __future__ import annotations
 import argparse
 import json
 import sys
-from collections.abc import Mapping
 from datetime import UTC, date, datetime
 from pathlib import Path
 
 # Direct script execution places ``scripts/`` first on sys.path; bind imports to this checkout.
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
+from scripts.collect_m27c_weather_calibration_coverage import WGRIB2_VERSION, _resolve_wgrib2
 from scripts.run_m27_current_weather_evidence import compose as compose_weather
 from services.prospective_shadow.kernel import ShadowObservationStore, validate_start_receipt
-from services.prospective_shadow.runner import DEFAULT_CADENCE_SECONDS, run_forever, run_once
+from services.prospective_shadow.runner import (
+    DEFAULT_CADENCE_SECONDS,
+    WeatherAcquisitionResult,
+    run_forever,
+    run_once,
+)
 
 
-def _weather_acquirer(day: date) -> Mapping[str, object] | None:
+def _weather_acquirer(day: date) -> WeatherAcquisitionResult:
+    try:
+        _resolve_wgrib2(None)
+    except Exception:
+        return WeatherAcquisitionResult(
+            None,
+            True,
+            f"WEATHER_ACQUISITION_RUNTIME_DEPENDENCY_MISSING:wgrib2 {WGRIB2_VERSION} required",
+        )
     result = compose_weather(day, transport=lambda url: _weather_transport(url))
-    if result.get("classification") != "SUCCESS":
-        return None
+    classification = result.get("classification")
+    if classification == "EVALUATION_BLOCKED":
+        return WeatherAcquisitionResult(
+            None,
+            True,
+            f"WEATHER_ACQUISITION_EVALUATION_BLOCKED:{result.get('reason')}",
+        )
+    if classification != "SUCCESS":
+        return WeatherAcquisitionResult(
+            None, False, f"WEATHER_AUTHORITY_REJECTED:{classification}:{result.get('reason')}"
+        )
     records = result.get("records")
     if not isinstance(records, list):
-        return None
-    return next(
+        return WeatherAcquisitionResult(None, False, "WEATHER_AUTHORITY_RECORDS_MISSING")
+    evidence = next(
         (
             record
             for record in records
             if isinstance(record, dict) and record.get("target_date") == day.isoformat()
         ),
         None,
+    )
+    return WeatherAcquisitionResult(
+        evidence, False, None if evidence is not None else "WEATHER_TARGET_DATE_UNAVAILABLE"
     )
 
 
@@ -64,11 +89,15 @@ def main() -> int:
     if args.once:
         result = run_once(cycle_id=datetime.now(UTC).isoformat(), **kwargs)
         payload = {
-            "refresh_complete": result.refresh_complete,
+            "complete": result.complete,
+            "diagnostics": result.diagnostics,
             "summary": {"weather": len(result.weather), "structural": len(result.structural)},
         }
+        (args.run_dir / f"cycle-{result.cycle_id}.json").write_text(
+            json.dumps(payload, sort_keys=True, indent=2) + "\n"
+        )
         print(json.dumps(payload, sort_keys=True))
-        return 0
+        return 0 if result.complete else 2
     run_forever(interval_seconds=args.interval_seconds, **kwargs)
     return 0
 

@@ -1,0 +1,136 @@
+"""A0.2 bounded-runner safety and failure-taxonomy tests."""
+
+from __future__ import annotations
+
+import json
+from datetime import UTC, datetime
+from pathlib import Path
+from types import SimpleNamespace
+
+from services.prospective_shadow import runner
+from services.prospective_shadow.kernel import ShadowObservationStore
+
+ROOT = Path(__file__).resolve().parents[1]
+RECEIPT = json.loads((ROOT / "artifacts/a01/prospective_start.json").read_text())
+NOW = datetime(2026, 9, 6, 17, 0, tzinfo=UTC)
+
+
+def _empty_refresh() -> SimpleNamespace:
+    return SimpleNamespace(
+        complete=True,
+        repo=SimpleNamespace(markets={}, events={}),
+    )
+
+
+def _empty_scan() -> SimpleNamespace:
+    return SimpleNamespace(
+        leads=(),
+        manifest=SimpleNamespace(structural_cohorts=0),
+    )
+
+
+def test_weather_operational_failure_is_diagnostic_only(monkeypatch, tmp_path) -> None:
+    monkeypatch.setattr(runner, "refresh_universe", lambda *args, **kwargs: _empty_refresh())
+    monkeypatch.setattr(runner, "run_discovery", lambda *args, **kwargs: _empty_scan())
+    store = ShadowObservationStore(tmp_path / "shadow.sqlite", RECEIPT)
+    result = runner.run_once(
+        archive=tmp_path / "archive.sqlite",
+        store=store,
+        start_receipt=RECEIPT,
+        cycle_id="cycle-1",
+        weather_acquirer=lambda _day: runner.WeatherAcquisitionResult(
+            None, True, "WEATHER_ACQUISITION_EVALUATION_BLOCKED:wgrib2 missing"
+        ),
+        clock=lambda: NOW,
+    )
+    assert result.complete is True
+    assert result.weather == ()
+    assert result.structural == ()
+    assert result.diagnostics["weather_operational_failures"] == 0
+    assert result.diagnostics["operational_failures"] == []
+    assert store.validate(now=NOW)["observations"] == 0
+
+
+def test_missing_weather_runtime_dependency_is_recorded_without_rows(tmp_path) -> None:
+    diagnostics = runner.CycleDiagnostics()
+    rows = runner._weather_cycle(
+        repo=SimpleNamespace(markets={}, events={}),
+        store=ShadowObservationStore(tmp_path / "shadow.sqlite", RECEIPT),
+        start_receipt=RECEIPT,
+        acquired_at=NOW,
+        weather_acquirer=None,
+        clock=lambda: NOW,
+        diagnostics=diagnostics,
+    )
+    assert rows == []
+    assert diagnostics.weather_operational_failures == 1
+    assert diagnostics.operational_failures == [
+        "WEATHER_ACQUISITION_RUNTIME_DEPENDENCY_MISSING"
+    ]
+
+
+def test_event_snapshot_cache_is_once_per_event(monkeypatch) -> None:
+    calls: list[str] = []
+
+    class Snapshot:
+        succeeded = True
+
+    monkeypatch.setattr(
+        runner,
+        "acquire_event_snapshot",
+        lambda ticker, clock: calls.append(ticker) or Snapshot(),
+    )
+    cache = {}
+    diagnostics = runner.CycleDiagnostics()
+    assert runner._event_snapshot("EVT", NOW, cache, diagnostics) is not None
+    assert runner._event_snapshot("EVT", NOW, cache, diagnostics) is not None
+    assert calls == ["EVT"]
+    assert diagnostics.exact_event_attempted == 1
+
+
+def test_structural_hydration_bound_cannot_be_complete_zero_lead(tmp_path) -> None:
+    scan = SimpleNamespace(
+        leads=tuple(SimpleNamespace(event_ticker=f"EVT-{index}") for index in range(501)),
+        manifest=SimpleNamespace(structural_cohorts=501),
+    )
+    diagnostics = runner.CycleDiagnostics()
+    rows, complete = runner._structural_cycle(
+        repo=SimpleNamespace(markets={}, events={}),
+        scan=scan,
+        store=ShadowObservationStore(tmp_path / "shadow.sqlite", RECEIPT),
+        start_receipt=RECEIPT,
+        acquired_at=NOW,
+        clock=lambda: NOW,
+        diagnostics=diagnostics,
+    )
+    assert rows == []
+    assert complete is False
+    assert "STRUCTURAL_CANDIDATE_BOUND_EXCEEDED" in diagnostics.operational_failures
+
+
+def test_three_restart_replay_cycles_are_complete_and_deterministic(monkeypatch, tmp_path) -> None:
+    monkeypatch.setattr(runner, "refresh_universe", lambda *args, **kwargs: _empty_refresh())
+    monkeypatch.setattr(runner, "run_discovery", lambda *args, **kwargs: _empty_scan())
+    store_path = tmp_path / "shadow.sqlite"
+    results = []
+    for index in range(3):
+        store = ShadowObservationStore(store_path, RECEIPT)
+        results.append(
+            runner.run_once(
+                archive=tmp_path / "archive.sqlite",
+                store=store,
+                start_receipt=RECEIPT,
+                cycle_id=f"cycle-{index}",
+                weather_acquirer=lambda _day: runner.WeatherAcquisitionResult(
+                    None, True, "missing"
+                ),
+                clock=lambda: NOW,
+            )
+        )
+        assert store.validate(now=NOW)["observations"] == 0
+    assert [result.complete for result in results] == [True, True, True]
+    stable = [
+        {key: value for key, value in result.diagnostics.items() if key != "cycle_duration_seconds"}
+        for result in results
+    ]
+    assert stable[0] == stable[1] == stable[2]
