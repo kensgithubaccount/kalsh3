@@ -49,6 +49,8 @@ class WeatherAcquisitionResult:
 
 @dataclass(slots=True)
 class CycleDiagnostics:
+    cycle_started_at: str = ""
+    cycle_deadline_seconds: float = MAX_CYCLE_SECONDS
     markets_discovered: int = 0
     events_discovered: int = 0
     candidate_events: int = 0
@@ -313,6 +315,7 @@ def run_once(
     deadline = CycleDeadline(MAX_CYCLE_SECONDS, monotonic=monotonic)
     acquired_at = clock()
     diagnostics = CycleDiagnostics()
+    diagnostics.cycle_started_at = acquired_at.isoformat()
     try:
         refresh = refresh_universe(
             str(archive), compressed_evidence=True, clock=clock, deadline=deadline
