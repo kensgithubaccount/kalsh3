@@ -40,7 +40,7 @@ primary metric, aggregation rule, or tie/boundary rule changed in this
 repair -- confirmed by the unchanged 19/27 eligibility total and unchanged
 `spec["primary_metric"]`/`spec["aggregation_rule"]` values (see tests).
 
-## Independent verification of canonical state (not trusted from the task text)
+## Historical initial Phase 0 start-state verification (not current canonical state)
 
 Ran `git ls-remote https://github.com/kensgithubaccount/kalsh3.git HEAD
 refs/heads/main refs/heads/cpi-e1-p10c-reuters refs/pull/131/head` directly
@@ -48,9 +48,11 @@ against GitHub, then cloned into a fresh isolated worktree
 (`/Users/ksyme/worktrees/cpi-e1-p10d-phase0-scoring-spec`, never the shared
 checkout, per standing instruction) and confirmed:
 
-- `origin/main` HEAD = `9169160c4583c4a6e353c5eb6c01eb59b816d31c`, tree
+- **Initial Phase 0 verified start state:** `origin/main` HEAD =
+  `9169160c4583c4a6e353c5eb6c01eb59b816d31c`, tree
   `114569cd2ab1c86f892a529d1c1b6eb24457bff7` -- **matches the SHA/tree
-  supplied in the task exactly.**
+  supplied when Phase 0 began.** This is historical provenance, not the
+  current canonical main.
 - `git log --oneline -15` on that main shows `9169160` is
   "Merge pull request #132 from kensgithubaccount/cpi-e1-p10c-reuters",
   and `git merge-base --is-ancestor origin/cpi-e1-p10c-reuters main`
@@ -58,6 +60,10 @@ checkout, per standing instruction) and confirmed:
 - Ran `build_binding()` (the actual P10A binder, not documentation) against
   this checkout: 42 accepted independent events, 341 accepted sibling rows
   -- unchanged from the frozen Phase 1 identity.
+
+The **final/current Phase 0 canonical base** for this document is
+`ecf52aabae7f5eeb9beb4cbebd46226103482837`, tree
+`b19e6ed38850d39df9d7a970fef087fb85439764`.
 
 This corrects a stale prior-session note (this agent's own memory) that
 still recorded Phase 2 as unmerged on branch `cpi-e1-p10c-reuters`; that
