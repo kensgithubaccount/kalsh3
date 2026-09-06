@@ -332,7 +332,10 @@ class UniverseObservationArchive:
 
     @property
     def authority_id(self) -> str:
-        with self._connect(read_only=True) as db:
+        # This identity is read during an append transaction as well as during archive
+        # validation.  Reuse the normal connection mode so SQLite can safely resolve the
+        # database while its WAL is active; the query itself remains read-only.
+        with self._connect() as db:
             self._validate_schema(db)
             row = db.execute(
                 "SELECT archive_authority_id FROM archive_metadata WHERE singleton=1"
