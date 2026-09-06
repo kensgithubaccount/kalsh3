@@ -10,6 +10,7 @@ import pytest
 
 from services.cycle_deadline import CycleDeadline, CycleDeadlineExceeded
 from services.market_universe.sync import MemoryUniverseRepository, SyncRun, UniverseSynchronizer
+from services.opportunity_engine.structural_measurement_runner import refresh_universe
 from services.prospective_shadow import runner
 from services.prospective_shadow.kernel import ShadowObservationStore
 
@@ -114,7 +115,7 @@ def test_exact_event_reconciliation_respects_deadline() -> None:
 def test_incomplete_refresh_is_not_authoritative(tmp_path: Path) -> None:
     clock = FakeClock()
     transport = PageTransport([{"markets": [], "cursor": "next"}], clock, delay=2)
-    result = runner.refresh_universe(
+    result = refresh_universe(
         str(tmp_path / "archive.sqlite3"),
         transport=transport,
         deadline=CycleDeadline(1, monotonic=clock),
