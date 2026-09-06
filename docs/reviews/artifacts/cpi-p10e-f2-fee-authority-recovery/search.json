@@ -1,0 +1,74 @@
+{
+  "schema": "cpi-e1-p10e-f2-fee-authority-recovery/v1",
+  "phase": "CPI-E1-P10E-F2 targeted historical fee evidence acquisition",
+  "acquired_at": "2026-09-06T22:32:33Z",
+  "canonical_main_sha": "2027c82d028d4cd08655e2f099157013952f927a",
+  "canonical_main_tree": "cf2ce666c954a6e5894c762a0ae2a3eeeaaba63b",
+  "scope": [
+    {
+      "event_ticker": "CPI-23AUG",
+      "market_ticker": "CPI-23AUG-T0.6",
+      "execution_timestamp": "2023-09-13T12:25:00+00:00",
+      "side": "NO",
+      "required_class": "marketable crossing / taker"
+    },
+    {
+      "event_ticker": "KXCPI-25JUL",
+      "market_ticker": "KXCPI-25JUL-T0.2",
+      "execution_timestamp": "2025-08-12T12:29:00+00:00",
+      "side": "NO",
+      "required_class": "marketable crossing / taker"
+    }
+  ],
+  "sources_searched": [
+    {
+      "identity": "KALSHI-REGULATORY-FEE-SCHEDULE-LIVE",
+      "locator": "https://kalshi.com/regulatory/fee-schedule",
+      "authority_class": "official Kalshi regulatory page",
+      "result": "no historical effective-date version or timestamp binding exposed"
+    },
+    {
+      "identity": "KALSHI-FEE-SCHEDULE-OCT-2025",
+      "locator": "https://kalshi.com/docs/kalshi-fee-schedule.pdf",
+      "authority_class": "official Kalshi fee schedule",
+      "result": "last updated and effective 2025-10-01; post-August locator only"
+    },
+    {
+      "identity": "KALSHI-SERIES-FEE-CHANGES-API",
+      "locator": "https://external-api.kalshi.com/trade-api/v2/series/fee_changes?series_ticker={CPI|KXCPI}&show_historical=true",
+      "authority_class": "official Kalshi API",
+      "result": "empty series_fee_change_arr for both scoped series; no historical record returned",
+      "raw_response_sha256": "6780c8eb7edbb5e1ca3b15166f17cef054befacb2cc8f4bc479c54074a9a2c18",
+      "raw_response_retained": false,
+      "load_bearing": false,
+      "limitation": "endpoint documented as added 2025-09-21; cannot prove 2023 continuity or August 2025 applicability"
+    },
+    {
+      "identity": "CFTC-49335-FINAL",
+      "locator": "https://www.cftc.gov/IndustryOversight/IndustryFilings/TradingOrganizationRules/49335",
+      "authority_class": "CFTC filing index and existing retained schedule",
+      "result": "2022-09-22 exact endpoint only; continuity to 2023 not established"
+    },
+    {
+      "identity": "CFTC-KEX-RULEBOOK-2023-EXHIBIT-M231130",
+      "locator": "https://www.cftc.gov/filings/documents/2023/orgkexkalshiexhibitm231130.pdf",
+      "authority_class": "CFTC rulebook",
+      "result": "publication/notice framework and fee-rule text; no historical schedule binding either execution"
+    },
+    {
+      "identity": "CFTC-KEX-FEE-FILING-SEARCH",
+      "locator": "https://www.cftc.gov/IndustryOversight/IndustryFilings/TradingOrganizationRules",
+      "authority_class": "CFTC filing index",
+      "result": "reviewed scoped KEX fee and waiver records; no positive base taker schedule effective on either timestamp"
+    }
+  ],
+  "new_load_bearing_sources": [],
+  "existing_load_bearing_sources_unchanged": [
+    "evidence/cpi_p9b_fee_authority/manifest.json",
+    "evidence/cpi_p9b_fee_authority/authority_timeline.json",
+    "docs/reviews/artifacts/cpi-p10e-f1-fee-authority-recovery/coverage.json"
+  ],
+  "outcome_blindness": true,
+  "economics_calculated": false,
+  "classification": "BLOCKED — HISTORICAL FEE AUTHORITY INCOMPLETE"
+}

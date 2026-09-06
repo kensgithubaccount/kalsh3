@@ -1,0 +1,46 @@
+{
+  "schema": "cpi-e1-p10e-f2-fee-authority-recovery/v1",
+  "canonical_main_sha": "2027c82d028d4cd08655e2f099157013952f927a",
+  "canonical_main_tree": "cf2ce666c954a6e5894c762a0ae2a3eeeaaba63b",
+  "prior_coverage_path": "docs/reviews/artifacts/cpi-p10e-f1-fee-authority-recovery/coverage.json",
+  "prior_coverage_digest": "d380a351900743095ba942a304d425144966923e450e82f4521d01b4286340d8",
+  "search_artifact": "docs/reviews/artifacts/cpi-p10e-f2-fee-authority-recovery/search.json",
+  "candidate_fee_coverage": [
+    {
+      "event_ticker": "CPI-23AUG",
+      "market_ticker": "CPI-23AUG-T0.6",
+      "execution_timestamp": "2023-09-13T12:25:00+00:00",
+      "side": "NO",
+      "required_class": "marketable crossing / taker",
+      "fee_status": "UNKNOWN",
+      "authority_identity": "UNPROVEN_BETWEEN_CFTC_49335_AND_MD_28_1",
+      "reason": "The bounded search found no positive official schedule, amendment, archived page, or regulatory continuity principle binding the 2022 endpoint formula to 2023-09-13. Formula, rounding, minimum/cap, application granularity, and CPI applicability therefore remain unproven for this execution."
+    },
+    {
+      "event_ticker": "KXCPI-25JUL",
+      "market_ticker": "KXCPI-25JUL-T0.2",
+      "execution_timestamp": "2025-08-12T12:29:00+00:00",
+      "side": "NO",
+      "required_class": "marketable crossing / taker",
+      "fee_status": "UNKNOWN",
+      "authority_identity": "OCT_2025_LOCATOR_ONLY",
+      "reason": "The official October 2025 schedule is post-date locator evidence. The official historical-fee API returned no record for KXCPI and no earlier effective schedule was found, so August 12 remains unbound."
+    }
+  ],
+  "existing_endpoint_formula_not_promoted": "round_up(0.07 * C * P * (1-P)); next_cent",
+  "load_bearing_unknowns": [
+    "historical regime at each execution",
+    "taker class applicability to each CPI series",
+    "minimum fee",
+    "maximum or cap",
+    "per-order versus per-fill behavior",
+    "YES/NO side applicability",
+    "CPI-specific exception or waiver"
+  ],
+  "counts": {"pass": 0, "unknown": 2, "failure": 0},
+  "phase1_ready": false,
+  "strategy_pnl_computed": false,
+  "outcomes_used_for_fee_selection": false,
+  "classification": "BLOCKED — HISTORICAL FEE AUTHORITY INCOMPLETE",
+  "coverage_digest_sha256": "db4c9ab719701d3b2be04a109c5e60933c78db484fd9f32d5ed1e2ef9be7d660"
+}
