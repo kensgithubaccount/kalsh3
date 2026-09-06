@@ -115,21 +115,24 @@ authority.
 
 **Reuters predictor evidence (4 positively-proven events only):**
 
-| Event | Ref. month | Value | Timestamp field (per-receipt, NOT uniform) | Timestamp (UTC) | Receipt |
+| Event | Ref. month | Value | Resolver-selected candidate (audit output, not a lookup table) | Timestamp (UTC) | Receipt |
 |---|---|---|---|---|---|
 | CPI-23AUG | 2023-08 | 0.6 | `published_at` | 2023-09-13T10:07:35Z | `docs/reviews/artifacts/cpi-p10c-reuters-phase2/CPI-23AUG/receipt.json` |
 | KXCPI-25JUL | 2025-07 | 0.2 | `published_at` | 2025-08-12T04:02:11Z | `docs/reviews/artifacts/cpi-p10b-reuters/KXCPI-25JUL/receipt.json` |
 | KXCPI-25DEC | 2025-12 | 0.3 | `governing_published_at` | 2026-01-13T05:03:53Z | `docs/reviews/artifacts/cpi-p10b-reuters/KXCPI-25DEC/receipt.json` |
 | KXCPI-26JAN | 2026-01 | 0.3 | `conservative_admissibility_time` | 2026-02-13T05:12:31Z | `docs/reviews/artifacts/cpi-p10b-reuters/KXCPI-26JAN/receipt.json` |
 
-**Discovered and fail-closed against:** the proven-timestamp field name is
+**Discovered and fail-closed against:** the proven-timestamp candidate is
 *not uniform across receipts* -- `KXCPI-25DEC` and `KXCPI-26JAN`'s
 `published_at` fields are literally `null`; the real value lives under a
 different key on each. A naive single-field-name reader would silently
 treat 2 of the 4 events as having no timestamp. `cpi_p10d_scoring_spec.py`
-binds the exact field name per event (`ReutersEventBinding.timestamp_field`)
-and fails closed if the bound field is absent or its value disagrees with
-the frozen expectation.
+uses `resolve_governing_timestamp()` to inspect each receipt's own content
+against the frozen candidate set and requires exactly one populated candidate;
+it fails closed on zero or multiple populated candidates. The resolver takes
+no event-ticker input and uses no event-specific field-selection table. The
+resolved timestamp is cross-checked against the frozen expected value only to
+detect receipt drift; it does not select the candidate.
 
 **Kalshi historical market evidence:** only the accepted P10A/P10C-manifest
 sibling rows for these 4 events (27 total accepted siblings: 9 + 6 + 6 + 6),
@@ -141,7 +144,14 @@ snapshot.
 receipt's own boolean claim) every build. All 27 accepted siblings across
 the 4 events are temporally eligible (Reuters proven-available instant
 strictly precedes every one of that event's sibling cutoffs, which are
-uniform per event in this cohort).
+uniform per event in this cohort): CPI-23AUG 9/9, KXCPI-25JUL 6/6,
+KXCPI-25DEC 6/6, and KXCPI-26JAN 6/6. **27/27 accepted siblings are
+temporally eligible.**
+
+**Primary-metric eligibility:** **19/27** accepted siblings after the frozen
+P10A quote/boundary exclusion: CPI-23AUG 5/9, KXCPI-25JUL 4/6,
+KXCPI-25DEC 4/6, and KXCPI-26JAN 6/6. The 8 excluded rows are not excluded
+by Reuters publication timing.
 
 **Historical truth:** intentionally **not read** by this spec module at
 all. Eligibility here is structural (temporal + non-boundary quote) only;
@@ -192,8 +202,9 @@ statistic's value.
 1. The 4-event set is exact; a 5th event (including any future
    reclassified UNKNOWN, e.g. `CPI-24JAN`) requires a new reviewed spec
    revision, never silent inclusion.
-2. Each event's Reuters timestamp field name and value are bound exactly;
-   a field-name or value drift fails closed.
+2. Each receipt's governing timestamp is resolved by
+   `resolve_governing_timestamp()` from the frozen candidate set; zero or
+   multiple populated candidates, or a resolved-value drift, fails closed.
 3. Temporal eligibility is recomputed from the frozen manifest every build,
    never read from a receipt's own claim.
 4. The market price convention is a frozen constant.
