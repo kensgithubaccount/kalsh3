@@ -74,7 +74,7 @@ def main() -> None:
         canonical_tree=args.canonical_tree,
         acceptance_sha=args.acceptance_sha,
         acceptance_tree=args.acceptance_tree,
-        environment_type="LOCAL_EPHEMERAL_NO_POSTGRES",
+        environment_type="LOCAL_EPHEMERAL_POSTGRES_18.6",
         api_schema_identity={
             "status": "CURRENT_DOCUMENTATION_COMPATIBLE",
             "source": "https://docs.kalshi.com",
@@ -98,16 +98,23 @@ def main() -> None:
             ),
         },
         postgres_acceptance={
-            "status": "BLOCKED_NO_NONPRODUCTION_DATABASE",
-            "fixture": "PASS",
-            "blocker": (
-                "KALSH3_TEST_POSTGRES_DSN is unset and no local PostgreSQL server is available"
-            ),
+            "status": "PASS",
+            "mechanism": "isolated local temporary PostgreSQL cluster",
+            "version": "PostgreSQL 18.6",
+            "database": "e01_r1a_acceptance",
+            "schema_migrations": "PASS",
+            "journal_persistence": "PASS",
+            "concurrency_idempotency": "PASS",
+            "transaction_rollback": "PASS",
+            "failure_modes": "PASS: connection loss/duplicate key/unique unresolved claim",
         },
         restart_recovery={
-            "status": "FIXTURE_PASS_POSTGRES_BLOCKED",
-            "fixture": "PASS",
-            "live_database": False,
+            "status": "PASS",
+            "server_restart": "PASS",
+            "partial_fill_persistence": "PASS",
+            "terminal_order_persistence": "PASS",
+            "reconciliation_after_restart": "PASS",
+            "durable_disarmed_state": "PASS",
         },
         fee_policy={
             "status": "CURRENT_FEE_POLICY_COMPATIBLE",
