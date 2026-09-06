@@ -2,19 +2,19 @@
   "aggregation_rule": "event_equal_mean_of_per_event_sibling_mean",
   "anti_overfitting_fail_closed_rules": [
     "the 4-event set is exactly FROZEN_FOUR_EVENT_TICKERS; a 5th event (including any future re-classified UNKNOWN->PASS) requires a new, explicitly reviewed spec revision, never silent inclusion",
-    "each event's Reuters timestamp field name and value are bound exactly per ReutersEventBinding; a receipt field-name or value drift fails closed",
+    "each event's Reuters governing timestamp is derived by resolve_governing_timestamp() from the receipt's own content against a frozen candidate field set, never a per-event field-name lookup table; a receipt with zero or multiple populated candidates fails closed rather than choosing one",
     "temporal eligibility is recomputed from the frozen per-sibling manifest cutoff on every build, never read from a receipt's own boolean claim",
     "the market price convention (yes_ask primary, midpoint diagnostic) is a frozen constant; changing it requires a new spec revision",
     "sibling rows are never treated as independent events; the primary statistic is always event-equal aggregated, never a flat mean over all eligible siblings",
     "the primary metric definition is fixed before any comparative score exists; this module contains no function that reads Reuters value, yes_ask, AND outcome/truth together -- that composition is deliberately deferred to a future, separately reviewed phase"
   ],
-  "canonical_main_sha": "9169160c4583c4a6e353c5eb6c01eb59b816d31c",
-  "canonical_main_tree": "114569cd2ab1c86f892a529d1c1b6eb24457bff7",
+  "canonical_main_sha": "ecf52aabae7f5eeb9beb4cbebd46226103482837",
+  "canonical_main_tree": "b19e6ed38850d39df9d7a970fef087fb85439764",
   "edge_pnl_fees_computed": false,
   "existing_scoring_authority_reused": {
     "aggregation_convention_reused_verbatim": true,
     "market_price_convention_reused_verbatim": true,
-    "narrow_adaptation": "per_sibling_market cutoff semantics verified (not assumed) for the 3 P10B-reused events, which carry only a single event-level receipt timestamp field; no new event-level cutoff authority was created",
+    "narrow_adaptation": "per_sibling_market cutoff semantics verified (not assumed) for the 3 P10B-reused events, using a content-derived governing-timestamp resolver (see timestamp_authority_resolver) rather than an event-level receipt field assumed uniform; no new event-level cutoff authority was created",
     "new_policy_required_for": "Reuters point-forecast-vs-market comparison metric -- no reviewed P10D/P10E precedent exists in this repository at the frozen SHA above",
     "source": "services/forecasting/cpi_p10a_binding.py (docs/reviews/CPI_E1_P10A_HISTORICAL_EVIDENCE_BINDING.md)"
   },
@@ -100,7 +100,15 @@
     "per_event_breakdown_table (4 rows; never collapsed into the primary statistic without the event-equal weighting step)"
   ],
   "small_sample_interpretation_rule": "N=4 independent Reuters-proven events cannot by itself establish durable predictive edge. This checkpoint may conclude only one of: 'promising diagnostic', 'no apparent advantage', or 'inconclusive'. It may NOT conclude, imply, or be used as grounds for promotion to live trading, capital allocation, or any change to execution/production authority, regardless of the primary statistic's value.",
-  "spec_digest_sha256": "df91b06c665a68f338b9a190cfcbba34e45261785d2aeffeb5e2f52be6a0d650",
+  "spec_digest_sha256": "519d41bad86f3d1f4d19afa9270e62bcc1f836de7a451d9784ba4d09bb1adb77",
   "tie_rule": "A Kalshi yes_ask of exactly Decimal('0.5000') is a directional tie and is excluded from the primary metric's denominator for that sibling only (retained in any Brier/log-loss diagnostic). Reuters never ties by this definition: reuters_value(e) == t_s resolves to direction 0, identically to how the contract's own settlement predicate (value > threshold, strict) resolves an exact-equality outcome -- no separate Reuters tie rule is introduced.",
+  "timestamp_authority_resolver": {
+    "candidate_fields": [
+      "published_at",
+      "governing_published_at",
+      "conservative_admissibility_time"
+    ],
+    "rule": "the governing timestamp is the unique populated field among the frozen candidate set, read from the receipt's own content only; fails closed if zero or more than one candidate is populated; takes no event ticker and performs no event-specific branching"
+  },
   "unit_of_independence": "event"
 }

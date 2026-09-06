@@ -9,6 +9,37 @@ accuracy, hit-rate, or P&L/fee/after-cost figure was computed** in this task.
 `reuters_vs_kalshi_score_computed: false`, `edge_pnl_fees_computed: false`,
 `research_only: true`, `production_influence: "0"` throughout.
 
+## Phase 0A/0B addendum (2026-09-06)
+
+**Phase 0A (pre-merge audit)** found that the original timestamp-field
+binding, while correct and honestly derived, was a per-event hardcoded
+lookup table rather than an inspectable resolution rule -- indistinguishable
+from an opportunistic per-event choice on inspection alone. Returned
+**BLOCKED -- TIMESTAMP AUTHORITY RULE NOT FROZEN** and made no code change.
+
+**Phase 0B (this repair)** replaces that table with
+`resolve_governing_timestamp()`: a pure function of the receipt's own
+content against a frozen 3-field candidate set
+(`published_at`, `governing_published_at`, `conservative_admissibility_time`),
+requiring exactly one populated candidate and failing closed on zero or on
+more than one. It takes no event ticker and cannot branch on one. All 4
+frozen receipts were independently confirmed (grep against the actual JSON,
+not memory) to populate exactly one candidate each -- see the table below.
+`ReutersEventBinding.expected_timestamp` is retained only as a frozen
+cross-check value (never as authority): the resolver's output is asserted
+equal to it, catching an unnoticed receipt edit without ever selecting a
+field by ticker.
+
+Canonical main also moved during this checkpoint (PR #133, an unrelated
+Perps-documentation merge); the branch was rebased cleanly onto the new
+verified main rather than merged, keeping a linear history with no
+unrelated changes dropped or altered.
+
+No 4-event cohort, Reuters value, Kalshi price, eligible-sibling set,
+primary metric, aggregation rule, or tie/boundary rule changed in this
+repair -- confirmed by the unchanged 19/27 eligibility total and unchanged
+`spec["primary_metric"]`/`spec["aggregation_rule"]` values (see tests).
+
 ## Independent verification of canonical state (not trusted from the task text)
 
 Ran `git ls-remote https://github.com/kensgithubaccount/kalsh3.git HEAD
@@ -181,29 +212,34 @@ before any per-sibling call was evaluated.
 ## Durable artifacts
 
 - `services/forecasting/cpi_p10d_scoring_spec.py` -- `build_phase0_spec()`
-  generator, frozen `ReutersEventBinding` roster, frozen metric/aggregation/
-  tie/missing-data constants, and `classify_directional_call()` (a pure,
-  outcome-free formula for a future phase, tested only against synthetic
-  fixtures).
+  generator, `resolve_governing_timestamp()` (the Phase 0B deterministic
+  resolver), frozen `ReutersEventBinding` roster (cross-check values only),
+  frozen metric/aggregation/tie/missing-data constants, and
+  `classify_directional_call()` (a pure, outcome-free formula for a future
+  phase, tested only against synthetic fixtures).
 - `scripts/build_cpi_e1_p10d_phase0_scoring_spec.py` -- regeneration script.
 - `docs/reviews/artifacts/cpi-p10d-phase0-scoring-spec/spec.json` -- frozen
-  evidence, digest `df91b06c665a68f338b9a190cfcbba34e45261785d2aeffeb5e2f52be6a0d650`.
-- `tests/test_cpi_p10d_phase0_scoring_spec.py` -- 18 tests: frozen-roster,
-  determinism, frozen-evidence match, per-event field-binding, eligible-
-  count structural checks, and fail-closed rejection of a synthesized 5th
-  event, a wrong timestamp field, and a post-cutoff timestamp; plus 4 tests
-  of `classify_directional_call()` against synthetic (non-cohort) fixtures
+  evidence, digest `519d41bad86f3d1f4d19afa9270e62bcc1f836de7a451d9784ba4d09bb1adb77`.
+- `tests/test_cpi_p10d_phase0_scoring_spec.py` -- 25 tests: frozen-roster,
+  determinism, frozen-evidence match, eligible-count structural checks
+  (19/27 exact), fail-closed rejection of a synthesized 5th event and a
+  post-cutoff timestamp, and 10 resolver-specific tests (frozen candidate
+  set, no-ticker-argument signature, exactly-one-resolves x3, zero-fails,
+  two-fails, null-vs-absent handling, unknown-field immunity, ticker cannot
+  select the field, all 4 real receipts resolve deterministically with
+  proof the other 2 candidate fields are absent on each); plus 4 tests of
+  `classify_directional_call()` against synthetic (non-cohort) fixtures
   only.
 
-All 18 new tests pass; `ruff check` / `ruff format --check` clean on the new
-files; full repo `pytest`/`mypy`/`bandit`/`detect-secrets` run separately
-(see task response for status).
+All 25 tests pass; `ruff check` / `ruff format --check` / `mypy` / `bandit`
+(high) clean on the changed files; full repo `pytest`/`detect-secrets` run
+separately (see task response for status).
 
 ## Return summary
 
-- Verified canonical main: SHA `9169160c4583c4a6e353c5eb6c01eb59b816d31c`,
-  tree `114569cd2ab1c86f892a529d1c1b6eb24457bff7` (matches supplied value,
-  independently confirmed).
+- Verified canonical main: SHA `ecf52aabae7f5eeb9beb4cbebd46226103482837`,
+  tree `b19e6ed38850d39df9d7a970fef087fb85439764` (matches supplied value,
+  independently confirmed; branch rebased cleanly onto it, PR #133 intact).
 - Existing scoring authority found: P10A's ask-crossing-price + event-equal
   aggregation convention, reused verbatim; no P10D/P10E precedent for a
   Reuters-vs-market metric existed, so that metric is newly frozen here.
@@ -229,11 +265,15 @@ files; full repo `pytest`/`mypy`/`bandit`/`detect-secrets` run separately
   advantage / inconclusive; live-trading promotion explicitly forbidden.
 - Durable scoring-spec path/digest:
   `docs/reviews/artifacts/cpi-p10d-phase0-scoring-spec/spec.json`,
-  `df91b06c665a68f338b9a190cfcbba34e45261785d2aeffeb5e2f52be6a0d650`.
-- Tests/validation: `tests/test_cpi_p10d_phase0_scoring_spec.py`, 18/18
-  passing; `ruff` clean.
+  `519d41bad86f3d1f4d19afa9270e62bcc1f836de7a451d9784ba4d09bb1adb77`.
+- Timestamp authority: `resolve_governing_timestamp()`, a content-derived
+  resolver over the frozen candidate set `{published_at,
+  governing_published_at, conservative_admissibility_time}`; fails closed
+  on zero or multiple populated candidates; takes no event ticker.
+- Tests/validation: `tests/test_cpi_p10d_phase0_scoring_spec.py`, 25/25
+  passing; `ruff`/`mypy`/`bandit`(high) clean.
 
-**Classification: PASS -- PREDICTIVE-EDGE SCORING SPEC FROZEN.**
+**Classification: PASS -- P10D SCORING SPEC READY FOR CANONICAL REVIEW.**
 
 No Reuters-vs-Kalshi result was computed. This branch/commit is not merged;
 merge is a separate decision for the user, per standing instruction.

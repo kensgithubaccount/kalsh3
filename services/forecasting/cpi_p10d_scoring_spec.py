@@ -41,10 +41,24 @@ single event-level `decision_cutoff` (or, for CPI-23AUG, a per-sibling
 event-level cutoff at all (`cutoff_semantics: per_sibling_market`). For the
 3 P10B-reused events, this module verifies -- rather than assumes -- that
 every accepted sibling of that event shares one uniform `sibling_cutoff`
-equal to the receipt's own event-level timestamp-comparison field, so that
-per-sibling eligibility can be established without synthesizing a new
-event-level authority and without silently trusting the receipt's own
-boolean claim.
+equal to the receipt's own governing timestamp (see `resolve_governing_
+timestamp` below), so that per-sibling eligibility can be established
+without synthesizing a new event-level authority and without silently
+trusting the receipt's own boolean claim.
+
+Timestamp-authority resolution (Phase 0B repair): the field name carrying
+each receipt's proven-publication instant is NOT uniform across receipt
+schemas (`published_at` is absent on 2 of the 4 receipts; the real value
+lives under `governing_published_at` or `conservative_admissibility_time`
+instead). An earlier version of this module hardcoded which field name to
+read per event ticker -- a lookup table that produced correct answers but
+was not, itself, an inspectable authority-resolution rule, and could not be
+distinguished from a field chosen opportunistically after the fact.
+`resolve_governing_timestamp()` replaces that table: it inspects only the
+receipt's own content against a frozen candidate field set, requires
+exactly one candidate to be populated, and fails closed otherwise. It takes
+no event ticker and performs no event-specific branching, so it cannot
+select a field "because of" which event is being processed.
 """
 
 from __future__ import annotations
@@ -64,8 +78,8 @@ from services.forecasting.cpi_p10c_manifest import (
     build_phase1_manifest,
 )
 
-CANONICAL_MAIN_SHA = "9169160c4583c4a6e353c5eb6c01eb59b816d31c"
-CANONICAL_MAIN_TREE = "114569cd2ab1c86f892a529d1c1b6eb24457bff7"
+CANONICAL_MAIN_SHA = "ecf52aabae7f5eeb9beb4cbebd46226103482837"
+CANONICAL_MAIN_TREE = "b19e6ed38850d39df9d7a970fef087fb85439764"
 P10C_PHASE2_MERGE_PR = 132
 P10C_PHASE2_BRANCH_HEAD_SHA = "69d250e47e5f16436a4156e55a173ab54b18c023"
 P10C_COVERAGE_PATH = Path("docs/reviews/artifacts/cpi-p10c-reuters-phase2/coverage.json")
@@ -76,6 +90,55 @@ class CPIP10DScoringSpecError(ValueError):
     """Raised when a bound identity, temporal, or schema invariant fails closed."""
 
 
+# Frozen candidate authority-field set for the governing Reuters timestamp.
+# Confirmed against the 4 committed receipts before coding this resolver:
+# each receipt populates exactly one of these three fields (never zero,
+# never more than one). This set is closed -- a receipt schema introducing a
+# new field name is NOT auto-adopted; it fails closed as "zero populated"
+# until this frozen set is explicitly revised.
+GOVERNING_TIMESTAMP_CANDIDATE_FIELDS: tuple[str, ...] = (
+    "published_at",
+    "governing_published_at",
+    "conservative_admissibility_time",
+)
+
+
+def resolve_governing_timestamp(receipt: dict[str, Any]) -> tuple[str, datetime]:
+    """Deterministically resolve a receipt's governing Reuters timestamp.
+
+    Content-derived only: inspects the frozen candidate field set on the
+    receipt itself. Takes no event ticker and performs no event-specific
+    branching, so it structurally cannot select a field "because of" which
+    event is being processed, and it cannot be tuned per event after seeing
+    downstream performance -- it has no performance input at all.
+
+    Fails closed if zero or more than one candidate field is populated.
+    Never infers, interpolates, or falls back to a non-candidate field
+    (e.g. a raw per-host `fetches[].datePublished`, or `decision_cutoff`,
+    which is a market-side cutoff, not a Reuters publication instant).
+    """
+    populated = {
+        field: receipt[field]
+        for field in GOVERNING_TIMESTAMP_CANDIDATE_FIELDS
+        if receipt.get(field) is not None
+    }
+    if len(populated) == 0:
+        raise CPIP10DScoringSpecError(
+            "no governing-timestamp candidate field is populated on this receipt "
+            f"(checked {GOVERNING_TIMESTAMP_CANDIDATE_FIELDS})"
+        )
+    if len(populated) > 1:
+        raise CPIP10DScoringSpecError(
+            f"more than one governing-timestamp candidate field is populated: "
+            f"{sorted(populated)} -- refusing to choose between them"
+        )
+    ((field, value),) = populated.items()
+    if not isinstance(value, str):
+        raise CPIP10DScoringSpecError(f"governing-timestamp field {field!r} is not a string")
+    parsed = datetime.fromisoformat(value.replace("Z", "+00:00")).astimezone(UTC)
+    return field, parsed
+
+
 @dataclass(frozen=True, slots=True)
 class ReutersEventBinding:
     event_ticker: str
@@ -83,15 +146,17 @@ class ReutersEventBinding:
     value: Decimal
     receipt_path: Path
     receipt_sha256: str
-    timestamp_field: str
-    timestamp_value: datetime
+    # Frozen cross-check ONLY -- not authority. The governing field and its
+    # value are derived at build time by `resolve_governing_timestamp()`
+    # from the receipt's own content; this is asserted equal to that
+    # derived value purely to fail closed on an unnoticed receipt edit, and
+    # is never used to pick which field to read.
+    expected_timestamp: datetime
 
 
-# Exact 4-event roster, field-name binding, and frozen receipt identity.
-# The `timestamp_field` varies per receipt schema (P10B vs Phase-2-R1 style)
-# -- this is bound explicitly per event rather than assumed uniform, because
-# a naive single field name (e.g. always `published_at`) silently resolves
-# to `None` for 2 of these 4 receipts.
+# Exact 4-event roster and frozen receipt identity. No field-name lookup
+# table is retained: the governing timestamp field is derived per event by
+# `resolve_governing_timestamp()` from receipt content alone.
 REUTERS_EVENT_BINDINGS: tuple[ReutersEventBinding, ...] = (
     ReutersEventBinding(
         event_ticker="CPI-23AUG",
@@ -99,8 +164,7 @@ REUTERS_EVENT_BINDINGS: tuple[ReutersEventBinding, ...] = (
         value=Decimal("0.6"),
         receipt_path=Path("docs/reviews/artifacts/cpi-p10c-reuters-phase2/CPI-23AUG/receipt.json"),
         receipt_sha256="d4e0cb79f7c14536bf8051effd6d62acd93aa11fcc285c54afcd05f5e1910a56",
-        timestamp_field="published_at",
-        timestamp_value=datetime(2023, 9, 13, 10, 7, 35, tzinfo=UTC),
+        expected_timestamp=datetime(2023, 9, 13, 10, 7, 35, tzinfo=UTC),
     ),
     ReutersEventBinding(
         event_ticker="KXCPI-25JUL",
@@ -108,8 +172,7 @@ REUTERS_EVENT_BINDINGS: tuple[ReutersEventBinding, ...] = (
         value=Decimal("0.2"),
         receipt_path=Path("docs/reviews/artifacts/cpi-p10b-reuters/KXCPI-25JUL/receipt.json"),
         receipt_sha256="3a0c265dac5ffa61aadd76838a62c9948d4beb64ff4db131f3d407cd48bb69fc",
-        timestamp_field="published_at",
-        timestamp_value=datetime(2025, 8, 12, 4, 2, 11, tzinfo=UTC),
+        expected_timestamp=datetime(2025, 8, 12, 4, 2, 11, tzinfo=UTC),
     ),
     ReutersEventBinding(
         event_ticker="KXCPI-25DEC",
@@ -117,8 +180,7 @@ REUTERS_EVENT_BINDINGS: tuple[ReutersEventBinding, ...] = (
         value=Decimal("0.3"),
         receipt_path=Path("docs/reviews/artifacts/cpi-p10b-reuters/KXCPI-25DEC/receipt.json"),
         receipt_sha256="0d49e5e46dc0c2c4269147ebd76de8cde7025517b325dbaa8f3deb4541e022fa",
-        timestamp_field="governing_published_at",
-        timestamp_value=datetime(2026, 1, 13, 5, 3, 53, tzinfo=UTC),
+        expected_timestamp=datetime(2026, 1, 13, 5, 3, 53, tzinfo=UTC),
     ),
     ReutersEventBinding(
         event_ticker="KXCPI-26JAN",
@@ -126,12 +188,11 @@ REUTERS_EVENT_BINDINGS: tuple[ReutersEventBinding, ...] = (
         value=Decimal("0.3"),
         receipt_path=Path("docs/reviews/artifacts/cpi-p10b-reuters/KXCPI-26JAN/receipt.json"),
         receipt_sha256="95648c04529fa46095649d6f95c1191fc8884db23cb7616f9caff8df5a0a61b9",
-        # This receipt's earliest bound ("observed_publication_range") is
-        # 2026-02-13T05:00:01Z; the receipt conservatively binds on the
-        # later, weaker-margin instant. This module reuses that conservative
-        # choice rather than the wider margin.
-        timestamp_field="conservative_admissibility_time",
-        timestamp_value=datetime(2026, 2, 13, 5, 12, 31, tzinfo=UTC),
+        # This receipt's earliest disclosed bound ("observed_publication_range")
+        # is 2026-02-13T05:00:01Z; the receipt's own governing field
+        # (`conservative_admissibility_time`) conservatively resolves to the
+        # later, weaker-margin instant, which is what the resolver returns.
+        expected_timestamp=datetime(2026, 2, 13, 5, 12, 31, tzinfo=UTC),
     ),
 )
 FROZEN_FOUR_EVENT_TICKERS = frozenset(binding.event_ticker for binding in REUTERS_EVENT_BINDINGS)
@@ -198,8 +259,10 @@ ANTI_OVERFITTING_FAIL_CLOSED_RULES: tuple[str, ...] = (
     "the 4-event set is exactly FROZEN_FOUR_EVENT_TICKERS; a 5th event (including "
     "any future re-classified UNKNOWN->PASS) requires a new, explicitly reviewed "
     "spec revision, never silent inclusion",
-    "each event's Reuters timestamp field name and value are bound exactly per "
-    "ReutersEventBinding; a receipt field-name or value drift fails closed",
+    "each event's Reuters governing timestamp is derived by resolve_governing_"
+    "timestamp() from the receipt's own content against a frozen candidate field "
+    "set, never a per-event field-name lookup table; a receipt with zero or "
+    "multiple populated candidates fails closed rather than choosing one",
     "temporal eligibility is recomputed from the frozen per-sibling manifest "
     "cutoff on every build, never read from a receipt's own boolean claim",
     "the market price convention (yes_ask primary, midpoint diagnostic) is a "
@@ -214,7 +277,9 @@ ANTI_OVERFITTING_FAIL_CLOSED_RULES: tuple[str, ...] = (
 )
 
 
-def _load_and_verify_receipt(binding: ReutersEventBinding, root: Path) -> dict[str, Any]:
+def _load_and_verify_receipt(
+    binding: ReutersEventBinding, root: Path
+) -> tuple[dict[str, Any], str, datetime]:
     raw = (root / binding.receipt_path).read_bytes()
     actual_sha256 = hashlib.sha256(raw).hexdigest()
     if actual_sha256 != binding.receipt_sha256:
@@ -230,18 +295,13 @@ def _load_and_verify_receipt(binding: ReutersEventBinding, root: Path) -> dict[s
         raise CPIP10DScoringSpecError(f"{binding.event_ticker} receipt value mismatch")
     if receipt.get("vintage_status") != "PASS":
         raise CPIP10DScoringSpecError(f"{binding.event_ticker} receipt is not a PASS")
-    field_value = receipt.get(binding.timestamp_field)
-    if not isinstance(field_value, str):
+    field, resolved = resolve_governing_timestamp(receipt)
+    if resolved != binding.expected_timestamp:
         raise CPIP10DScoringSpecError(
-            f"{binding.event_ticker} receipt field {binding.timestamp_field!r} is absent"
+            f"{binding.event_ticker} resolver output does not match the frozen expected "
+            f"timestamp (resolved {resolved} via field {field!r})"
         )
-    parsed = datetime.fromisoformat(field_value.replace("Z", "+00:00")).astimezone(UTC)
-    if parsed != binding.timestamp_value:
-        raise CPIP10DScoringSpecError(
-            f"{binding.event_ticker} bound timestamp does not match receipt field "
-            f"{binding.timestamp_field!r}"
-        )
-    return receipt
+    return receipt, field, resolved
 
 
 def _verify_coverage_authority(root: Path) -> dict[str, Any]:
@@ -263,7 +323,10 @@ def _verify_coverage_authority(root: Path) -> dict[str, Any]:
 
 
 def _eligible_sibling_counts(
-    binding: ReutersEventBinding, manifest_events: dict[str, dict[str, Any]], root: Path
+    binding: ReutersEventBinding,
+    resolved_timestamp: datetime,
+    manifest_events: dict[str, dict[str, Any]],
+    root: Path,
 ) -> dict[str, Any]:
     event_manifest = manifest_events[binding.event_ticker]
     siblings = event_manifest["accepted_siblings"]
@@ -274,10 +337,10 @@ def _eligible_sibling_counts(
         )
     (cutoff_str,) = cutoffs
     cutoff = _time(cutoff_str)
-    if not binding.timestamp_value < cutoff:
+    if not resolved_timestamp < cutoff:
         raise CPIP10DScoringSpecError(
             f"{binding.event_ticker} Reuters observation is not proven available before "
-            f"every accepted sibling's cutoff ({binding.timestamp_value} >= {cutoff})"
+            f"every accepted sibling's cutoff ({resolved_timestamp} >= {cutoff})"
         )
 
     p9a_manifest = json.loads((root / P9A_ROOT / "manifest.json").read_bytes())
@@ -320,15 +383,15 @@ def build_phase0_spec(repository_root: str | Path) -> dict[str, Any]:
 
     event_bindings = []
     for binding in REUTERS_EVENT_BINDINGS:
-        _load_and_verify_receipt(binding, root)
-        counts = _eligible_sibling_counts(binding, manifest_events, root)
+        _receipt, resolved_field, resolved_timestamp = _load_and_verify_receipt(binding, root)
+        counts = _eligible_sibling_counts(binding, resolved_timestamp, manifest_events, root)
         event_bindings.append(
             {
                 "event_ticker": binding.event_ticker,
                 "reference_month": binding.reference_month,
                 "reuters_value": str(binding.value),
-                "reuters_timestamp_field": binding.timestamp_field,
-                "reuters_timestamp_utc": binding.timestamp_value.isoformat(),
+                "reuters_timestamp_field": resolved_field,
+                "reuters_timestamp_utc": resolved_timestamp.isoformat(),
                 "receipt_path": str(binding.receipt_path),
                 "receipt_sha256": binding.receipt_sha256,
                 **counts,
@@ -351,8 +414,10 @@ def build_phase0_spec(repository_root: str | Path) -> dict[str, Any]:
             "aggregation_convention_reused_verbatim": True,
             "narrow_adaptation": (
                 "per_sibling_market cutoff semantics verified (not assumed) for the 3 "
-                "P10B-reused events, which carry only a single event-level receipt "
-                "timestamp field; no new event-level cutoff authority was created"
+                "P10B-reused events, using a content-derived governing-timestamp "
+                "resolver (see timestamp_authority_resolver) rather than an "
+                "event-level receipt field assumed uniform; no new event-level "
+                "cutoff authority was created"
             ),
             "new_policy_required_for": (
                 "Reuters point-forecast-vs-market comparison metric -- no reviewed "
@@ -361,6 +426,15 @@ def build_phase0_spec(repository_root: str | Path) -> dict[str, Any]:
         },
         "reuters_proven_events": event_bindings,
         "reuters_proven_event_count": len(event_bindings),
+        "timestamp_authority_resolver": {
+            "candidate_fields": list(GOVERNING_TIMESTAMP_CANDIDATE_FIELDS),
+            "rule": (
+                "the governing timestamp is the unique populated field among the frozen "
+                "candidate set, read from the receipt's own content only; fails closed if "
+                "zero or more than one candidate is populated; takes no event ticker and "
+                "performs no event-specific branching"
+            ),
+        },
         "market_price_convention": {
             "primary": PRIMARY_MARKET_PRICE_CONVENTION,
             "diagnostic": DIAGNOSTIC_MARKET_PRICE_CONVENTION,
