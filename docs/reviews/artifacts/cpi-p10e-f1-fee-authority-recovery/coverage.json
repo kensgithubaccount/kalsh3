@@ -1,0 +1,111 @@
+{
+  "schema": "cpi-e1-p10e-f1-fee-authority-recovery/v1",
+  "canonical_main_sha": "27f100f5da7e5a49044f2e4a68f6a6fecfff5216",
+  "canonical_main_tree": "b7524e9e446c289202405c6966962fdf84917fa6",
+  "p10e_phase0": {
+    "branch": "cpi-e1-p10e-phase0",
+    "head_sha": "04631b884399325e140ab6ce1d37aed0c4fd9f39",
+    "tree": "98e0d6e4df9cc80ae817d071f3fc835a011bd0bc",
+    "artifact_path": "docs/reviews/artifacts/cpi-p10e-phase0-after-cost-spec/spec.json",
+    "artifact_digest": "9b26a6b96c1b1dbb41125704953a4bc527c77e6010ee17c4fd28dd5a8a23924a",
+    "fee_blocker": "BLOCKED — HISTORICAL FEE AUTHORITY INCOMPLETE"
+  },
+  "candidate_derivation": {
+    "source_authorities": [
+      "docs/reviews/artifacts/cpi-p10d-phase0-scoring-spec/spec.json",
+      "docs/reviews/artifacts/cpi-p10d-phase1-sealed-score/result.json",
+      "docs/reviews/artifacts/cpi-p10e-phase0-after-cost-spec/spec.json"
+    ],
+    "method": "P10D primary-eligible rows only; compare frozen Reuters direction with frozen Kalshi direction; retain disagreement rows; settlement fields are not read for inclusion",
+    "execution_timestamp_rule": "the P10E methodology freezes each candidate execution timestamp as the P10D sibling cutoff; no settlement timestamp or outcome-derived date is used",
+    "candidate_count": 2
+  },
+  "candidate_fee_coverage": [
+    {
+      "event_ticker": "CPI-23AUG",
+      "market_ticker": "CPI-23AUG-T0.6",
+      "execution_timestamp": "2023-09-13T12:25:00+00:00",
+      "reuters_side": "NO",
+      "crossing_status": "FROZEN MARKETABLE CROSSING / TAKER CLASS",
+      "fee_status": "UNKNOWN",
+      "authority_identity": "UNPROVEN_BETWEEN_CFTC_49335_AND_MD_28_1",
+      "authority_interval": "2022-09-24 through 2025-05-06 endpoint interval; continuity explicitly unproven",
+      "reason": "Matching endpoint formulas are informational only; the canonical fee timeline makes no continuity claim and does not establish exact historical applicability to this execution timestamp or CPI contract.",
+      "formula": null,
+      "rounding": null,
+      "cpi_applicability": "UNKNOWN",
+      "maker_taker_applicability": "TAKER REQUIRED; exact historical regime UNKNOWN"
+    },
+    {
+      "event_ticker": "KXCPI-25JUL",
+      "market_ticker": "KXCPI-25JUL-T0.2",
+      "execution_timestamp": "2025-08-12T12:29:00+00:00",
+      "reuters_side": "NO",
+      "crossing_status": "FROZEN MARKETABLE CROSSING / TAKER CLASS",
+      "fee_status": "UNKNOWN",
+      "authority_identity": "OCT_2025_LOCATOR_ONLY",
+      "authority_interval": "after 2025-05-06; retained October 2025 locator does not positively bind this August 2025 timestamp",
+      "reason": "The canonical timeline contains no exact historical fee regime for this post-2025-05-06 timestamp; a later/current fee page cannot establish the August execution rule.",
+      "formula": null,
+      "rounding": null,
+      "cpi_applicability": "UNKNOWN",
+      "maker_taker_applicability": "TAKER REQUIRED; exact historical regime UNKNOWN"
+    }
+  ],
+  "reviewed_fee_authority": {
+    "exact_endpoint_regimes": [
+      {
+        "identity": "CFTC-49335-FINAL",
+        "effective_date": "2022-09-22",
+        "scope": "general taker",
+        "formula": "round_up(0.07 * C * P * (1-P))",
+        "rounding": "next_cent",
+        "raw_path": "evidence/cpi_p9b_fee_authority/raw/cftc-49335-final-schedule.pdf",
+        "raw_sha256": "b002a5ae260c68f543a9c4630233c9d311c580ad70620e7db37eac14437007b3",
+        "source_url": "https://www.cftc.gov/filings/orgrules/rule091222kexdcm003.pdf",
+        "applicability_to_candidates": "not positively continuous to either candidate"
+      },
+      {
+        "identity": "MD-1:25-CV-01283-28-1",
+        "effective_or_snapshot_date": "2025-05-06",
+        "scope": "general taker snapshot",
+        "formula": "round_up(0.07 * C * P * (1-P))",
+        "rounding": "next_cent",
+        "raw_path": "evidence/cpi_p9b_fee_authority/raw/md-1-25-cv-01283-28-1.pdf",
+        "raw_sha256": "1185c41174304316cd6c68c6bd9eba3170e8082ff31a60b730b89b7da60b58e8",
+        "source_url": "https://www.ingame.com/wp-content/uploads/2025/05/document.pdf",
+        "applicability_to_candidates": "not positively continuous to either candidate"
+      }
+    ],
+    "maker_authority": "UNKNOWN / UNRESOLVED",
+    "side_symmetry": "not promoted to candidate authority; endpoint formula uses contract price P and contains no YES/NO-specific term, but exact candidate applicability remains unresolved",
+    "minimum_fee": "not positively established for candidate regimes",
+    "maximum_or_cap": "not positively established for candidate regimes",
+    "currency": "not promoted to candidate authority; endpoint artifacts describe dollar fee/next-cent rounding",
+    "evaluation_and_application": "not positively established for candidate regimes beyond the endpoint schedule's aggregate C formula",
+    "cpi_specific_schedule_or_exception": "UNKNOWN",
+    "supersession_continuity": "UNKNOWN between 2022-09-22 and 2025-05-06; post-2025-05-06 authority is locator-only"
+  },
+  "provenance": {
+    "existing_review": "docs/reviews/CPI_E1_P9B4R1_HISTORICAL_TAKER_CONTINUITY.md",
+    "existing_manifest": "evidence/cpi_p9b_fee_authority/manifest.json",
+    "manifest_sha256": "638fa5713addcfccc0c2204033b17e1c19cfe77be4573952d7e87f7c85d7a000",
+    "authority_timeline": "evidence/cpi_p9b_fee_authority/authority_timeline.json",
+    "authority_timeline_sha256": "0a748f8c5d0042d911431af9059d91968ea3147dc50f98b8186ce8bbfcac8993",
+    "continuity_inventory": "evidence/cpi_p9b_fee_authority/raw/cftc-kex-fee-filing-inventory.json",
+    "continuity_inventory_sha256": "a979dc5e4a19c187e7d40efc384cc9737c33cd03d9478788326bd3d0f4b689a2",
+    "inventory_acquired_at": "2026-09-02T00:51:28Z",
+    "new_load_bearing_source_bytes_acquired": false,
+    "new_evidence_artifacts": []
+  },
+  "completeness_gate": {
+    "pass_count": 0,
+    "unknown_count": 2,
+    "failure_count": 0,
+    "phase1_ready": false,
+    "classification": "BLOCKED — HISTORICAL FEE AUTHORITY INCOMPLETE",
+    "strategy_pnl_computed": false,
+    "outcomes_used_for_fee_selection": false
+  },
+  "coverage_digest_sha256": "d380a351900743095ba942a304d425144966923e450e82f4521d01b4286340d8"
+}
