@@ -64,9 +64,7 @@ def test_missing_weather_runtime_dependency_is_recorded_without_rows(tmp_path) -
     )
     assert rows == []
     assert diagnostics.weather_operational_failures == 1
-    assert diagnostics.operational_failures == [
-        "WEATHER_ACQUISITION_RUNTIME_DEPENDENCY_MISSING"
-    ]
+    assert diagnostics.operational_failures == ["WEATHER_ACQUISITION_RUNTIME_DEPENDENCY_MISSING"]
 
 
 def test_event_snapshot_cache_is_once_per_event(monkeypatch) -> None:

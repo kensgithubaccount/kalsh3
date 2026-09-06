@@ -314,12 +314,8 @@ def run_once(
         clock=clock,
         diagnostics=diagnostics,
     )
-    diagnostics.structural_observe = sum(
-        row["decision"] == "OBSERVE" for row in structural_rows
-    )
-    diagnostics.structural_abstain = sum(
-        row["decision"] == "ABSTAIN" for row in structural_rows
-    )
+    diagnostics.structural_observe = sum(row["decision"] == "OBSERVE" for row in structural_rows)
+    diagnostics.structural_abstain = sum(row["decision"] == "ABSTAIN" for row in structural_rows)
     if time.monotonic() - started > MAX_CYCLE_SECONDS:
         _record_failure(diagnostics, "CYCLE_TIMEOUT")
         structural_complete = False
@@ -350,14 +346,10 @@ def summarize(cycles: list[CycleResult]) -> dict[str, Any]:
     return {
         adapter: {
             "observe": sum(
-                row["decision"] == "OBSERVE"
-                for row in rows
-                if row["strategy_family"] == adapter
+                row["decision"] == "OBSERVE" for row in rows if row["strategy_family"] == adapter
             ),
             "abstain": sum(
-                row["decision"] == "ABSTAIN"
-                for row in rows
-                if row["strategy_family"] == adapter
+                row["decision"] == "ABSTAIN" for row in rows if row["strategy_family"] == adapter
             ),
             "reasons": dict(
                 Counter(
