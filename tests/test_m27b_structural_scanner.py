@@ -569,10 +569,8 @@ def confirm_exact(
     )
 
 
-@pytest.mark.parametrize(
-    "delta", [timedelta(microseconds=1), timedelta(minutes=5), timedelta(hours=3)]
-)
-def test_confirmation_requires_identical_orderbook_observation_instant(
+@pytest.mark.parametrize("delta", [timedelta(minutes=5), timedelta(hours=3)])
+def test_confirmation_rejects_orderbook_outside_common_freshness_window(
     delta: timedelta,
 ) -> None:
     lead, broad_route, narrow_route = lead_fixture()
@@ -587,8 +585,29 @@ def test_confirmation_requires_identical_orderbook_observation_instant(
     narrow_specification = specification("H", "2")
     # Both objects were individually accepted by the canonical M27A constructor.
     assert broad.evidence_id and narrow.evidence_id
-    with pytest.raises(OpportunityError, match="orderbook observations are not simultaneous"):
+    with pytest.raises(OpportunityError, match="orderbook is stale at common confirmation time"):
         confirm_exact(lead, broad, narrow, broad_specification, narrow_specification)
+
+
+def test_confirmation_accepts_sequential_orderbooks_inside_common_freshness_window() -> None:
+    lead, broad_route, narrow_route = lead_fixture()
+    broad = evidence("L", broad_route.rules_hash, broad_route.metadata_hash, observed_at=NOW)
+    narrow = evidence(
+        "H",
+        narrow_route.rules_hash,
+        narrow_route.metadata_hash,
+        observed_at=NOW - timedelta(seconds=1),
+    )
+    assert (
+        confirm_exact(
+            lead,
+            broad,
+            narrow,
+            specification("L", "1"),
+            specification("H", "2"),
+        ).state
+        is ConfirmationState.FINAL_FEE_UNKNOWN_PREFILL
+    )
 
 
 def test_simultaneous_orderbook_observations_may_proceed() -> None:

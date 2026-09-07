@@ -8,6 +8,7 @@ import re
 from collections import Counter
 from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from decimal import Decimal, InvalidOperation
 from enum import StrEnum
 
@@ -20,6 +21,7 @@ from services.market_universe.domain import (
     UniverseValidationError,
     stable_hash,
 )
+from services.market_universe.market_snapshot import FRESHNESS
 from services.market_universe.quality import Family, classify
 
 from .books import OutcomeSide
@@ -32,6 +34,14 @@ from .live_economics import (
 
 POLICY_VERSION = "m27b-directional-structural-v1"
 ZERO = Decimal("0")
+
+
+def _utc(value: datetime) -> datetime:
+    if value.tzinfo is None or value.utcoffset() is None:
+        raise OpportunityError("timestamp must be timezone-aware")
+    return value.astimezone(UTC)
+
+
 SUPPORTED_STRIKE_TYPES = frozenset(("greater", "greater_or_equal"))
 _FIXED_POINT_STRIKE = re.compile(r"[+-]?(?:\d+(?:\.\d*)?|\.\d+)")
 
@@ -284,6 +294,7 @@ def confirm_structural_lead(
     *,
     broad_specification: ContractSpecification,
     narrow_specification: ContractSpecification,
+    confirmation_observed_at: datetime | None = None,
 ) -> StructuralConfirmation:
     """Pure exact-depth review; final pre-fill exchange fees remain unknown."""
     if not lead.research_only or lead.production_influence != ZERO:
@@ -341,8 +352,21 @@ def confirm_structural_lead(
         raise OpportunityError("economics evidence must remain research-only")
     if broad_evidence.requested_quantity != narrow_evidence.requested_quantity:
         raise OpportunityError("structural confirmation quantities must be exactly equal")
-    if broad_evidence.orderbook_observed_at != narrow_evidence.orderbook_observed_at:
-        raise OpportunityError("cross-market orderbook observations are not simultaneous")
+    common_at = _utc(
+        confirmation_observed_at
+        if confirmation_observed_at is not None
+        else max(broad_evidence.economics_observed_at, narrow_evidence.economics_observed_at)
+    )
+    for label, evidence in (("broad", broad_evidence), ("narrow", narrow_evidence)):
+        book_at = _utc(evidence.orderbook_observed_at)
+        market_at = _utc(evidence.market_observed_at)
+        economics_at = _utc(evidence.economics_observed_at)
+        if book_at > common_at or market_at > common_at or economics_at > common_at:
+            raise OpportunityError(f"{label} evidence is after common confirmation time")
+        if common_at - book_at > FRESHNESS:
+            raise OpportunityError(f"{label} orderbook is stale at common confirmation time")
+        if common_at - market_at > FRESHNESS:
+            raise OpportunityError(f"{label} market snapshot is stale at common confirmation time")
     if replay_market_economics(broad_evidence) != (
         broad_evidence.yes,
         broad_evidence.no,

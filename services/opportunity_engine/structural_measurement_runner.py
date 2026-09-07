@@ -57,7 +57,11 @@ from services.market_universe.collect import (
     PublicUniverseTransport,
 )
 from services.market_universe.domain import Event, Market, UniverseValidationError, stable_hash
-from services.market_universe.market_snapshot import acquire_market_snapshot
+from services.market_universe.market_snapshot import (
+    FRESHNESS,
+    acquire_market_snapshot,
+    validate_market_snapshot,
+)
 from services.market_universe.orderbook_snapshot import (
     acquire_orderbook_snapshot,
     validate_orderbook_snapshot,
@@ -311,12 +315,20 @@ class _LegEvidence:
     market_ticker: str
     economics: Any
     specification: ContractSpecification
+    market_snapshot_payload: dict[str, Any]
+    orderbook_snapshot_payload: dict[str, Any]
 
 
 class _ConfirmationBlocked(Exception):
     def __init__(self, reason: str) -> None:
         super().__init__(reason)
         self.reason = reason
+
+
+def _utc(value: datetime) -> datetime:
+    if value.tzinfo is None or value.utcoffset() is None:
+        raise OpportunityError("timestamp must be timezone-aware")
+    return value.astimezone(UTC)
 
 
 def _acquire_leg(
@@ -330,12 +342,22 @@ def _acquire_leg(
     series_fee_observation_id: str,
     event_fee_hash: str,
     requested_quantity: Decimal,
-    economics_observed_at: datetime,
     market_read: MarketReader,
     orderbook_acquirer: Callable[..., Any],
-    now: datetime,
+    clock: Callable[[], datetime],
 ) -> _LegEvidence:
-    specification = _build_specification(market, event, series_raw, now=economics_observed_at)
+    snapshot = acquire_market_snapshot(ticker, transport=market_read)
+    if not snapshot.succeeded:
+        raise _ConfirmationBlocked(
+            f"market snapshot acquisition failed for {ticker}: {snapshot.classification}"
+        )
+    # Contract semantics are checked after the market snapshot they describe is acquired.  Keep
+    # this inexpensive gate before the book request so an unsupported contract remains a clean
+    # semantic abstention, while the authoritative economics evaluation below still occurs after
+    # the orderbook required for economics has arrived.
+    specification = _build_specification(
+        market, event, series_raw, now=max(_utc(clock()), snapshot.observed_at)
+    )
     if (
         specification.semantic_status is not SemanticStatus.VALID
         or not specification.strategy_supported
@@ -344,21 +366,31 @@ def _acquire_leg(
             f"contract specification not strategy-supported for {ticker}: "
             f"status={specification.semantic_status.value}"
         )
-    snapshot = acquire_market_snapshot(ticker, transport=market_read)
-    if not snapshot.succeeded:
-        raise _ConfirmationBlocked(
-            f"market snapshot acquisition failed for {ticker}: {snapshot.classification}"
-        )
     orderbook = orderbook_acquirer(ticker)
     if not orderbook.succeeded:
         raise _ConfirmationBlocked(
             f"orderbook snapshot acquisition failed for {ticker}: {orderbook.classification}"
         )
-    validation = validate_orderbook_snapshot(orderbook.to_json(), expected_ticker=ticker, now=now)
+    # This clock read is intentionally after both evidence acquisitions.  It is the evaluation
+    # time for this leg, never the attempt-start time.
+    evaluation_at = max(_utc(clock()), snapshot.observed_at, orderbook.observed_at)
+    orderbook_payload = orderbook.to_json()
+    validation = validate_orderbook_snapshot(
+        orderbook_payload, expected_ticker=ticker, now=evaluation_at
+    )
     if not validation.succeeded:
         raise _ConfirmationBlocked(
             f"orderbook snapshot did not independently re-validate for {ticker}: "
             f"{validation.classification}"
+        )
+    specification = _build_specification(market, event, series_raw, now=evaluation_at)
+    if (
+        specification.semantic_status is not SemanticStatus.VALID
+        or not specification.strategy_supported
+    ):
+        raise _ConfirmationBlocked(
+            f"contract specification not strategy-supported for {ticker}: "
+            f"status={specification.semantic_status.value}"
         )
     try:
         ladder = PriceLadder.parse(
@@ -383,13 +415,50 @@ def _acquire_leg(
             fee_policy=fee_policy,
             fee_regime=fee_regime,
             requested_quantity=requested_quantity,
-            economics_observed_at=economics_observed_at,
+            economics_observed_at=evaluation_at,
         )
     except OpportunityError as exc:
         raise _ConfirmationBlocked(
             f"authoritative economics construction failed for {ticker}: {exc}"
         ) from None
-    return _LegEvidence(ticker, economics, specification)
+    return _LegEvidence(ticker, economics, specification, snapshot.to_json(), orderbook_payload)
+
+
+def _validate_common_confirmation_time(
+    broad: _LegEvidence, narrow: _LegEvidence, confirmation_at: datetime
+) -> None:
+    """Require both independently acquired legs to remain fresh at one actual common time."""
+    common_at = _utc(confirmation_at)
+    for leg in (broad, narrow):
+        market_validation = validate_market_snapshot(
+            leg.market_snapshot_payload,
+            expected_ticker=leg.market_ticker,
+            expected_event_ticker=leg.economics.event_ticker,
+        )
+        if not market_validation.succeeded or market_validation.observed_at is None:
+            raise _ConfirmationBlocked(
+                f"market snapshot no longer independently validates for {leg.market_ticker}: "
+                f"{market_validation.classification}"
+            )
+        market_at = market_validation.observed_at
+        if market_at > common_at or common_at - market_at > FRESHNESS:
+            raise _ConfirmationBlocked(
+                f"market snapshot is not fresh at common confirmation time for {leg.market_ticker}"
+            )
+        book_validation = validate_orderbook_snapshot(
+            leg.orderbook_snapshot_payload,
+            expected_ticker=leg.market_ticker,
+            now=common_at,
+        )
+        if not book_validation.succeeded:
+            raise _ConfirmationBlocked(
+                f"orderbook snapshot is not fresh at common confirmation time for "
+                f"{leg.market_ticker}: {book_validation.classification}"
+            )
+        if leg.economics.economics_observed_at > common_at:
+            raise _ConfirmationBlocked(
+                f"economics evaluation is after common confirmation time for {leg.market_ticker}"
+            )
 
 
 def attempt_exact_confirmation(
@@ -410,7 +479,7 @@ def attempt_exact_confirmation(
     evidence this needs produces a ``DISCOVERY_ONLY`` observation with an explicit
     ``blocker_reason``, never a fabricated or partial confirmation.
     """
-    now = clock()
+    attempt_started_at = clock()
     event = repo.events.get(lead.event_ticker)
     broad_market = repo.markets.get(lead.broad_market_ticker)
     narrow_market = repo.markets.get(lead.narrow_market_ticker)
@@ -419,7 +488,7 @@ def attempt_exact_confirmation(
             lead,
             relationship_id_value=relationship_id_value,
             scan_run_id=scan_run_id,
-            observed_at=now,
+            observed_at=attempt_started_at,
             blocker_reason="event or market no longer present in the refreshed universe",
         )
     series_ticker = event.series_ticker
@@ -428,12 +497,14 @@ def attempt_exact_confirmation(
             lead,
             relationship_id_value=relationship_id_value,
             scan_run_id=scan_run_id,
-            observed_at=now,
+            observed_at=attempt_started_at,
             blocker_reason="event carries no series identity",
         )
     try:
         series_raw = _fetch_series_raw(series_ticker, series_read)
-        series_observation = CurrentSeriesFeeObservation.parse(dict(series_raw), observed_at=now)
+        series_observation = CurrentSeriesFeeObservation.parse(
+            dict(series_raw), observed_at=_utc(clock())
+        )
         event_override = EventFeeOverride.parse(event.raw)
         fee_regime = resolve_current_fee_regime(series_observation, event_override)
         fee_policy = current_event_formula_policy(
@@ -444,7 +515,7 @@ def attempt_exact_confirmation(
             lead,
             relationship_id_value=relationship_id_value,
             scan_run_id=scan_run_id,
-            observed_at=now,
+            observed_at=max(attempt_started_at, _utc(clock())),
             blocker_reason=f"fee regime unresolved: {exc}",
         )
 
@@ -459,10 +530,9 @@ def attempt_exact_confirmation(
             series_fee_observation_id=series_observation.observation_id,
             event_fee_hash=event_override.metadata_hash,
             requested_quantity=requested_quantity,
-            economics_observed_at=now,
             market_read=market_read,
             orderbook_acquirer=orderbook_acquirer,
-            now=now,
+            clock=clock,
         )
         narrow = _acquire_leg(
             lead.narrow_market_ticker,
@@ -474,17 +544,22 @@ def attempt_exact_confirmation(
             series_fee_observation_id=series_observation.observation_id,
             event_fee_hash=event_override.metadata_hash,
             requested_quantity=requested_quantity,
-            economics_observed_at=now,
             market_read=market_read,
             orderbook_acquirer=orderbook_acquirer,
-            now=now,
+            clock=clock,
         )
+        common_confirmation_at = max(
+            _utc(clock()),
+            broad.economics.economics_observed_at,
+            narrow.economics.economics_observed_at,
+        )
+        _validate_common_confirmation_time(broad, narrow, common_confirmation_at)
     except _ConfirmationBlocked as exc:
         return record_discovery_only(
             lead,
             relationship_id_value=relationship_id_value,
             scan_run_id=scan_run_id,
-            observed_at=now,
+            observed_at=max(attempt_started_at, _utc(clock())),
             blocker_reason=exc.reason,
         )
 
@@ -495,13 +570,14 @@ def attempt_exact_confirmation(
             narrow.economics,
             broad_specification=broad.specification,
             narrow_specification=narrow.specification,
+            confirmation_observed_at=common_confirmation_at,
         )
     except OpportunityError as exc:
         return record_discovery_only(
             lead,
             relationship_id_value=relationship_id_value,
             scan_run_id=scan_run_id,
-            observed_at=now,
+            observed_at=common_confirmation_at,
             blocker_reason=f"canonical exact confirmation rejected: {exc}",
         )
     return record_exact_confirmation(
@@ -509,7 +585,7 @@ def attempt_exact_confirmation(
         confirmation,
         relationship_id_value=relationship_id_value,
         scan_run_id=scan_run_id,
-        observed_at=now,
+        observed_at=common_confirmation_at,
     )
 
 

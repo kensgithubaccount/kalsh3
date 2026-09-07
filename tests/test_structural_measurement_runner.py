@@ -362,6 +362,42 @@ def test_attempt_exact_confirmation_end_to_end_happy_path(tmp_path: Path) -> Non
     assert observation.confirmation_id is not None
 
 
+def test_exact_confirmation_uses_post_acquisition_evaluation_and_common_time(
+    tmp_path: Path,
+) -> None:
+    low_raw, high_raw, transport = _universe_for_confirmation(low_book={}, high_book={})
+    refresh = refresh_universe(str(tmp_path / "u.sqlite3"), transport=transport, clock=lambda: NOW)
+    lead = run_discovery(refresh.repo, source_authority="test").leads[0]
+    order_books = {
+        "LOW": {"yes_dollars": [[".05", "5"]], "no_dollars": [[".85", "5"]]},
+        "HIGH": {"yes_dollars": [[".85", "5"]], "no_dollars": [[".05", "5"]]},
+    }
+    # The books are stamped at NOW, deliberately after the attempt-start clock value.
+    clock_values = iter(
+        [
+            NOW - timedelta(seconds=1),  # attempt identity/start
+            NOW,  # series observation
+            NOW,  # broad specification evaluation, after broad market acquisition
+            NOW,  # broad economics evaluation, after broad book acquisition
+            NOW,  # narrow specification evaluation, after narrow market acquisition
+            NOW,  # narrow economics evaluation, after narrow book acquisition
+            NOW,  # common confirmation
+        ]
+    )
+    observation = attempt_exact_confirmation(
+        lead,
+        relationship_id_value=relationship_id(lead),
+        scan_run_id="scan-temporal",
+        repo=refresh.repo,
+        market_read=_market_transport({"LOW": low_raw, "HIGH": high_raw}),
+        series_read=_series_transport(raw_series()),
+        orderbook_acquirer=_orderbook_acquirer(order_books),
+        clock=lambda: next(clock_values),
+    )
+    assert observation.state is MeasurementState.AFTER_COST_POSITIVE_RESEARCH
+    assert observation.observed_at == NOW
+
+
 def test_attempt_exact_confirmation_blocks_on_a_semantically_invalid_specification(
     tmp_path: Path,
 ) -> None:
