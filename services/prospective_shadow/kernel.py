@@ -34,7 +34,14 @@ from services.forecasting.weather_prospective import (
 from services.forecasting.weather_prospective import (
     validate_prospective_forecast_evidence,
 )
-from services.market_universe.domain import Event, Market, stable_hash
+from services.market_universe.archive import (
+    ARCHIVE_IDENTITY_POLICY_VERSION,
+    ARCHIVE_SCHEMA_VERSION,
+    UNIVERSE_PARSER_VERSION,
+    ArchivedObservation,
+    EntityKind,
+)
+from services.market_universe.domain import Event, Market, Series, stable_hash
 from services.market_universe.event_snapshot import PARSER_VERSION as EVENT_PARSER_VERSION
 from services.market_universe.event_snapshot import SCHEMA as EVENT_SNAPSHOT_SCHEMA
 from services.market_universe.event_snapshot import AuthoritativeEventSnapshot
@@ -193,6 +200,40 @@ class HydratedMarketAuthority:
         }
 
 
+@dataclass(frozen=True, slots=True)
+class HydratedSeriesAuthority:
+    """Exact series entity reconstructed from the reviewed universe archive."""
+
+    series: Series
+    observation: ArchivedObservation
+
+    @property
+    def identity(self) -> dict[str, str]:
+        if self.observation.kind is not EntityKind.SERIES:
+            raise ShadowKernelError("series authority kind mismatch")
+        if self.observation.ticker != self.series.ticker:
+            raise ShadowKernelError("series authority ticker mismatch")
+        if (
+            self.observation.parser_version != UNIVERSE_PARSER_VERSION
+            or self.observation.archive_schema_version != ARCHIVE_SCHEMA_VERSION
+            or self.observation.archive_policy_version != ARCHIVE_IDENTITY_POLICY_VERSION
+            or self.observation.metadata_hash != self.series.metadata_hash
+            or self.observation.canonical_source_hash
+            != hashlib.sha256(canonical_json(self.series.raw).encode()).hexdigest()
+        ):
+            raise ShadowKernelError("series authority evidence mismatch")
+        return {
+            "series_ticker": self.series.ticker,
+            "series_body_sha256": self.observation.canonical_source_hash,
+            "series_metadata_hash": self.series.metadata_hash,
+            "series_observation_id": self.observation.observation_id,
+            "series_acquired_at": self.observation.acquired_at.isoformat(),
+            "series_parser_version": self.observation.parser_version,
+            "series_snapshot_schema": self.observation.archive_schema_version,
+            "series_identity_policy_version": self.observation.archive_policy_version,
+        }
+
+
 def hydrate_market_authority(
     summary: Mapping[str, Any],
     *,
@@ -338,6 +379,65 @@ def _book(view: BookView, decision_at: datetime, stale_after: timedelta) -> dict
         "no_bids": no_bids,
         "best_yes_bid": None if view.best_yes_bid is None else str(view.best_yes_bid),
         "best_yes_ask": None if view.best_yes_ask is None else str(view.best_yes_ask),
+    }
+
+
+def _validate_persisted_book(book: object) -> dict[str, Any]:
+    if not isinstance(book, dict):
+        raise ShadowKernelError("persisted book is malformed")
+    ticker = book.get("ticker")
+    sequence = book.get("sequence")
+    observed_raw = book.get("observed_at")
+    if (
+        not isinstance(ticker, str)
+        or not ticker
+        or isinstance(sequence, bool)
+        or not isinstance(sequence, int)
+    ):
+        raise ShadowKernelError("persisted book identity is malformed")
+    if not isinstance(observed_raw, str):
+        raise ShadowKernelError("persisted book timestamp is malformed")
+    try:
+        observed = datetime.fromisoformat(observed_raw)
+    except ValueError as exc:
+        raise ShadowKernelError("persisted book timestamp is malformed") from exc
+    observed_canonical = _iso(observed, f"{ticker}.observed_at")
+    levels: dict[str, list[list[str]]] = {}
+    for side in ("yes_bids", "no_bids"):
+        raw_levels = book.get(side)
+        if not isinstance(raw_levels, list):
+            raise ShadowKernelError("persisted book levels are malformed")
+        parsed: list[list[str]] = []
+        previous: Decimal | None = None
+        for item in raw_levels:
+            if not isinstance(item, list) or len(item) != 2:
+                raise ShadowKernelError("persisted book level is malformed")
+            price = _canonical_decimal(item[0], f"{ticker}.{side}.price")
+            quantity = _canonical_decimal(item[1], f"{ticker}.{side}.quantity")
+            price_d, quantity_d = Decimal(price), Decimal(quantity)
+            if not (Decimal("0") < price_d < Decimal("1")) or quantity_d <= 0:
+                raise ShadowKernelError("persisted book level is invalid")
+            if previous is not None and price_d >= previous:
+                raise ShadowKernelError("persisted book levels are not canonically ordered")
+            previous = price_d
+            parsed.append([price, quantity])
+        levels[side] = parsed
+    expected_snapshot = stable_hash(
+        (ticker, sequence, observed_canonical, levels["yes_bids"], levels["no_bids"])
+    )
+    if book.get("snapshot_id") != expected_snapshot:
+        raise ShadowKernelError("persisted book snapshot identity mismatch")
+    yes_prices = [Decimal(item[0]) for item in levels["yes_bids"]]
+    no_prices = [Decimal(item[0]) for item in levels["no_bids"]]
+    expected_bid = None if not yes_prices else str(max(yes_prices))
+    expected_ask = None if not no_prices else str(min(no_prices))
+    if book.get("best_yes_bid") != expected_bid or book.get("best_yes_ask") != expected_ask:
+        raise ShadowKernelError("persisted book top-of-book mismatch")
+    return {
+        **book,
+        "observed_at": observed_canonical,
+        "yes_bids": levels["yes_bids"],
+        "no_bids": levels["no_bids"],
     }
 
 
@@ -655,21 +755,19 @@ def _canonical_decimal(value: object, field: str) -> str:
     return value
 
 
-def _semantic_specification(authority: HydratedMarketAuthority) -> ContractSpecification:
-    """Normalize only exact hydrated market/event authority through the reviewed parser."""
+def _semantic_specification(
+    authority: HydratedMarketAuthority, series_authority: HydratedSeriesAuthority
+) -> ContractSpecification:
+    """Normalize exact market/event/series authority through the reviewed parser."""
     market = authority.market.raw
     event = authority.event.raw
-    sources = event.get("settlement_sources") or market.get("settlement_sources") or []
-    series = {
-        "ticker": authority.event.series_ticker,
-        "title": event.get("title", ""),
-        "category": event.get("category", market.get("category", "")),
-        "frequency": event.get("frequency", "event"),
-        "settlement_sources": sources,
-    }
+    if authority.event.series_ticker != series_authority.series.ticker:
+        raise ShadowKernelError("event/series authority ticker mismatch")
     try:
         specification = ContractSpecificationParser().parse(
-            SemanticsInputBundle.build(dict(market), dict(event), series),
+            SemanticsInputBundle.build(
+                dict(market), dict(event), dict(series_authority.series.raw)
+            ),
             now=authority.market_snapshot.observed_at,
         )
     except Exception as exc:
@@ -752,6 +850,8 @@ def build_structural_signal_envelope(
     decision_at: datetime,
     start_receipt_digest: str,
     runtime: RuntimeIdentity,
+    broad_series_authority: HydratedSeriesAuthority,
+    narrow_series_authority: HydratedSeriesAuthority,
 ) -> dict[str, Any]:
     """Build the immutable, candidate-only S2A envelope from captured evidence."""
     _validate_runtime_identity(runtime)
@@ -761,6 +861,10 @@ def build_structural_signal_envelope(
         raise ShadowKernelError("unknown structural relationship")
     if broad_authority.event.ticker != narrow_authority.event.ticker:
         raise ShadowKernelError("sibling event authorities disagree")
+    if broad_series_authority.identity != narrow_series_authority.identity:
+        raise ShadowKernelError("sibling series authorities disagree")
+    if broad_authority.event.series_ticker != broad_series_authority.series.ticker:
+        raise ShadowKernelError("broad event/series authority mismatch")
     broad_event = _event_authority(broad_authority)
     narrow_event = _event_authority(narrow_authority)
     if broad_event != narrow_event:
@@ -794,8 +898,12 @@ def build_structural_signal_envelope(
         raise ShadowKernelError("structural lead inequality is not satisfied")
     if broad_book.get("snapshot_id") is None or narrow_book.get("snapshot_id") is None:
         raise ShadowKernelError("book snapshot identity missing")
-    broad_specification = _semantic_specification(broad_authority)
-    narrow_specification = _semantic_specification(narrow_authority)
+    broad_specification = _semantic_specification(broad_authority, broad_series_authority)
+    narrow_specification = _semantic_specification(narrow_authority, narrow_series_authority)
+    if broad_specification.comparator.value not in {">", ">="}:
+        raise ShadowKernelError("unsupported upward structural comparator")
+    if narrow_specification.comparator != broad_specification.comparator:
+        raise ShadowKernelError("structural comparator mismatch")
     broad_semantic_identity = _semantic_identity(broad_specification)
     narrow_semantic_identity = _semantic_identity(narrow_specification)
     if broad_semantic_identity != narrow_semantic_identity:
@@ -818,6 +926,7 @@ def build_structural_signal_envelope(
         "schema": STRUCTURAL_SIGNAL_ENVELOPE_SCHEMA,
         "status": "CANDIDATE_OBSERVE",
         "event": {"ticker": broad_event["event_ticker"], "authority": broad_event},
+        "series": {"authority": broad_series_authority.identity},
         "relationship": {
             "type": STRUCTURAL_RELATIONSHIP,
             "broad": {
@@ -861,10 +970,12 @@ def build_structural_signal_envelope(
                 "broad": broad_book["snapshot_id"],
                 "narrow": narrow_book["snapshot_id"],
             },
+            "book_contents": {"broad": dict(broad_book), "narrow": dict(narrow_book)},
             "market_authority": {
                 "broad": broad_authority.identity,
                 "narrow": narrow_authority.identity,
             },
+            "series_authority": broad_series_authority.identity,
             "rules_hashes": {
                 "broad": broad_authority.market.rules_hash,
                 "narrow": narrow_authority.market.rules_hash,
@@ -888,6 +999,7 @@ def validate_structural_signal_envelope(envelope: Mapping[str, Any]) -> None:
         "schema",
         "status",
         "event",
+        "series",
         "relationship",
         "lead",
         "evidence",
@@ -997,7 +1109,7 @@ def validate_structural_signal_envelope(envelope: Mapping[str, Any]) -> None:
             or not _SHA256.fullmatch(str(market_authority.get("metadata_hash", "")))
         ):
             raise ShadowKernelError(f"candidate envelope {label} market authority malformed")
-        if not isinstance(proposition.get("comparator"), str) or not proposition["comparator"]:
+        if proposition.get("comparator") not in {">", ">="}:
             raise ShadowKernelError(f"candidate envelope {label} comparator missing")
     event = envelope.get("event")
     authority = event.get("authority") if isinstance(event, dict) else None
@@ -1005,6 +1117,14 @@ def validate_structural_signal_envelope(envelope: Mapping[str, Any]) -> None:
         not isinstance(event, dict)
         or not isinstance(event.get("ticker"), str)
         or not isinstance(authority, dict)
+        or set(authority)
+        != {
+            "event_ticker",
+            "event_body_sha256",
+            "event_metadata_hash",
+            "event_parser_version",
+            "event_snapshot_schema",
+        }
     ):
         raise ShadowKernelError("candidate envelope event authority missing")
     if (
@@ -1018,6 +1138,38 @@ def validate_structural_signal_envelope(envelope: Mapping[str, Any]) -> None:
         or authority.get("event_snapshot_schema") != EVENT_SNAPSHOT_SCHEMA
     ):
         raise ShadowKernelError("candidate envelope event authority convention mismatch")
+    series = envelope.get("series")
+    series_authority = series.get("authority") if isinstance(series, dict) else None
+    if not isinstance(series_authority, dict) or set(series_authority) != {
+        "series_ticker",
+        "series_body_sha256",
+        "series_metadata_hash",
+        "series_observation_id",
+        "series_acquired_at",
+        "series_parser_version",
+        "series_snapshot_schema",
+        "series_identity_policy_version",
+    }:
+        raise ShadowKernelError("candidate envelope series authority malformed")
+    for field in ("series_body_sha256", "series_metadata_hash", "series_observation_id"):
+        if not isinstance(series_authority[field], str) or not _SHA256.fullmatch(
+            series_authority[field]
+        ):
+            raise ShadowKernelError("candidate envelope series authority malformed")
+    try:
+        series_acquired = datetime.fromisoformat(series_authority["series_acquired_at"])
+    except (TypeError, ValueError) as exc:
+        raise ShadowKernelError(
+            "candidate envelope series acquisition timestamp malformed"
+        ) from exc
+    if _iso(series_acquired, "series_acquired_at") != series_authority["series_acquired_at"]:
+        raise ShadowKernelError("candidate envelope series acquisition timestamp malformed")
+    if (
+        series_authority["series_parser_version"] != UNIVERSE_PARSER_VERSION
+        or series_authority["series_snapshot_schema"] != ARCHIVE_SCHEMA_VERSION
+        or series_authority["series_identity_policy_version"] != ARCHIVE_IDENTITY_POLICY_VERSION
+    ):
+        raise ShadowKernelError("candidate envelope series authority convention mismatch")
     semantic_context = relationship.get("semantic_context")
     if not isinstance(semantic_context, dict) or set(semantic_context) != {"identity", "material"}:
         raise ShadowKernelError("candidate envelope semantic context missing")
@@ -1026,6 +1178,8 @@ def validate_structural_signal_envelope(envelope: Mapping[str, Any]) -> None:
         raise ShadowKernelError("candidate envelope semantic context shape mismatch")
     if semantic_context.get("identity") != content_hash({"semantic_context": material}):
         raise ShadowKernelError("candidate envelope semantic context identity mismatch")
+    if series_authority["series_ticker"] != material["series_ticker"]:
+        raise ShadowKernelError("candidate envelope series semantic mismatch")
     expected_proposition_authority = {
         "body_sha256": authority["event_body_sha256"],
         "metadata_hash": authority["event_metadata_hash"],
@@ -1083,6 +1237,8 @@ def validate_structural_signal_envelope(envelope: Mapping[str, Any]) -> None:
         not isinstance(evidence, dict)
         or not isinstance(evidence.get("book_snapshots"), dict)
         or set(evidence["book_snapshots"]) != {"broad", "narrow"}
+        or not isinstance(evidence.get("book_contents"), dict)
+        or set(evidence["book_contents"]) != {"broad", "narrow"}
     ):
         raise ShadowKernelError("candidate envelope evidence snapshots missing")
     if not all(
@@ -1101,6 +1257,21 @@ def validate_structural_signal_envelope(envelope: Mapping[str, Any]) -> None:
             != parent_authority.get("market_metadata_hash")
         ):
             raise ShadowKernelError("candidate envelope market authority binding mismatch")
+    for key, leg in (("broad", broad), ("narrow", narrow)):
+        checked = _validate_persisted_book(evidence["book_contents"][key])
+        if (
+            checked["ticker"] != leg["ticker"]
+            or checked["snapshot_id"] != evidence["book_snapshots"][key]
+        ):
+            raise ShadowKernelError("candidate envelope book reconciliation mismatch")
+        expected_price = checked["best_yes_ask"] if key == "broad" else checked["best_yes_bid"]
+        if (
+            envelope["lead"]["broad_yes_ask" if key == "broad" else "narrow_yes_bid"]
+            != expected_price
+        ):
+            raise ShadowKernelError("candidate envelope lead price/book mismatch")
+    if envelope.get("series") is None:
+        raise ShadowKernelError("candidate envelope series authority missing")
     if envelope.get("signal_id") != content_hash(
         {key: value for key, value in envelope.items() if key != "signal_id"}
     ):
@@ -1117,6 +1288,7 @@ def capture_structural_observation(
     stale_after: timedelta = timedelta(seconds=30),
     raw_inconsistency: bool | None = None,
     leg_authority: Mapping[str, HydratedMarketAuthority] | None = None,
+    leg_series_authority: Mapping[str, HydratedSeriesAuthority] | None = None,
     start_receipt_digest: str = "",
     runtime: RuntimeIdentity | None = None,
     s2a_enabled: bool = False,
@@ -1191,7 +1363,11 @@ def capture_structural_observation(
     }
     envelope: dict[str, Any] | None = None
     if s2a_enabled:
-        if runtime is None:
+        if (
+            runtime is None
+            or leg_series_authority is None
+            or set(leg_series_authority) != set(leg_authority)
+        ):
             return _base(
                 "structural_threshold",
                 acquired_at,
@@ -1223,6 +1399,8 @@ def capture_structural_observation(
                 decision_at=decision_at,
                 start_receipt_digest=start_receipt_digest,
                 runtime=runtime,
+                broad_series_authority=leg_series_authority[lead.broad_market_ticker],
+                narrow_series_authority=leg_series_authority[lead.narrow_market_ticker],
             )
         except ShadowKernelError as exc:
             return _base(
@@ -1245,6 +1423,7 @@ def capture_structural_observation(
         values["semantic_context_identity"] = envelope["relationship"]["semantic_context"][
             "identity"
         ]
+        values["series_authority"] = envelope["evidence"]["series_authority"]
     return _base(
         "structural_threshold",
         acquired_at,
@@ -1329,6 +1508,8 @@ def validate_observation(
             raise ShadowKernelError("structural envelope market ticker mismatch")
         if envelope["event"]["ticker"] != obs.get("evidence", {}).get("event_ticker"):
             raise ShadowKernelError("structural envelope event ticker mismatch")
+        if envelope["event"]["ticker"] != obs.get("event_identity"):
+            raise ShadowKernelError("structural envelope parent event identity mismatch")
         if envelope["start_receipt_digest"] != obs.get("start_receipt_digest"):
             raise ShadowKernelError("structural envelope start receipt mismatch")
         if relation.get("type") != obs["evidence"].get("relationship_type"):
@@ -1360,6 +1541,43 @@ def validate_observation(
         ):
             if envelope["evidence"]["market_authority"][key] != authorities.get(ticker):
                 raise ShadowKernelError("structural envelope market authority mismatch")
+        parent_event_authorities = {
+            tuple(
+                authorities[ticker][field]
+                for field in (
+                    "event_body_sha256",
+                    "event_metadata_hash",
+                    "event_parser_version",
+                    "event_snapshot_schema",
+                )
+            )
+            for ticker in (relation["broad"]["ticker"], relation["narrow"]["ticker"])
+        }
+        if len(parent_event_authorities) != 1:
+            raise ShadowKernelError("parent event authorities disagree")
+        parent_event = next(iter(parent_event_authorities))
+        envelope_event = envelope["event"]["authority"]
+        if parent_event != tuple(
+            envelope_event[field]
+            for field in (
+                "event_body_sha256",
+                "event_metadata_hash",
+                "event_parser_version",
+                "event_snapshot_schema",
+            )
+        ):
+            raise ShadowKernelError("structural envelope event authority mismatch")
+        if envelope.get("series", {}).get("authority") != obs["evidence"].get("series_authority"):
+            raise ShadowKernelError("structural envelope series authority mismatch")
+        envelope_books = envelope["evidence"]["book_contents"]
+        for key, ticker in (
+            ("broad", relation["broad"]["ticker"]),
+            ("narrow", relation["narrow"]["ticker"]),
+        ):
+            if envelope_books[key] != next(
+                book for book in obs["books"] if book.get("ticker") == ticker
+            ):
+                raise ShadowKernelError("structural envelope book contents mismatch")
         if envelope["lead"]["policy_identity"] != obs["evidence"].get("structural_policy_identity"):
             raise ShadowKernelError("structural envelope policy mismatch")
         if envelope["relationship"]["semantic_context"]["identity"] != obs["evidence"].get(

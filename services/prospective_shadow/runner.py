@@ -13,6 +13,7 @@ from typing import Any
 
 from services.cycle_deadline import CycleDeadline, CycleDeadlineExceeded
 from services.forecasting.daily_temperature import route_daily_temperature
+from services.market_universe.archive import EntityKind, UniverseObservationArchive
 from services.market_universe.event_snapshot import (
     AuthoritativeEventSnapshot,
     acquire_event_snapshot,
@@ -253,6 +254,7 @@ def _weather_cycle(
 
 def _structural_cycle(
     *,
+    archive_path: str | Path | None = None,
     repo: Any,
     scan: Any,
     store: ShadowObservationStore,
@@ -274,6 +276,12 @@ def _structural_cycle(
         return [], False
 
     event_cache: dict[str, AuthoritativeEventSnapshot | None] = {}
+    series_cache: dict[str, Any | None] = {}
+    archive_reader = (
+        UniverseObservationArchive(str(archive_path), deadline=deadline)
+        if s2a_enabled and archive_path is not None
+        else None
+    )
     rows: list[dict[str, Any]] = []
     for lead in leads:
         if deadline is not None:
@@ -304,6 +312,26 @@ def _structural_cycle(
             lead.broad_market_ticker: broad_authority,
             lead.narrow_market_ticker: narrow_authority,
         }
+        series_authority = None
+        if s2a_enabled:
+            event = repo.events.get(lead.event_ticker)
+            series_ticker = None if event is None else event.series_ticker
+            if (
+                series_ticker is not None
+                and archive_reader is not None
+                and series_ticker not in series_cache
+            ):
+                try:
+                    series_cache[series_ticker] = archive_reader.at_or_before(
+                        EntityKind.SERIES, series_ticker, now
+                    )
+                except Exception:
+                    series_cache[series_ticker] = None
+            archived = None if series_ticker is None else series_cache.get(series_ticker)
+            if archived is not None:
+                from services.prospective_shadow.kernel import HydratedSeriesAuthority
+
+                series_authority = HydratedSeriesAuthority(archived.entity, archived)
         broad_book = _book(lead.broad_market_ticker, now, diagnostics, deadline, clock=clock)
         narrow_book = _book(lead.narrow_market_ticker, now, diagnostics, deadline, clock=clock)
         if broad_book.state is not BookState.CURRENT or narrow_book.state is not BookState.CURRENT:
@@ -318,6 +346,12 @@ def _structural_cycle(
             acquired_at=acquired_at,
             decision_at=decision_at,
             leg_authority=authorities,
+            leg_series_authority=None
+            if series_authority is None
+            else {
+                lead.broad_market_ticker: series_authority,
+                lead.narrow_market_ticker: series_authority,
+            },
             start_receipt_digest=str(start_receipt["receipt_digest"]),
             runtime=runtime,
             s2a_enabled=s2a_enabled,
@@ -345,7 +379,11 @@ def run_once(
     diagnostics.cycle_started_at = acquired_at.isoformat()
     try:
         refresh = refresh_universe(
-            str(archive), compressed_evidence=True, clock=clock, deadline=deadline
+            str(archive),
+            compressed_evidence=True,
+            clock=clock,
+            deadline=deadline,
+            s2a_enabled=s2a_enabled,
         )
     except CycleDeadlineExceeded as exc:
         diagnostics.timeout_stage = exc.stage
@@ -386,6 +424,7 @@ def run_once(
         )
         deadline.check("CYCLE_DEADLINE_STRUCTURAL_SCAN")
         structural_rows, structural_complete = _structural_cycle(
+            archive_path=str(archive),
             repo=refresh.repo,
             scan=scan,
             store=store,

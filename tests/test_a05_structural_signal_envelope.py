@@ -1,21 +1,25 @@
 from __future__ import annotations
 
+import hashlib
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from types import SimpleNamespace
 
 import pytest
 
-from services.market_universe.domain import material_hashes
+from services.market_universe.archive import EntityKind
+from services.market_universe.domain import Series, material_hashes
 from services.opportunity_engine.structural import RelationshipType, StructuralLead
 from services.prospective_shadow.kernel import (
     STRUCTURAL_POLICY_ID,
     STRUCTURAL_SIGNAL_ENVELOPE_SCHEMA,
     HydratedMarketAuthority,
+    HydratedSeriesAuthority,
     RuntimeIdentity,
     ShadowKernelError,
     _book,
     build_structural_signal_envelope,
+    canonical_json,
     capture_structural_observation,
     validate_observation,
     validate_structural_signal_envelope,
@@ -109,6 +113,30 @@ def _authority(ticker: str, *, event_body: str = "d" * 64) -> HydratedMarketAuth
     return HydratedMarketAuthority(market, event, market_snapshot, event_snapshot)
 
 
+def _series_authority() -> HydratedSeriesAuthority:
+    raw = {
+        "ticker": "SERIES",
+        "title": "Measured series",
+        "category": "Economics",
+        "frequency": "event",
+        "settlement_sources": [{"name": "Official Source", "url": "https://example.test"}],
+    }
+    series = Series.parse(raw)
+    observation = SimpleNamespace(
+        kind=EntityKind.SERIES,
+        ticker="SERIES",
+        canonical_source_hash=hashlib.sha256(canonical_json(raw).encode()).hexdigest(),
+        metadata_hash=series.metadata_hash,
+        observation_id="8" * 64,
+        acquired_at=NOW - timedelta(seconds=3),
+        parser_version="m2-market-universe-parser-v1",
+        archive_schema_version="m26f-universe-archive-schema-v1",
+        archive_policy_version="m26f-canonical-json-sha256-v1",
+        entity=series,
+    )
+    return HydratedSeriesAuthority(series, observation)
+
+
 def _lead() -> StructuralLead:
     broad = _authority("BROAD").market
     narrow = _authority("NARROW").market
@@ -142,6 +170,9 @@ def _books() -> tuple[dict, dict]:
     )
 
 
+SERIES_AUTHORITY = _series_authority()
+
+
 def test_complete_envelope_is_canonical_and_deterministic() -> None:
     broad, narrow = _books()
     first = build_structural_signal_envelope(
@@ -154,6 +185,8 @@ def test_complete_envelope_is_canonical_and_deterministic() -> None:
         decision_at=NOW,
         start_receipt_digest=RECEIPT,
         runtime=RUNTIME,
+        broad_series_authority=SERIES_AUTHORITY,
+        narrow_series_authority=SERIES_AUTHORITY,
     )
     second = build_structural_signal_envelope(
         lead=_lead(),
@@ -165,6 +198,8 @@ def test_complete_envelope_is_canonical_and_deterministic() -> None:
         decision_at=NOW,
         start_receipt_digest=RECEIPT,
         runtime=RUNTIME,
+        broad_series_authority=SERIES_AUTHORITY,
+        narrow_series_authority=SERIES_AUTHORITY,
     )
     assert first == second
     assert first["schema"] == STRUCTURAL_SIGNAL_ENVELOPE_SCHEMA
@@ -198,6 +233,8 @@ def test_disagreeing_event_authority_and_invalid_runtime_fail_closed() -> None:
             decision_at=NOW,
             start_receipt_digest=RECEIPT,
             runtime=RUNTIME,
+            broad_series_authority=SERIES_AUTHORITY,
+            narrow_series_authority=SERIES_AUTHORITY,
         )
 
 
@@ -224,6 +261,8 @@ def test_discovery_rules_or_metadata_mismatch_fails_closed_before_semantics() ->
             decision_at=NOW,
             start_receipt_digest=RECEIPT,
             runtime=RUNTIME,
+            broad_series_authority=SERIES_AUTHORITY,
+            narrow_series_authority=SERIES_AUTHORITY,
         )
     row = capture_structural_observation(
         lead=lead,
@@ -234,6 +273,7 @@ def test_discovery_rules_or_metadata_mismatch_fails_closed_before_semantics() ->
         leg_authority={"BROAD": _authority("BROAD"), "NARROW": _authority("NARROW")},
         start_receipt_digest=RECEIPT,
         runtime=RUNTIME,
+        leg_series_authority={"BROAD": SERIES_AUTHORITY, "NARROW": SERIES_AUTHORITY},
         s2a_enabled=True,
     )
     assert row["decision"] == "ABSTAIN"
@@ -255,6 +295,8 @@ def test_load_bearing_semantic_context_mismatch_fails_closed() -> None:
             decision_at=NOW,
             start_receipt_digest=RECEIPT,
             runtime=RUNTIME,
+            broad_series_authority=SERIES_AUTHORITY,
+            narrow_series_authority=SERIES_AUTHORITY,
         )
 
 
@@ -273,6 +315,8 @@ def test_normalization_refuses_ticker_or_title_inference() -> None:
             decision_at=NOW,
             start_receipt_digest=RECEIPT,
             runtime=RUNTIME,
+            broad_series_authority=SERIES_AUTHORITY,
+            narrow_series_authority=SERIES_AUTHORITY,
         )
 
 
@@ -288,6 +332,8 @@ def test_stored_semantics_replay_without_current_metadata() -> None:
         decision_at=NOW,
         start_receipt_digest=RECEIPT,
         runtime=RUNTIME,
+        broad_series_authority=SERIES_AUTHORITY,
+        narrow_series_authority=SERIES_AUTHORITY,
     )
     validate_structural_signal_envelope(envelope)
     assert envelope["relationship"]["semantic_context"]["identity"]
@@ -320,6 +366,7 @@ def test_capture_binds_envelope_to_parent_and_legacy_mode_remains_valid() -> Non
         leg_authority=authorities,
         start_receipt_digest=RECEIPT,
         runtime=RUNTIME,
+        leg_series_authority={"BROAD": SERIES_AUTHORITY, "NARROW": SERIES_AUTHORITY},
         s2a_enabled=True,
     )
     assert row["decision"] == "OBSERVE"
@@ -361,6 +408,7 @@ def test_s2a_mode_abstains_without_envelope_or_when_lead_is_not_positive() -> No
         leg_authority=authorities,
         start_receipt_digest=RECEIPT,
         runtime=RUNTIME,
+        leg_series_authority={"BROAD": SERIES_AUTHORITY, "NARROW": SERIES_AUTHORITY},
         s2a_enabled=True,
     )
     assert no_lead["decision"] == "ABSTAIN"
@@ -379,6 +427,8 @@ def test_envelope_rejects_mutated_signal_id_and_parent_mismatch() -> None:
         decision_at=NOW,
         start_receipt_digest=RECEIPT,
         runtime=RUNTIME,
+        broad_series_authority=SERIES_AUTHORITY,
+        narrow_series_authority=SERIES_AUTHORITY,
     )
     mutated = dict(envelope)
     mutated["lead"] = dict(envelope["lead"], gap="0.21")
@@ -393,8 +443,43 @@ def test_envelope_rejects_mutated_signal_id_and_parent_mismatch() -> None:
         leg_authority={"BROAD": _authority("BROAD"), "NARROW": _authority("NARROW")},
         start_receipt_digest=RECEIPT,
         runtime=RUNTIME,
+        leg_series_authority={"BROAD": SERIES_AUTHORITY, "NARROW": SERIES_AUTHORITY},
         s2a_enabled=True,
     )
     row["structural_signal_envelope"]["start_receipt_digest"] = "e" * 64
     with pytest.raises(ShadowKernelError):
         validate_observation(row, now=NOW)
+
+
+def test_r2_rejects_direction_and_book_content_mutations() -> None:
+    broad, narrow = _books()
+    envelope = build_structural_signal_envelope(
+        lead=_lead(),
+        broad_book=broad,
+        narrow_book=narrow,
+        broad_authority=_authority("BROAD"),
+        narrow_authority=_authority("NARROW"),
+        acquired_at=NOW - timedelta(seconds=2),
+        decision_at=NOW,
+        start_receipt_digest=RECEIPT,
+        runtime=RUNTIME,
+        broad_series_authority=SERIES_AUTHORITY,
+        narrow_series_authority=SERIES_AUTHORITY,
+    )
+    bad_comparator = dict(envelope)
+    bad_relationship = dict(envelope["relationship"])
+    bad_broad = dict(bad_relationship["broad"])
+    bad_broad["proposition"] = dict(bad_broad["proposition"], comparator="<=")
+    bad_relationship["broad"] = bad_broad
+    bad_comparator["relationship"] = bad_relationship
+    with pytest.raises(ShadowKernelError, match="comparator missing"):
+        validate_structural_signal_envelope(bad_comparator)
+
+    bad_books = dict(envelope)
+    bad_evidence = dict(envelope["evidence"])
+    bad_contents = dict(bad_evidence["book_contents"])
+    bad_contents["broad"] = dict(bad_contents["broad"], yes_bids=[["0.21", "2"]])
+    bad_evidence["book_contents"] = bad_contents
+    bad_books["evidence"] = bad_evidence
+    with pytest.raises(ShadowKernelError, match="snapshot identity"):
+        validate_structural_signal_envelope(bad_books)

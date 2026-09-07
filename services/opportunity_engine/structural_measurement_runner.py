@@ -141,6 +141,7 @@ def refresh_universe(
     clock: Callable[[], datetime] = lambda: datetime.now(UTC),
     progress: Callable[[SyncProgress], None] | None = None,
     deadline: CycleDeadline | None = None,
+    s2a_enabled: bool = False,
 ) -> UniverseRefreshResult:
     """Bounded public-only universe refresh.
 
@@ -171,6 +172,9 @@ def refresh_universe(
         if deadline is not None:
             deadline.check("CYCLE_DEADLINE_EVENT_PAGINATION")
         event_run = synchronizer.sync("events", parameters=dict(OPEN_NON_MVE_V2.events_parameters))
+        series_run = (
+            synchronizer.sync("series", parameters={"limit": "1000"}) if s2a_enabled else None
+        )
     except CycleDeadlineExceeded as exc:
         return UniverseRefreshResult(repo, False, exc.stage)
     market_events = {item.event_ticker for item in repo.markets.values()}
@@ -194,6 +198,7 @@ def refresh_universe(
     complete = (
         market_run.completeness is Completeness.COMPLETE
         and event_run.completeness is Completeness.COMPLETE
+        and (series_run is None or series_run.completeness is Completeness.COMPLETE)
         and reconciliation_complete
     )
     return UniverseRefreshResult(
