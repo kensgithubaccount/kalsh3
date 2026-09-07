@@ -3,10 +3,11 @@
 from __future__ import annotations
 
 import json
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 from types import SimpleNamespace
 
+import scripts.run_a02_prospective_collection as a02
 from services.prospective_shadow import runner
 from services.prospective_shadow.kernel import ShadowObservationStore
 from services.real_time_market_data.orderbook import BookState
@@ -66,6 +67,73 @@ def test_missing_weather_runtime_dependency_is_recorded_without_rows(tmp_path) -
     assert rows == []
     assert diagnostics.weather_operational_failures == 1
     assert diagnostics.operational_failures == ["WEATHER_ACQUISITION_RUNTIME_DEPENDENCY_MISSING"]
+
+
+def test_explicit_wgrib2_is_resolved_once_and_reaches_weather_composer(monkeypatch) -> None:
+    resolved_calls: list[str | None] = []
+    compose_calls: list[dict[str, object]] = []
+
+    def resolve(requested: str | None) -> tuple[str, str]:
+        resolved_calls.append(requested)
+        return "/isolated/reviewed/wgrib2", "sha256"
+
+    def compose(day, *, transport, wgrib2_bin):
+        del transport
+        compose_calls.append({"day": day, "wgrib2_bin": wgrib2_bin})
+        return {"classification": "SUCCESS", "records": [{"target_date": day.isoformat()}]}
+
+    monkeypatch.setattr(a02, "_resolve_wgrib2", resolve)
+    monkeypatch.setattr(a02, "compose_weather", compose)
+
+    acquirer = a02._weather_acquirer_factory("/configured/wgrib2")
+    result = acquirer(date(2026, 9, 8))
+
+    assert result.evidence == {"target_date": "2026-09-08"}
+    assert resolved_calls == ["/configured/wgrib2"]
+    assert compose_calls == [{"day": date(2026, 9, 8), "wgrib2_bin": "/isolated/reviewed/wgrib2"}]
+
+
+def test_explicit_wgrib2_does_not_use_path_lookup(monkeypatch) -> None:
+    def fail_if_path_lookup(name: str) -> None:
+        raise AssertionError(f"unexpected PATH lookup for {name}")
+
+    monkeypatch.setattr(a02, "_resolve_wgrib2", lambda requested: (requested or "", "sha256"))
+    monkeypatch.setattr(a02.shutil, "which", fail_if_path_lookup)
+    monkeypatch.setattr(
+        a02,
+        "compose_weather",
+        lambda day, *, transport, wgrib2_bin: {
+            "classification": "EVALUATION_BLOCKED",
+            "reason": "ZERO_VALID_CANDIDATES",
+        },
+    )
+
+    result = a02._weather_acquirer_factory("/configured/wgrib2")(date(2026, 9, 8))
+
+    assert result.operational_failure is True
+    assert result.reason == "WEATHER_ACQUISITION_EVALUATION_BLOCKED:ZERO_VALID_CANDIDATES"
+
+
+def test_invalid_explicit_wgrib2_fails_closed_without_path_fallback(monkeypatch) -> None:
+    resolve_calls: list[str | None] = []
+
+    def resolve(requested: str | None) -> tuple[str, str]:
+        resolve_calls.append(requested)
+        raise RuntimeError("invalid explicit executable")
+
+    monkeypatch.setattr(a02, "_resolve_wgrib2", resolve)
+    monkeypatch.setattr(
+        a02.shutil,
+        "which",
+        lambda _name: (_ for _ in ()).throw(AssertionError("PATH fallback")),
+    )
+
+    result = a02._weather_acquirer_factory("/invalid/wgrib2")(date(2026, 9, 8))
+
+    assert resolve_calls == ["/invalid/wgrib2"]
+    assert result.evidence is None
+    assert result.operational_failure is True
+    assert result.reason == "WEATHER_ACQUISITION_RUNTIME_DEPENDENCY_MISSING:wgrib2 3.8.0 required"
 
 
 def test_event_snapshot_cache_is_once_per_event(monkeypatch) -> None:
