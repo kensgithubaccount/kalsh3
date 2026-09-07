@@ -24,6 +24,7 @@ from services.opportunity_engine.structural_measurement_runner import (
     run_discovery,
 )
 from services.prospective_shadow.kernel import (
+    RuntimeIdentity,
     ShadowObservationStore,
     capture_structural_observation,
     capture_weather_observation,
@@ -260,6 +261,8 @@ def _structural_cycle(
     clock: Callable[[], datetime],
     diagnostics: CycleDiagnostics,
     deadline: CycleDeadline | None = None,
+    runtime: RuntimeIdentity | None = None,
+    s2a_enabled: bool = False,
 ) -> tuple[list[dict[str, Any]], bool]:
     leads = tuple(scan.leads)
     diagnostics.candidate_leads = len(leads)
@@ -316,6 +319,8 @@ def _structural_cycle(
             decision_at=decision_at,
             leg_authority=authorities,
             start_receipt_digest=str(start_receipt["receipt_digest"]),
+            runtime=runtime,
+            s2a_enabled=s2a_enabled,
         )
         rows.append(row)
     return rows, True
@@ -330,6 +335,8 @@ def run_once(
     weather_acquirer: Callable[[date], WeatherAcquisitionResult] | None = None,
     clock: Callable[[], datetime] = lambda: datetime.now(UTC),
     monotonic: Callable[[], float] = time.monotonic,
+    runtime: RuntimeIdentity | None = None,
+    s2a_enabled: bool = False,
 ) -> CycleResult:
     validate_start_receipt(start_receipt)
     deadline = CycleDeadline(MAX_CYCLE_SECONDS, monotonic=monotonic)
@@ -387,6 +394,8 @@ def run_once(
             clock=clock,
             diagnostics=diagnostics,
             deadline=deadline,
+            runtime=runtime,
+            s2a_enabled=s2a_enabled,
         )
         weather_rows = _weather_cycle(
             repo=refresh.repo,
