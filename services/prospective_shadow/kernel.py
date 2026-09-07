@@ -244,16 +244,16 @@ def _book(view: BookView, decision_at: datetime, stale_after: timedelta) -> dict
     observed = _iso(view.observed_at, f"{view.ticker}.observed_at")
     if view.observed_at > decision_at or decision_at - view.observed_at > stale_after:
         raise ShadowKernelError(f"{view.ticker}: stale or future book")
+    yes_bids = [[str(price), str(quantity)] for price, quantity in view.yes_bids]
+    no_bids = [[str(price), str(quantity)] for price, quantity in view.no_bids]
     return {
         "ticker": view.ticker,
-        "snapshot_id": stable_hash(
-            (view.ticker, view.sequence, observed, view.yes_bids, view.no_bids)
-        ),
+        "snapshot_id": stable_hash((view.ticker, view.sequence, observed, yes_bids, no_bids)),
         "sequence": view.sequence,
         "observed_at": observed,
         "state": view.state.value,
-        "yes_bids": [[str(p), str(q)] for p, q in view.yes_bids],
-        "no_bids": [[str(p), str(q)] for p, q in view.no_bids],
+        "yes_bids": yes_bids,
+        "no_bids": no_bids,
         "best_yes_bid": None if view.best_yes_bid is None else str(view.best_yes_bid),
         "best_yes_ask": None if view.best_yes_ask is None else str(view.best_yes_ask),
     }
