@@ -103,15 +103,19 @@ def _book(
     now: datetime,
     diagnostics: CycleDiagnostics,
     deadline: CycleDeadline | None = None,
+    clock: Callable[[], datetime] | None = None,
 ) -> BookView:
     diagnostics.books_attempted += 1
+    acquisition_clock = clock or (lambda: now)
     if deadline is not None:
         timeout = deadline.timeout_seconds(10, "CYCLE_DEADLINE_BOOK_ACQUISITION")
-        snapshot = acquire_orderbook_snapshot(ticker, clock=lambda: now, timeout_seconds=timeout)
+        snapshot = acquire_orderbook_snapshot(
+            ticker, clock=acquisition_clock, timeout_seconds=timeout
+        )
     else:
-        snapshot = acquire_orderbook_snapshot(ticker, clock=lambda: now)
+        snapshot = acquire_orderbook_snapshot(ticker, clock=acquisition_clock)
     if not snapshot.succeeded:
-        return _empty_book(ticker, now)
+        return _empty_book(ticker, acquisition_clock())
     book = SequencedBook(ticker)
     book.snapshot(
         0,
@@ -121,7 +125,8 @@ def _book(
         snapshot.orderbook_identity or "",
         ingested_at=snapshot.observed_at,
     )
-    return book.view(now)
+    # Consume the returned evidence using a clock read that occurs after acquisition.
+    return book.view(acquisition_clock())
 
 
 def _event_snapshot(
@@ -130,15 +135,19 @@ def _event_snapshot(
     cache: dict[str, AuthoritativeEventSnapshot | None],
     diagnostics: CycleDiagnostics,
     deadline: CycleDeadline | None = None,
+    clock: Callable[[], datetime] | None = None,
 ) -> AuthoritativeEventSnapshot | None:
     if event_ticker in cache:
         return cache[event_ticker]
     diagnostics.exact_event_attempted += 1
+    acquisition_clock = clock or (lambda: now)
     if deadline is not None:
         timeout = deadline.timeout_seconds(10, "CYCLE_DEADLINE_EVENT_HYDRATION")
-        snapshot = acquire_event_snapshot(event_ticker, clock=lambda: now, timeout_seconds=timeout)
+        snapshot = acquire_event_snapshot(
+            event_ticker, clock=acquisition_clock, timeout_seconds=timeout
+        )
     else:
-        snapshot = acquire_event_snapshot(event_ticker, clock=lambda: now)
+        snapshot = acquire_event_snapshot(event_ticker, clock=acquisition_clock)
     cache[event_ticker] = snapshot if snapshot.succeeded else None
     if snapshot.succeeded:
         diagnostics.exact_event_succeeded += 1
@@ -153,15 +162,17 @@ def _authority(
     now: datetime,
     diagnostics: CycleDiagnostics,
     deadline: CycleDeadline | None = None,
+    clock: Callable[[], datetime] | None = None,
 ) -> Any:
     diagnostics.exact_market_attempted += 1
+    acquisition_clock = clock or (lambda: now)
     if deadline is not None:
         timeout = deadline.timeout_seconds(10, "CYCLE_DEADLINE_MARKET_HYDRATION")
         snapshot = acquire_market_snapshot(
-            market.ticker, clock=lambda: now, timeout_seconds=timeout
+            market.ticker, clock=acquisition_clock, timeout_seconds=timeout
         )
     else:
-        snapshot = acquire_market_snapshot(market.ticker, clock=lambda: now)
+        snapshot = acquire_market_snapshot(market.ticker, clock=acquisition_clock)
     if not snapshot.succeeded or event_snapshot is None:
         diagnostics.exact_market_failed += 1
         return None
@@ -220,15 +231,18 @@ def _weather_cycle(
             _record_failure(diagnostics, result.reason or "WEATHER_ACQUISITION_FAILURE")
             return []
         now = clock()
-        event_snapshot = _event_snapshot(event.ticker, now, event_cache, diagnostics, deadline)
-        authority = _authority(market, event_snapshot, now, diagnostics, deadline)
+        event_snapshot = _event_snapshot(
+            event.ticker, now, event_cache, diagnostics, deadline, clock=clock
+        )
+        authority = _authority(market, event_snapshot, now, diagnostics, deadline, clock=clock)
+        book = _book(market.ticker, now, diagnostics, deadline, clock=clock)
         row = capture_weather_observation(
             market=authority.market if authority is not None else market,
             event=authority.event if authority is not None else event,
             forecast=result.evidence or {},
-            book=_book(market.ticker, now, diagnostics, deadline),
+            book=book,
             acquired_at=acquired_at,
-            decision_at=now,
+            decision_at=clock(),
             authority=authority,
             start_receipt_digest=str(start_receipt["receipt_digest"]),
         )
@@ -265,16 +279,20 @@ def _structural_cycle(
             _record_failure(diagnostics, "STRUCTURAL_MARKET_HYDRATION_BOUND_EXCEEDED")
             return rows, False
         now = clock()
-        event_snapshot = _event_snapshot(lead.event_ticker, now, event_cache, diagnostics, deadline)
+        event_snapshot = _event_snapshot(
+            lead.event_ticker, now, event_cache, diagnostics, deadline, clock=clock
+        )
         broad = repo.markets.get(lead.broad_market_ticker)
         narrow = repo.markets.get(lead.narrow_market_ticker)
         broad_authority = (
-            None if broad is None else _authority(broad, event_snapshot, now, diagnostics, deadline)
+            None
+            if broad is None
+            else _authority(broad, event_snapshot, now, diagnostics, deadline, clock=clock)
         )
         narrow_authority = (
             None
             if narrow is None
-            else _authority(narrow, event_snapshot, now, diagnostics, deadline)
+            else _authority(narrow, event_snapshot, now, diagnostics, deadline, clock=clock)
         )
         if event_snapshot is None or broad_authority is None or narrow_authority is None:
             _record_failure(diagnostics, "STRUCTURAL_EXACT_AUTHORITY_UNAVAILABLE")
@@ -283,17 +301,19 @@ def _structural_cycle(
             lead.broad_market_ticker: broad_authority,
             lead.narrow_market_ticker: narrow_authority,
         }
-        broad_book = _book(lead.broad_market_ticker, now, diagnostics, deadline)
-        narrow_book = _book(lead.narrow_market_ticker, now, diagnostics, deadline)
+        broad_book = _book(lead.broad_market_ticker, now, diagnostics, deadline, clock=clock)
+        narrow_book = _book(lead.narrow_market_ticker, now, diagnostics, deadline, clock=clock)
         if broad_book.state is not BookState.CURRENT or narrow_book.state is not BookState.CURRENT:
             _record_failure(diagnostics, "STRUCTURAL_ORDERBOOK_ACQUISITION_FAILURE")
             return rows, False
+        # Establish decision/consumption time only after all required evidence exists.
+        decision_at = clock()
         row = capture_structural_observation(
             lead=lead,
             broad_book=broad_book,
             narrow_book=narrow_book,
             acquired_at=acquired_at,
-            decision_at=now,
+            decision_at=decision_at,
             leg_authority=authorities,
             start_receipt_digest=str(start_receipt["receipt_digest"]),
         )
