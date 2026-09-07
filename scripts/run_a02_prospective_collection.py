@@ -7,6 +7,7 @@ import json
 import shutil
 import subprocess
 import sys
+from collections.abc import Callable
 from datetime import UTC, date, datetime
 from pathlib import Path
 
@@ -29,16 +30,36 @@ from services.prospective_shadow.runner import (
 )
 
 
-def _weather_acquirer(day: date) -> WeatherAcquisitionResult:
+def _weather_acquirer(day: date, *, wgrib2_bin: str | None = None) -> WeatherAcquisitionResult:
+    """Acquire weather using an optional explicitly resolved wgrib2 executable.
+
+    The no-argument form retains the established ambient lookup behavior.  An explicit
+    path is resolved by the caller's factory and is passed through unchanged, so a
+    restricted launchd PATH cannot substitute another executable.
+    """
     try:
-        _resolve_wgrib2(None)
+        resolved_wgrib2_bin, _ = _resolve_wgrib2(wgrib2_bin)
     except Exception:
-        return WeatherAcquisitionResult(
-            None,
-            True,
-            f"WEATHER_ACQUISITION_RUNTIME_DEPENDENCY_MISSING:wgrib2 {WGRIB2_VERSION} required",
-        )
-    result = compose_weather(day, transport=lambda url: _weather_transport(url))
+        return _weather_dependency_failure()
+    return _weather_acquirer_with_resolved_path(day, resolved_wgrib2_bin)
+
+
+def _weather_dependency_failure() -> WeatherAcquisitionResult:
+    return WeatherAcquisitionResult(
+        None,
+        True,
+        f"WEATHER_ACQUISITION_RUNTIME_DEPENDENCY_MISSING:wgrib2 {WGRIB2_VERSION} required",
+    )
+
+
+def _weather_acquirer_with_resolved_path(
+    day: date, resolved_wgrib2_bin: str
+) -> WeatherAcquisitionResult:
+    result = compose_weather(
+        day,
+        transport=lambda url: _weather_transport(url),
+        wgrib2_bin=resolved_wgrib2_bin,
+    )
     classification = result.get("classification")
     if classification == "EVALUATION_BLOCKED":
         return WeatherAcquisitionResult(
@@ -64,6 +85,18 @@ def _weather_acquirer(day: date) -> WeatherAcquisitionResult:
     return WeatherAcquisitionResult(
         evidence, False, None if evidence is not None else "WEATHER_TARGET_DATE_UNAVAILABLE"
     )
+
+
+def _weather_acquirer_factory(wgrib2_bin: str | None) -> Callable[[date], WeatherAcquisitionResult]:
+    """Bind the configured weather dependency once for the prospective runtime."""
+    if wgrib2_bin is None:
+        return _weather_acquirer
+    try:
+        resolved_wgrib2_bin, _ = _resolve_wgrib2(wgrib2_bin)
+    except Exception:
+        return lambda _day: _weather_dependency_failure()
+
+    return lambda day: _weather_acquirer_with_resolved_path(day, resolved_wgrib2_bin)
 
 
 def _weather_transport(url: str) -> bytes:
@@ -98,6 +131,12 @@ def main() -> int:
     parser.add_argument("--store", type=Path, required=True)
     parser.add_argument("--archive", type=Path, required=True)
     parser.add_argument(
+        "--wgrib2-bin",
+        type=str,
+        default=None,
+        help="explicit reviewed wgrib2 executable; omitted means the existing PATH lookup",
+    )
+    parser.add_argument(
         "--start-receipt", type=Path, default=Path("artifacts/a01/prospective_start.json")
     )
     args = parser.parse_args()
@@ -110,7 +149,7 @@ def main() -> int:
         "archive": args.archive,
         "store": store,
         "start_receipt": receipt,
-        "weather_acquirer": _weather_acquirer,
+        "weather_acquirer": _weather_acquirer_factory(args.wgrib2_bin),
     }
     if args.once:
         result = run_once(cycle_id=datetime.now(UTC).isoformat(), **kwargs)
