@@ -3,12 +3,13 @@
 from __future__ import annotations
 
 import json
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from types import SimpleNamespace
 
 from services.prospective_shadow import runner
 from services.prospective_shadow.kernel import ShadowObservationStore
+from services.real_time_market_data.orderbook import BookState
 
 ROOT = Path(__file__).resolve().parents[1]
 RECEIPT = json.loads((ROOT / "artifacts/a01/prospective_start.json").read_text())
@@ -84,6 +85,110 @@ def test_event_snapshot_cache_is_once_per_event(monkeypatch) -> None:
     assert runner._event_snapshot("EVT", NOW, cache, diagnostics) is not None
     assert calls == ["EVT"]
     assert diagnostics.exact_event_attempted == 1
+
+
+def test_book_uses_live_post_request_clock_and_preserves_transport_observed_at(monkeypatch) -> None:
+    t0 = NOW
+    transport_observed = t0 + timedelta(seconds=1)
+    clock_values = iter((t0, t0 + timedelta(seconds=2)))
+    clock_calls: list[datetime] = []
+
+    def clock() -> datetime:
+        value = next(clock_values)
+        clock_calls.append(value)
+        return value
+
+    def acquire(ticker: str, *, clock, **kwargs):
+        clock()
+        return SimpleNamespace(
+            succeeded=True,
+            ticker=ticker,
+            yes_levels=(("0.30", "1"),),
+            no_levels=(("0.65", "1"),),
+            observed_at=transport_observed,
+            orderbook_identity="transport-identity",
+        )
+
+    monkeypatch.setattr(runner, "acquire_orderbook_snapshot", acquire)
+    view = runner._book("BOOK", t0, runner.CycleDiagnostics(), clock=clock)
+
+    assert view.state is BookState.CURRENT
+    assert view.observed_at == transport_observed
+    assert clock_calls == [t0, t0 + timedelta(seconds=2)]
+
+
+def test_structural_decision_is_read_after_both_books_and_authority(monkeypatch, tmp_path) -> None:
+    timestamps = iter(
+        (
+            NOW,
+            NOW + timedelta(seconds=1),
+            NOW + timedelta(seconds=2),
+            NOW + timedelta(seconds=3),
+            NOW + timedelta(seconds=4),
+            NOW + timedelta(seconds=5),
+        )
+    )
+    decisions: list[datetime] = []
+    broad_observed = NOW + timedelta(seconds=3)
+    narrow_observed = NOW + timedelta(seconds=4)
+
+    def clock() -> datetime:
+        return next(timestamps)
+
+    lead = SimpleNamespace(
+        event_ticker="EVENT",
+        broad_market_ticker="BROAD",
+        narrow_market_ticker="NARROW",
+    )
+    scan = SimpleNamespace(leads=(lead,), manifest=SimpleNamespace(structural_cohorts=1))
+    repo = SimpleNamespace(
+        markets={
+            "BROAD": SimpleNamespace(ticker="BROAD"),
+            "NARROW": SimpleNamespace(ticker="NARROW"),
+        }
+    )
+    authority = SimpleNamespace(
+        market_snapshot=SimpleNamespace(observed_at=NOW + timedelta(seconds=2)),
+        event_snapshot=SimpleNamespace(observed_at=NOW + timedelta(seconds=1)),
+    )
+
+    monkeypatch.setattr(runner, "_event_snapshot", lambda *args, **kwargs: authority.event_snapshot)
+    monkeypatch.setattr(runner, "_authority", lambda *args, **kwargs: authority)
+
+    def book(ticker, now, diagnostics, deadline=None, *, clock):
+        del now, diagnostics, deadline
+        clock()
+        clock()
+        observed = broad_observed if ticker == "BROAD" else narrow_observed
+        return SimpleNamespace(ticker=ticker, state=BookState.CURRENT, observed_at=observed)
+
+    monkeypatch.setattr(runner, "_book", book)
+    monkeypatch.setattr(
+        runner,
+        "capture_structural_observation",
+        lambda *, decision_at, broad_book, narrow_book, **kwargs: (
+            decisions.append(decision_at)
+            or {"decision": "OBSERVE", "broad": broad_book, "narrow": narrow_book}
+        ),
+    )
+
+    rows, complete = runner._structural_cycle(
+        repo=repo,
+        scan=scan,
+        store=ShadowObservationStore(tmp_path / "shadow.sqlite", RECEIPT),
+        start_receipt=RECEIPT,
+        acquired_at=NOW,
+        clock=clock,
+        diagnostics=runner.CycleDiagnostics(),
+    )
+
+    assert complete is True
+    assert rows[0]["decision"] == "OBSERVE"
+    assert decisions == [NOW + timedelta(seconds=5)]
+    assert decisions[0] >= broad_observed
+    assert decisions[0] >= narrow_observed
+    assert decisions[0] >= authority.market_snapshot.observed_at
+    assert decisions[0] >= authority.event_snapshot.observed_at
 
 
 def test_structural_hydration_bound_cannot_be_complete_zero_lead(tmp_path) -> None:
