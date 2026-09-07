@@ -16,8 +16,13 @@ from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
+from services.contract_intelligence.specification import (
+    ContractSpecification,
+    ContractSpecificationParser,
+    SemanticsInputBundle,
+)
 from services.forecasting.daily_temperature import route_daily_temperature
 from services.forecasting.domain import ForecastError
 from services.forecasting.weather_prospective import (
@@ -41,6 +46,7 @@ from services.opportunity_engine.structural import (
 )
 from services.opportunity_engine.structural import (
     StructuralLead,
+    _semantic_context,
 )
 from services.real_time_market_data.orderbook import BookState, BookView
 from services.supervised_canary.m27n2_evidence_reconstruction import (
@@ -63,6 +69,36 @@ STRUCTURAL_SIGNAL_ENVELOPE_SCHEMA = "kalshi.a05.structural-signal-envelope.v1"
 STRUCTURAL_SIGNAL_CONTRACT_VERSION = "kalshi-a05-structural-signal-evaluation-v1"
 STRUCTURAL_RELATIONSHIP = "YES_HIGH_SUBSET_OF_YES_LOW"
 _ENVELOPE_LEG_ROLES = ("BROAD_LOWER_THRESHOLD", "NARROW_HIGHER_THRESHOLD")
+_SEMANTIC_CONTEXT_FIELDS = (
+    "event_ticker",
+    "series_ticker",
+    "settlement_type",
+    "payout_model",
+    "measured_event_or_value",
+    "subject_entities",
+    "geographic_scope",
+    "comparator",
+    "inclusivity",
+    "threshold_unit",
+    "measurement_window_start",
+    "measurement_window_end",
+    "deadline",
+    "timezone",
+    "occurrence_time",
+    "expected_expiration",
+    "actual_expiration",
+    "settlement_authority",
+    "settlement_sources",
+    "source_precedence_status",
+    "rounding_rules",
+    "revision_rules",
+    "correction_rules",
+    "recount_rules",
+    "cancellation_rules",
+    "postponement_rules",
+    "early_close_rules",
+    "exception_rules",
+)
 ZERO = "0"
 DEFAULT_FEE_POLICY_ID = "research-only-fees-v1"
 DEFAULT_EXECUTION_CONVENTION = "displayed-price-only"
@@ -260,6 +296,8 @@ def _dec(value: Any, field: str) -> str:
 def _jsonable(value: Any) -> Any:
     if isinstance(value, Decimal):
         return str(value)
+    if isinstance(value, datetime):
+        return value.isoformat()
     if isinstance(value, Mapping):
         return {str(k): _jsonable(v) for k, v in value.items()}
     if isinstance(value, (tuple, list)):
@@ -617,30 +655,72 @@ def _canonical_decimal(value: object, field: str) -> str:
     return value
 
 
+def _semantic_specification(authority: HydratedMarketAuthority) -> ContractSpecification:
+    """Normalize only exact hydrated market/event authority through the reviewed parser."""
+    market = authority.market.raw
+    event = authority.event.raw
+    sources = event.get("settlement_sources") or market.get("settlement_sources") or []
+    series = {
+        "ticker": authority.event.series_ticker,
+        "title": event.get("title", ""),
+        "category": event.get("category", market.get("category", "")),
+        "frequency": event.get("frequency", "event"),
+        "settlement_sources": sources,
+    }
+    try:
+        specification = ContractSpecificationParser().parse(
+            SemanticsInputBundle.build(dict(market), dict(event), series),
+            now=authority.market_snapshot.observed_at,
+        )
+    except Exception as exc:
+        raise ShadowKernelError("reviewed structural semantic normalization failed") from exc
+    if not specification.strategy_supported:
+        raise ShadowKernelError("reviewed structural semantic normalization is not valid")
+    if specification.market_rules_hash != authority.market.rules_hash:
+        raise ShadowKernelError("reviewed semantic rules authority mismatch")
+    if specification.market_metadata_hash != authority.market.metadata_hash:
+        raise ShadowKernelError("reviewed semantic metadata authority mismatch")
+    return specification
+
+
+def _semantic_material(specification: ContractSpecification) -> dict[str, Any]:
+    values = _semantic_context(specification)
+    return cast(dict[str, Any], _jsonable(dict(zip(_SEMANTIC_CONTEXT_FIELDS, values, strict=True))))
+
+
+def _semantic_identity(specification: ContractSpecification) -> str:
+    return content_hash({"semantic_context": _semantic_material(specification)})
+
+
 def _structural_proposition(
-    authority: HydratedMarketAuthority, threshold: Decimal
+    authority: HydratedMarketAuthority,
+    threshold: Decimal,
+    specification: ContractSpecification,
+    semantic_identity: str,
 ) -> dict[str, Any]:
-    raw = authority.market.raw
-    strike_type = raw.get("strike_type")
-    if strike_type not in {"greater", "greater_or_equal"}:
-        raise ShadowKernelError("structural proposition strike type is not canonical")
-    custom = raw.get("custom_strike")
-    if custom is not None and not isinstance(custom, dict):
-        raise ShadowKernelError("structural proposition custom strike is malformed")
-    custom_json = (
-        json.dumps(custom, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
-        if custom is not None
-        else None
-    )
-    subject_identity = stable_hash((authority.event.ticker, custom_json or "EVENT_SUBJECT"))
+    if specification.threshold_value != threshold:
+        raise ShadowKernelError("reviewed semantic threshold differs from structural lead")
     return {
-        "subject_identity": subject_identity,
-        "event_ticker": authority.event.ticker,
-        "measurement_context": custom_json or "EVENT_SUBJECT",
-        "comparator": ">=" if strike_type == "greater_or_equal" else ">",
+        "semantic_context_identity": semantic_identity,
+        "semantic_context": _semantic_material(specification),
+        "subject_identity": content_hash(
+            {
+                "subject_entities": list(specification.subject_entities),
+                "geographic_scope": specification.geographic_scope,
+                "measured_event_or_value": specification.measured_event_or_value,
+            }
+        ),
+        "event_ticker": specification.event_ticker,
         "threshold": str(threshold),
-        "strike_type": strike_type,
+        "threshold_unit": specification.threshold_unit,
+        "comparator": specification.comparator.value,
+        "inclusivity": specification.inclusivity,
         "side": "YES",
+        "market_authority": {
+            "ticker": authority.market.ticker,
+            "rules_hash": authority.market.rules_hash,
+            "metadata_hash": authority.market.metadata_hash,
+        },
         "event_authority": {
             "body_sha256": authority.event_snapshot.body_sha256,
             "metadata_hash": authority.event.metadata_hash,
@@ -689,6 +769,13 @@ def build_structural_signal_envelope(
         raise ShadowKernelError("broad authority ticker mismatch")
     if narrow_authority.market.ticker != lead.narrow_market_ticker:
         raise ShadowKernelError("narrow authority ticker mismatch")
+    if (
+        lead.broad_rules_hash != broad_authority.market.rules_hash
+        or lead.broad_metadata_hash != broad_authority.market.metadata_hash
+        or lead.narrow_rules_hash != narrow_authority.market.rules_hash
+        or lead.narrow_metadata_hash != narrow_authority.market.metadata_hash
+    ):
+        raise ShadowKernelError("discovery lead market authority mismatch")
     if lead.broad_threshold >= lead.narrow_threshold:
         raise ShadowKernelError("structural thresholds are not ordered")
     if (
@@ -707,8 +794,24 @@ def build_structural_signal_envelope(
         raise ShadowKernelError("structural lead inequality is not satisfied")
     if broad_book.get("snapshot_id") is None or narrow_book.get("snapshot_id") is None:
         raise ShadowKernelError("book snapshot identity missing")
-    broad_prop = _structural_proposition(broad_authority, lead.broad_threshold)
-    narrow_prop = _structural_proposition(narrow_authority, lead.narrow_threshold)
+    broad_specification = _semantic_specification(broad_authority)
+    narrow_specification = _semantic_specification(narrow_authority)
+    broad_semantic_identity = _semantic_identity(broad_specification)
+    narrow_semantic_identity = _semantic_identity(narrow_specification)
+    if broad_semantic_identity != narrow_semantic_identity:
+        raise ShadowKernelError("reviewed structural semantic context mismatch")
+    broad_prop = _structural_proposition(
+        broad_authority,
+        lead.broad_threshold,
+        broad_specification,
+        broad_semantic_identity,
+    )
+    narrow_prop = _structural_proposition(
+        narrow_authority,
+        lead.narrow_threshold,
+        narrow_specification,
+        narrow_semantic_identity,
+    )
     if broad_prop["event_ticker"] != narrow_prop["event_ticker"]:
         raise ShadowKernelError("proposition event identity mismatch")
     envelope: dict[str, Any] = {
@@ -737,13 +840,17 @@ def build_structural_signal_envelope(
                 "broad_side": "YES",
                 "narrow_hedge_side": "NO",
             },
+            "semantic_context": {
+                "identity": broad_semantic_identity,
+                "material": _semantic_material(broad_specification),
+            },
         },
         "lead": {
             "broad_yes_ask": broad_ask,
             "narrow_yes_bid": narrow_bid,
             "gap": gap,
             "policy_identity": STRUCTURAL_POLICY_ID,
-            "threshold": str(lead.priority_gap),
+            "discovery_priority_gap": str(lead.priority_gap),
             "inequality": "narrow_yes_bid > broad_yes_ask",
             "price_convention": DEFAULT_EXECUTION_CONVENTION,
         },
@@ -853,26 +960,45 @@ def validate_structural_signal_envelope(envelope: Mapping[str, Any]) -> None:
         if not isinstance(proposition, dict):
             raise ShadowKernelError(f"candidate envelope {label} proposition missing")
         if set(proposition) != {
+            "semantic_context_identity",
+            "semantic_context",
             "subject_identity",
             "event_ticker",
-            "measurement_context",
-            "comparator",
             "threshold",
-            "strike_type",
+            "threshold_unit",
+            "comparator",
+            "inclusivity",
             "side",
+            "market_authority",
             "event_authority",
         }:
             raise ShadowKernelError(f"candidate envelope {label} proposition shape mismatch")
         if proposition.get("threshold") != threshold or proposition.get("side") != "YES":
             raise ShadowKernelError(f"candidate envelope {label} proposition mismatch")
+        context = proposition.get("semantic_context")
+        if not isinstance(context, dict) or set(context) != set(_SEMANTIC_CONTEXT_FIELDS):
+            raise ShadowKernelError(f"candidate envelope {label} semantic context shape mismatch")
+        if proposition.get("semantic_context_identity") != content_hash(
+            {"semantic_context": context}
+        ):
+            raise ShadowKernelError(
+                f"candidate envelope {label} semantic context identity mismatch"
+            )
         if not isinstance(proposition.get("subject_identity"), str) or not _SHA256.fullmatch(
             proposition["subject_identity"]
         ):
             raise ShadowKernelError(f"candidate envelope {label} proposition identity malformed")
-        if proposition.get("comparator") not in {">", ">="} or proposition.get(
-            "strike_type"
-        ) not in {"greater", "greater_or_equal"}:
-            raise ShadowKernelError(f"candidate envelope {label} comparator mismatch")
+        market_authority = proposition.get("market_authority")
+        if (
+            not isinstance(market_authority, dict)
+            or set(market_authority) != {"ticker", "rules_hash", "metadata_hash"}
+            or market_authority.get("ticker") != leg.get("ticker")
+            or not _SHA256.fullmatch(str(market_authority.get("rules_hash", "")))
+            or not _SHA256.fullmatch(str(market_authority.get("metadata_hash", "")))
+        ):
+            raise ShadowKernelError(f"candidate envelope {label} market authority malformed")
+        if not isinstance(proposition.get("comparator"), str) or not proposition["comparator"]:
+            raise ShadowKernelError(f"candidate envelope {label} comparator missing")
     event = envelope.get("event")
     authority = event.get("authority") if isinstance(event, dict) else None
     if (
@@ -892,6 +1018,14 @@ def validate_structural_signal_envelope(envelope: Mapping[str, Any]) -> None:
         or authority.get("event_snapshot_schema") != EVENT_SNAPSHOT_SCHEMA
     ):
         raise ShadowKernelError("candidate envelope event authority convention mismatch")
+    semantic_context = relationship.get("semantic_context")
+    if not isinstance(semantic_context, dict) or set(semantic_context) != {"identity", "material"}:
+        raise ShadowKernelError("candidate envelope semantic context missing")
+    material = semantic_context.get("material")
+    if not isinstance(material, dict) or set(material) != set(_SEMANTIC_CONTEXT_FIELDS):
+        raise ShadowKernelError("candidate envelope semantic context shape mismatch")
+    if semantic_context.get("identity") != content_hash({"semantic_context": material}):
+        raise ShadowKernelError("candidate envelope semantic context identity mismatch")
     expected_proposition_authority = {
         "body_sha256": authority["event_body_sha256"],
         "metadata_hash": authority["event_metadata_hash"],
@@ -903,16 +1037,26 @@ def validate_structural_signal_envelope(envelope: Mapping[str, Any]) -> None:
         if (
             proposition["event_ticker"] != event["ticker"]
             or proposition["event_authority"] != expected_proposition_authority
+            or proposition["semantic_context_identity"] != semantic_context["identity"]
+            or proposition["semantic_context"] != material
+            or proposition["comparator"] != material["comparator"]
+            or proposition["inclusivity"] != material["inclusivity"]
+            or proposition["threshold_unit"] != material["threshold_unit"]
         ):
             raise ShadowKernelError("candidate envelope proposition authority mismatch")
     if broad["proposition"]["subject_identity"] != narrow["proposition"]["subject_identity"]:
         raise ShadowKernelError("candidate envelope proposition subject mismatch")
+    if broad["proposition"]["semantic_context"] != narrow["proposition"]["semantic_context"]:
+        raise ShadowKernelError("candidate envelope semantic context mismatch")
     lead = envelope.get("lead")
     if not isinstance(lead, dict):
         raise ShadowKernelError("candidate envelope lead missing")
     ask = _canonical_decimal(lead.get("broad_yes_ask"), "broad_yes_ask")
     bid = _canonical_decimal(lead.get("narrow_yes_bid"), "narrow_yes_bid")
     gap = _canonical_decimal(lead.get("gap"), "gap")
+    discovery_priority_gap = _canonical_decimal(
+        lead.get("discovery_priority_gap"), "discovery_priority_gap"
+    )
     if (
         Decimal(bid) - Decimal(ask) != Decimal(gap)
         or Decimal(bid) <= Decimal(ask)
@@ -922,6 +1066,7 @@ def validate_structural_signal_envelope(envelope: Mapping[str, Any]) -> None:
     if (
         lead.get("policy_identity") != STRUCTURAL_POLICY_ID
         or lead.get("price_convention") != DEFAULT_EXECUTION_CONVENTION
+        or Decimal(discovery_priority_gap) < 0
     ):
         raise ShadowKernelError("candidate envelope lead policy mismatch")
     try:
@@ -945,6 +1090,17 @@ def validate_structural_signal_envelope(envelope: Mapping[str, Any]) -> None:
         for value in evidence["book_snapshots"].values()
     ):
         raise ShadowKernelError("candidate envelope book snapshot identity malformed")
+    for key, ticker in (("broad", broad["ticker"]), ("narrow", narrow["ticker"])):
+        parent_authority = evidence.get("market_authority", {}).get(key)
+        proposition_authority = relationship[key]["proposition"]["market_authority"]
+        if (
+            not isinstance(parent_authority, dict)
+            or proposition_authority.get("ticker") != ticker
+            or proposition_authority.get("rules_hash") != parent_authority.get("market_rules_hash")
+            or proposition_authority.get("metadata_hash")
+            != parent_authority.get("market_metadata_hash")
+        ):
+            raise ShadowKernelError("candidate envelope market authority binding mismatch")
     if envelope.get("signal_id") != content_hash(
         {key: value for key, value in envelope.items() if key != "signal_id"}
     ):
@@ -1086,6 +1242,9 @@ def capture_structural_observation(
                 {"detail": str(exc), "cohort_identity": lead.cohort_identity},
                 start_receipt_digest=start_receipt_digest,
             )
+        values["semantic_context_identity"] = envelope["relationship"]["semantic_context"][
+            "identity"
+        ]
     return _base(
         "structural_threshold",
         acquired_at,
@@ -1203,6 +1362,10 @@ def validate_observation(
                 raise ShadowKernelError("structural envelope market authority mismatch")
         if envelope["lead"]["policy_identity"] != obs["evidence"].get("structural_policy_identity"):
             raise ShadowKernelError("structural envelope policy mismatch")
+        if envelope["relationship"]["semantic_context"]["identity"] != obs["evidence"].get(
+            "semantic_context_identity"
+        ):
+            raise ShadowKernelError("structural envelope semantic identity mismatch")
     elif (
         obs.get("strategy_family") != "structural_threshold" and "structural_signal_envelope" in obs
     ):
