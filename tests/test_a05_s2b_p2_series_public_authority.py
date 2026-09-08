@@ -4,6 +4,7 @@ import json
 from email.message import Message
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlencode
 
 import pytest
 
@@ -103,20 +104,24 @@ def test_explicit_historical_scope_rejects_series(monkeypatch: pytest.MonkeyPatc
 def test_explicit_s2a_series_scope_accepts_exact_and_canonical_pagination(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    encoded_cursor = urlencode([("cursor", "a/b"), ("limit", "1000")])
     opener = _Opener(
         {
             "/trade-api/v2/series?limit=1000": {"series": [], "cursor": ""},
             "/trade-api/v2/series?cursor=next&limit=1000": {"series": [], "cursor": ""},
             "/trade-api/v2/series?limit=1000&cursor=next": {"series": [], "cursor": ""},
+            f"/trade-api/v2/series?{encoded_cursor}": {"series": [], "cursor": ""},
         }
     )
     monkeypatch.setattr("urllib.request.build_opener", lambda *args: opener)
     transport = PublicUniverseTransport(S2A_PUBLIC_SERIES_SCOPE)
     transport.get("/trade-api/v2/series?limit=1000", timeout_seconds=1)
     transport.get("/trade-api/v2/series?cursor=next&limit=1000", timeout_seconds=1)
+    transport.get(f"/trade-api/v2/series?{encoded_cursor}", timeout_seconds=1)
     assert opener.urls == [
         "https://external-api.kalshi.com/trade-api/v2/series?limit=1000",
         "https://external-api.kalshi.com/trade-api/v2/series?cursor=next&limit=1000",
+        "https://external-api.kalshi.com/trade-api/v2/series?cursor=a%2Fb&limit=1000",
     ]
 
 
@@ -134,6 +139,12 @@ def test_explicit_s2a_series_scope_accepts_exact_and_canonical_pagination(
         "/trade-api/v2/series?limit=1000&cursor=bad%0Avalue",
         "/trade-api/v2/series?limit=1000&cursor=",
         "/trade-api/v2/series?limit=1000#fragment",
+        "/trade-api/v2/series?limit=1000&cursor=%",
+        "/trade-api/v2/series?limit=1000&cursor=%Z0",
+        "/trade-api/v2/series?limit=1000&cursor=%0Z",
+        "/trade-api/v2/series?limit=1000&cursor=%ZZ",
+        "/trade-api/v2/series?limit=1000&cursor=%41",
+        "/trade-api/v2/series?limit=1000&cursor=a%2fb",
     ],
 )
 def test_series_authority_rejects_every_unreviewed_shape(

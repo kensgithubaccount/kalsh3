@@ -20,7 +20,7 @@ from enum import StrEnum
 from pathlib import Path
 from types import MappingProxyType
 from typing import Any, Protocol
-from urllib.parse import parse_qsl, quote, unquote, urlsplit
+from urllib.parse import parse_qsl, quote, unquote, urlencode, urlsplit
 
 from .archive import UniverseObservationArchive
 from .sync import (
@@ -135,6 +135,8 @@ class PublicUniverseTransport:
             )
         except (UnicodeError, ValueError):
             raise CollectionError("public universe resource rejected") from None
+        if parsed.query != urlencode(pairs):
+            raise CollectionError("public universe resource rejected")
         expected = {
             self._scope.markets_endpoint: dict(self._scope.markets_parameters),
             self._scope.events_endpoint: dict(self._scope.events_parameters),
