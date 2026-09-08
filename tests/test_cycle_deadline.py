@@ -122,6 +122,12 @@ def test_incomplete_refresh_is_not_authoritative(tmp_path: Path) -> None:
     )
     assert result.complete is False
     assert result.failure == "CYCLE_DEADLINE_MARKET_PAGINATION"
+    assert result.market_pages == 0
+    assert result.market_sync_completeness is None
+    assert result.markets_discovered == 0
+    assert result.event_pages is None
+    assert result.event_sync_completeness is None
+    assert result.reconciliation_started is None
 
 
 def test_downstream_deadline_emits_operational_failure_without_observation(
@@ -190,6 +196,7 @@ def test_successful_empty_cycle_remains_complete_without_weather_rows(
         clock=lambda: NOW,
     )
     assert result.complete is True
+    assert result.diagnostics["cycle_deadline_seconds"] == 300.0
     assert result.weather == ()
     assert result.structural == ()
     assert store.validate(now=NOW)["observations"] == 0

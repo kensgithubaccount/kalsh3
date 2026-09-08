@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import gc
+import math
 import time
 from collections import Counter
 from collections.abc import Callable, Mapping
@@ -43,6 +44,7 @@ MAX_CANDIDATE_EVENTS = 200
 MAX_STRUCTURAL_LEADS = 500
 MAX_MARKET_HYDRATIONS = 1000
 MAX_CYCLE_SECONDS = 300.0
+MAX_CONTROLLED_CYCLE_SECONDS = 840.0
 _PUBLIC_SOURCE = "external-api.kalshi.com"
 
 
@@ -57,8 +59,9 @@ class WeatherAcquisitionResult:
 class CycleDiagnostics:
     cycle_started_at: str = ""
     cycle_deadline_seconds: float = MAX_CYCLE_SECONDS
-    markets_discovered: int = 0
-    events_discovered: int = 0
+    markets_discovered: int | None = None
+    events_discovered: int | None = None
+    series_discovered: int | None = None
     candidate_events: int = 0
     candidate_leads: int = 0
     exact_market_attempted: int = 0
@@ -75,11 +78,22 @@ class CycleDiagnostics:
     weather_operational_failures: int = 0
     cycle_duration_seconds: float = 0.0
     operational_failures: list[str] = field(default_factory=list)
-    discovery_elapsed_seconds: float = 0.0
+    discovery_elapsed_seconds: float | None = None
     timeout_stage: str | None = None
-    market_pages: int = 0
-    event_pages: int = 0
-    exact_reconciliation_count: int = 0
+    market_pages: int | None = None
+    event_pages: int | None = None
+    series_pages: int | None = None
+    market_sync_completeness: str | None = None
+    event_sync_completeness: str | None = None
+    series_sync_completeness: str | None = None
+    reconciliation_missing_count: int | None = None
+    reconciliation_started: bool | None = None
+    reconciliation_requests_attempted: int | None = None
+    exact_reconciliation_count: int | None = None
+    markets_sync_elapsed_seconds: float | None = None
+    events_sync_elapsed_seconds: float | None = None
+    series_sync_elapsed_seconds: float | None = None
+    reconciliation_elapsed_seconds: float | None = None
 
     def as_dict(self) -> dict[str, Any]:
         payload = asdict(self)
@@ -410,11 +424,21 @@ def run_once(
     monotonic: Callable[[], float] = time.monotonic,
     runtime: RuntimeIdentity | None = None,
     s2a_enabled: bool = False,
+    cycle_budget_seconds: float = MAX_CYCLE_SECONDS,
 ) -> CycleResult:
     validate_start_receipt(start_receipt)
-    deadline = CycleDeadline(MAX_CYCLE_SECONDS, monotonic=monotonic)
+    if (
+        isinstance(cycle_budget_seconds, bool)
+        or not isinstance(cycle_budget_seconds, (int, float))
+        or not math.isfinite(cycle_budget_seconds)
+        or cycle_budget_seconds <= 0
+        or cycle_budget_seconds > MAX_CONTROLLED_CYCLE_SECONDS
+    ):
+        raise ValueError("cycle_budget_seconds must be finite, positive, and <= 840 seconds")
+    deadline = CycleDeadline(cycle_budget_seconds, monotonic=monotonic)
     acquired_at = clock()
     diagnostics = CycleDiagnostics()
+    diagnostics.cycle_deadline_seconds = float(cycle_budget_seconds)
     diagnostics.cycle_started_at = acquired_at.isoformat()
     try:
         refresh = refresh_universe(
@@ -435,12 +459,34 @@ def run_once(
         diagnostics.cycle_duration_seconds = deadline.elapsed_seconds
         return CycleResult(cycle_id, (), (), False, diagnostics.as_dict())
     gc.collect()
-    diagnostics.markets_discovered = len(refresh.repo.markets)
-    diagnostics.events_discovered = len(refresh.repo.events)
-    diagnostics.market_pages = getattr(refresh, "market_pages", 0)
-    diagnostics.event_pages = getattr(refresh, "event_pages", 0)
-    diagnostics.exact_reconciliation_count = getattr(refresh, "exact_reconciliation_count", 0)
-    diagnostics.discovery_elapsed_seconds = round(deadline.elapsed_seconds)
+    diagnostics.markets_discovered = getattr(refresh, "markets_discovered", None)
+    diagnostics.events_discovered = getattr(refresh, "events_discovered", None)
+    diagnostics.series_discovered = getattr(refresh, "series_discovered", None)
+    diagnostics.market_pages = getattr(refresh, "market_pages", None)
+    diagnostics.event_pages = getattr(refresh, "event_pages", None)
+    diagnostics.series_pages = getattr(refresh, "series_pages", None)
+    diagnostics.market_sync_completeness = getattr(refresh, "market_sync_completeness", None)
+    diagnostics.event_sync_completeness = getattr(refresh, "event_sync_completeness", None)
+    diagnostics.series_sync_completeness = getattr(refresh, "series_sync_completeness", None)
+    diagnostics.reconciliation_missing_count = getattr(
+        refresh, "reconciliation_missing_count", None
+    )
+    diagnostics.reconciliation_started = getattr(refresh, "reconciliation_started", None)
+    diagnostics.reconciliation_requests_attempted = getattr(
+        refresh, "reconciliation_requests_attempted", None
+    )
+    diagnostics.exact_reconciliation_count = diagnostics.reconciliation_missing_count
+    diagnostics.markets_sync_elapsed_seconds = getattr(refresh, "markets_elapsed_seconds", None)
+    diagnostics.events_sync_elapsed_seconds = getattr(refresh, "events_elapsed_seconds", None)
+    diagnostics.series_sync_elapsed_seconds = getattr(refresh, "series_elapsed_seconds", None)
+    diagnostics.reconciliation_elapsed_seconds = getattr(
+        refresh, "reconciliation_elapsed_seconds", None
+    )
+    diagnostics.discovery_elapsed_seconds = getattr(
+        refresh, "total_discovery_elapsed_seconds", None
+    )
+    if diagnostics.discovery_elapsed_seconds is None:
+        diagnostics.discovery_elapsed_seconds = round(deadline.elapsed_seconds)
     if not refresh.complete:
         reason = refresh.failure or "UNIVERSE_DISCOVERY_INCOMPLETE"
         diagnostics.timeout_stage = reason if reason.startswith("CYCLE_DEADLINE_") else None

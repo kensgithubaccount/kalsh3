@@ -165,11 +165,11 @@ class UniverseSynchronizer:
     def _deadline_stage(endpoint: str, *, reconciliation: bool = False) -> str:
         if reconciliation:
             return "CYCLE_DEADLINE_EVENT_RECONCILIATION"
-        return (
-            "CYCLE_DEADLINE_MARKET_PAGINATION"
-            if endpoint == "markets"
-            else "CYCLE_DEADLINE_EVENT_PAGINATION"
-        )
+        return {
+            "markets": "CYCLE_DEADLINE_MARKET_PAGINATION",
+            "events": "CYCLE_DEADLINE_EVENT_PAGINATION",
+            "series": "CYCLE_DEADLINE_SERIES_PAGINATION",
+        }[endpoint]
 
     def _pages(
         self,
