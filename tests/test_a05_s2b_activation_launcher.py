@@ -1,4 +1,5 @@
 import json
+import sqlite3
 from datetime import UTC, datetime
 from pathlib import Path
 from types import SimpleNamespace
@@ -26,7 +27,18 @@ def _args(tmp_path: Path, *mode: str, activation: bool = True) -> list[str]:
     archive = tmp_path / "archive.sqlite"
     archive.touch()
     receipt = tmp_path / "receipt.json"
-    receipt.write_text(json.dumps(_receipt()), encoding="utf-8")
+    receipt_value = _receipt()
+    receipt.write_text(json.dumps(receipt_value), encoding="utf-8")
+    store = tmp_path / "store.sqlite"
+    with sqlite3.connect(store) as db:
+        db.execute(
+            "CREATE TABLE IF NOT EXISTS start_receipt (id INTEGER PRIMARY KEY, canonical_json TEXT)"
+        )
+        db.execute("CREATE TABLE IF NOT EXISTS observations (sequence INTEGER PRIMARY KEY)")
+        db.execute(
+            "INSERT OR REPLACE INTO start_receipt VALUES (1, ?)",
+            (launcher.prospective_kernel.canonical_json(receipt_value),),
+        )
     values = [
         "--runtime-git-sha",
         SHA,
@@ -35,7 +47,7 @@ def _args(tmp_path: Path, *mode: str, activation: bool = True) -> list[str]:
         "--archive",
         str(archive),
         "--store",
-        str(tmp_path / "store.sqlite"),
+        str(store),
         "--start-receipt",
         str(receipt),
         *mode,
@@ -107,6 +119,44 @@ def test_receipt_is_validated_and_not_rewritten(tmp_path: Path, identity: None) 
     assert receipt_path.read_bytes() == before
     receipt_path.write_text("{}", encoding="utf-8")
     with pytest.raises(ShadowKernelError):
+        launcher.main(args)
+
+
+def test_store_paths_and_identity_fail_closed(tmp_path: Path, identity: None) -> None:
+    args = _args(tmp_path, "--once")
+    store_index = args.index("--store") + 1
+    archive_index = args.index("--archive") + 1
+    receipt_index = args.index("--start-receipt") + 1
+    original_store = args[store_index]
+
+    args[store_index] = str(tmp_path / "missing.sqlite")
+    with pytest.raises(RuntimeError, match="does not exist"):
+        launcher.main(args)
+    args[store_index] = str(tmp_path / "store-dir")
+    Path(args[store_index]).mkdir()
+    with pytest.raises(RuntimeError, match="does not exist"):
+        launcher.main(args)
+
+    args[store_index] = args[archive_index]
+    with pytest.raises(RuntimeError, match="distinct"):
+        launcher.main(args)
+    args[store_index] = args[receipt_index]
+    with pytest.raises(RuntimeError, match="distinct"):
+        launcher.main(args)
+
+    args[store_index] = original_store
+    with sqlite3.connect(original_store) as db:
+        db.execute("UPDATE start_receipt SET canonical_json='{}' WHERE id=1")
+    with pytest.raises(RuntimeError, match="does not match"):
+        launcher.main(args)
+
+
+def test_store_preflight_rejects_non_a01_database(tmp_path: Path, identity: None) -> None:
+    args = _args(tmp_path, "--once")
+    store = Path(args[args.index("--store") + 1])
+    with sqlite3.connect(store) as db:
+        db.execute("DROP TABLE observations")
+    with pytest.raises(RuntimeError, match=r"not an A0\.1"):
         launcher.main(args)
 
 

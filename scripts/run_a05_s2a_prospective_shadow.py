@@ -10,6 +10,7 @@ import argparse
 import json
 import re
 import shutil
+import sqlite3
 import subprocess
 import sys
 from collections.abc import Callable, Sequence
@@ -69,6 +70,16 @@ def _checkout_identity(
     if git is None:
         raise RuntimeError("git executable is required for runtime identity")
 
+    status = run_git(
+        [git, "status", "--porcelain=v1", "--untracked-files=all"],
+        cwd=root,
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout
+    if status:
+        raise RuntimeError("executing checkout is dirty")
+
     def rev_parse(revision: str) -> str:
         result = run_git(
             [git, "rev-parse", revision],
@@ -120,7 +131,34 @@ def _resolve_operational_paths(args: argparse.Namespace) -> tuple[Path, Path, Pa
     receipt = args.start_receipt.resolve()
     if not archive.is_file():
         raise RuntimeError(f"archive does not exist or is not a file: {archive}")
+    if not store.is_file():
+        raise RuntimeError(f"prospective observation store does not exist: {store}")
+    if not receipt.is_file():
+        raise RuntimeError(f"start receipt does not exist: {receipt}")
+    if len({archive, store, receipt}) != 3:
+        raise RuntimeError("archive, store, and start receipt paths must be distinct")
     return archive, store, receipt
+
+
+def _preflight_store(path: Path, receipt: dict[str, Any]) -> None:
+    """Prove the existing database is bound to this validated A0.1 receipt."""
+    expected = prospective_kernel.canonical_json(receipt)
+    uri = f"file:{path}?mode=ro"
+    try:
+        with sqlite3.connect(uri, uri=True) as db:
+            tables = {
+                row[0]
+                for row in db.execute(
+                    "SELECT name FROM sqlite_master WHERE type='table'"
+                ).fetchall()
+            }
+            if not {"start_receipt", "observations"}.issubset(tables):
+                raise RuntimeError("store is not an A0.1 prospective observation store")
+            row = db.execute("SELECT canonical_json FROM start_receipt WHERE id=1").fetchone()
+    except (sqlite3.DatabaseError, OSError) as exc:
+        raise RuntimeError("unable to read prospective observation store") from exc
+    if row is None or row[0] != expected:
+        raise RuntimeError("prospective observation store receipt does not match supplied receipt")
 
 
 def _startup(
@@ -128,18 +166,19 @@ def _startup(
 ) -> tuple[argparse.Namespace, dict[str, Any], RuntimeIdentity]:
     if not args.s2a_enabled:
         raise RuntimeError("--s2a-enabled is required; refusing legacy-mode startup")
-    if args.cadence_seconds != DEFAULT_CADENCE_SECONDS and args.cadence_seconds <= 0:
-        raise RuntimeError("--cadence-seconds must be positive")
+    if args.cadence_seconds != DEFAULT_CADENCE_SECONDS:
+        raise RuntimeError("cadence is fixed at exactly 900 seconds")
     actual_sha, actual_tree = _checkout_identity(RUNTIME_ROOT)
-    _verify_module_binding(RUNTIME_ROOT)
     if actual_sha != args.runtime_git_sha:
         raise RuntimeError("expected runtime SHA differs from executing checkout HEAD")
     if actual_tree != args.runtime_git_tree:
         raise RuntimeError("expected runtime tree differs from executing checkout tree")
+    _verify_module_binding(RUNTIME_ROOT)
     runtime = RuntimeIdentity(git_sha=actual_sha, git_tree=actual_tree)
     receipt = _load_receipt(args.start_receipt.resolve())
     archive, store_path, receipt_path = _resolve_operational_paths(args)
     args.archive, args.store, args.start_receipt = archive, store_path, receipt_path
+    _preflight_store(store_path, receipt)
     return args, receipt, runtime
 
 
