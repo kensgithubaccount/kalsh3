@@ -20,7 +20,7 @@ from enum import StrEnum
 from pathlib import Path
 from types import MappingProxyType
 from typing import Any, Protocol
-from urllib.parse import parse_qsl, quote, unquote, urlsplit
+from urllib.parse import parse_qsl, quote, unquote, urlencode, urlsplit
 
 from .archive import UniverseObservationArchive
 from .sync import (
@@ -39,6 +39,7 @@ DEFAULT_MAX_PAGES = 250
 ZERO_INFLUENCE = Decimal("0")
 M26H1_SCOPE_POLICY_VERSION = "m26h1-reviewed-public-scope-v1"
 M26H3_SCOPE_POLICY_VERSION = "m26h3-reviewed-public-scope-v2"
+A05_S2A_PUBLIC_SERIES_POLICY_VERSION = "a05-s2a-reviewed-public-series-v1"
 MAX_EVENT_RECONCILIATION_REQUESTS = 200
 
 
@@ -50,6 +51,8 @@ class CollectionScope:
     events_endpoint: str
     events_parameters: tuple[tuple[str, str], ...]
     policy_version: str = M26H1_SCOPE_POLICY_VERSION
+    series_endpoint: str | None = None
+    series_parameters: tuple[tuple[str, str], ...] = ()
     production_influence: Decimal = ZERO_INFLUENCE
 
     @property
@@ -63,6 +66,9 @@ class CollectionScope:
             "policy_version": self.policy_version,
             "production_influence": "0",
         }
+        if self.series_endpoint is not None:
+            material["series_endpoint"] = self.series_endpoint
+            material["series_parameters"] = dict(self.series_parameters)
         canonical = json.dumps(material, sort_keys=True, separators=(",", ":"))
         return hashlib.sha256(canonical.encode()).hexdigest()
 
@@ -81,6 +87,16 @@ OPEN_NON_MVE_V2 = CollectionScope(
     events_endpoint="/trade-api/v2/events",
     events_parameters=(("status", "open"), ("limit", "200")),
     policy_version=M26H3_SCOPE_POLICY_VERSION,
+)
+S2A_PUBLIC_SERIES_SCOPE = CollectionScope(
+    name="a05-s2a-public-series-v1",
+    markets_endpoint=OPEN_NON_MVE_V2.markets_endpoint,
+    markets_parameters=OPEN_NON_MVE_V2.markets_parameters,
+    events_endpoint=OPEN_NON_MVE_V2.events_endpoint,
+    events_parameters=OPEN_NON_MVE_V2.events_parameters,
+    policy_version=A05_S2A_PUBLIC_SERIES_POLICY_VERSION,
+    series_endpoint="/trade-api/v2/series",
+    series_parameters=(("limit", "1000"),),
 )
 REVIEWED_SCOPES = MappingProxyType({OPEN_NON_MVE_V2.name: OPEN_NON_MVE_V2})
 
@@ -103,7 +119,7 @@ class PublicUniverseTransport:
     """Unauthenticated GET transport restricted to one reviewed scope."""
 
     def __init__(self, scope: CollectionScope = OPEN_NON_MVE_V2) -> None:
-        if scope is not OPEN_NON_MVE_V2:
+        if scope is not OPEN_NON_MVE_V2 and scope is not S2A_PUBLIC_SERIES_SCOPE:
             raise CollectionError("public universe scope rejected")
         self._scope = scope
 
@@ -119,10 +135,14 @@ class PublicUniverseTransport:
             )
         except (UnicodeError, ValueError):
             raise CollectionError("public universe resource rejected") from None
+        if parsed.query != urlencode(pairs):
+            raise CollectionError("public universe resource rejected")
         expected = {
             self._scope.markets_endpoint: dict(self._scope.markets_parameters),
             self._scope.events_endpoint: dict(self._scope.events_parameters),
         }
+        if self._scope.series_endpoint is not None:
+            expected[self._scope.series_endpoint] = dict(self._scope.series_parameters)
         exact_event = None
         prefix = self._scope.events_endpoint + "/"
         try:

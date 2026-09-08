@@ -218,7 +218,11 @@ class UniverseSynchronizer:
                     cursor_in=cursor,
                     cursor_out=next_cursor if isinstance(next_cursor, str) else None,
                     run_id=run.run_id,
-                    kind=EntityKind(endpoint[:-1] if endpoint.endswith("s") else endpoint),
+                    kind={
+                        "markets": EntityKind.MARKET,
+                        "events": EntityKind.EVENT,
+                        "series": EntityKind.SERIES,
+                    }[endpoint],
                     payload=payload,
                     succeeded=isinstance(page, list),
                     failure=None if isinstance(page, list) else "malformed_page",
