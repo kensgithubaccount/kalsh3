@@ -6,9 +6,12 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from enum import StrEnum
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from services.market_universe.domain import UniverseValidationError, exact
+
+if TYPE_CHECKING:
+    from services.market_universe.orderbook_snapshot import AuthoritativeOrderbookSnapshot
 
 
 class BookState(StrEnum):
@@ -36,6 +39,8 @@ class BookView:
     ingested_at: datetime
     best_bid_size: Decimal | None
     best_ask_size: Decimal | None
+    price_mode: PriceMode | None = None
+    orderbook_authority: AuthoritativeOrderbookSnapshot | None = None
 
 
 @dataclass(slots=True)
@@ -141,6 +146,7 @@ class SequencedBook:
             self.ingested_at or observed,
             bid_size,
             ask_size,
+            self.price_mode,
         )
 
     @staticmethod

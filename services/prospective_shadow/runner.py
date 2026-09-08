@@ -6,31 +6,37 @@ import gc
 import time
 from collections import Counter
 from collections.abc import Callable, Mapping
-from dataclasses import asdict, dataclass, field
+from dataclasses import asdict, dataclass, field, replace
 from datetime import UTC, date, datetime
+from decimal import Decimal
 from pathlib import Path
 from typing import Any
 
 from services.cycle_deadline import CycleDeadline, CycleDeadlineExceeded
 from services.forecasting.daily_temperature import route_daily_temperature
+from services.market_universe.archive import EntityKind, UniverseObservationArchive
 from services.market_universe.event_snapshot import (
     AuthoritativeEventSnapshot,
     acquire_event_snapshot,
 )
 from services.market_universe.market_snapshot import acquire_market_snapshot
-from services.market_universe.orderbook_snapshot import acquire_orderbook_snapshot
+from services.market_universe.orderbook_snapshot import (
+    acquire_orderbook_snapshot,
+    derive_side_specific_top_of_book,
+)
 from services.opportunity_engine.structural_measurement_runner import (
     refresh_universe,
     run_discovery,
 )
 from services.prospective_shadow.kernel import (
+    RuntimeIdentity,
     ShadowObservationStore,
     capture_structural_observation,
     capture_weather_observation,
     hydrate_market_authority,
     validate_start_receipt,
 )
-from services.real_time_market_data.orderbook import BookState, BookView, SequencedBook
+from services.real_time_market_data.orderbook import BookState, BookView, PriceMode, SequencedBook
 
 DEFAULT_CADENCE_SECONDS = 900
 MAX_CANDIDATE_EVENTS = 200
@@ -116,7 +122,7 @@ def _book(
         snapshot = acquire_orderbook_snapshot(ticker, clock=acquisition_clock)
     if not snapshot.succeeded:
         return _empty_book(ticker, acquisition_clock())
-    book = SequencedBook(ticker)
+    book = SequencedBook(ticker, price_mode=PriceMode.LEGACY_SIDE)
     book.snapshot(
         0,
         [list(level) for level in snapshot.yes_levels],
@@ -124,9 +130,44 @@ def _book(
         snapshot.observed_at,
         snapshot.orderbook_identity or "",
         ingested_at=snapshot.observed_at,
+        price_mode=PriceMode.LEGACY_SIDE,
     )
-    # Consume the returned evidence using a clock read that occurs after acquisition.
-    return book.view(acquisition_clock())
+    # Consume the returned evidence using a clock read that occurs after acquisition.  The
+    # SequencedBook is only a state/level container here; source semantics come from the exact
+    # authoritative snapshot and are derived by the reviewed side-specific helper.
+    view = book.view(acquisition_clock())
+    top = derive_side_specific_top_of_book(snapshot.yes_levels, snapshot.no_levels)
+    return replace(
+        view,
+        best_yes_bid=top.yes_bid,
+        best_yes_ask=top.yes_ask,
+        best_bid_size=(
+            next(
+                (
+                    Decimal(size)
+                    for price, size in snapshot.yes_levels
+                    if Decimal(price) == top.yes_bid
+                ),
+                None,
+            )
+            if top.yes_bid is not None
+            else None
+        ),
+        best_ask_size=(
+            next(
+                (
+                    Decimal(size)
+                    for price, size in snapshot.no_levels
+                    if Decimal(price) == top.no_bid
+                ),
+                None,
+            )
+            if top.no_bid is not None
+            else None
+        ),
+        price_mode=None,
+        orderbook_authority=snapshot,
+    )
 
 
 def _event_snapshot(
@@ -252,6 +293,7 @@ def _weather_cycle(
 
 def _structural_cycle(
     *,
+    archive_path: str | Path | None = None,
     repo: Any,
     scan: Any,
     store: ShadowObservationStore,
@@ -260,6 +302,8 @@ def _structural_cycle(
     clock: Callable[[], datetime],
     diagnostics: CycleDiagnostics,
     deadline: CycleDeadline | None = None,
+    runtime: RuntimeIdentity | None = None,
+    s2a_enabled: bool = False,
 ) -> tuple[list[dict[str, Any]], bool]:
     leads = tuple(scan.leads)
     diagnostics.candidate_leads = len(leads)
@@ -271,6 +315,12 @@ def _structural_cycle(
         return [], False
 
     event_cache: dict[str, AuthoritativeEventSnapshot | None] = {}
+    series_cache: dict[str, Any | None] = {}
+    archive_reader = (
+        UniverseObservationArchive(str(archive_path), deadline=deadline)
+        if s2a_enabled and archive_path is not None
+        else None
+    )
     rows: list[dict[str, Any]] = []
     for lead in leads:
         if deadline is not None:
@@ -301,6 +351,26 @@ def _structural_cycle(
             lead.broad_market_ticker: broad_authority,
             lead.narrow_market_ticker: narrow_authority,
         }
+        series_authority = None
+        if s2a_enabled:
+            event = repo.events.get(lead.event_ticker)
+            series_ticker = None if event is None else event.series_ticker
+            if (
+                series_ticker is not None
+                and archive_reader is not None
+                and series_ticker not in series_cache
+            ):
+                try:
+                    series_cache[series_ticker] = archive_reader.at_or_before(
+                        EntityKind.SERIES, series_ticker, now
+                    )
+                except Exception:
+                    series_cache[series_ticker] = None
+            archived = None if series_ticker is None else series_cache.get(series_ticker)
+            if archived is not None:
+                from services.prospective_shadow.kernel import HydratedSeriesAuthority
+
+                series_authority = HydratedSeriesAuthority(archived.entity, archived)
         broad_book = _book(lead.broad_market_ticker, now, diagnostics, deadline, clock=clock)
         narrow_book = _book(lead.narrow_market_ticker, now, diagnostics, deadline, clock=clock)
         if broad_book.state is not BookState.CURRENT or narrow_book.state is not BookState.CURRENT:
@@ -315,7 +385,15 @@ def _structural_cycle(
             acquired_at=acquired_at,
             decision_at=decision_at,
             leg_authority=authorities,
+            leg_series_authority=None
+            if series_authority is None
+            else {
+                lead.broad_market_ticker: series_authority,
+                lead.narrow_market_ticker: series_authority,
+            },
             start_receipt_digest=str(start_receipt["receipt_digest"]),
+            runtime=runtime,
+            s2a_enabled=s2a_enabled,
         )
         rows.append(row)
     return rows, True
@@ -330,6 +408,8 @@ def run_once(
     weather_acquirer: Callable[[date], WeatherAcquisitionResult] | None = None,
     clock: Callable[[], datetime] = lambda: datetime.now(UTC),
     monotonic: Callable[[], float] = time.monotonic,
+    runtime: RuntimeIdentity | None = None,
+    s2a_enabled: bool = False,
 ) -> CycleResult:
     validate_start_receipt(start_receipt)
     deadline = CycleDeadline(MAX_CYCLE_SECONDS, monotonic=monotonic)
@@ -338,7 +418,11 @@ def run_once(
     diagnostics.cycle_started_at = acquired_at.isoformat()
     try:
         refresh = refresh_universe(
-            str(archive), compressed_evidence=True, clock=clock, deadline=deadline
+            str(archive),
+            compressed_evidence=True,
+            clock=clock,
+            deadline=deadline,
+            s2a_enabled=s2a_enabled,
         )
     except CycleDeadlineExceeded as exc:
         diagnostics.timeout_stage = exc.stage
@@ -379,6 +463,7 @@ def run_once(
         )
         deadline.check("CYCLE_DEADLINE_STRUCTURAL_SCAN")
         structural_rows, structural_complete = _structural_cycle(
+            archive_path=str(archive),
             repo=refresh.repo,
             scan=scan,
             store=store,
@@ -387,6 +472,8 @@ def run_once(
             clock=clock,
             diagnostics=diagnostics,
             deadline=deadline,
+            runtime=runtime,
+            s2a_enabled=s2a_enabled,
         )
         weather_rows = _weather_cycle(
             repo=refresh.repo,

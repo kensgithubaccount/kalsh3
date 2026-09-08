@@ -49,7 +49,7 @@ import base64
 import binascii
 import hashlib
 import json
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from decimal import Decimal
@@ -78,6 +78,30 @@ _MAX_BODY_B64_CHARS = 4 * ((MAX_ORDERBOOK_BODY_BYTES // 3) + 1) * 2
 
 _SIDES: tuple[str, ...] = ("yes_dollars", "no_dollars")
 _Level = tuple[str, str]
+
+
+@dataclass(frozen=True, slots=True)
+class SideSpecificBookTop:
+    yes_bid: Decimal | None
+    no_bid: Decimal | None
+    yes_ask: Decimal | None
+    no_ask: Decimal | None
+
+
+def derive_side_specific_top_of_book(
+    yes_levels: Sequence[_Level], no_levels: Sequence[_Level]
+) -> SideSpecificBookTop:
+    """Derive the binary top of book from the exchange's side-specific bid ladders."""
+    yes_prices = [Decimal(level[0]) for level in yes_levels]
+    no_prices = [Decimal(level[0]) for level in no_levels]
+    yes_bid = max(yes_prices) if yes_prices else None
+    no_bid = max(no_prices) if no_prices else None
+    return SideSpecificBookTop(
+        yes_bid=yes_bid,
+        no_bid=no_bid,
+        yes_ask=None if no_bid is None else Decimal(1) - no_bid,
+        no_ask=None if yes_bid is None else Decimal(1) - yes_bid,
+    )
 
 
 class OrderbookAcquisitionError(RuntimeError):
