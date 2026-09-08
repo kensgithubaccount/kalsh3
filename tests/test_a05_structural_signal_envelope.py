@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+from copy import deepcopy
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from types import SimpleNamespace
@@ -10,7 +11,9 @@ import pytest
 from services.market_universe.archive import EntityKind
 from services.market_universe.domain import Series, material_hashes
 from services.opportunity_engine.structural import RelationshipType, StructuralLead
+from services.prospective_shadow import runner
 from services.prospective_shadow.kernel import (
+    STRUCTURAL_BOOK_SEMANTICS_VERSION,
     STRUCTURAL_POLICY_ID,
     STRUCTURAL_SIGNAL_ENVELOPE_SCHEMA,
     HydratedMarketAuthority,
@@ -21,17 +24,24 @@ from services.prospective_shadow.kernel import (
     build_structural_signal_envelope,
     canonical_json,
     capture_structural_observation,
+    content_hash,
     validate_observation,
     validate_structural_signal_envelope,
 )
-from services.real_time_market_data.orderbook import BookState, BookView
+from services.real_time_market_data.orderbook import BookState, BookView, PriceMode, SequencedBook
 
 NOW = datetime(2026, 9, 7, 12, tzinfo=UTC)
 RECEIPT = "a" * 64
 RUNTIME = RuntimeIdentity("b" * 40, "c" * 40)
 
 
-def _book_view(ticker: str, *, yes_bid: str, no_bid: str) -> BookView:
+def _book_view(
+    ticker: str,
+    *,
+    yes_bid: str,
+    no_bid: str,
+    price_mode: PriceMode | None = PriceMode.UNIFIED_YES,
+) -> BookView:
     yes = ((Decimal(yes_bid), Decimal("2")),)
     no = ((Decimal(no_bid), Decimal("2")),)
     return BookView(
@@ -46,6 +56,7 @@ def _book_view(ticker: str, *, yes_bid: str, no_bid: str) -> BookView:
         NOW - timedelta(seconds=1),
         yes[0][1],
         no[0][1],
+        price_mode,
     )
 
 
@@ -165,8 +176,18 @@ def _lead() -> StructuralLead:
 
 def _books() -> tuple[dict, dict]:
     return (
-        _book(_book_view("BROAD", yes_bid="0.20", no_bid="0.30"), NOW, timedelta(seconds=30)),
-        _book(_book_view("NARROW", yes_bid="0.50", no_bid="0.40"), NOW, timedelta(seconds=30)),
+        _book(
+            _book_view("BROAD", yes_bid="0.20", no_bid="0.30"),
+            NOW,
+            timedelta(seconds=30),
+            include_price_mode=True,
+        ),
+        _book(
+            _book_view("NARROW", yes_bid="0.50", no_bid="0.40"),
+            NOW,
+            timedelta(seconds=30),
+            include_price_mode=True,
+        ),
     )
 
 
@@ -483,3 +504,187 @@ def test_r2_rejects_direction_and_book_content_mutations() -> None:
     bad_books["evidence"] = bad_evidence
     with pytest.raises(ShadowKernelError, match="snapshot identity"):
         validate_structural_signal_envelope(bad_books)
+
+
+def test_sequenced_book_view_exposes_actual_price_mode() -> None:
+    book = SequencedBook("BOOK", price_mode=PriceMode.UNIFIED_YES)
+    book.snapshot(42, [["0.20", "2"]], [["0.30", "2"]], NOW, "s" * 64)
+    assert book.view(NOW).price_mode is PriceMode.UNIFIED_YES
+
+
+@pytest.mark.parametrize("mode", [None, PriceMode.LEGACY_SIDE])
+def test_s2a_rejects_missing_or_non_unified_price_mode(mode: PriceMode | None) -> None:
+    authorities = {"BROAD": _authority("BROAD"), "NARROW": _authority("NARROW")}
+    row = capture_structural_observation(
+        lead=_lead(),
+        broad_book=_book_view("BROAD", yes_bid="0.20", no_bid="0.30", price_mode=mode),
+        narrow_book=_book_view("NARROW", yes_bid="0.50", no_bid="0.40"),
+        acquired_at=NOW - timedelta(seconds=2),
+        decision_at=NOW,
+        leg_authority=authorities,
+        start_receipt_digest=RECEIPT,
+        runtime=RUNTIME,
+        leg_series_authority={"BROAD": SERIES_AUTHORITY, "NARROW": SERIES_AUTHORITY},
+        s2a_enabled=True,
+    )
+    assert row["decision"] == "ABSTAIN"
+    assert row["reason_code"] == "STRUCTURAL_SIGNAL_ENVELOPE_UNAVAILABLE"
+
+
+def test_s2a_persists_and_validates_book_price_semantics() -> None:
+    envelope = build_structural_signal_envelope(
+        lead=_lead(),
+        broad_book=_books()[0],
+        narrow_book=_books()[1],
+        broad_authority=_authority("BROAD"),
+        narrow_authority=_authority("NARROW"),
+        acquired_at=NOW - timedelta(seconds=2),
+        decision_at=NOW,
+        start_receipt_digest=RECEIPT,
+        runtime=RUNTIME,
+        broad_series_authority=SERIES_AUTHORITY,
+        narrow_series_authority=SERIES_AUTHORITY,
+    )
+    assert envelope["evidence"]["book_price_semantics"] == {
+        "version": STRUCTURAL_BOOK_SEMANTICS_VERSION,
+        "price_mode": PriceMode.UNIFIED_YES.value,
+        "yes_bid": "max(yes_bids)",
+        "yes_ask": "min(no_bids)",
+    }
+    mutated = deepcopy(envelope)
+    mutated["evidence"]["book_contents"]["broad"]["price_mode"] = PriceMode.LEGACY_SIDE.value
+    with pytest.raises(ShadowKernelError, match="price mode"):
+        validate_structural_signal_envelope(mutated)
+
+
+_ARCHIVE_FAILURE = object()
+
+
+@pytest.mark.parametrize(
+    "field,value",
+    [
+        ("subject_entities", ["different"]),
+        ("geographic_scope", "different"),
+        ("measured_event_or_value", "different"),
+    ],
+)
+def test_subject_identity_recomputed_from_persisted_semantic_context(
+    field: str, value: object
+) -> None:
+    envelope = build_structural_signal_envelope(
+        lead=_lead(),
+        broad_book=_books()[0],
+        narrow_book=_books()[1],
+        broad_authority=_authority("BROAD"),
+        narrow_authority=_authority("NARROW"),
+        acquired_at=NOW - timedelta(seconds=2),
+        decision_at=NOW,
+        start_receipt_digest=RECEIPT,
+        runtime=RUNTIME,
+        broad_series_authority=SERIES_AUTHORITY,
+        narrow_series_authority=SERIES_AUTHORITY,
+    )
+    mutated = deepcopy(envelope)
+    context = mutated["relationship"]["broad"]["proposition"]["semantic_context"]
+    context[field] = value
+    semantic_identity = content_hash({"semantic_context": context})
+    for leg in (mutated["relationship"]["broad"], mutated["relationship"]["narrow"]):
+        leg["proposition"]["semantic_context"] = context
+        leg["proposition"]["semantic_context_identity"] = semantic_identity
+    mutated["relationship"]["semantic_context"]["material"] = context
+    mutated["relationship"]["semantic_context"]["identity"] = semantic_identity
+    mutated["signal_id"] = content_hash(
+        {key: value for key, value in mutated.items() if key != "signal_id"}
+    )
+    with pytest.raises(ShadowKernelError, match="subject identity"):
+        validate_structural_signal_envelope(mutated)
+
+
+def test_subject_identity_mutation_fails_even_with_outer_signal_recomputed() -> None:
+    envelope = build_structural_signal_envelope(
+        lead=_lead(),
+        broad_book=_books()[0],
+        narrow_book=_books()[1],
+        broad_authority=_authority("BROAD"),
+        narrow_authority=_authority("NARROW"),
+        acquired_at=NOW - timedelta(seconds=2),
+        decision_at=NOW,
+        start_receipt_digest=RECEIPT,
+        runtime=RUNTIME,
+        broad_series_authority=SERIES_AUTHORITY,
+        narrow_series_authority=SERIES_AUTHORITY,
+    )
+    mutated = deepcopy(envelope)
+    mutated["relationship"]["broad"]["proposition"]["subject_identity"] = "f" * 64
+    mutated["signal_id"] = content_hash(
+        {key: value for key, value in mutated.items() if key != "signal_id"}
+    )
+    with pytest.raises(ShadowKernelError, match="subject identity"):
+        validate_structural_signal_envelope(mutated)
+
+
+@pytest.mark.parametrize(
+    ("archive_result", "mode", "expected"),
+    [
+        (SERIES_AUTHORITY.observation, PriceMode.UNIFIED_YES, "OBSERVE"),
+        (None, PriceMode.UNIFIED_YES, "ABSTAIN"),
+        (_ARCHIVE_FAILURE, PriceMode.UNIFIED_YES, "ABSTAIN"),
+        (SERIES_AUTHORITY.observation, None, "ABSTAIN"),
+        (SERIES_AUTHORITY.observation, PriceMode.LEGACY_SIDE, "ABSTAIN"),
+    ],
+)
+def test_runner_s2a_wires_series_cache_and_actual_book_mode(
+    monkeypatch, tmp_path, archive_result, mode, expected
+) -> None:
+    class Archive:
+        def __init__(self, *_args, **_kwargs):
+            pass
+
+        def at_or_before(self, *_args, **_kwargs):
+            if archive_result is _ARCHIVE_FAILURE:
+                raise RuntimeError("archive unavailable")
+            return archive_result
+
+    monkeypatch.setattr(runner, "UniverseObservationArchive", Archive)
+    monkeypatch.setattr(
+        runner,
+        "_event_snapshot",
+        lambda *args, **kwargs: SimpleNamespace(),
+    )
+    monkeypatch.setattr(
+        runner,
+        "_authority",
+        lambda market, *args, **kwargs: _authority(market.ticker),
+    )
+    monkeypatch.setattr(
+        runner,
+        "_book",
+        lambda ticker, *args, **kwargs: _book_view(
+            ticker,
+            yes_bid="0.20" if ticker == "BROAD" else "0.50",
+            no_bid="0.30",
+            price_mode=mode,
+        ),
+    )
+    repo = SimpleNamespace(
+        markets={
+            "BROAD": SimpleNamespace(ticker="BROAD"),
+            "NARROW": SimpleNamespace(ticker="NARROW"),
+        },
+        events={"EVENT": SimpleNamespace(series_ticker="SERIES")},
+    )
+    scan = SimpleNamespace(leads=(_lead(),), manifest=SimpleNamespace(structural_cohorts=1))
+    rows, complete = runner._structural_cycle(
+        archive_path=tmp_path / "archive.sqlite",
+        repo=repo,
+        scan=scan,
+        store=SimpleNamespace(),
+        start_receipt={"receipt_digest": RECEIPT},
+        acquired_at=NOW - timedelta(seconds=2),
+        clock=lambda: NOW,
+        diagnostics=runner.CycleDiagnostics(),
+        runtime=RUNTIME,
+        s2a_enabled=True,
+    )
+    assert complete is True
+    assert rows[0]["decision"] == expected

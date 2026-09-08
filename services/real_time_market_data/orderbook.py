@@ -36,6 +36,7 @@ class BookView:
     ingested_at: datetime
     best_bid_size: Decimal | None
     best_ask_size: Decimal | None
+    price_mode: PriceMode | None = None
 
 
 @dataclass(slots=True)
@@ -141,6 +142,7 @@ class SequencedBook:
             self.ingested_at or observed,
             bid_size,
             ask_size,
+            self.price_mode,
         )
 
     @staticmethod
