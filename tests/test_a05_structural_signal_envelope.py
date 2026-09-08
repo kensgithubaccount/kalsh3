@@ -230,6 +230,33 @@ def _books() -> tuple[dict, dict]:
 SERIES_AUTHORITY = _series_authority()
 
 
+def _recompute_row_hashes(row: dict) -> None:
+    envelope = row["structural_signal_envelope"]
+    envelope["signal_id"] = content_hash(
+        {key: value for key, value in envelope.items() if key != "signal_id"}
+    )
+    row["evidence_hash"] = content_hash(row["evidence"])
+    body = dict(row)
+    body.pop("observation_id", None)
+    body.pop("evidence_hash", None)
+    row["observation_id"] = content_hash(body)
+
+
+def _captured_s2a_row() -> dict:
+    return capture_structural_observation(
+        lead=_lead(),
+        broad_book=_book_view("BROAD", yes_bid="0.20", no_bid="0.30"),
+        narrow_book=_book_view("NARROW", yes_bid="0.50", no_bid="0.40"),
+        acquired_at=NOW - timedelta(seconds=2),
+        decision_at=NOW,
+        leg_authority={"BROAD": _authority("BROAD"), "NARROW": _authority("NARROW")},
+        start_receipt_digest=RECEIPT,
+        runtime=RUNTIME,
+        leg_series_authority={"BROAD": SERIES_AUTHORITY, "NARROW": SERIES_AUTHORITY},
+        s2a_enabled=True,
+    )
+
+
 def test_complete_envelope_is_canonical_and_deterministic() -> None:
     broad, narrow = _books()
     first = build_structural_signal_envelope(
@@ -275,6 +302,126 @@ def test_complete_envelope_is_canonical_and_deterministic() -> None:
     assert first["probability"] is None and first["settlement"] is None
     assert first["safety"] == {"research_only": True, "production_influence": "0"}
     assert first["runtime"]["runtime_git_sha"] == "b" * 40
+
+
+def test_build_accepts_series_authority_at_decision_time() -> None:
+    series_authority = _series_authority()
+    series_authority.observation.acquired_at = NOW
+    envelope = build_structural_signal_envelope(
+        lead=_lead(),
+        broad_book=_books()[0],
+        narrow_book=_books()[1],
+        broad_authority=_authority("BROAD"),
+        narrow_authority=_authority("NARROW"),
+        acquired_at=NOW - timedelta(seconds=2),
+        decision_at=NOW,
+        start_receipt_digest=RECEIPT,
+        runtime=RUNTIME,
+        broad_series_authority=series_authority,
+        narrow_series_authority=series_authority,
+    )
+    validate_structural_signal_envelope(envelope)
+
+
+def test_build_rejects_series_authority_after_decision() -> None:
+    series_authority = _series_authority()
+    series_authority.observation.acquired_at = NOW + timedelta(microseconds=1)
+    with pytest.raises(ShadowKernelError, match="series authority is after decision"):
+        build_structural_signal_envelope(
+            lead=_lead(),
+            broad_book=_books()[0],
+            narrow_book=_books()[1],
+            broad_authority=_authority("BROAD"),
+            narrow_authority=_authority("NARROW"),
+            acquired_at=NOW - timedelta(seconds=2),
+            decision_at=NOW,
+            start_receipt_digest=RECEIPT,
+            runtime=RUNTIME,
+            broad_series_authority=series_authority,
+            narrow_series_authority=series_authority,
+        )
+
+
+def test_build_rejects_inverted_timestamps() -> None:
+    with pytest.raises(ShadowKernelError, match="timestamp ordering"):
+        build_structural_signal_envelope(
+            lead=_lead(),
+            broad_book=_books()[0],
+            narrow_book=_books()[1],
+            broad_authority=_authority("BROAD"),
+            narrow_authority=_authority("NARROW"),
+            acquired_at=NOW,
+            decision_at=NOW - timedelta(microseconds=1),
+            start_receipt_digest=RECEIPT,
+            runtime=RUNTIME,
+            broad_series_authority=SERIES_AUTHORITY,
+            narrow_series_authority=SERIES_AUTHORITY,
+        )
+
+
+def test_standalone_envelope_rejects_inverted_timestamps() -> None:
+    envelope = _captured_s2a_row()["structural_signal_envelope"]
+    envelope["evidence"]["acquisition_timestamp"] = NOW.isoformat()
+    envelope["evidence"]["decision_timestamp"] = (NOW - timedelta(seconds=1)).isoformat()
+    with pytest.raises(ShadowKernelError, match="timestamp ordering"):
+        validate_structural_signal_envelope(envelope)
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("acquisition_timestamp", (NOW - timedelta(seconds=1)).isoformat()),
+        ("decision_timestamp", (NOW + timedelta(seconds=1)).isoformat()),
+        ("decision_timestamp", (NOW - timedelta(seconds=1)).isoformat()),
+    ],
+)
+def test_parent_envelope_timestamps_remain_exactly_bound_after_rehash(
+    field: str, value: str
+) -> None:
+    row = _captured_s2a_row()
+    row["structural_signal_envelope"]["evidence"][field] = value
+    _recompute_row_hashes(row)
+    with pytest.raises(ShadowKernelError, match="envelope timestamp mismatch"):
+        validate_observation(row, now=NOW)
+
+
+def test_standalone_envelope_rejects_series_acquired_after_decision_after_rehash() -> None:
+    envelope = _captured_s2a_row()["structural_signal_envelope"]
+    envelope["series"]["authority"]["series_acquired_at"] = (
+        NOW + timedelta(microseconds=1)
+    ).isoformat()
+    envelope["signal_id"] = content_hash(
+        {key: value for key, value in envelope.items() if key != "signal_id"}
+    )
+    with pytest.raises(ShadowKernelError, match="series authority is after decision"):
+        validate_structural_signal_envelope(envelope)
+
+
+def test_series_before_parent_acquisition_remains_valid() -> None:
+    row = _captured_s2a_row()
+    validate_observation(row, now=NOW)
+
+
+def test_future_parent_and_envelope_fail_existing_parent_time_gate() -> None:
+    row = _captured_s2a_row()
+    future = NOW + timedelta(seconds=1)
+    row["acquisition_timestamp"] = (NOW - timedelta(seconds=1)).isoformat()
+    row["decision_timestamp"] = future.isoformat()
+    row["structural_signal_envelope"]["evidence"]["acquisition_timestamp"] = row[
+        "acquisition_timestamp"
+    ]
+    row["structural_signal_envelope"]["evidence"]["decision_timestamp"] = row["decision_timestamp"]
+    _recompute_row_hashes(row)
+    with pytest.raises(ShadowKernelError, match="future or inverted observation time"):
+        validate_observation(row, now=NOW)
+
+
+def test_orderbook_after_envelope_decision_fails_standalone_replay() -> None:
+    envelope = _captured_s2a_row()["structural_signal_envelope"]
+    authority = envelope["evidence"]["book_contents"]["broad"]["orderbook_authority"]
+    authority["observed_at"] = (NOW + timedelta(microseconds=1)).isoformat()
+    with pytest.raises(ShadowKernelError, match="observed_at is in the future"):
+        validate_structural_signal_envelope(envelope)
 
 
 def test_disagreeing_event_authority_and_invalid_runtime_fail_closed() -> None:

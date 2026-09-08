@@ -936,6 +936,14 @@ def build_structural_signal_envelope(
     _validate_runtime_identity(runtime)
     if not _SHA256.fullmatch(start_receipt_digest):
         raise ShadowKernelError("envelope start receipt digest is malformed")
+    if decision_at < acquired_at:
+        raise ShadowKernelError("candidate envelope timestamp ordering failed")
+    for label, series_authority in (
+        ("broad", broad_series_authority),
+        ("narrow", narrow_series_authority),
+    ):
+        if series_authority.observation.acquired_at > decision_at:
+            raise ShadowKernelError(f"{label} series authority is after decision")
     if lead.relationship_type.value != STRUCTURAL_RELATIONSHIP:
         raise ShadowKernelError("unknown structural relationship")
     if broad_authority.event.ticker != narrow_authority.event.ticker:
@@ -1339,6 +1347,8 @@ def validate_structural_signal_envelope(envelope: Mapping[str, Any]) -> None:
     _iso(decision, "envelope decision_timestamp")
     if decision < acquisition:
         raise ShadowKernelError("candidate envelope timestamp ordering failed")
+    if series_acquired > decision:
+        raise ShadowKernelError("candidate envelope series authority is after decision")
     evidence = envelope.get("evidence")
     if (
         not isinstance(evidence, dict)
@@ -1637,6 +1647,12 @@ def validate_observation(
         if not isinstance(envelope, dict):
             raise ShadowKernelError("structural envelope is malformed")
         validate_structural_signal_envelope(envelope)
+        envelope_evidence = envelope["evidence"]
+        if (
+            envelope_evidence["acquisition_timestamp"] != obs["acquisition_timestamp"]
+            or envelope_evidence["decision_timestamp"] != obs["decision_timestamp"]
+        ):
+            raise ShadowKernelError("structural envelope timestamp mismatch")
         relation = envelope["relationship"]
         if obs.get("market_tickers") != [relation["broad"]["ticker"], relation["narrow"]["ticker"]]:
             raise ShadowKernelError("structural envelope market ticker mismatch")
