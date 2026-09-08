@@ -48,6 +48,17 @@ from services.market_universe.event_snapshot import AuthoritativeEventSnapshot
 from services.market_universe.market_snapshot import PARSER_VERSION as MARKET_PARSER_VERSION
 from services.market_universe.market_snapshot import SCHEMA as MARKET_SNAPSHOT_SCHEMA
 from services.market_universe.market_snapshot import AuthoritativeMarketSnapshot
+from services.market_universe.orderbook_snapshot import (
+    PARSER_VERSION as ORDERBOOK_PARSER_VERSION,
+)
+from services.market_universe.orderbook_snapshot import (
+    SCHEMA as ORDERBOOK_SCHEMA,
+)
+from services.market_universe.orderbook_snapshot import (
+    AuthoritativeOrderbookSnapshot,
+    derive_side_specific_top_of_book,
+    validate_orderbook_snapshot,
+)
 from services.opportunity_engine.structural import (
     POLICY_VERSION as STRUCTURAL_SCANNER_VERSION,
 )
@@ -55,7 +66,7 @@ from services.opportunity_engine.structural import (
     StructuralLead,
     _semantic_context,
 )
-from services.real_time_market_data.orderbook import BookState, BookView, PriceMode
+from services.real_time_market_data.orderbook import BookState, BookView
 from services.supervised_canary.m27n2_evidence_reconstruction import (
     EvidenceReconstructionError,
     reconstruct_event,
@@ -75,7 +86,7 @@ STRUCTURAL_POLICY_ID = stable_hash((STRUCTURAL_SCANNER_VERSION, "compatibility-p
 STRUCTURAL_SIGNAL_ENVELOPE_SCHEMA = "kalshi.a05.structural-signal-envelope.v1"
 STRUCTURAL_SIGNAL_CONTRACT_VERSION = "kalshi-a05-structural-signal-evaluation-v1"
 STRUCTURAL_RELATIONSHIP = "YES_HIGH_SUBSET_OF_YES_LOW"
-STRUCTURAL_BOOK_SEMANTICS_VERSION = "kalshi-a05-unified-yes-book-semantics-v1"
+STRUCTURAL_BOOK_SEMANTICS_VERSION = "kalshi-a05-side-specific-bid-book-semantics-v1"
 _ENVELOPE_LEG_ROLES = ("BROAD_LOWER_THRESHOLD", "NARROW_HIGHER_THRESHOLD")
 _SEMANTIC_CONTEXT_FIELDS = (
     "event_ticker",
@@ -367,7 +378,7 @@ def _book(
     decision_at: datetime,
     stale_after: timedelta,
     *,
-    include_price_mode: bool = False,
+    include_orderbook_authority: bool = False,
 ) -> dict[str, Any]:
     if view.state is not BookState.CURRENT:
         raise ShadowKernelError(f"{view.ticker}: book is {view.state.value}")
@@ -387,14 +398,21 @@ def _book(
         "best_yes_bid": None if view.best_yes_bid is None else str(view.best_yes_bid),
         "best_yes_ask": None if view.best_yes_ask is None else str(view.best_yes_ask),
     }
-    if include_price_mode:
-        result["price_mode"] = (
-            view.price_mode.value if isinstance(view.price_mode, PriceMode) else None
-        )
+    if include_orderbook_authority:
+        authority = view.orderbook_authority
+        if not isinstance(authority, AuthoritativeOrderbookSnapshot):
+            result["orderbook_authority"] = None
+        else:
+            top = derive_side_specific_top_of_book(authority.yes_levels, authority.no_levels)
+            result["best_yes_bid"] = None if top.yes_bid is None else str(top.yes_bid)
+            result["best_yes_ask"] = None if top.yes_ask is None else str(top.yes_ask)
+            result["orderbook_authority"] = authority.to_json()
     return result
 
 
-def _validate_persisted_book(book: object, *, require_price_mode: bool = False) -> dict[str, Any]:
+def _validate_persisted_book(
+    book: object, *, require_side_specific_semantics: bool = False
+) -> dict[str, Any]:
     if not isinstance(book, dict):
         raise ShadowKernelError("persisted book is malformed")
     ticker = book.get("ticker")
@@ -441,10 +459,15 @@ def _validate_persisted_book(book: object, *, require_price_mode: bool = False) 
         raise ShadowKernelError("persisted book snapshot identity mismatch")
     yes_prices = [Decimal(item[0]) for item in levels["yes_bids"]]
     no_prices = [Decimal(item[0]) for item in levels["no_bids"]]
-    if require_price_mode and book.get("price_mode") != PriceMode.UNIFIED_YES.value:
-        raise ShadowKernelError("unsupported or missing S2A book price mode")
     expected_bid = None if not yes_prices else str(max(yes_prices))
     expected_ask = None if not no_prices else str(min(no_prices))
+    if require_side_specific_semantics:
+        top = derive_side_specific_top_of_book(
+            tuple((item[0], item[1]) for item in levels["yes_bids"]),
+            tuple((item[0], item[1]) for item in levels["no_bids"]),
+        )
+        expected_bid = None if top.yes_bid is None else str(top.yes_bid)
+        expected_ask = None if top.yes_ask is None else str(top.yes_ask)
     if book.get("best_yes_bid") != expected_bid or book.get("best_yes_ask") != expected_ask:
         raise ShadowKernelError("persisted book top-of-book mismatch")
     return {
@@ -453,6 +476,36 @@ def _validate_persisted_book(book: object, *, require_price_mode: bool = False) 
         "yes_bids": levels["yes_bids"],
         "no_bids": levels["no_bids"],
     }
+
+
+def _validate_orderbook_authority(
+    payload: object, *, expected_ticker: str, decision_at: datetime
+) -> dict[str, Any]:
+    if not isinstance(payload, dict):
+        raise ShadowKernelError("S2A orderbook authority is missing")
+    result = validate_orderbook_snapshot(payload, expected_ticker=expected_ticker, now=decision_at)
+    if not result.succeeded:
+        raise ShadowKernelError(f"S2A orderbook authority is invalid: {result.reason}")
+    if (
+        payload.get("schema") != ORDERBOOK_SCHEMA
+        or payload.get("parser_version") != ORDERBOOK_PARSER_VERSION
+    ):
+        raise ShadowKernelError("S2A orderbook authority schema/parser mismatch")
+    return payload
+
+
+def _bind_orderbook_authority(book: Mapping[str, Any], authority: Mapping[str, Any]) -> None:
+    expected_yes = sorted(authority["yes_levels"], key=lambda level: Decimal(level[0]))
+    expected_no = sorted(authority["no_levels"], key=lambda level: Decimal(level[0]))
+    actual_yes = sorted(book["yes_bids"], key=lambda level: Decimal(level[0]))
+    actual_no = sorted(book["no_bids"], key=lambda level: Decimal(level[0]))
+    if (
+        book["ticker"] != authority["ticker"]
+        or actual_yes != expected_yes
+        or actual_no != expected_no
+        or book["observed_at"] != authority["observed_at"]
+    ):
+        raise ShadowKernelError("S2A persisted book does not match authoritative snapshot")
 
 
 def build_start_receipt(
@@ -913,8 +966,20 @@ def build_structural_signal_envelope(
         or narrow_book.get("ticker") != lead.narrow_market_ticker
     ):
         raise ShadowKernelError("envelope book ticker mismatch")
-    broad_book = _validate_persisted_book(broad_book, require_price_mode=True)
-    narrow_book = _validate_persisted_book(narrow_book, require_price_mode=True)
+    broad_book = _validate_persisted_book(broad_book, require_side_specific_semantics=True)
+    narrow_book = _validate_persisted_book(narrow_book, require_side_specific_semantics=True)
+    broad_orderbook_authority = _validate_orderbook_authority(
+        broad_book.get("orderbook_authority"),
+        expected_ticker=lead.broad_market_ticker,
+        decision_at=decision_at,
+    )
+    narrow_orderbook_authority = _validate_orderbook_authority(
+        narrow_book.get("orderbook_authority"),
+        expected_ticker=lead.narrow_market_ticker,
+        decision_at=decision_at,
+    )
+    _bind_orderbook_authority(broad_book, broad_orderbook_authority)
+    _bind_orderbook_authority(narrow_book, narrow_orderbook_authority)
     broad_ask = broad_book.get("best_yes_ask")
     narrow_bid = narrow_book.get("best_yes_bid")
     if broad_ask is None or narrow_bid is None:
@@ -999,11 +1064,13 @@ def build_structural_signal_envelope(
                 "narrow": narrow_book["snapshot_id"],
             },
             "book_contents": {"broad": dict(broad_book), "narrow": dict(narrow_book)},
-            "book_price_semantics": {
+            "book_semantics": {
                 "version": STRUCTURAL_BOOK_SEMANTICS_VERSION,
-                "price_mode": PriceMode.UNIFIED_YES.value,
-                "yes_bid": "max(yes_bids)",
-                "yes_ask": "min(no_bids)",
+                "source_representation": "SIDE_SPECIFIC_BIDS",
+                "yes_bid": "max(yes_dollars)",
+                "no_bid": "max(no_dollars)",
+                "yes_ask": "1 - max(no_dollars)",
+                "no_ask": "1 - max(yes_dollars)",
             },
             "market_authority": {
                 "broad": broad_authority.identity,
@@ -1281,11 +1348,13 @@ def validate_structural_signal_envelope(envelope: Mapping[str, Any]) -> None:
         or set(evidence["book_contents"]) != {"broad", "narrow"}
     ):
         raise ShadowKernelError("candidate envelope evidence snapshots missing")
-    if evidence.get("book_price_semantics") != {
+    if evidence.get("book_semantics") != {
         "version": STRUCTURAL_BOOK_SEMANTICS_VERSION,
-        "price_mode": PriceMode.UNIFIED_YES.value,
-        "yes_bid": "max(yes_bids)",
-        "yes_ask": "min(no_bids)",
+        "source_representation": "SIDE_SPECIFIC_BIDS",
+        "yes_bid": "max(yes_dollars)",
+        "no_bid": "max(no_dollars)",
+        "yes_ask": "1 - max(no_dollars)",
+        "no_ask": "1 - max(yes_dollars)",
     }:
         raise ShadowKernelError("candidate envelope book price semantics mismatch")
     if not all(
@@ -1305,7 +1374,15 @@ def validate_structural_signal_envelope(envelope: Mapping[str, Any]) -> None:
         ):
             raise ShadowKernelError("candidate envelope market authority binding mismatch")
     for key, leg in (("broad", broad), ("narrow", narrow)):
-        checked = _validate_persisted_book(evidence["book_contents"][key], require_price_mode=True)
+        checked = _validate_persisted_book(
+            evidence["book_contents"][key], require_side_specific_semantics=True
+        )
+        authority = _validate_orderbook_authority(
+            checked.get("orderbook_authority"),
+            expected_ticker=leg["ticker"],
+            decision_at=decision,
+        )
+        _bind_orderbook_authority(checked, authority)
         if (
             checked["ticker"] != leg["ticker"]
             or checked["snapshot_id"] != evidence["book_snapshots"][key]
@@ -1341,8 +1418,18 @@ def capture_structural_observation(
     s2a_enabled: bool = False,
 ) -> dict[str, Any]:
     try:
-        broad = _book(broad_book, decision_at, stale_after, include_price_mode=s2a_enabled)
-        narrow = _book(narrow_book, decision_at, stale_after, include_price_mode=s2a_enabled)
+        broad = _book(
+            broad_book,
+            decision_at,
+            stale_after,
+            include_orderbook_authority=s2a_enabled,
+        )
+        narrow = _book(
+            narrow_book,
+            decision_at,
+            stale_after,
+            include_orderbook_authority=s2a_enabled,
+        )
     except ShadowKernelError as exc:
         return _base(
             "structural_threshold",

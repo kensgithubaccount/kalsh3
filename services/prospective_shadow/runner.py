@@ -6,8 +6,9 @@ import gc
 import time
 from collections import Counter
 from collections.abc import Callable, Mapping
-from dataclasses import asdict, dataclass, field
+from dataclasses import asdict, dataclass, field, replace
 from datetime import UTC, date, datetime
+from decimal import Decimal
 from pathlib import Path
 from typing import Any
 
@@ -19,7 +20,10 @@ from services.market_universe.event_snapshot import (
     acquire_event_snapshot,
 )
 from services.market_universe.market_snapshot import acquire_market_snapshot
-from services.market_universe.orderbook_snapshot import acquire_orderbook_snapshot
+from services.market_universe.orderbook_snapshot import (
+    acquire_orderbook_snapshot,
+    derive_side_specific_top_of_book,
+)
 from services.opportunity_engine.structural_measurement_runner import (
     refresh_universe,
     run_discovery,
@@ -32,7 +36,7 @@ from services.prospective_shadow.kernel import (
     hydrate_market_authority,
     validate_start_receipt,
 )
-from services.real_time_market_data.orderbook import BookState, BookView, SequencedBook
+from services.real_time_market_data.orderbook import BookState, BookView, PriceMode, SequencedBook
 
 DEFAULT_CADENCE_SECONDS = 900
 MAX_CANDIDATE_EVENTS = 200
@@ -118,7 +122,7 @@ def _book(
         snapshot = acquire_orderbook_snapshot(ticker, clock=acquisition_clock)
     if not snapshot.succeeded:
         return _empty_book(ticker, acquisition_clock())
-    book = SequencedBook(ticker)
+    book = SequencedBook(ticker, price_mode=PriceMode.LEGACY_SIDE)
     book.snapshot(
         0,
         [list(level) for level in snapshot.yes_levels],
@@ -126,9 +130,44 @@ def _book(
         snapshot.observed_at,
         snapshot.orderbook_identity or "",
         ingested_at=snapshot.observed_at,
+        price_mode=PriceMode.LEGACY_SIDE,
     )
-    # Consume the returned evidence using a clock read that occurs after acquisition.
-    return book.view(acquisition_clock())
+    # Consume the returned evidence using a clock read that occurs after acquisition.  The
+    # SequencedBook is only a state/level container here; source semantics come from the exact
+    # authoritative snapshot and are derived by the reviewed side-specific helper.
+    view = book.view(acquisition_clock())
+    top = derive_side_specific_top_of_book(snapshot.yes_levels, snapshot.no_levels)
+    return replace(
+        view,
+        best_yes_bid=top.yes_bid,
+        best_yes_ask=top.yes_ask,
+        best_bid_size=(
+            next(
+                (
+                    Decimal(size)
+                    for price, size in snapshot.yes_levels
+                    if Decimal(price) == top.yes_bid
+                ),
+                None,
+            )
+            if top.yes_bid is not None
+            else None
+        ),
+        best_ask_size=(
+            next(
+                (
+                    Decimal(size)
+                    for price, size in snapshot.no_levels
+                    if Decimal(price) == top.no_bid
+                ),
+                None,
+            )
+            if top.no_bid is not None
+            else None
+        ),
+        price_mode=None,
+        orderbook_authority=snapshot,
+    )
 
 
 def _event_snapshot(

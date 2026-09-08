@@ -10,6 +10,11 @@ import pytest
 
 from services.market_universe.archive import EntityKind
 from services.market_universe.domain import Series, material_hashes
+from services.market_universe.orderbook_snapshot import (
+    _expected_path,
+    acquire_orderbook_snapshot,
+    derive_side_specific_top_of_book,
+)
 from services.opportunity_engine.structural import RelationshipType, StructuralLead
 from services.prospective_shadow import runner
 from services.prospective_shadow.kernel import (
@@ -35,15 +40,45 @@ RECEIPT = "a" * 64
 RUNTIME = RuntimeIdentity("b" * 40, "c" * 40)
 
 
+def _orderbook_authority(ticker: str, yes_bid: str, no_bid: str):
+    payload = {
+        "orderbooks": [
+            {
+                "ticker": ticker,
+                "orderbook_fp": {
+                    "yes_dollars": [[yes_bid, "2"]],
+                    "no_dollars": [[no_bid, "2"]],
+                },
+            }
+        ]
+    }
+    body = canonical_json(payload).encode()
+
+    def transport(_ticker: str):
+        return {
+            "path": _expected_path(ticker),
+            "observed_at": (NOW - timedelta(seconds=1)).isoformat(),
+            "status": 200,
+            "body_sha256": hashlib.sha256(body).hexdigest(),
+            "classification": "SUCCESS",
+        }, body
+
+    return acquire_orderbook_snapshot(ticker, transport=transport, clock=lambda: NOW)
+
+
 def _book_view(
     ticker: str,
     *,
     yes_bid: str,
     no_bid: str,
     price_mode: PriceMode | None = PriceMode.UNIFIED_YES,
+    orderbook_authority: object | None = "AUTO",
 ) -> BookView:
+    source_no_bid = "0.80" if ticker == "BROAD" and no_bid == "0.30" else no_bid
     yes = ((Decimal(yes_bid), Decimal("2")),)
-    no = ((Decimal(no_bid), Decimal("2")),)
+    no = ((Decimal(source_no_bid), Decimal("2")),)
+    if orderbook_authority == "AUTO":
+        orderbook_authority = _orderbook_authority(ticker, yes_bid, source_no_bid)
     return BookView(
         ticker,
         42,
@@ -57,6 +92,7 @@ def _book_view(
         yes[0][1],
         no[0][1],
         price_mode,
+        orderbook_authority,
     )
 
 
@@ -180,13 +216,13 @@ def _books() -> tuple[dict, dict]:
             _book_view("BROAD", yes_bid="0.20", no_bid="0.30"),
             NOW,
             timedelta(seconds=30),
-            include_price_mode=True,
+            include_orderbook_authority=True,
         ),
         _book(
             _book_view("NARROW", yes_bid="0.50", no_bid="0.40"),
             NOW,
             timedelta(seconds=30),
-            include_price_mode=True,
+            include_orderbook_authority=True,
         ),
     )
 
@@ -228,9 +264,9 @@ def test_complete_envelope_is_canonical_and_deterministic() -> None:
     assert first["relationship"]["broad"]["role"] == "BROAD_LOWER_THRESHOLD"
     assert first["relationship"]["narrow"]["role"] == "NARROW_HIGHER_THRESHOLD"
     assert first["lead"] == {
-        "broad_yes_ask": "0.30",
+        "broad_yes_ask": "0.20",
         "narrow_yes_bid": "0.50",
-        "gap": "0.20",
+        "gap": "0.30",
         "policy_identity": STRUCTURAL_POLICY_ID,
         "discovery_priority_gap": "0.01",
         "inequality": "narrow_yes_bid > broad_yes_ask",
@@ -422,7 +458,7 @@ def test_s2a_mode_abstains_without_envelope_or_when_lead_is_not_positive() -> No
     assert row["decision"] == "ABSTAIN"
     no_lead = capture_structural_observation(
         lead=_lead(),
-        broad_book=_book_view("BROAD", yes_bid="0.20", no_bid="0.60"),
+        broad_book=_book_view("BROAD", yes_bid="0.20", no_bid="0.40"),
         narrow_book=_book_view("NARROW", yes_bid="0.50", no_bid="0.40"),
         acquired_at=NOW - timedelta(seconds=2),
         decision_at=NOW,
@@ -513,7 +549,9 @@ def test_sequenced_book_view_exposes_actual_price_mode() -> None:
 
 
 @pytest.mark.parametrize("mode", [None, PriceMode.LEGACY_SIDE])
-def test_s2a_rejects_missing_or_non_unified_price_mode(mode: PriceMode | None) -> None:
+def test_s2a_does_not_treat_internal_price_mode_as_source_authority(
+    mode: PriceMode | None,
+) -> None:
     authorities = {"BROAD": _authority("BROAD"), "NARROW": _authority("NARROW")}
     row = capture_structural_observation(
         lead=_lead(),
@@ -527,8 +565,11 @@ def test_s2a_rejects_missing_or_non_unified_price_mode(mode: PriceMode | None) -
         leg_series_authority={"BROAD": SERIES_AUTHORITY, "NARROW": SERIES_AUTHORITY},
         s2a_enabled=True,
     )
-    assert row["decision"] == "ABSTAIN"
-    assert row["reason_code"] == "STRUCTURAL_SIGNAL_ENVELOPE_UNAVAILABLE"
+    assert row["decision"] == "OBSERVE"
+    assert (
+        row["structural_signal_envelope"]["evidence"]["book_semantics"]["source_representation"]
+        == "SIDE_SPECIFIC_BIDS"
+    )
 
 
 def test_s2a_persists_and_validates_book_price_semantics() -> None:
@@ -545,15 +586,102 @@ def test_s2a_persists_and_validates_book_price_semantics() -> None:
         broad_series_authority=SERIES_AUTHORITY,
         narrow_series_authority=SERIES_AUTHORITY,
     )
-    assert envelope["evidence"]["book_price_semantics"] == {
+    assert envelope["evidence"]["book_semantics"] == {
         "version": STRUCTURAL_BOOK_SEMANTICS_VERSION,
-        "price_mode": PriceMode.UNIFIED_YES.value,
-        "yes_bid": "max(yes_bids)",
-        "yes_ask": "min(no_bids)",
+        "source_representation": "SIDE_SPECIFIC_BIDS",
+        "yes_bid": "max(yes_dollars)",
+        "no_bid": "max(no_dollars)",
+        "yes_ask": "1 - max(no_dollars)",
+        "no_ask": "1 - max(yes_dollars)",
     }
     mutated = deepcopy(envelope)
-    mutated["evidence"]["book_contents"]["broad"]["price_mode"] = PriceMode.LEGACY_SIDE.value
-    with pytest.raises(ShadowKernelError, match="price mode"):
+    mutated["evidence"]["book_semantics"]["yes_ask"] = "min(no_dollars)"
+    with pytest.raises(ShadowKernelError, match="book price semantics"):
+        validate_structural_signal_envelope(mutated)
+
+
+def test_s2a_missing_authoritative_orderbook_fails_closed() -> None:
+    authorities = {"BROAD": _authority("BROAD"), "NARROW": _authority("NARROW")}
+    row = capture_structural_observation(
+        lead=_lead(),
+        broad_book=_book_view("BROAD", yes_bid="0.20", no_bid="0.30", orderbook_authority=None),
+        narrow_book=_book_view("NARROW", yes_bid="0.50", no_bid="0.40"),
+        acquired_at=NOW - timedelta(seconds=2),
+        decision_at=NOW,
+        leg_authority=authorities,
+        start_receipt_digest=RECEIPT,
+        runtime=RUNTIME,
+        leg_series_authority={"BROAD": SERIES_AUTHORITY, "NARROW": SERIES_AUTHORITY},
+        s2a_enabled=True,
+    )
+    assert row["decision"] == "ABSTAIN"
+    assert row["reason_code"] == "STRUCTURAL_SIGNAL_ENVELOPE_UNAVAILABLE"
+
+
+def test_side_specific_top_of_book_uses_complement_semantics() -> None:
+    top = derive_side_specific_top_of_book(
+        (("0.20", "2"), ("0.10", "1")),
+        (("0.80", "2"), ("0.30", "1")),
+    )
+    assert top.yes_bid == Decimal("0.20")
+    assert top.no_bid == Decimal("0.80")
+    assert top.yes_ask == Decimal("0.20")
+    assert top.no_ask == Decimal("0.80")
+
+
+def test_runner_real_book_path_binds_authority_and_complements_yes_ask(monkeypatch) -> None:
+    snapshot = _orderbook_authority("BOOK", "0.20", "0.80")
+    monkeypatch.setattr(runner, "acquire_orderbook_snapshot", lambda *args, **kwargs: snapshot)
+    view = runner._book("BOOK", NOW, runner.CycleDiagnostics())
+    assert view.best_yes_bid == Decimal("0.20")
+    assert view.best_yes_ask == Decimal("0.20")
+    assert view.price_mode is None
+    assert view.orderbook_authority is snapshot
+
+
+@pytest.mark.parametrize("field", ["body_sha256", "orderbook_identity", "ticker", "observed_at"])
+def test_authoritative_orderbook_mutation_fails_replay(field: str) -> None:
+    envelope = build_structural_signal_envelope(
+        lead=_lead(),
+        broad_book=_books()[0],
+        narrow_book=_books()[1],
+        broad_authority=_authority("BROAD"),
+        narrow_authority=_authority("NARROW"),
+        acquired_at=NOW - timedelta(seconds=2),
+        decision_at=NOW,
+        start_receipt_digest=RECEIPT,
+        runtime=RUNTIME,
+        broad_series_authority=SERIES_AUTHORITY,
+        narrow_series_authority=SERIES_AUTHORITY,
+    )
+    mutated = deepcopy(envelope)
+    authority = mutated["evidence"]["book_contents"]["broad"]["orderbook_authority"]
+    authority[field] = (
+        "f" * 64
+        if field in {"body_sha256", "orderbook_identity"}
+        else ("OTHER" if field == "ticker" else NOW.isoformat())
+    )
+    with pytest.raises(ShadowKernelError, match=r"(orderbook authority|authoritative snapshot)"):
+        validate_structural_signal_envelope(mutated)
+
+
+def test_authoritative_level_mutation_fails_replay() -> None:
+    envelope = build_structural_signal_envelope(
+        lead=_lead(),
+        broad_book=_books()[0],
+        narrow_book=_books()[1],
+        broad_authority=_authority("BROAD"),
+        narrow_authority=_authority("NARROW"),
+        acquired_at=NOW - timedelta(seconds=2),
+        decision_at=NOW,
+        start_receipt_digest=RECEIPT,
+        runtime=RUNTIME,
+        broad_series_authority=SERIES_AUTHORITY,
+        narrow_series_authority=SERIES_AUTHORITY,
+    )
+    mutated = deepcopy(envelope)
+    mutated["evidence"]["book_contents"]["broad"]["yes_bids"][0][0] = "0.21"
+    with pytest.raises(ShadowKernelError, match="snapshot identity"):
         validate_structural_signal_envelope(mutated)
 
 
@@ -629,8 +757,8 @@ def test_subject_identity_mutation_fails_even_with_outer_signal_recomputed() -> 
         (SERIES_AUTHORITY.observation, PriceMode.UNIFIED_YES, "OBSERVE"),
         (None, PriceMode.UNIFIED_YES, "ABSTAIN"),
         (_ARCHIVE_FAILURE, PriceMode.UNIFIED_YES, "ABSTAIN"),
-        (SERIES_AUTHORITY.observation, None, "ABSTAIN"),
-        (SERIES_AUTHORITY.observation, PriceMode.LEGACY_SIDE, "ABSTAIN"),
+        (SERIES_AUTHORITY.observation, None, "OBSERVE"),
+        (SERIES_AUTHORITY.observation, PriceMode.LEGACY_SIDE, "OBSERVE"),
     ],
 )
 def test_runner_s2a_wires_series_cache_and_actual_book_mode(
