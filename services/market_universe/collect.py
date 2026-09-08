@@ -118,7 +118,7 @@ def _has_control(value: str) -> bool:
 class PublicUniverseTransport:
     """Unauthenticated GET transport restricted to one reviewed scope."""
 
-    def __init__(self, scope: CollectionScope = S2A_PUBLIC_SERIES_SCOPE) -> None:
+    def __init__(self, scope: CollectionScope = OPEN_NON_MVE_V2) -> None:
         if scope is not OPEN_NON_MVE_V2 and scope is not S2A_PUBLIC_SERIES_SCOPE:
             raise CollectionError("public universe scope rejected")
         self._scope = scope
