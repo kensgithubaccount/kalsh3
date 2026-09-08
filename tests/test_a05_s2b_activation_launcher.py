@@ -78,6 +78,40 @@ def test_runtime_sha_and_tree_are_required(tmp_path: Path) -> None:
             launcher.main(missing)
 
 
+def test_real_checkout_identity_accepts_clean_porcelain(tmp_path: Path) -> None:
+    calls: list[tuple[list[str], Path]] = []
+    outputs = iter(("", f"{SHA}\n", f"{TREE}\n"))
+
+    def fake_run_git(command: list[str], *, cwd: Path, **_: object) -> SimpleNamespace:
+        calls.append((command, cwd))
+        return SimpleNamespace(stdout=next(outputs))
+
+    assert launcher._checkout_identity(tmp_path, run_git=fake_run_git) == (SHA, TREE)
+    assert [command for command, _ in calls] == [
+        ["/usr/bin/git", "status", "--porcelain=v1", "--untracked-files=all"],
+        ["/usr/bin/git", "rev-parse", "HEAD"],
+        ["/usr/bin/git", "rev-parse", "HEAD^{tree}"],
+    ]
+    assert all(cwd == tmp_path for _, cwd in calls)
+
+
+@pytest.mark.parametrize(
+    "porcelain",
+    [" M services/x.py\n", "M  services/x.py\n", " D services/x.py\n", "?? stray.py\n"],
+)
+def test_real_checkout_identity_rejects_dirty_porcelain(tmp_path: Path, porcelain: str) -> None:
+    calls: list[list[str]] = []
+
+    def fake_run_git(command: list[str], **_: object) -> SimpleNamespace:
+        calls.append(command)
+        return SimpleNamespace(stdout=porcelain)
+
+    with pytest.raises(RuntimeError, match="dirty"):
+        launcher._checkout_identity(tmp_path, run_git=fake_run_git)
+    assert len(calls) == 1
+    assert calls[0] == ["/usr/bin/git", "status", "--porcelain=v1", "--untracked-files=all"]
+
+
 @pytest.mark.parametrize(
     ("sha", "tree", "message"),
     [("a", TREE, "SHA"), (SHA, "b", "tree"), ("e" * 40, TREE, "SHA"), (SHA, "f" * 40, "tree")],
@@ -208,6 +242,19 @@ def test_once_complete_and_forever_use_canonical_runner(
     assert calls[-1][0] == "forever"
     assert calls[-1][1]["interval_seconds"] == 900.0
     assert calls[-1][1]["s2a_enabled"] is True
+
+
+@pytest.mark.parametrize("cadence", [1, 60, 300, 901])
+def test_forever_rejects_non_reviewed_cadence(
+    tmp_path: Path, identity: None, monkeypatch: pytest.MonkeyPatch, cadence: int
+) -> None:
+    monkeypatch.setattr(
+        launcher.prospective_runner,
+        "run_forever",
+        lambda **_: pytest.fail("canonical runner must not be invoked"),
+    )
+    with pytest.raises(RuntimeError, match="exactly 900"):
+        launcher.main([*_args(tmp_path, "--forever"), "--cadence-seconds", str(cadence)])
 
 
 def test_launcher_has_no_legacy_runner_invocation() -> None:
