@@ -54,6 +54,7 @@ from services.market_universe.collect import (
     DEFAULT_MAX_PAGES,
     MAX_EVENT_RECONCILIATION_REQUESTS,
     OPEN_NON_MVE_V2,
+    S2A_PUBLIC_SERIES_SCOPE,
     PublicUniverseTransport,
 )
 from services.market_universe.domain import Event, Market, UniverseValidationError, stable_hash
@@ -151,7 +152,9 @@ def refresh_universe(
     glue, because that function does not return its :class:`MemoryUniverseRepository`, and the
     scanner needs the resulting Market/Event objects directly.
     """
-    live_transport = transport if transport is not None else PublicUniverseTransport()
+    live_transport = (
+        transport if transport is not None else PublicUniverseTransport(S2A_PUBLIC_SERIES_SCOPE)
+    )
     archive = UniverseObservationArchive(
         archive_path, compressed_evidence=compressed_evidence, deadline=deadline
     )
