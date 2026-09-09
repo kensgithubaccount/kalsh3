@@ -408,6 +408,9 @@ class UniverseObservationArchive:
         if kind is EntityKind.EVENT and endpoint.startswith("events/"):
             singleton = payload.get("event")
             records = [singleton] if isinstance(singleton, dict) else []
+        if kind is EntityKind.SERIES and endpoint.startswith("series/"):
+            singleton = payload.get("series")
+            records = [singleton] if isinstance(singleton, dict) else []
         if not succeeded or not isinstance(records, list):
             records = []
         parsed_rows: list[tuple[object, ...]] = []
@@ -654,6 +657,13 @@ class UniverseObservationArchive:
             and isinstance(decoded_payload, dict)
         ):
             singleton = decoded_payload.get("event")
+            page_records = [singleton] if isinstance(singleton, dict) else None
+        if (
+            row["entity_kind"] == EntityKind.SERIES.value
+            and str(page["endpoint"]).startswith("series/")
+            and isinstance(decoded_payload, dict)
+        ):
+            singleton = decoded_payload.get("series")
             page_records = [singleton] if isinstance(singleton, dict) else None
         if not isinstance(page_records, list) or raw not in page_records:
             raise ArchiveError("persisted entity is not present in its acquisition page")

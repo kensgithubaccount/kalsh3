@@ -140,6 +140,44 @@ def test_reconciliation_transport_failure_counts_attempt() -> None:
     assert transport.calls == 1
 
 
+def test_exact_series_reconciliation_respects_deadline() -> None:
+    clock = FakeClock()
+    transport = PageTransport([{"series": {}}], clock, delay=2)
+    deadline = CycleDeadline(1, monotonic=clock)
+    with pytest.raises(CycleDeadlineExceeded) as exc_info:
+        UniverseSynchronizer(
+            transport, MemoryUniverseRepository(), deadline=deadline
+        ).reconcile_series(("S",))
+    assert exc_info.value.stage == "CYCLE_DEADLINE_SERIES_HYDRATION"
+
+
+def test_series_reconciliation_deadline_before_transport_counts_no_attempt() -> None:
+    clock = FakeClock()
+    transport = PageTransport([{"series": {}}], clock)
+    deadline = CycleDeadline(1, monotonic=clock)
+    clock.advance(1)
+    repository = MemoryUniverseRepository()
+    with pytest.raises(CycleDeadlineExceeded):
+        UniverseSynchronizer(transport, repository, deadline=deadline).reconcile_series(("S",))
+    assert transport.calls == 0
+    assert repository.runs[0].requests == 0
+
+
+def test_series_hydration_shares_absolute_deadline_with_earlier_stages() -> None:
+    """No second/reset time budget: an earlier stage's elapsed time reduces what remains
+    for exact-Series hydration on the same absolute CycleDeadline."""
+    clock = FakeClock()
+    deadline = CycleDeadline(3, monotonic=clock)
+    repo = MemoryUniverseRepository()
+    markets_transport = PageTransport([{"markets": [], "cursor": ""}], clock, delay=2)
+    UniverseSynchronizer(markets_transport, repo, deadline=deadline).sync("markets")
+    series_transport = PageTransport([{"series": {}}], clock, delay=2)
+    with pytest.raises(CycleDeadlineExceeded) as exc_info:
+        UniverseSynchronizer(series_transport, repo, deadline=deadline).reconcile_series(("S",))
+    assert exc_info.value.stage == "CYCLE_DEADLINE_SERIES_HYDRATION"
+    assert repo.series == {}
+
+
 @pytest.mark.parametrize("budget", [float("nan"), float("inf"), True, "300", 0, -1, 841])
 def test_run_once_rejects_invalid_budget_before_refresh(budget: object) -> None:
     with pytest.raises(ValueError):
@@ -179,16 +217,6 @@ def test_incomplete_refresh_is_not_authoritative(tmp_path: Path) -> None:
             2,
             "CYCLE_DEADLINE_EVENT_PAGINATION",
             "events_elapsed_seconds",
-        ),
-        (
-            [
-                {"markets": [], "cursor": ""},
-                {"events": [], "cursor": ""},
-                {"series": [], "cursor": "next"},
-            ],
-            3,
-            "CYCLE_DEADLINE_SERIES_PAGINATION",
-            "series_elapsed_seconds",
         ),
     ],
 )
@@ -380,6 +408,61 @@ def test_downstream_deadline_emits_operational_failure_without_observation(
     assert result.complete is False
     assert result.diagnostics["timeout_stage"] == "CYCLE_DEADLINE_BOOK_ACQUISITION"
     assert result.diagnostics["operational_failures"] == ["CYCLE_DEADLINE_BOOK_ACQUISITION"]
+    assert store.validate(now=NOW)["observations"] == 0
+
+
+def test_unavailable_required_series_fails_structural_cycle_before_market_hydration(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    monkeypatch.setattr(
+        runner,
+        "refresh_universe",
+        lambda *args, **kwargs: SimpleNamespace(
+            complete=True, repo=SimpleNamespace(markets={}, events={})
+        ),
+    )
+    lead = SimpleNamespace(event_ticker="E", broad_market_ticker="B", narrow_market_ticker="N")
+    monkeypatch.setattr(
+        runner,
+        "run_discovery",
+        lambda *args, **kwargs: SimpleNamespace(
+            leads=(lead,), manifest=SimpleNamespace(structural_cohorts=1)
+        ),
+    )
+    structural_called = False
+
+    def unexpected_structural_cycle(*_: object, **__: object) -> None:
+        nonlocal structural_called
+        structural_called = True
+
+    monkeypatch.setattr(runner, "_structural_cycle", unexpected_structural_cycle)
+
+    def failing_hydrate(*, diagnostics: runner.CycleDiagnostics, **_: object) -> bool:
+        diagnostics.exact_series_required = 1
+        diagnostics.exact_series_attempted = 1
+        diagnostics.exact_series_failed = 1
+        runner._record_failure(diagnostics, "STRUCTURAL_EXACT_SERIES_AUTHORITY_UNAVAILABLE")
+        return False
+
+    monkeypatch.setattr(runner, "_hydrate_candidate_series", failing_hydrate)
+    store = ShadowObservationStore(tmp_path / "store.sqlite3", RECEIPT)
+    result = runner.run_once(
+        archive=tmp_path / "archive.sqlite3",
+        store=store,
+        start_receipt=RECEIPT,
+        cycle_id="series-unavailable",
+        clock=lambda: NOW,
+        s2a_enabled=True,
+    )
+    assert result.complete is False
+    assert result.structural == ()
+    assert result.weather == ()
+    assert structural_called is False
+    assert result.diagnostics["operational_failures"] == [
+        "STRUCTURAL_EXACT_SERIES_AUTHORITY_UNAVAILABLE"
+    ]
+    assert result.diagnostics["exact_series_required"] == 1
+    assert result.diagnostics["exact_series_failed"] == 1
     assert store.validate(now=NOW)["observations"] == 0
 
 

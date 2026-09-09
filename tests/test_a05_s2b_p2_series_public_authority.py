@@ -1,19 +1,23 @@
 from __future__ import annotations
 
 import json
+from datetime import UTC, datetime
 from email.message import Message
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
-from urllib.parse import urlencode
 
 import pytest
 
+from services.cycle_deadline import CycleDeadline
+from services.market_universe.archive import EntityKind, UniverseObservationArchive
 from services.market_universe.collect import (
     OPEN_NON_MVE_V2,
     S2A_PUBLIC_SERIES_SCOPE,
     CollectionError,
     PublicUniverseTransport,
 )
+from services.market_universe.domain import Event
 from services.market_universe.sync import (
     Completeness,
     MemoryUniverseRepository,
@@ -21,6 +25,7 @@ from services.market_universe.sync import (
 )
 from services.opportunity_engine import structural_measurement_runner as runner_module
 from services.opportunity_engine.structural_measurement_runner import refresh_universe
+from services.prospective_shadow.runner import CycleDiagnostics, _hydrate_candidate_series
 
 
 class _Response:
@@ -96,33 +101,17 @@ def test_default_transport_is_historical_and_rejects_series(
 def test_explicit_historical_scope_rejects_series(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr("urllib.request.build_opener", lambda *args: pytest.fail("network reached"))
     with pytest.raises(CollectionError, match="resource rejected"):
-        PublicUniverseTransport(OPEN_NON_MVE_V2).get(
-            "/trade-api/v2/series?limit=1000", timeout_seconds=1
-        )
+        PublicUniverseTransport(OPEN_NON_MVE_V2).get("/trade-api/v2/series/S", timeout_seconds=1)
 
 
-def test_explicit_s2a_series_scope_accepts_exact_and_canonical_pagination(
+def test_explicit_s2a_series_scope_accepts_only_exact_series(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    encoded_cursor = urlencode([("cursor", "a/b"), ("limit", "1000")])
-    opener = _Opener(
-        {
-            "/trade-api/v2/series?limit=1000": {"series": [], "cursor": ""},
-            "/trade-api/v2/series?cursor=next&limit=1000": {"series": [], "cursor": ""},
-            "/trade-api/v2/series?limit=1000&cursor=next": {"series": [], "cursor": ""},
-            f"/trade-api/v2/series?{encoded_cursor}": {"series": [], "cursor": ""},
-        }
-    )
+    opener = _Opener({"/trade-api/v2/series/S": {"series": _series()}})
     monkeypatch.setattr("urllib.request.build_opener", lambda *args: opener)
     transport = PublicUniverseTransport(S2A_PUBLIC_SERIES_SCOPE)
-    transport.get("/trade-api/v2/series?limit=1000", timeout_seconds=1)
-    transport.get("/trade-api/v2/series?cursor=next&limit=1000", timeout_seconds=1)
-    transport.get(f"/trade-api/v2/series?{encoded_cursor}", timeout_seconds=1)
-    assert opener.urls == [
-        "https://external-api.kalshi.com/trade-api/v2/series?limit=1000",
-        "https://external-api.kalshi.com/trade-api/v2/series?cursor=next&limit=1000",
-        "https://external-api.kalshi.com/trade-api/v2/series?cursor=a%2Fb&limit=1000",
-    ]
+    transport.get("/trade-api/v2/series/S", timeout_seconds=1)
+    assert opener.urls == ["https://external-api.kalshi.com/trade-api/v2/series/S"]
 
 
 @pytest.mark.parametrize(
@@ -136,15 +125,11 @@ def test_explicit_s2a_series_scope_accepts_exact_and_canonical_pagination(
         "/trade-api/v2/series?limit=1000&limit=1000",
         "https://evil.example/trade-api/v2/series?limit=1000",
         "/trade-api/v2/series/S?limit=1000",
-        "/trade-api/v2/series?limit=1000&cursor=bad%0Avalue",
-        "/trade-api/v2/series?limit=1000&cursor=",
-        "/trade-api/v2/series?limit=1000#fragment",
-        "/trade-api/v2/series?limit=1000&cursor=%",
-        "/trade-api/v2/series?limit=1000&cursor=%Z0",
-        "/trade-api/v2/series?limit=1000&cursor=%0Z",
-        "/trade-api/v2/series?limit=1000&cursor=%ZZ",
-        "/trade-api/v2/series?limit=1000&cursor=%41",
-        "/trade-api/v2/series?limit=1000&cursor=a%2fb",
+        "/trade-api/v2/series/S?limit=1000",
+        "/trade-api/v2/series/S#fragment",
+        "/trade-api/v2/series/S%2fX",
+        "/trade-api/v2/series/S%41",
+        "/trade-api/v2/series/S\nX",
     ],
 )
 def test_series_authority_rejects_every_unreviewed_shape(
@@ -174,34 +159,133 @@ def test_existing_markets_events_and_exact_event_authority_remains_available(
     transport.get("/trade-api/v2/events/E", timeout_seconds=1)
 
 
-def test_series_sync_uses_actual_reviewed_transport_boundary(
+def test_exact_series_reconciliation_uses_actual_reviewed_transport_boundary(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    opener = _Opener({"/trade-api/v2/series?limit=1000": {"series": [_series()]}})
+    opener = _Opener({"/trade-api/v2/series/S": {"series": _series()}})
     monkeypatch.setattr("urllib.request.build_opener", lambda *args: opener)
     repo = MemoryUniverseRepository()
-    run = UniverseSynchronizer(PublicUniverseTransport(S2A_PUBLIC_SERIES_SCOPE), repo).sync(
-        "series", parameters={"limit": "1000"}
-    )
+    run = UniverseSynchronizer(
+        PublicUniverseTransport(S2A_PUBLIC_SERIES_SCOPE), repo
+    ).reconcile_series(("S",))
     assert run.completeness is Completeness.COMPLETE
     assert set(repo.series) == {"S"}
-    assert opener.urls == ["https://external-api.kalshi.com/trade-api/v2/series?limit=1000"]
+    assert opener.urls == ["https://external-api.kalshi.com/trade-api/v2/series/S"]
 
 
-@pytest.mark.parametrize("series_payload", [{"series": [_series()]}, {"series": "malformed"}])
-def test_s2a_refresh_requires_complete_series_run(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, series_payload: dict[str, object]
+@pytest.mark.parametrize(
+    "series_payload",
+    [
+        {},
+        {"series": "not-an-object"},
+        {"series": {"ticker": "S"}},
+        {"series": {**_series(), "ticker": "OTHER"}},
+    ],
+)
+def test_exact_series_reconciliation_fails_closed_on_malformed_missing_or_mismatched_response(
+    monkeypatch: pytest.MonkeyPatch, series_payload: dict[str, object]
+) -> None:
+    opener = _Opener({"/trade-api/v2/series/S": series_payload})
+    monkeypatch.setattr("urllib.request.build_opener", lambda *args: opener)
+    repo = MemoryUniverseRepository()
+    run = UniverseSynchronizer(
+        PublicUniverseTransport(S2A_PUBLIC_SERIES_SCOPE), repo
+    ).reconcile_series(("S",))
+    assert run.completeness is Completeness.PARTIAL
+    assert run.failure == "invalid_exact_series"
+    assert repo.series == {}
+
+
+def test_hydrate_candidate_series_fails_closed_without_network_when_event_authority_missing(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr("urllib.request.build_opener", lambda *args: pytest.fail("network reached"))
+    repo = MemoryUniverseRepository()
+    scan = SimpleNamespace(leads=(SimpleNamespace(event_ticker="MISSING"),))
+    diagnostics = CycleDiagnostics()
+    assert not _hydrate_candidate_series(
+        archive_path=tmp_path / "archive.sqlite",
+        repo=repo,
+        scan=scan,
+        clock=lambda: datetime(2026, 1, 1, tzinfo=UTC),
+        deadline=CycleDeadline(30),
+        diagnostics=diagnostics,
+    )
+    assert diagnostics.exact_series_required is None
+    assert diagnostics.exact_series_attempted == 0
+    assert diagnostics.operational_failures == ["STRUCTURAL_CANDIDATE_EVENT_AUTHORITY_UNAVAILABLE"]
+
+
+def test_hydrate_candidate_series_fails_closed_without_network_when_bound_exceeded(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr("urllib.request.build_opener", lambda *args: pytest.fail("network reached"))
+    tickers = [f"S{i}" for i in range(201)]
+    repo = MemoryUniverseRepository(
+        events={
+            f"E{i}": Event.parse({"event_ticker": f"E{i}", "series_ticker": t, "title": "T"})
+            for i, t in enumerate(tickers)
+        }
+    )
+    scan = SimpleNamespace(leads=tuple(SimpleNamespace(event_ticker=f"E{i}") for i in range(201)))
+    diagnostics = CycleDiagnostics()
+    assert not _hydrate_candidate_series(
+        archive_path=tmp_path / "archive.sqlite",
+        repo=repo,
+        scan=scan,
+        clock=lambda: datetime(2026, 1, 1, tzinfo=UTC),
+        deadline=CycleDeadline(30),
+        diagnostics=diagnostics,
+    )
+    assert diagnostics.exact_series_required == 201
+    assert diagnostics.exact_series_attempted == 0
+    assert diagnostics.operational_failures == ["STRUCTURAL_SERIES_REQUEST_BOUND_EXCEEDED"]
+
+
+def test_exact_series_is_archived_and_candidate_set_is_unique_and_sorted(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    opener = _Opener({"/trade-api/v2/series/S": {"series": _series()}})
+    monkeypatch.setattr("urllib.request.build_opener", lambda *args: opener)
+    archive_path = tmp_path / "archive.sqlite"
+    repo = MemoryUniverseRepository(events={"E": Event.parse(_event())})
+    scan = SimpleNamespace(
+        leads=(
+            SimpleNamespace(event_ticker="E"),
+            SimpleNamespace(event_ticker="E"),
+        )
+    )
+    diagnostics = CycleDiagnostics()
+    assert _hydrate_candidate_series(
+        archive_path=archive_path,
+        repo=repo,
+        scan=scan,
+        clock=lambda: datetime(2026, 1, 1, tzinfo=UTC),
+        deadline=CycleDeadline(30),
+        diagnostics=diagnostics,
+    )
+    assert diagnostics.exact_series_required == 1
+    assert diagnostics.exact_series_attempted == 1
+    assert opener.urls == ["https://external-api.kalshi.com/trade-api/v2/series/S"]
+    archived = UniverseObservationArchive(archive_path).at_or_before(
+        EntityKind.SERIES, "S", datetime(2026, 1, 1, 0, 0, 1, tzinfo=UTC)
+    )
+    assert archived.kind is EntityKind.SERIES
+    assert archived.endpoint == "series/S"
+
+
+def test_s2a_refresh_does_not_require_global_series_run(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     opener = _Opener(
         {
             "/trade-api/v2/markets?status=open&mve_filter=exclude&limit=1000": {"markets": []},
             "/trade-api/v2/events?status=open&limit=200": {"events": []},
-            "/trade-api/v2/series?limit=1000": series_payload,
         }
     )
     monkeypatch.setattr("urllib.request.build_opener", lambda *args: opener)
     result = refresh_universe(str(tmp_path / "archive.sqlite"), s2a_enabled=True)
-    assert result.complete is (series_payload["series"] != "malformed")
+    assert result.complete
 
 
 def test_refresh_selects_authority_by_s2a_mode_and_preserves_injection(
@@ -273,7 +357,7 @@ def test_explicit_s2a_series_scope_retains_response_fail_closed_checks(
     monkeypatch.setattr("urllib.request.build_opener", lambda *args: Opener())
     with pytest.raises(CollectionError):
         PublicUniverseTransport(S2A_PUBLIC_SERIES_SCOPE).get(
-            "/trade-api/v2/series?limit=1000", timeout_seconds=1
+            "/trade-api/v2/series/S", timeout_seconds=1
         )
 
 

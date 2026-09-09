@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import contextlib
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
@@ -393,6 +394,86 @@ class UniverseSynchronizer:
         run.completeness = Completeness.PARTIAL if failed else Completeness.COMPLETE
         if failed and run.failure is None:
             run.failure = "invalid_exact_event"
+        run.finished_at = self.clock()
+        if self.__archive_writer is not None:
+            self.__archive_writer.record_run_result(
+                run_id=run.run_id,
+                completeness=run.completeness.value,
+                pages=run.pages,
+                records_received=run.records_received,
+                malformed=run.malformed,
+                failure=run.failure,
+                finished_at=run.finished_at,
+            )
+        return run
+
+    def reconcile_series(self, tickers: tuple[str, ...]) -> SyncRun:
+        """Acquire exact Series parents in deterministic order through this authority."""
+        now = self.clock()
+        run = SyncRun(self.run_id_factory(), "series/reconciliation", "exact", now)
+        self.repo.runs.append(run)
+        failed = False
+        stage = "CYCLE_DEADLINE_SERIES_HYDRATION"
+        for ticker in tickers:
+            if self.deadline is not None:
+                self.deadline.check(stage)
+            try:
+                if not ticker or not all(
+                    character.isascii() and (character.isalnum() or character in "-_.")
+                    for character in ticker
+                ):
+                    raise UniverseValidationError("series ticker is not a canonical target")
+                endpoint = f"series/{quote(ticker, safe='')}"
+                target = f"/trade-api/v2/{endpoint}"
+                timeout = (
+                    self.timeout
+                    if self.deadline is None
+                    else self.deadline.timeout_seconds(self.timeout, stage)
+                )
+                run.requests += 1
+                payload = self.transport.get(target, timeout_seconds=timeout)
+                if self.deadline is not None:
+                    self.deadline.check(stage)
+                raw = payload.get("series")
+                entity: Series | None = None
+                if isinstance(raw, dict):
+                    with contextlib.suppress(UniverseValidationError):
+                        entity = Series.parse(raw)
+                valid = entity is not None and entity.ticker == ticker
+                run.pages += 1
+                run.records_received += int(isinstance(raw, dict))
+                if self.__archive_writer is not None:
+                    if self.deadline is not None:
+                        self.deadline.check(stage)
+                    self.__archive_writer.append_page(
+                        provider=self.provider,
+                        endpoint=endpoint,
+                        parameters={},
+                        acquired_at=self.clock(),
+                        page_number=run.pages,
+                        cursor_in=None,
+                        cursor_out=None,
+                        run_id=run.run_id,
+                        kind=EntityKind.SERIES,
+                        payload=payload,
+                        succeeded=valid,
+                        failure=None if valid else "invalid_exact_series",
+                    )
+                if not valid or entity is None:
+                    run.malformed += 1
+                    failed = True
+                    continue
+                result = self.repo.upsert(entity)
+                setattr(run, result, getattr(run, result) + 1)
+            except CycleDeadlineExceeded:
+                raise
+            except Exception as exc:
+                failed = True
+                if run.failure is None:
+                    run.failure = type(exc).__name__
+        run.completeness = Completeness.PARTIAL if failed else Completeness.COMPLETE
+        if failed and run.failure is None:
+            run.failure = "invalid_exact_series"
         run.finished_at = self.clock()
         if self.__archive_writer is not None:
             self.__archive_writer.record_run_result(
