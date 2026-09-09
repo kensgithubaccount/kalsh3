@@ -1,4 +1,6 @@
+import hashlib
 import inspect
+import sqlite3
 from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -118,6 +120,92 @@ def test_start_authority_is_required_and_replayable(tmp_path: Path) -> None:
         "observations": 1,
         "abstentions": 0,
     }
+
+
+def _distinct_observation(event: str) -> dict[str, object]:
+    value = observation()
+    value["event_identity"] = event
+    value["independent_event_identity"] = f"independent-{event}"
+    return rehash(value)
+
+
+def test_append_batch_commits_order_and_hashes_atomically(tmp_path: Path) -> None:
+    store = ShadowObservationStore(tmp_path / "shadow.sqlite", start_receipt())
+    first = observation()
+    second = _distinct_observation("event-2")
+    sequences = store.append_batch((first, second), now=NOW + timedelta(minutes=1))
+    assert sequences == (1, 2)
+    with sqlite3.connect(store.path) as db:
+        rows = db.execute(
+            "SELECT sequence,observation_id,canonical_json,content_hash FROM observations "
+            "ORDER BY sequence"
+        ).fetchall()
+    assert [row[0] for row in rows] == [1, 2]
+    assert [row[1] for row in rows] == [first["observation_id"], second["observation_id"]]
+    assert [row[3] for row in rows] == [hashlib.sha256(row[2].encode()).hexdigest() for row in rows]
+
+
+def test_append_batch_invalid_row_rolls_back_prior_valid_row(tmp_path: Path) -> None:
+    store = ShadowObservationStore(tmp_path / "shadow.sqlite", start_receipt())
+    invalid = _distinct_observation("event-2")
+    invalid["production_influence"] = "1"
+    with pytest.raises(ShadowKernelError, match="safety"):
+        store.append_batch((observation(), invalid), now=NOW + timedelta(minutes=1))
+    assert store.validate(now=NOW + timedelta(minutes=1))["observations"] == 0
+
+
+def test_append_batch_acceptance_failure_rolls_back(tmp_path: Path) -> None:
+    store = ShadowObservationStore(tmp_path / "shadow.sqlite", start_receipt())
+    checks = 0
+
+    def fail_before_commit() -> None:
+        nonlocal checks
+        checks += 1
+        if checks == 2:
+            raise TimeoutError("fixture deadline")
+
+    with pytest.raises(TimeoutError):
+        store.append_batch(
+            (observation(), _distinct_observation("event-2")),
+            now=NOW + timedelta(minutes=1),
+            acceptance_check=fail_before_commit,
+        )
+    assert checks == 2
+    assert store.validate(now=NOW + timedelta(minutes=1))["observations"] == 0
+
+
+def test_append_batch_write_failure_rolls_back(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    store = ShadowObservationStore(tmp_path / "shadow.sqlite", start_receipt())
+    original_connect = store._connect
+
+    class FailingConnection:
+        def __init__(self, connection: sqlite3.Connection) -> None:
+            self.connection = connection
+            self.inserts = 0
+
+        def __enter__(self) -> "FailingConnection":
+            self.connection.__enter__()
+            return self
+
+        def __exit__(self, *args: object) -> bool:
+            return bool(self.connection.__exit__(*args))
+
+        def execute(self, sql: str, parameters: object = ()) -> sqlite3.Cursor:
+            if sql.startswith("INSERT INTO observations"):
+                self.inserts += 1
+                if self.inserts == 2:
+                    raise sqlite3.IntegrityError("fixture write failure")
+            return self.connection.execute(sql, parameters)
+
+    monkeypatch.setattr(store, "_connect", lambda: FailingConnection(original_connect()))
+    with pytest.raises(sqlite3.IntegrityError):
+        store.append_batch(
+            (observation(), _distinct_observation("event-2")),
+            now=NOW + timedelta(minutes=1),
+        )
+    assert store.validate(now=NOW + timedelta(minutes=1))["observations"] == 0
 
 
 def test_mutated_duplicate_and_future_observations_fail(tmp_path: Path) -> None:

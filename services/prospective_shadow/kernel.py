@@ -11,7 +11,7 @@ import hashlib
 import json
 import re
 import sqlite3
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
@@ -1828,40 +1828,64 @@ class ShadowObservationStore:
         validate_start_receipt(receipt)
         return receipt
 
-    def append(self, observation: Mapping[str, Any], *, now: datetime | None = None) -> int:
+    def append_batch(
+        self,
+        observations: Sequence[Mapping[str, Any]],
+        *,
+        now: datetime | None = None,
+        acceptance_check: Callable[[], None] | None = None,
+    ) -> tuple[int, ...]:
+        if not observations:
+            return ()
         start = self._start_receipt()
-        validate_observation(observation, now=now, start_receipt=start)
-        encoded = canonical_json(observation)
-        digest = hashlib.sha256(encoded.encode()).hexdigest()
+        encoded_rows: list[tuple[Mapping[str, Any], str, str]] = []
+        for observation in observations:
+            validate_observation(observation, now=now, start_receipt=start)
+            encoded = canonical_json(observation)
+            encoded_rows.append(
+                (observation, encoded, hashlib.sha256(encoded.encode()).hexdigest())
+            )
         with self._connect() as db:
-            row = db.execute(
-                "SELECT sequence,content_hash FROM observations WHERE observation_id=?",
-                (observation["observation_id"],),
-            ).fetchone()
-            if row is not None:
-                if row[1] == digest:
-                    return int(row[0])
-                raise ShadowKernelError("duplicate observation ID with mutated evidence")
-            seq = int(
-                db.execute("SELECT COALESCE(MAX(sequence),0)+1 FROM observations").fetchone()[0]
-            )
-            db.execute(
-                "INSERT INTO observations VALUES(?,?,?,?,?,?)",
-                (
-                    seq,
-                    observation["observation_id"],
-                    encoded,
-                    digest,
-                    datetime.now(UTC).isoformat(),
-                    ZERO,
-                ),
-            )
-            if observation["decision"] == "ABSTAIN":
-                db.execute(
-                    "INSERT INTO abstentions VALUES(?,?,?)",
-                    (seq, observation["observation_id"], observation["reason_code"]),
+            db.execute("BEGIN IMMEDIATE")
+            if acceptance_check is not None:
+                acceptance_check()
+            sequences: list[int] = []
+            for observation, encoded, digest in encoded_rows:
+                row = db.execute(
+                    "SELECT sequence,content_hash FROM observations WHERE observation_id=?",
+                    (observation["observation_id"],),
+                ).fetchone()
+                if row is not None:
+                    if row[1] == digest:
+                        sequences.append(int(row[0]))
+                        continue
+                    raise ShadowKernelError("duplicate observation ID with mutated evidence")
+                seq = int(
+                    db.execute("SELECT COALESCE(MAX(sequence),0)+1 FROM observations").fetchone()[0]
                 )
-            return seq
+                db.execute(
+                    "INSERT INTO observations VALUES(?,?,?,?,?,?)",
+                    (
+                        seq,
+                        observation["observation_id"],
+                        encoded,
+                        digest,
+                        datetime.now(UTC).isoformat(),
+                        ZERO,
+                    ),
+                )
+                if observation["decision"] == "ABSTAIN":
+                    db.execute(
+                        "INSERT INTO abstentions VALUES(?,?,?)",
+                        (seq, observation["observation_id"], observation["reason_code"]),
+                    )
+                sequences.append(seq)
+            if acceptance_check is not None:
+                acceptance_check()
+            return tuple(sequences)
+
+    def append(self, observation: Mapping[str, Any], *, now: datetime | None = None) -> int:
+        return self.append_batch((observation,), now=now)[0]
 
     def validate(self, *, now: datetime | None = None) -> dict[str, Any]:
         with self._connect() as db:

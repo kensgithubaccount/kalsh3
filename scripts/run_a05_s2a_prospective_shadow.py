@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import re
 import shutil
 import sqlite3
@@ -34,6 +35,17 @@ from services.prospective_shadow.kernel import (  # noqa: E402
 
 _GIT_ID = re.compile(r"\A[0-9a-f]{40}\Z")
 DEFAULT_CADENCE_SECONDS = 900.0
+MAX_CONTROLLED_CYCLE_SECONDS = 840.0
+
+
+def _cycle_budget(value: str) -> float:
+    try:
+        parsed = float(value)
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError("cycle budget must be numeric") from exc
+    if not math.isfinite(parsed) or parsed <= 0 or parsed > MAX_CONTROLLED_CYCLE_SECONDS:
+        raise argparse.ArgumentTypeError("cycle budget must be finite, > 0, and <= 840 seconds")
+    return parsed
 
 
 def _parser() -> argparse.ArgumentParser:
@@ -57,6 +69,12 @@ def _parser() -> argparse.ArgumentParser:
         type=float,
         default=DEFAULT_CADENCE_SECONDS,
         help="continuous collection cadence (default: 900 seconds)",
+    )
+    parser.add_argument(
+        "--cycle-budget-seconds",
+        type=_cycle_budget,
+        default=300.0,
+        help="absolute one-shot cycle budget (default: 300 seconds; maximum: 840)",
     )
     return parser
 
@@ -168,6 +186,8 @@ def _startup(
         raise RuntimeError("--s2a-enabled is required; refusing legacy-mode startup")
     if args.cadence_seconds != DEFAULT_CADENCE_SECONDS:
         raise RuntimeError("cadence is fixed at exactly 900 seconds")
+    if args.forever and args.cycle_budget_seconds != 300.0:
+        raise RuntimeError("--forever requires --cycle-budget-seconds exactly 300")
     actual_sha, actual_tree = _checkout_identity(RUNTIME_ROOT)
     if actual_sha != args.runtime_git_sha:
         raise RuntimeError("expected runtime SHA differs from executing checkout HEAD")
@@ -197,6 +217,7 @@ def _summary(
         "research_only": True,
         "production_influence": "0",
         "start_receipt_digest": receipt["receipt_digest"],
+        "cycle_budget_seconds": args.cycle_budget_seconds,
     }
     if args.forever:
         payload["cadence_seconds"] = args.cadence_seconds
@@ -214,10 +235,14 @@ def main(argv: Sequence[str] | None = None) -> int:
         "start_receipt": receipt,
         "runtime": runtime,
         "s2a_enabled": True,
+        "cycle_budget_seconds": args.cycle_budget_seconds,
     }
     if args.once:
         cycle_id = f"cycle-{datetime.now(UTC).isoformat()}"
-        result = prospective_runner.run_once(cycle_id=cycle_id, **kwargs)
+        result = prospective_runner.run_once(
+            cycle_id=cycle_id,
+            **kwargs,
+        )
         print(
             json.dumps(
                 {

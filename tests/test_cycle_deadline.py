@@ -112,6 +112,46 @@ def test_exact_event_reconciliation_respects_deadline() -> None:
     assert exc_info.value.stage == "CYCLE_DEADLINE_EVENT_RECONCILIATION"
 
 
+def test_reconciliation_deadline_before_transport_counts_no_attempt() -> None:
+    clock = FakeClock()
+    transport = PageTransport([{"event": {}}], clock)
+    deadline = CycleDeadline(1, monotonic=clock)
+    clock.advance(1)
+    repository = MemoryUniverseRepository()
+    with pytest.raises(CycleDeadlineExceeded):
+        UniverseSynchronizer(transport, repository, deadline=deadline).reconcile_events(("EVENT",))
+    assert transport.calls == 0
+    assert repository.runs[0].requests == 0
+
+
+def test_reconciliation_transport_failure_counts_attempt() -> None:
+    clock = FakeClock()
+
+    class FailingTransport(PageTransport):
+        def get(self, path: str, *, timeout_seconds: float) -> dict[str, Any]:
+            self.calls += 1
+            self.timeouts.append(timeout_seconds)
+            raise OSError("fixture transport failure")
+
+    transport = FailingTransport([], clock)
+    repository = MemoryUniverseRepository()
+    run = UniverseSynchronizer(transport, repository).reconcile_events(("EVENT",))
+    assert run.requests == 1
+    assert transport.calls == 1
+
+
+@pytest.mark.parametrize("budget", [float("nan"), float("inf"), True, "300", 0, -1, 841])
+def test_run_once_rejects_invalid_budget_before_refresh(budget: object) -> None:
+    with pytest.raises(ValueError):
+        runner.run_once(
+            archive="unused",
+            store=object(),  # type: ignore[arg-type]
+            start_receipt={},
+            cycle_id="invalid-budget",
+            cycle_budget_seconds=budget,  # type: ignore[arg-type]
+        )
+
+
 def test_incomplete_refresh_is_not_authoritative(tmp_path: Path) -> None:
     clock = FakeClock()
     transport = PageTransport([{"markets": [], "cursor": "next"}], clock, delay=2)
@@ -122,6 +162,185 @@ def test_incomplete_refresh_is_not_authoritative(tmp_path: Path) -> None:
     )
     assert result.complete is False
     assert result.failure == "CYCLE_DEADLINE_MARKET_PAGINATION"
+    assert result.market_pages == 0
+    assert result.market_sync_completeness is None
+    assert result.markets_discovered == 0
+    assert result.event_pages is None
+    assert result.event_sync_completeness is None
+    assert result.reconciliation_started is None
+    assert result.markets_elapsed_seconds == 2.0
+
+
+@pytest.mark.parametrize(
+    ("pages", "budget", "stage", "field"),
+    [
+        (
+            [{"markets": [], "cursor": ""}, {"events": [], "cursor": "next"}],
+            2,
+            "CYCLE_DEADLINE_EVENT_PAGINATION",
+            "events_elapsed_seconds",
+        ),
+        (
+            [
+                {"markets": [], "cursor": ""},
+                {"events": [], "cursor": ""},
+                {"series": [], "cursor": "next"},
+            ],
+            3,
+            "CYCLE_DEADLINE_SERIES_PAGINATION",
+            "series_elapsed_seconds",
+        ),
+    ],
+)
+def test_refresh_timeout_timing_uses_explicit_stage_mapping(
+    tmp_path: Path,
+    pages: list[dict[str, Any]],
+    budget: float,
+    stage: str,
+    field: str,
+) -> None:
+    clock = FakeClock()
+    result = refresh_universe(
+        str(tmp_path / f"{stage}.sqlite3"),
+        transport=PageTransport(pages, clock, delay=1),
+        deadline=CycleDeadline(budget, monotonic=clock),
+        s2a_enabled=stage == "CYCLE_DEADLINE_SERIES_PAGINATION",
+    )
+    assert result.failure == stage
+    assert getattr(result, field) == 1.0
+
+
+def test_partial_sync_result_is_non_authoritative_and_skips_discovery(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    called = False
+
+    def unexpected_discovery(*_: object, **__: object) -> None:
+        nonlocal called
+        called = True
+
+    monkeypatch.setattr(
+        runner,
+        "refresh_universe",
+        lambda *args, **kwargs: SimpleNamespace(
+            complete=False,
+            failure="UNIVERSE_DISCOVERY_INCOMPLETE",
+            repo=SimpleNamespace(markets={"M": object()}, events={}),
+            markets_discovered=1,
+            events_discovered=0,
+            market_pages=2,
+            event_pages=1,
+            market_sync_completeness="PARTIAL",
+            event_sync_completeness="PARTIAL",
+        ),
+    )
+    monkeypatch.setattr(runner, "run_discovery", unexpected_discovery)
+    result = runner.run_once(
+        archive=tmp_path / "archive.sqlite",
+        store=ShadowObservationStore(tmp_path / "store.sqlite", RECEIPT),
+        start_receipt=RECEIPT,
+        cycle_id="partial-sync",
+        clock=lambda: NOW,
+    )
+    assert result.complete is False
+    assert result.diagnostics["market_sync_completeness"] == "PARTIAL"
+    assert result.diagnostics["markets_discovered"] == 1
+    assert called is False
+
+
+def test_census_is_unknown_before_or_during_scan(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    monkeypatch.setattr(
+        runner,
+        "refresh_universe",
+        lambda *args, **kwargs: SimpleNamespace(
+            complete=True, repo=SimpleNamespace(markets={}, events={})
+        ),
+    )
+
+    def timeout_scan(*_: object, **__: object) -> None:
+        raise CycleDeadlineExceeded("CYCLE_DEADLINE_STRUCTURAL_SCAN")
+
+    monkeypatch.setattr(runner, "run_discovery", timeout_scan)
+    result = runner.run_once(
+        archive=tmp_path / "archive.sqlite",
+        store=ShadowObservationStore(tmp_path / "store.sqlite", RECEIPT),
+        start_receipt=RECEIPT,
+        cycle_id="scan-timeout",
+        clock=lambda: NOW,
+    )
+    assert all(
+        result.diagnostics[field] is None
+        for field in (
+            "candidate_events",
+            "candidate_leads",
+            "structural_cohorts",
+            "structural_leads",
+        )
+    )
+
+
+def test_empty_completed_scan_proves_zero_census(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    monkeypatch.setattr(
+        runner,
+        "refresh_universe",
+        lambda *args, **kwargs: SimpleNamespace(
+            complete=True, repo=SimpleNamespace(markets={}, events={})
+        ),
+    )
+    monkeypatch.setattr(
+        runner,
+        "run_discovery",
+        lambda *args, **kwargs: SimpleNamespace(
+            leads=(), manifest=SimpleNamespace(structural_cohorts=0)
+        ),
+    )
+    result = runner.run_once(
+        archive=tmp_path / "archive.sqlite",
+        store=ShadowObservationStore(tmp_path / "store.sqlite", RECEIPT),
+        start_receipt=RECEIPT,
+        cycle_id="empty-scan",
+        clock=lambda: NOW,
+    )
+    assert all(
+        result.diagnostics[field] == 0
+        for field in (
+            "candidate_events",
+            "candidate_leads",
+            "structural_cohorts",
+            "structural_leads",
+        )
+    )
+
+
+def test_nonempty_scan_counts_survive_later_structural_failure(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    monkeypatch.setattr(runner, "_event_snapshot", lambda *args, **kwargs: None)
+    diagnostics = runner.CycleDiagnostics()
+    lead = SimpleNamespace(
+        event_ticker="E",
+        broad_market_ticker="B",
+        narrow_market_ticker="N",
+    )
+    rows, complete = runner._structural_cycle(
+        repo=SimpleNamespace(markets={}, events={}),
+        scan=SimpleNamespace(leads=(lead,), manifest=SimpleNamespace(structural_cohorts=3)),
+        store=ShadowObservationStore(tmp_path / "store.sqlite", RECEIPT),
+        start_receipt=RECEIPT,
+        acquired_at=NOW,
+        clock=lambda: NOW,
+        diagnostics=diagnostics,
+    )
+    assert rows == []
+    assert complete is False
+    assert diagnostics.candidate_events == 1
+    assert diagnostics.candidate_leads == 1
+    assert diagnostics.structural_cohorts == 3
+    assert diagnostics.structural_leads == 1
 
 
 def test_downstream_deadline_emits_operational_failure_without_observation(
@@ -190,6 +409,7 @@ def test_successful_empty_cycle_remains_complete_without_weather_rows(
         clock=lambda: NOW,
     )
     assert result.complete is True
+    assert result.diagnostics["cycle_deadline_seconds"] == 300.0
     assert result.weather == ()
     assert result.structural == ()
     assert store.validate(now=NOW)["observations"] == 0

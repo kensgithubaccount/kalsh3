@@ -129,9 +129,85 @@ class UniverseRefreshResult:
     repo: MemoryUniverseRepository
     complete: bool
     failure: str | None = None
-    market_pages: int = 0
-    event_pages: int = 0
-    exact_reconciliation_count: int = 0
+    market_pages: int | None = None
+    event_pages: int | None = None
+    series_pages: int | None = None
+    market_sync_completeness: str | None = None
+    event_sync_completeness: str | None = None
+    series_sync_completeness: str | None = None
+    markets_discovered: int | None = None
+    events_discovered: int | None = None
+    series_discovered: int | None = None
+    reconciliation_missing_count: int | None = None
+    reconciliation_started: bool | None = None
+    reconciliation_requests_attempted: int | None = None
+    markets_elapsed_seconds: float | None = None
+    events_elapsed_seconds: float | None = None
+    series_elapsed_seconds: float | None = None
+    reconciliation_elapsed_seconds: float | None = None
+    total_discovery_elapsed_seconds: float | None = None
+
+
+_TIMEOUT_STAGE_TO_TIMING = {
+    "CYCLE_DEADLINE_MARKET_PAGINATION": "markets",
+    "CYCLE_DEADLINE_EVENT_PAGINATION": "events",
+    "CYCLE_DEADLINE_SERIES_PAGINATION": "series",
+    "CYCLE_DEADLINE_EVENT_RECONCILIATION": "reconciliation",
+}
+
+
+def _refresh_result(
+    repo: MemoryUniverseRepository,
+    complete: bool,
+    failure: str | None,
+    *,
+    deadline: CycleDeadline | None,
+    missing_count: int | None = None,
+    reconciliation_started: bool | None = None,
+    stage_elapsed: dict[str, float | None] | None = None,
+) -> UniverseRefreshResult:
+    runs = {run.endpoint: run for run in repo.runs}
+
+    def run_value(endpoint: str, field: str) -> Any:
+        run = runs.get(endpoint)
+        return None if run is None else getattr(run, field)
+
+    def completeness(endpoint: str) -> str | None:
+        run = runs.get(endpoint)
+        if run is None:
+            return None
+        if run.finished_at is not None:
+            return run.completeness.value
+        if run.pages or run.requests or run.records_received:
+            return Completeness.PARTIAL.value
+        return None
+
+    reconciliation = runs.get("events/reconciliation")
+    elapsed = stage_elapsed or {}
+    return UniverseRefreshResult(
+        repo,
+        complete,
+        failure,
+        market_pages=run_value("markets", "pages"),
+        event_pages=run_value("events", "pages"),
+        series_pages=run_value("series", "pages"),
+        market_sync_completeness=completeness("markets"),
+        event_sync_completeness=completeness("events"),
+        series_sync_completeness=completeness("series"),
+        markets_discovered=len(repo.markets),
+        events_discovered=len(repo.events),
+        series_discovered=len(repo.series) if "series" in runs else None,
+        reconciliation_missing_count=missing_count,
+        reconciliation_started=reconciliation_started,
+        reconciliation_requests_attempted=(
+            None if reconciliation is None else reconciliation.requests
+        ),
+        markets_elapsed_seconds=elapsed.get("markets"),
+        events_elapsed_seconds=elapsed.get("events"),
+        series_elapsed_seconds=elapsed.get("series"),
+        reconciliation_elapsed_seconds=elapsed.get("reconciliation"),
+        total_discovery_elapsed_seconds=(None if deadline is None else deadline.elapsed_seconds),
+    )
 
 
 def refresh_universe(
@@ -171,23 +247,53 @@ def refresh_universe(
         progress=progress,
         deadline=deadline,
     )
+    stage_elapsed: dict[str, float | None] = {}
+    stage_started = None if deadline is None else deadline.elapsed_seconds
     try:
         market_run = synchronizer.sync(
             "markets", parameters=dict(OPEN_NON_MVE_V2.markets_parameters)
         )
         if deadline is not None:
+            stage_elapsed["markets"] = deadline.elapsed_seconds - (stage_started or 0.0)
+            stage_started = deadline.elapsed_seconds
+        if deadline is not None:
             deadline.check("CYCLE_DEADLINE_EVENT_PAGINATION")
         event_run = synchronizer.sync("events", parameters=dict(OPEN_NON_MVE_V2.events_parameters))
+        if deadline is not None:
+            stage_elapsed["events"] = deadline.elapsed_seconds - (stage_started or 0.0)
+            stage_started = deadline.elapsed_seconds
         series_run = (
             synchronizer.sync("series", parameters={"limit": "1000"}) if s2a_enabled else None
         )
+        if deadline is not None and series_run is not None:
+            stage_elapsed["series"] = deadline.elapsed_seconds - (stage_started or 0.0)
     except CycleDeadlineExceeded as exc:
-        return UniverseRefreshResult(repo, False, exc.stage)
+        if deadline is not None:
+            timing_name = _TIMEOUT_STAGE_TO_TIMING.get(exc.stage)
+            if timing_name is not None:
+                stage_elapsed.setdefault(
+                    timing_name, deadline.elapsed_seconds - (stage_started or 0.0)
+                )
+        return _refresh_result(
+            repo, False, exc.stage, deadline=deadline, stage_elapsed=stage_elapsed
+        )
     market_events = {item.event_ticker for item in repo.markets.values()}
     if deadline is not None:
-        deadline.check("CYCLE_DEADLINE_EVENT_RECONCILIATION")
+        try:
+            deadline.check("CYCLE_DEADLINE_EVENT_RECONCILIATION")
+        except CycleDeadlineExceeded as exc:
+            return _refresh_result(
+                repo,
+                False,
+                exc.stage,
+                deadline=deadline,
+                missing_count=len(market_events - set(repo.events)),
+                reconciliation_started=False,
+                stage_elapsed=stage_elapsed,
+            )
     missing = tuple(sorted(market_events - set(repo.events)))
     reconciliation_complete = True
+    reconciliation_started = False
     if missing:
         if (
             market_run.completeness is not Completeness.COMPLETE
@@ -197,9 +303,24 @@ def refresh_universe(
             reconciliation_complete = False
         else:
             try:
+                if deadline is not None:
+                    stage_started = deadline.elapsed_seconds
+                reconciliation_started = True
                 reconciliation_run = synchronizer.reconcile_events(missing)
             except CycleDeadlineExceeded as exc:
-                return UniverseRefreshResult(repo, False, exc.stage)
+                if deadline is not None:
+                    stage_elapsed["reconciliation"] = deadline.elapsed_seconds - (
+                        stage_started or 0.0
+                    )
+                return _refresh_result(
+                    repo,
+                    False,
+                    exc.stage,
+                    deadline=deadline,
+                    missing_count=len(missing),
+                    reconciliation_started=True,
+                    stage_elapsed=stage_elapsed,
+                )
             reconciliation_complete = reconciliation_run.completeness is Completeness.COMPLETE
     complete = (
         market_run.completeness is Completeness.COMPLETE
@@ -207,13 +328,16 @@ def refresh_universe(
         and (series_run is None or series_run.completeness is Completeness.COMPLETE)
         and reconciliation_complete
     )
-    return UniverseRefreshResult(
+    if deadline is not None and reconciliation_started:
+        stage_elapsed["reconciliation"] = deadline.elapsed_seconds - (stage_started or 0.0)
+    return _refresh_result(
         repo,
         complete,
         None if complete else "UNIVERSE_DISCOVERY_INCOMPLETE",
-        market_run.pages,
-        event_run.pages,
-        len(missing),
+        deadline=deadline,
+        missing_count=len(missing),
+        reconciliation_started=reconciliation_started,
+        stage_elapsed=stage_elapsed,
     )
 
 

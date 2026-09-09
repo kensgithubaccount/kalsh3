@@ -261,3 +261,61 @@ def test_launcher_has_no_legacy_runner_invocation() -> None:
     source = Path(launcher.__file__).read_text(encoding="utf-8")
     assert "s2a_enabled=False" not in source
     assert '"s2a_enabled": True' in source
+
+
+@pytest.mark.parametrize("budget", [300, 600.5, 840])
+def test_once_accepts_reviewed_cycle_budgets(budget: float) -> None:
+    args = launcher._parser().parse_args(
+        [
+            "--s2a-enabled",
+            "--once",
+            "--cycle-budget-seconds",
+            str(budget),
+            "--runtime-git-sha",
+            SHA,
+            "--runtime-git-tree",
+            TREE,
+            "--archive",
+            "a",
+            "--store",
+            "s",
+            "--start-receipt",
+            "r",
+        ]
+    )
+    assert args.cycle_budget_seconds == budget
+
+
+@pytest.mark.parametrize("budget", ["0", "-1", "nan", "inf", "841"])
+def test_parser_rejects_invalid_cycle_budgets(budget: str) -> None:
+    with pytest.raises(SystemExit):
+        launcher._parser().parse_args(
+            [
+                "--s2a-enabled",
+                "--once",
+                "--cycle-budget-seconds",
+                budget,
+                "--runtime-git-sha",
+                SHA,
+                "--runtime-git-tree",
+                TREE,
+                "--archive",
+                "archive",
+                "--store",
+                "store",
+                "--start-receipt",
+                "receipt",
+            ]
+        )
+
+
+def test_forever_rejects_non_default_cycle_budget(
+    tmp_path: Path, identity: None, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(
+        launcher.prospective_runner,
+        "run_forever",
+        lambda **_: pytest.fail("continuous runner must not be invoked"),
+    )
+    with pytest.raises(RuntimeError, match="exactly 300"):
+        launcher.main([*_args(tmp_path, "--forever"), "--cycle-budget-seconds", "301"])
