@@ -1,57 +1,51 @@
-"""A0.5-S2B-P5 forensic root-cause and repair proof.
+"""A0.5-S2B-P5-R1 forensic root-cause proof and safe containment repair.
 
 Rows 193-205 of the live a02-prospective-20260906 observation store recorded
 ABSTAIN / STRUCTURAL_SIGNAL_ENVELOPE_UNAVAILABLE for every one of 13 structural
 candidates spanning six unrelated event families, all with
 evidence.detail == "reviewed structural semantic normalization is not valid".
 
-Forensic tracing (capture_structural_observation -> build_structural_signal_envelope
--> _semantic_specification -> ContractSpecificationParser.parse) found the immediate
-cause: `ContractSpecification.strategy_supported` requires
-`semantic_status == VALID`, and every one of the sampled real markets independently
-failed the parser's TIMEZONE_AMBIGUITY gate, because the live Kalshi market/event
-schema never publishes a MARKET.timezone or EVENT.timezone field at all (verified by
-reading, strictly read-only, the exact real market/event/series payloads for these
-tickers out of the point-in-time archive at
-/Users/ksyme/.local/state/kalsh3/a02-prospective-20260906/market-universe/archive.sqlite3).
-Every real payload reproduced below is trimmed to the fields
-`ContractSpecificationParser.parse` reads, taken verbatim from that archive.
+An earlier iteration of this task (A0.5-S2B-P5) added
+`_prospective_market_with_derived_timezone` to services/prospective_shadow/
+kernel.py, which derived a synthetic `timezone = "UTC"` whenever a market's
+deadline/expiration timestamp resolved with an explicit UTC offset but no
+separate MARKET/EVENT.timezone field was present. Independent adversarial
+review correctly rejected that as UNSOUND and it has been fully reverted
+(services/prospective_shadow/kernel.py is now byte-identical to the canonical
+base again): an explicit UTC offset on a timestamp proves only the instant/
+transport representation, never the contract's semantic/civil measurement
+timezone. The counter-example is KXMPOXCOUNT itself -- its real rules text
+states cases are "determined at 10:00 AM ET on Expiration Date" while the API
+`expiration_time` is `2027-01-08T15:00:00Z`. 15:00Z and 10:00 AM ET happen to
+be the same instant, but the contract's semantic timezone is
+America/New_York, not UTC -- and nothing in the market/event payload
+positively asserts that. The old helper would have silently and incorrectly
+written `timezone = "UTC"` for this exact real market.
 
-Root cause classification: INPUT-BINDING BUG. `parse_time` already requires an
-explicit UTC offset on MARKET.deadline/MARKET.expiration_time and always resolves
-it to UTC (services/market_universe/domain.py::parse_time) -- the deadline's own
-already-validated explicit offset is positive evidence of the applicable timezone;
-the parser was simply never reading it, only ever the separate "timezone" field
-that the live schema never sends.
+No reviewed, existing per-Series semantic timezone authority applicable to
+any of the six real structural_threshold families involved here exists
+anywhere in this codebase: the only such authority
+(`KXCPIReviewedSemanticPolicy` in
+services/forecasting/cpi_settlement_reconciliation.py) is scoped exclusively
+to the `KXCPI` series, is unrelated to KXARTISTSTREAMSY / KXB200MAX /
+KXGOVTCUTS / KXMPOXCOUNT / KXNFL2HSPREAD / KXTRUMPAPPROVALYEAR, and even its
+own reviewed timezone value is "UTC" -- it would not have helped the ET
+counter-example either. Per the review's explicit instruction, no new
+per-Series timezone allowlist is invented here to paper over that gap.
+TIMEZONE_AMBIGUITY (and, independently, UNKNOWN_LANGUAGE) remain real,
+unresolved, and correctly fail-closed for all six real families sampled from
+rows 193-205. ABSTAIN is the correct, accepted outcome.
 
-The fix is intentionally NOT applied inside `ContractSpecificationParser` itself:
-that shared parser is also used, unmodified, by the frozen CPI P9A/P10x historical
-replay path (services/historical_replay/cpi_price_evidence.py), whose committed
-`semantic_hash` values were computed under the original behavior. Changing the
-parser's own timezone derivation would silently invalidate that separate frozen
-evidence. Instead, the derivation is applied only at the prospective S2B call site
-(`_prospective_market_with_derived_timezone`, services/prospective_shadow/kernel.py),
-on a copy of the market mapping, before it is handed to the unmodified parser.
-"timezone" is not a member of RULE_FIELDS/METADATA_FIELDS
-(services/market_universe/domain.py), so this cannot affect
-`authority.market.rules_hash`/`metadata_hash`.
+This file's job is purely regression proof: that no code anywhere in this
+repository (not just the deleted helper) can turn a bare UTC offset, a naive
+timestamp, a malformed timestamp, or ticker/title/category/location text into
+semantic timezone authority, and that the shared, unmodified
+`ContractSpecificationParser` -- and therefore the frozen CPI P9A/P10x
+historical replay evidence and KU-A2 identity-freeze checkpoints -- are
+completely unaffected.
 
-Every one of the three families below ALSO independently fails a second, unrelated,
-and NOT repaired gate: UNKNOWN_LANGUAGE, because the deterministic comparison-phrase
-templates in `_COMPARISON_TEMPLATES` only recognize a narrow set of literal
-CPI-report and weather-station phrasings and were never extended to the generic
-"If <subject> <comparator> <threshold>[, unit], then the market resolves to Yes."
-shape used across most of the catalog. That gap is a genuine, separate parser
-coverage gap -- for at least KXGOVTCUTS the correct semantics ("N below a reference
-baseline level") cannot even be safely represented by the current single
-comparator/single-threshold model without risking an inverted comparator polarity --
-so it is intentionally left fail-closed and unrepaired here (see the P5 forensic
-report). These tests prove the timezone repair is real, isolated, and does not
-silently paper over that separate gap: all three real fixtures below correctly
-remain blocked (ABSTAIN) after the fix, for the correct remaining reason.
-
-No test in this file performs live network acquisition; all fixtures are static,
-already-persisted, point-in-time evidence.
+No test in this file performs live network acquisition; all fixtures are
+static, already-persisted, point-in-time evidence or synthetic edge cases.
 """
 
 from __future__ import annotations
@@ -60,10 +54,13 @@ import hashlib
 from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
 
+import pytest
+
 from services.contract_intelligence.specification import (
     ContractSpecificationParser,
     IssueType,
     SemanticsInputBundle,
+    normalize_timezone,
 )
 from services.market_universe.archive import EntityKind
 from services.market_universe.domain import Series, material_hashes
@@ -71,7 +68,6 @@ from services.prospective_shadow.kernel import (
     HydratedMarketAuthority,
     HydratedSeriesAuthority,
     ShadowKernelError,
-    _prospective_market_with_derived_timezone,
     _semantic_specification,
     canonical_json,
 )
@@ -155,6 +151,11 @@ GOVTCUTS_SERIES = {
 }
 
 # --- KXMPOXCOUNT: real payload for KXMPOXCOUNT-27JAN01-A35 ---
+# Rules text asserts settlement occurs "at 10:00 AM ET" while the API
+# expiration_time is the same instant expressed as 15:00Z -- the canonical
+# counter-example the independent review identified: the offset alone
+# expresses only the instant, never that the contract's semantic timezone is
+# America/New_York.
 MPOXCOUNT_MARKET = {
     "ticker": "KXMPOXCOUNT-27JAN01-A35",
     "event_ticker": "KXMPOXCOUNT-27JAN01",
@@ -240,96 +241,168 @@ def _series_authority(series_raw: dict) -> HydratedSeriesAuthority:
     return HydratedSeriesAuthority(series, observation)
 
 
-def test_real_candidate_families_no_longer_hit_timezone_ambiguity_at_kernel_boundary() -> None:
-    """The specific, proven root cause (no MARKET/EVENT.timezone in the live
-    schema) is fixed, at the prospective S2B call site, for three materially
-    different real event families -- and still fails closed overall for the
-    correct, separate, unrepaired reason (UNKNOWN_LANGUAGE)."""
-    for name, (market_raw, event_raw, series_raw) in REAL_FAMILIES.items():
-        authority = _authority(market_raw, event_raw)
-        series_authority = _series_authority(series_raw)
-        try:
-            _semantic_specification(authority, series_authority)
-        except ShadowKernelError as exc:
-            assert str(exc) == "reviewed structural semantic normalization is not valid", name
-        else:
-            raise AssertionError(f"{name}: expected a fail-closed ShadowKernelError")
-
-        # Confirm *why* it still fails closed: TIMEZONE_AMBIGUITY must be gone,
-        # UNKNOWN_LANGUAGE must be the (only newly relevant) remaining reason.
-        normalized_market = _prospective_market_with_derived_timezone(market_raw)
-        spec = ContractSpecificationParser().parse(
-            SemanticsInputBundle.build(normalized_market, dict(event_raw), dict(series_raw)),
-            now=NOW,
-        )
-        issue_types = {x.issue_type for x in spec.issues}
-        assert IssueType.TIMEZONE_AMBIGUITY not in issue_types, name
-        assert IssueType.UNKNOWN_LANGUAGE in issue_types, name
-        assert spec.timezone == "UTC", name
-
-
-def test_derived_timezone_market_copy_preserves_rules_and_metadata_hash() -> None:
-    """Injecting the derived timezone must never perturb the hashes that gate
-    exact Market authority -- "timezone" is not in RULE_FIELDS/METADATA_FIELDS."""
-    for name, (market_raw, _event_raw, _series_raw) in REAL_FAMILIES.items():
-        normalized = _prospective_market_with_derived_timezone(market_raw)
-        assert normalized.get("timezone") == "UTC", name
-        assert material_hashes(normalized) == material_hashes(market_raw), name
-
-
-def test_shared_contract_specification_parser_is_untouched() -> None:
-    """The fix lives only at the S2B call site. Calling the shared,
-    unmodified `ContractSpecificationParser` directly -- exactly as the frozen
-    CPI P9A/P10x historical replay path does -- on a payload lacking a
-    "timezone" field must still hit TIMEZONE_AMBIGUITY exactly as before this
-    repair. This is the isolation guarantee that keeps frozen CPI evidence
-    identity untouched."""
-    market_raw, event_raw, series_raw = REAL_FAMILIES["KXARTISTSTREAMSY"]
-    spec = ContractSpecificationParser().parse(
-        SemanticsInputBundle.build(dict(market_raw), dict(event_raw), dict(series_raw)),
-        now=NOW,
+def _parse(market: dict, event: dict, series: dict):
+    return ContractSpecificationParser().parse(
+        SemanticsInputBundle.build(dict(market), dict(event), dict(series)), now=NOW
     )
-    assert IssueType.TIMEZONE_AMBIGUITY in {x.issue_type for x in spec.issues}
-    assert spec.timezone is None
 
 
-def test_derivation_does_not_consult_ticker_or_title() -> None:
-    """The derived timezone must come only from the already-validated deadline
-    offset -- never from ticker text or title heuristics (explicitly prohibited)."""
-    market = dict(ARTIST_STREAMS_MARKET)
-    market["ticker"] = "ZZZUNKNOWNTICKER-1"
-    market["title"] = "completely unrecognizable free text with no timezone words"
-    normalized = _prospective_market_with_derived_timezone(market)
-    assert normalized["timezone"] == "UTC"
+# --- 1/15/16/17/18: real families remain fail closed end-to-end ---
 
 
-def test_explicit_timezone_field_still_wins_over_derivation() -> None:
-    market = dict(ARTIST_STREAMS_MARKET) | {"timezone": "America/New_York"}
-    normalized = _prospective_market_with_derived_timezone(market)
-    assert normalized["timezone"] == "America/New_York"
-
-
-def test_unresolvable_deadline_and_absent_timezone_is_not_derived() -> None:
-    """No explicit timezone and no resolvable deadline is a genuine ambiguity;
-    the market mapping must pass through unchanged and still fail closed."""
-    market = dict(ARTIST_STREAMS_MARKET)
-    del market["expiration_time"]
-    del market["expected_expiration_time"]
-    normalized = _prospective_market_with_derived_timezone(market)
-    assert "timezone" not in normalized
-
-    authority = _authority(market, ARTIST_STREAMS_EVENT)
-    series_authority = _series_authority(ARTIST_STREAMS_SERIES)
-    try:
+@pytest.mark.parametrize("name", list(REAL_FAMILIES))
+def test_real_families_remain_fail_closed_at_kernel_boundary(name: str) -> None:
+    """rows 193-205-shaped real evidence: replaying it today under the exact
+    same runtime/evidence identity still raises the same fail-closed error --
+    it is not reinterpreted as OBSERVE by this repair."""
+    market_raw, event_raw, series_raw = REAL_FAMILIES[name]
+    authority = _authority(market_raw, event_raw)
+    series_authority = _series_authority(series_raw)
+    with pytest.raises(ShadowKernelError) as exc_info:
         _semantic_specification(authority, series_authority)
-    except ShadowKernelError as exc:
-        assert str(exc) == "reviewed structural semantic normalization is not valid"
-    else:
-        raise AssertionError("expected a fail-closed ShadowKernelError")
-    normalized_bundle = ContractSpecificationParser().parse(
-        SemanticsInputBundle.build(
-            normalized, dict(ARTIST_STREAMS_EVENT), dict(ARTIST_STREAMS_SERIES)
-        ),
-        now=NOW,
-    )
-    assert IssueType.TIMEZONE_AMBIGUITY in {x.issue_type for x in normalized_bundle.issues}
+    assert str(exc_info.value) == "reviewed structural semantic normalization is not valid"
+
+
+def test_kxmpoxcount_et_rules_text_does_not_become_semantic_timezone_utc() -> None:
+    """The independent-review counter-example: rules_secondary asserts
+    settlement at "10:00 AM ET" while expiration_time is the same instant as
+    15:00Z. Nothing in this payload positively establishes a semantic
+    timezone, so it must resolve to None/TIMEZONE_AMBIGUITY, never a silently
+    derived "UTC" (or any other) value."""
+    spec = _parse(MPOXCOUNT_MARKET, MPOXCOUNT_EVENT, MPOXCOUNT_SERIES)
+    assert spec.timezone is None
+    assert IssueType.TIMEZONE_AMBIGUITY in {x.issue_type for x in spec.issues}
+    assert spec.semantic_status.value != "VALID"
+
+
+@pytest.mark.parametrize("name", list(REAL_FAMILIES))
+def test_real_families_hit_timezone_ambiguity_and_unknown_language(name: str) -> None:
+    market_raw, event_raw, series_raw = REAL_FAMILIES[name]
+    spec = _parse(market_raw, event_raw, series_raw)
+    issue_types = {x.issue_type for x in spec.issues}
+    assert IssueType.TIMEZONE_AMBIGUITY in issue_types, name
+    assert IssueType.UNKNOWN_LANGUAGE in issue_types, name
+    assert spec.timezone is None, name
+    assert spec.strategy_supported is False, name
+
+
+# --- 2-7: an offset/timestamp alone never establishes semantic timezone ---
+
+
+@pytest.mark.parametrize(
+    "expiration_time",
+    [
+        "2027-01-08T15:00:00Z",
+        "2027-01-08T15:00:00+00:00",
+        "2026-01-01T10:00:00-05:00",
+        "2026-06-01T04:30:00+05:30",
+    ],
+    ids=["Z", "+00:00", "-05:00", "+05:30"],
+)
+def test_utc_or_any_offset_timestamp_alone_never_establishes_semantic_timezone(
+    expiration_time: str,
+) -> None:
+    market = dict(MPOXCOUNT_MARKET) | {"expiration_time": expiration_time}
+    spec = _parse(market, MPOXCOUNT_EVENT, MPOXCOUNT_SERIES)
+    assert spec.timezone is None
+    assert IssueType.TIMEZONE_AMBIGUITY in {x.issue_type for x in spec.issues}
+
+
+def test_naive_timestamp_does_not_establish_timezone() -> None:
+    market = dict(MPOXCOUNT_MARKET) | {"expiration_time": "2027-01-08T15:00:00"}
+    spec = _parse(market, MPOXCOUNT_EVENT, MPOXCOUNT_SERIES)
+    assert spec.timezone is None
+    assert IssueType.TIMEZONE_AMBIGUITY in {x.issue_type for x in spec.issues}
+    assert IssueType.DEADLINE_CONFLICT in {x.issue_type for x in spec.issues}
+
+
+def test_malformed_timestamp_does_not_establish_timezone() -> None:
+    market = dict(MPOXCOUNT_MARKET) | {"expiration_time": "not-a-timestamp"}
+    spec = _parse(market, MPOXCOUNT_EVENT, MPOXCOUNT_SERIES)
+    assert spec.timezone is None
+    assert IssueType.TIMEZONE_AMBIGUITY in {x.issue_type for x in spec.issues}
+    assert IssueType.DEADLINE_CONFLICT in {x.issue_type for x in spec.issues}
+
+
+# --- 8-10: explicit authoritative field behavior is unchanged ---
+
+
+def test_explicit_authoritative_timezone_remains_accepted() -> None:
+    market = dict(MPOXCOUNT_MARKET) | {"timezone": "America/New_York"}
+    spec = _parse(market, MPOXCOUNT_EVENT, MPOXCOUNT_SERIES)
+    assert spec.timezone == "America/New_York"
+    assert IssueType.TIMEZONE_AMBIGUITY not in {x.issue_type for x in spec.issues}
+
+
+def test_malformed_explicit_timezone_fails_closed() -> None:
+    market = dict(MPOXCOUNT_MARKET) | {"timezone": "Mars/Nowhere"}
+    spec = _parse(market, MPOXCOUNT_EVENT, MPOXCOUNT_SERIES)
+    assert spec.timezone is None
+    assert IssueType.TIMEZONE_AMBIGUITY in {x.issue_type for x in spec.issues}
+
+
+@pytest.mark.parametrize("value", ["", "   ", None])
+def test_whitespace_or_empty_timezone_does_not_silently_become_utc(value) -> None:
+    assert normalize_timezone(value) is None
+    market = dict(MPOXCOUNT_MARKET) | {"timezone": value}
+    spec = _parse(market, MPOXCOUNT_EVENT, MPOXCOUNT_SERIES)
+    assert spec.timezone is None
+    assert IssueType.TIMEZONE_AMBIGUITY in {x.issue_type for x in spec.issues}
+
+
+# --- 11: ticker/title/category/location text cannot create timezone authority ---
+
+
+def test_ticker_title_category_location_text_cannot_create_timezone_authority() -> None:
+    market = dict(MPOXCOUNT_MARKET)
+    market["ticker"] = "KXNYCTEMP-NEWYORK-EASTERN-ET"
+    market["title"] = "New York Eastern Time ET America/New_York temperature market"
+    event = dict(MPOXCOUNT_EVENT)
+    event["category"] = "Weather"
+    event["title"] = "New York ET America/New_York"
+    spec = _parse(market, event, MPOXCOUNT_SERIES)
+    assert spec.timezone is None
+    assert IssueType.TIMEZONE_AMBIGUITY in {x.issue_type for x in spec.issues}
+
+
+# --- 12: shared parser historical behavior is provably untouched ---
+
+
+def test_shared_contract_specification_parser_matches_canonical_weather_fixture() -> None:
+    """A known-good, fully VALID weather spec (explicit timezone, matching
+    comparison-language template, all required fields present) must still
+    resolve to VALID with the expected comparator/threshold -- proving the
+    shared parser's ordinary behavior is completely unaffected by this
+    repair (it was reverted to the exact canonical base)."""
+    market = {
+        "ticker": "M",
+        "event_ticker": "E",
+        "title": "Will the final temperature be at least 90 F?",
+        "yes_sub_title": "Final temperature is 90 F or higher",
+        "no_sub_title": "Final temperature is below 90 F",
+        "rules_primary": "YES if the final NWS report at station KNYC is at least 90 F.",
+        "rules_secondary": "Use the final daily climate report.",
+        "station_code": "KNYC",
+        "floor_strike": "90",
+        "timezone": "America/New_York",
+        "expiration_time": "2026-08-11T23:59:00-04:00",
+        "settlement_value_dollars": None,
+    }
+    event = {
+        "event_ticker": "E",
+        "series_ticker": "S",
+        "category": "Weather",
+        "timezone": "America/New_York",
+        "settlement_sources": [{"name": "NWS", "url": "https://weather.gov"}],
+    }
+    series = {
+        "ticker": "S",
+        "title": "Daily weather",
+        "category": "Weather",
+        "frequency": "daily",
+        "settlement_sources": [{"name": "NWS", "url": "https://weather.gov"}],
+    }
+    spec = _parse(market, event, series)
+    assert spec.semantic_status.value == "VALID"
+    assert spec.timezone == "America/New_York"
+    assert spec.strategy_supported is True
