@@ -39,7 +39,7 @@ DEFAULT_MAX_PAGES = 250
 ZERO_INFLUENCE = Decimal("0")
 M26H1_SCOPE_POLICY_VERSION = "m26h1-reviewed-public-scope-v1"
 M26H3_SCOPE_POLICY_VERSION = "m26h3-reviewed-public-scope-v2"
-A05_S2A_PUBLIC_SERIES_POLICY_VERSION = "a05-s2a-reviewed-public-series-v1"
+A05_S2A_PUBLIC_SERIES_POLICY_VERSION = "a05-s2a-reviewed-exact-series-v2"
 MAX_EVENT_RECONCILIATION_REQUESTS = 200
 
 
@@ -95,8 +95,7 @@ S2A_PUBLIC_SERIES_SCOPE = CollectionScope(
     events_endpoint=OPEN_NON_MVE_V2.events_endpoint,
     events_parameters=OPEN_NON_MVE_V2.events_parameters,
     policy_version=A05_S2A_PUBLIC_SERIES_POLICY_VERSION,
-    series_endpoint="/trade-api/v2/series",
-    series_parameters=(("limit", "1000"),),
+    series_endpoint="/trade-api/v2/series/{series_ticker}",
 )
 REVIEWED_SCOPES = MappingProxyType({OPEN_NON_MVE_V2.name: OPEN_NON_MVE_V2})
 
@@ -141,9 +140,8 @@ class PublicUniverseTransport:
             self._scope.markets_endpoint: dict(self._scope.markets_parameters),
             self._scope.events_endpoint: dict(self._scope.events_parameters),
         }
-        if self._scope.series_endpoint is not None:
-            expected[self._scope.series_endpoint] = dict(self._scope.series_parameters)
         exact_event = None
+        exact_series = None
         prefix = self._scope.events_endpoint + "/"
         try:
             if parsed.path.startswith(prefix):
@@ -160,6 +158,22 @@ class PublicUniverseTransport:
                     exact_event = decoded
         except UnicodeError:
             raise CollectionError("public universe resource rejected") from None
+        series_prefix = "/trade-api/v2/series/"
+        try:
+            if self._scope is S2A_PUBLIC_SERIES_SCOPE and parsed.path.startswith(series_prefix):
+                encoded = parsed.path.removeprefix(series_prefix)
+                decoded = unquote(encoded, errors="strict")
+                if (
+                    encoded
+                    and quote(decoded, safe="") == encoded
+                    and all(
+                        character.isascii() and (character.isalnum() or character in "-_.")
+                        for character in decoded
+                    )
+                ):
+                    exact_series = decoded
+        except UnicodeError:
+            raise CollectionError("public universe resource rejected") from None
         keys = [key for key, _ in pairs]
         semantic = dict(pairs)
         required = expected.get(parsed.path)
@@ -167,9 +181,10 @@ class PublicUniverseTransport:
             parsed.scheme
             or parsed.netloc
             or parsed.fragment
-            or (required is None and exact_event is None)
+            or _has_control(path)
+            or (required is None and exact_event is None and exact_series is None)
             or len(keys) != len(set(keys))
-            or (exact_event is not None and pairs)
+            or ((exact_event is not None or exact_series is not None) and pairs)
             or (
                 required is not None
                 and set(semantic) != set(required) | ({"cursor"} if "cursor" in semantic else set())

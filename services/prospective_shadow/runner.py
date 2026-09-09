@@ -16,6 +16,7 @@ from typing import Any
 from services.cycle_deadline import CycleDeadline, CycleDeadlineExceeded
 from services.forecasting.daily_temperature import route_daily_temperature
 from services.market_universe.archive import EntityKind, UniverseObservationArchive
+from services.market_universe.collect import S2A_PUBLIC_SERIES_SCOPE, PublicUniverseTransport
 from services.market_universe.event_snapshot import (
     AuthoritativeEventSnapshot,
     acquire_event_snapshot,
@@ -24,6 +25,11 @@ from services.market_universe.market_snapshot import acquire_market_snapshot
 from services.market_universe.orderbook_snapshot import (
     acquire_orderbook_snapshot,
     derive_side_specific_top_of_book,
+)
+from services.market_universe.sync import (
+    Completeness,
+    MemoryUniverseRepository,
+    UniverseSynchronizer,
 )
 from services.opportunity_engine.structural_measurement_runner import (
     refresh_universe,
@@ -70,6 +76,10 @@ class CycleDiagnostics:
     exact_event_attempted: int = 0
     exact_event_succeeded: int = 0
     exact_event_failed: int = 0
+    exact_series_required: int | None = None
+    exact_series_attempted: int = 0
+    exact_series_succeeded: int = 0
+    exact_series_failed: int = 0
     books_attempted: int = 0
     structural_cohorts: int | None = None
     structural_leads: int | None = None
@@ -241,6 +251,57 @@ def _authority(
 
 def _record_failure(diagnostics: CycleDiagnostics, reason: str) -> None:
     diagnostics.operational_failures.append(reason)
+
+
+def _hydrate_candidate_series(
+    *,
+    archive_path: str | Path,
+    repo: Any,
+    scan: Any,
+    clock: Callable[[], datetime],
+    deadline: CycleDeadline,
+    diagnostics: CycleDiagnostics,
+) -> bool:
+    if any(
+        lead.event_ticker not in repo.events or not repo.events[lead.event_ticker].series_ticker
+        for lead in scan.leads
+    ):
+        diagnostics.exact_series_required = None
+        _record_failure(diagnostics, "STRUCTURAL_CANDIDATE_EVENT_AUTHORITY_UNAVAILABLE")
+        return False
+    tickers = tuple(
+        sorted(
+            {
+                repo.events[lead.event_ticker].series_ticker
+                for lead in scan.leads
+                if lead.event_ticker in repo.events
+            }
+        )
+    )
+    diagnostics.exact_series_required = len(tickers)
+    if len(tickers) > MAX_CANDIDATE_EVENTS:
+        _record_failure(diagnostics, "STRUCTURAL_SERIES_REQUEST_BOUND_EXCEEDED")
+        return False
+    archive = UniverseObservationArchive(str(archive_path), deadline=deadline)
+    synchronizer = UniverseSynchronizer(
+        PublicUniverseTransport(S2A_PUBLIC_SERIES_SCOPE),
+        MemoryUniverseRepository(),
+        archive=archive,
+        clock=clock,
+        timeout=10.0,
+        deadline=deadline,
+    )
+    diagnostics.exact_series_attempted = len(tickers)
+    try:
+        run = synchronizer.reconcile_series(tickers)
+    except CycleDeadlineExceeded:
+        raise
+    diagnostics.exact_series_succeeded = run.inserted + run.updated + run.unchanged
+    diagnostics.exact_series_failed = run.requests - diagnostics.exact_series_succeeded
+    if run.completeness is not Completeness.COMPLETE:
+        _record_failure(diagnostics, "STRUCTURAL_EXACT_SERIES_AUTHORITY_UNAVAILABLE")
+        return False
+    return True
 
 
 def _weather_cycle(
@@ -502,6 +563,16 @@ def run_once(
             deadline_check=lambda: deadline.check("CYCLE_DEADLINE_STRUCTURAL_SCAN"),
         )
         deadline.check("CYCLE_DEADLINE_STRUCTURAL_SCAN")
+        if s2a_enabled and not _hydrate_candidate_series(
+            archive_path=archive,
+            repo=refresh.repo,
+            scan=scan,
+            clock=clock,
+            deadline=deadline,
+            diagnostics=diagnostics,
+        ):
+            diagnostics.cycle_duration_seconds = deadline.elapsed_seconds
+            return CycleResult(cycle_id, (), (), False, diagnostics.as_dict())
         structural_rows, structural_complete = _structural_cycle(
             archive_path=str(archive),
             repo=refresh.repo,

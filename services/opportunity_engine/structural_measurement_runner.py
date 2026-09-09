@@ -262,11 +262,6 @@ def refresh_universe(
         if deadline is not None:
             stage_elapsed["events"] = deadline.elapsed_seconds - (stage_started or 0.0)
             stage_started = deadline.elapsed_seconds
-        series_run = (
-            synchronizer.sync("series", parameters={"limit": "1000"}) if s2a_enabled else None
-        )
-        if deadline is not None and series_run is not None:
-            stage_elapsed["series"] = deadline.elapsed_seconds - (stage_started or 0.0)
     except CycleDeadlineExceeded as exc:
         if deadline is not None:
             timing_name = _TIMEOUT_STAGE_TO_TIMING.get(exc.stage)
@@ -325,7 +320,6 @@ def refresh_universe(
     complete = (
         market_run.completeness is Completeness.COMPLETE
         and event_run.completeness is Completeness.COMPLETE
-        and (series_run is None or series_run.completeness is Completeness.COMPLETE)
         and reconciliation_complete
     )
     if deadline is not None and reconciliation_started:
