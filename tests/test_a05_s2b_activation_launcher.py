@@ -289,7 +289,24 @@ def test_once_accepts_reviewed_cycle_budgets(budget: float) -> None:
 @pytest.mark.parametrize("budget", ["0", "-1", "nan", "inf", "841"])
 def test_parser_rejects_invalid_cycle_budgets(budget: str) -> None:
     with pytest.raises(SystemExit):
-        launcher._parser().parse_args(["--s2a-enabled", "--once", "--cycle-budget-seconds", budget])
+        launcher._parser().parse_args(
+            [
+                "--s2a-enabled",
+                "--once",
+                "--cycle-budget-seconds",
+                budget,
+                "--runtime-git-sha",
+                SHA,
+                "--runtime-git-tree",
+                TREE,
+                "--archive",
+                "archive",
+                "--store",
+                "store",
+                "--start-receipt",
+                "receipt",
+            ]
+        )
 
 
 def test_forever_rejects_non_default_cycle_budget(

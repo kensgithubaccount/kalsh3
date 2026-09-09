@@ -337,7 +337,6 @@ class UniverseSynchronizer:
                 encoded = quote(ticker, safe="")
                 endpoint = f"events/{encoded}"
                 target = f"/trade-api/v2/{endpoint}"
-                run.requests += 1
                 timeout = (
                     self.timeout
                     if self.deadline is None
@@ -345,6 +344,7 @@ class UniverseSynchronizer:
                         self.timeout, "CYCLE_DEADLINE_EVENT_RECONCILIATION"
                     )
                 )
+                run.requests += 1
                 payload = self.transport.get(target, timeout_seconds=timeout)
                 if self.deadline is not None:
                     self.deadline.check("CYCLE_DEADLINE_EVENT_RECONCILIATION")

@@ -7,6 +7,8 @@ from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 from types import SimpleNamespace
 
+import pytest
+
 import scripts.run_a02_prospective_collection as a02
 from services.prospective_shadow import runner
 from services.prospective_shadow.kernel import ShadowObservationStore
@@ -305,3 +307,34 @@ def test_three_restart_replay_cycles_are_complete_and_deterministic(monkeypatch,
         for result in results
     ]
     assert stable[0] == stable[1] == stable[2]
+
+
+@pytest.mark.parametrize("budget", [301, 840, float("nan"), float("inf"), True, "300", 0, -1])
+def test_run_forever_rejects_nonreviewed_budget_before_run(
+    monkeypatch: pytest.MonkeyPatch, budget: float
+) -> None:
+    called = False
+
+    def unexpected_run_once(**_: object) -> None:
+        nonlocal called
+        called = True
+
+    monkeypatch.setattr(runner, "run_once", unexpected_run_once)
+    with pytest.raises(ValueError):
+        runner.run_forever(cycle_budget_seconds=budget)
+    assert called is False
+
+
+def test_run_forever_passes_exact_reviewed_budget(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured: dict[str, object] = {}
+
+    def stop_after_one(**kwargs: object) -> SimpleNamespace:
+        captured.update(kwargs)
+        return SimpleNamespace(complete=False)
+
+    monkeypatch.setattr(runner, "run_once", stop_after_one)
+    with pytest.raises(RuntimeError, match="incomplete"):
+        runner.run_forever(cycle_budget_seconds=300)
+    assert captured["cycle_budget_seconds"] == 300.0

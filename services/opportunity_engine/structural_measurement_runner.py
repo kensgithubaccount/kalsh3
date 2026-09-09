@@ -148,6 +148,14 @@ class UniverseRefreshResult:
     total_discovery_elapsed_seconds: float | None = None
 
 
+_TIMEOUT_STAGE_TO_TIMING = {
+    "CYCLE_DEADLINE_MARKET_PAGINATION": "markets",
+    "CYCLE_DEADLINE_EVENT_PAGINATION": "events",
+    "CYCLE_DEADLINE_SERIES_PAGINATION": "series",
+    "CYCLE_DEADLINE_EVENT_RECONCILIATION": "reconciliation",
+}
+
+
 def _refresh_result(
     repo: MemoryUniverseRepository,
     complete: bool,
@@ -261,8 +269,11 @@ def refresh_universe(
             stage_elapsed["series"] = deadline.elapsed_seconds - (stage_started or 0.0)
     except CycleDeadlineExceeded as exc:
         if deadline is not None:
-            stage = exc.stage.removeprefix("CYCLE_DEADLINE_").removesuffix("_PAGINATION").lower()
-            stage_elapsed.setdefault(stage, deadline.elapsed_seconds - (stage_started or 0.0))
+            timing_name = _TIMEOUT_STAGE_TO_TIMING.get(exc.stage)
+            if timing_name is not None:
+                stage_elapsed.setdefault(
+                    timing_name, deadline.elapsed_seconds - (stage_started or 0.0)
+                )
         return _refresh_result(
             repo, False, exc.stage, deadline=deadline, stage_elapsed=stage_elapsed
         )

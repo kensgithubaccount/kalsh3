@@ -62,8 +62,8 @@ class CycleDiagnostics:
     markets_discovered: int | None = None
     events_discovered: int | None = None
     series_discovered: int | None = None
-    candidate_events: int = 0
-    candidate_leads: int = 0
+    candidate_events: int | None = None
+    candidate_leads: int | None = None
     exact_market_attempted: int = 0
     exact_market_succeeded: int = 0
     exact_market_failed: int = 0
@@ -71,8 +71,8 @@ class CycleDiagnostics:
     exact_event_succeeded: int = 0
     exact_event_failed: int = 0
     books_attempted: int = 0
-    structural_cohorts: int = 0
-    structural_leads: int = 0
+    structural_cohorts: int | None = None
+    structural_leads: int | None = None
     structural_observe: int = 0
     structural_abstain: int = 0
     weather_operational_failures: int = 0
@@ -320,11 +320,12 @@ def _structural_cycle(
     s2a_enabled: bool = False,
 ) -> tuple[list[dict[str, Any]], bool]:
     leads = tuple(scan.leads)
+    candidate_events = len({lead.event_ticker for lead in leads})
     diagnostics.candidate_leads = len(leads)
-    diagnostics.candidate_events = len({lead.event_ticker for lead in leads})
+    diagnostics.candidate_events = candidate_events
     diagnostics.structural_cohorts = scan.manifest.structural_cohorts
     diagnostics.structural_leads = len(leads)
-    if len(leads) > MAX_STRUCTURAL_LEADS or diagnostics.candidate_events > MAX_CANDIDATE_EVENTS:
+    if len(leads) > MAX_STRUCTURAL_LEADS or candidate_events > MAX_CANDIDATE_EVENTS:
         _record_failure(diagnostics, "STRUCTURAL_CANDIDATE_BOUND_EXCEEDED")
         return [], False
 
@@ -426,15 +427,8 @@ def run_once(
     s2a_enabled: bool = False,
     cycle_budget_seconds: float = MAX_CYCLE_SECONDS,
 ) -> CycleResult:
+    _validate_cycle_budget(cycle_budget_seconds, maximum=MAX_CONTROLLED_CYCLE_SECONDS)
     validate_start_receipt(start_receipt)
-    if (
-        isinstance(cycle_budget_seconds, bool)
-        or not isinstance(cycle_budget_seconds, (int, float))
-        or not math.isfinite(cycle_budget_seconds)
-        or cycle_budget_seconds <= 0
-        or cycle_budget_seconds > MAX_CONTROLLED_CYCLE_SECONDS
-    ):
-        raise ValueError("cycle_budget_seconds must be finite, positive, and <= 840 seconds")
     deadline = CycleDeadline(cycle_budget_seconds, monotonic=monotonic)
     acquired_at = clock()
     diagnostics = CycleDiagnostics()
@@ -531,7 +525,7 @@ def run_once(
             diagnostics=diagnostics,
             deadline=deadline,
         )
-        deadline.check("CYCLE_DEADLINE_FINAL_PERSISTENCE")
+        deadline.check("CYCLE_DEADLINE_OBSERVATION_PERSISTENCE")
     except CycleDeadlineExceeded as exc:
         diagnostics.timeout_stage = exc.stage
         _record_failure(diagnostics, exc.stage)
@@ -540,10 +534,21 @@ def run_once(
     diagnostics.structural_observe = sum(row["decision"] == "OBSERVE" for row in structural_rows)
     diagnostics.structural_abstain = sum(row["decision"] == "ABSTAIN" for row in structural_rows)
     if structural_complete:
-        for row in structural_rows:
-            store.append(row, now=clock())
-        for row in weather_rows:
-            store.append(row, now=clock())
+        try:
+            store.append_batch(
+                (*structural_rows, *weather_rows),
+                now=clock(),
+                acceptance_check=lambda: deadline.check("CYCLE_DEADLINE_OBSERVATION_PERSISTENCE"),
+            )
+        except CycleDeadlineExceeded as exc:
+            diagnostics.timeout_stage = exc.stage
+            _record_failure(diagnostics, exc.stage)
+            diagnostics.cycle_duration_seconds = deadline.elapsed_seconds
+            return CycleResult(cycle_id, (), (), False, diagnostics.as_dict())
+        except Exception as exc:
+            _record_failure(diagnostics, f"OBSERVATION_PERSISTENCE_FAILURE:{type(exc).__name__}")
+            diagnostics.cycle_duration_seconds = deadline.elapsed_seconds
+            return CycleResult(cycle_id, (), (), False, diagnostics.as_dict())
     diagnostics.cycle_duration_seconds = deadline.elapsed_seconds
     return CycleResult(
         cycle_id,
@@ -554,9 +559,29 @@ def run_once(
     )
 
 
+def _validate_cycle_budget(value: object, *, maximum: float) -> float:
+    if (
+        isinstance(value, bool)
+        or not isinstance(value, (int, float))
+        or not math.isfinite(value)
+        or value <= 0
+        or value > maximum
+    ):
+        raise ValueError(
+            f"cycle_budget_seconds must be finite, positive, and <= {maximum:g} seconds"
+        )
+    return float(value)
+
+
 def run_forever(*, interval_seconds: float = DEFAULT_CADENCE_SECONDS, **kwargs: Any) -> None:
     if interval_seconds < 0:
         raise ValueError("interval_seconds must be non-negative")
+    cycle_budget_seconds = _validate_cycle_budget(
+        kwargs.get("cycle_budget_seconds", MAX_CYCLE_SECONDS), maximum=MAX_CYCLE_SECONDS
+    )
+    if cycle_budget_seconds != MAX_CYCLE_SECONDS:
+        raise ValueError("run_forever requires cycle_budget_seconds exactly 300 seconds")
+    kwargs = {**kwargs, "cycle_budget_seconds": MAX_CYCLE_SECONDS}
     index = 0
     while True:
         result = run_once(cycle_id=f"cycle-{index}", **kwargs)
