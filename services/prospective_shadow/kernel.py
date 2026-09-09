@@ -41,7 +41,14 @@ from services.market_universe.archive import (
     ArchivedObservation,
     EntityKind,
 )
-from services.market_universe.domain import Event, Market, Series, stable_hash
+from services.market_universe.domain import (
+    Event,
+    Market,
+    Series,
+    UniverseValidationError,
+    parse_time,
+    stable_hash,
+)
 from services.market_universe.event_snapshot import PARSER_VERSION as EVENT_PARSER_VERSION
 from services.market_universe.event_snapshot import SCHEMA as EVENT_SNAPSHOT_SCHEMA
 from services.market_universe.event_snapshot import AuthoritativeEventSnapshot
@@ -822,6 +829,43 @@ def _canonical_decimal(value: object, field: str) -> str:
     return value
 
 
+def _prospective_market_with_derived_timezone(market: Mapping[str, Any]) -> dict[str, Any]:
+    """A05-S2B-P5 forensic finding: the live Kalshi market/event schema never
+    publishes a MARKET.timezone or EVENT.timezone field, so every real
+    structural_threshold candidate unconditionally failed
+    `ContractSpecificationParser`'s TIMEZONE_AMBIGUITY gate (proven against
+    real, read-only archived KXARTISTSTREAMSY/KXGOVTCUTS/KXMPOXCOUNT payloads).
+
+    `parse_time` already requires an explicit UTC offset on MARKET.deadline /
+    MARKET.expiration_time and always resolves it to UTC
+    (services/market_universe/domain.py::parse_time). When no separate
+    timezone field is present but that deadline resolves, the deadline's own
+    already-validated explicit offset is positive evidence that "UTC" is the
+    correct, unambiguous applicable timezone -- this reads a fact already
+    present in a different authoritative field, it does not treat a missing
+    field as equal or infer anything from ticker/title text.
+
+    This normalization is applied only at this prospective S2B call site, on a
+    copy of the market mapping. It deliberately does not touch
+    `ContractSpecificationParser` itself (used unmodified by, among others, the
+    frozen CPI P9A/P10x historical replay path) and "timezone" is not a member
+    of RULE_FIELDS/METADATA_FIELDS, so `material_hashes` -- and therefore
+    `authority.market.rules_hash`/`metadata_hash` -- are unaffected.
+    """
+    if market.get("timezone"):
+        return dict(market)
+    deadline_raw = market.get("deadline") or market.get("expiration_time")
+    if deadline_raw is None:
+        return dict(market)
+    try:
+        deadline = parse_time(deadline_raw, optional=True)
+    except UniverseValidationError:
+        return dict(market)
+    if deadline is None:
+        return dict(market)
+    return dict(market) | {"timezone": "UTC"}
+
+
 def _semantic_specification(
     authority: HydratedMarketAuthority, series_authority: HydratedSeriesAuthority
 ) -> ContractSpecification:
@@ -833,7 +877,9 @@ def _semantic_specification(
     try:
         specification = ContractSpecificationParser().parse(
             SemanticsInputBundle.build(
-                dict(market), dict(event), dict(series_authority.series.raw)
+                _prospective_market_with_derived_timezone(market),
+                dict(event),
+                dict(series_authority.series.raw),
             ),
             now=authority.market_snapshot.observed_at,
         )
