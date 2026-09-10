@@ -1,8 +1,8 @@
 """First-party prospective KXGDP fee authority.
 
-This module owns acquisition and issues a fee policy only after the official fee
-PDF and the exact public fee-change query have been retained and parsed.  It is
-deliberately not connected to the decision runner yet.
+Only :func:`acquire_fee_authority` is a canonical authority entrypoint.  The
+parser and resolver seams are deliberately private so deterministic tests can
+exercise them without making caller-authored evidence authoritative.
 """
 
 from __future__ import annotations
@@ -19,7 +19,10 @@ from decimal import Decimal, InvalidOperation
 from enum import StrEnum
 from typing import Final
 
-from services.opportunity_engine.fees import FeeCalculation, FeePolicy, FeeType, calculate_fee
+from services.opportunity_engine.fees import FeeCalculation as _FeeCalculation
+from services.opportunity_engine.fees import FeePolicy as _FeePolicy
+from services.opportunity_engine.fees import FeeType as _FeeType
+from services.opportunity_engine.fees import calculate_fee as _calculate_fee
 
 PDF_URL: Final = "https://kalshi.com/docs/kalshi-fee-schedule.pdf"
 FEE_CHANGES_URL: Final = (
@@ -29,8 +32,10 @@ FEE_CHANGES_URL: Final = (
 KXGDP: Final = "KXGDP"
 MAX_RESPONSE_BYTES: Final = 8_000_000
 TIMEOUT_SECONDS: Final = 10.0
-RESOLVER_ID: Final = "d1-g3-kxgdp-fee-resolver-v1"
+RESOLVER_ID: Final = "d1-g3-kxgdp-fee-resolver-v2"
 FORMULA_VERSION: Final = "price-times-complement-times-quantity-v1"
+AUDITED_TAKER_COEFFICIENT: Final = Decimal("0.07")
+AUDITED_MAKER_COEFFICIENT: Final = Decimal("0.0175")
 
 
 class FeeAuthorityStatus(StrEnum):
@@ -44,7 +49,7 @@ class FeeAuthorityError(ValueError):
 
 
 @dataclass(frozen=True, slots=True)
-class RawEvidence:
+class _RawEvidence:
     source_url: str
     status: int
     content_type: str
@@ -54,39 +59,132 @@ class RawEvidence:
 
 
 @dataclass(frozen=True, slots=True)
-class FeeChange:
-    change_id: str | None
+class _FeeChange:
+    change_id: str
     effective_at: datetime
-    fee_type: FeeType
+    fee_type: _FeeType
     multiplier: Decimal
     raw: dict[str, object]
 
 
 @dataclass(frozen=True, slots=True)
-class FeeSchedule:
+class _FeeSchedule:
     document_identity: str
     effective_at: datetime
     taker_coefficient: Decimal
     maker_coefficient: Decimal
     taker_multiplier: Decimal
     maker_multiplier: Decimal
-    raw: RawEvidence
+    raw: _RawEvidence
+    currentness_proven: bool
 
 
 @dataclass(frozen=True, slots=True)
-class FeeAuthority:
+class _FeeChangeBatch:
+    records: tuple[_FeeChange, ...]
+    raw: _RawEvidence
+    exhaustive_proven: bool
+
+
+@dataclass(frozen=True, slots=True)
+class _AuthorityCandidate:
     status: FeeAuthorityStatus
     reason: str | None
-    policy: FeePolicy | None
-    pdf_evidence: RawEvidence | None
-    fee_change_evidence: RawEvidence | None
+    policy: _FeePolicy | None
     applicable_change_ids: tuple[str, ...]
     resolver_id: str
 
-    def calculate_one_contract(self, price: Decimal) -> FeeCalculation:
+
+_AUTHORITY_TOKEN: Final = object()
+
+
+class FeeAuthority:
+    """Immutable result issued only by the fixed-source acquisition path."""
+
+    _applicable_change_ids: tuple[str, ...]
+    _fee_change_evidence: _RawEvidence | None
+    _pdf_evidence: _RawEvidence | None
+    _policy: _FeePolicy | None
+    _reason: str | None
+    _resolver_id: str
+    _sealed: bool
+    _status: FeeAuthorityStatus
+
+    __slots__ = (
+        "_applicable_change_ids",
+        "_fee_change_evidence",
+        "_pdf_evidence",
+        "_policy",
+        "_reason",
+        "_resolver_id",
+        "_sealed",
+        "_status",
+    )
+
+    def __new__(cls, *args: object, **kwargs: object) -> FeeAuthority:
+        if kwargs.pop("_token", None) is not _AUTHORITY_TOKEN or args:
+            raise TypeError("FeeAuthority is issued by acquire_fee_authority only")
+        return super().__new__(cls)
+
+    def __init__(
+        self,
+        *,
+        status: FeeAuthorityStatus,
+        reason: str | None,
+        policy: _FeePolicy | None,
+        pdf_evidence: _RawEvidence | None,
+        fee_change_evidence: _RawEvidence | None,
+        applicable_change_ids: tuple[str, ...],
+        resolver_id: str,
+        _token: object | None = None,
+    ) -> None:
+        del _token
+        object.__setattr__(self, "_status", status)
+        object.__setattr__(self, "_reason", reason)
+        object.__setattr__(self, "_policy", policy)
+        object.__setattr__(self, "_pdf_evidence", pdf_evidence)
+        object.__setattr__(self, "_fee_change_evidence", fee_change_evidence)
+        object.__setattr__(self, "_applicable_change_ids", applicable_change_ids)
+        object.__setattr__(self, "_resolver_id", resolver_id)
+        object.__setattr__(self, "_sealed", True)
+
+    def __setattr__(self, name: str, value: object) -> None:
+        if getattr(self, "_sealed", False):
+            raise AttributeError("FeeAuthority is immutable")
+        object.__setattr__(self, name, value)
+
+    @property
+    def status(self) -> FeeAuthorityStatus:
+        return self._status
+
+    @property
+    def reason(self) -> str | None:
+        return self._reason
+
+    @property
+    def policy(self) -> _FeePolicy | None:
+        return self._policy
+
+    @property
+    def pdf_evidence(self) -> _RawEvidence | None:
+        return self._pdf_evidence
+
+    @property
+    def fee_change_evidence(self) -> _RawEvidence | None:
+        return self._fee_change_evidence
+
+    @property
+    def applicable_change_ids(self) -> tuple[str, ...]:
+        return self._applicable_change_ids
+
+    @property
+    def resolver_id(self) -> str:
+        return self._resolver_id
+
+    def calculate_one_contract(self, price: Decimal) -> _FeeCalculation:
         if self.status is not FeeAuthorityStatus.COMPLETE or self.policy is None:
             raise FeeAuthorityError("fee authority is incomplete")
-        return calculate_fee(self.policy, price, Decimal("1"), maker=False)
+        return _calculate_fee(self.policy, price, Decimal("1"), maker=False)
 
 
 class _NoRedirect(urllib.request.HTTPRedirectHandler):
@@ -103,7 +201,7 @@ def _utc(value: datetime) -> datetime:
     return value.astimezone(UTC)
 
 
-def _fetch(url: str, *, accept: str) -> RawEvidence:
+def _fetch(url: str, *, accept: str) -> _RawEvidence:
     if url not in {PDF_URL, FEE_CHANGES_URL}:
         raise FeeAuthorityError("source URL is outside fixed authority")
     request = urllib.request.Request(  # noqa: S310 - URL is one of two fixed HTTPS constants
@@ -124,12 +222,12 @@ def _fetch(url: str, *, accept: str) -> RawEvidence:
     acquired_at = datetime.now(UTC)
     if len(body) > MAX_RESPONSE_BYTES:
         raise FeeAuthorityError("response truncated or exceeds bound")
-    return RawEvidence(
+    return _RawEvidence(
         url, status, content_type, acquired_at, body, hashlib.sha256(body).hexdigest()
     )
 
 
-def _validate_evidence(evidence: RawEvidence) -> None:
+def _validate_evidence(evidence: _RawEvidence) -> None:
     if evidence.source_url not in {PDF_URL, FEE_CHANGES_URL}:
         raise FeeAuthorityError("evidence source is outside fixed authority")
     if type(evidence.body) is not bytes or not evidence.body:
@@ -145,9 +243,8 @@ def _pdf_text(body: bytes) -> str:
         raise FeeAuthorityError("PDF is truncated or malformed")
     chunks = [body]
     for match in re.finditer(rb"stream\r?\n(.*?)\r?\nendstream", body, re.S):
-        stream = match.group(1)
         try:
-            chunks.append(zlib.decompress(stream))
+            chunks.append(zlib.decompress(match.group(1)))
         except zlib.error:
             continue
     strings = re.findall(rb"\((?:\\.|[^()])*\)", b"\n".join(chunks))
@@ -156,57 +253,90 @@ def _pdf_text(body: bytes) -> str:
     return re.sub(r"\s+", " ", text)
 
 
-def parse_fee_schedule(evidence: RawEvidence) -> FeeSchedule:
-    """Parse only the audited July-2026 document layout; drift fails closed."""
+def _one_match(pattern: str, text: str, label: str, *, flags: int = re.I) -> re.Match[str]:
+    matches = list(re.finditer(pattern, text, flags))
+    if len(matches) != 1:
+        raise FeeAuthorityError(f"{label} is missing, duplicated, or ambiguous")
+    return matches[0]
+
+
+def _parse_fee_schedule(evidence: _RawEvidence) -> _FeeSchedule:
     _validate_evidence(evidence)
     if evidence.source_url != PDF_URL or evidence.status != 200:
         raise FeeAuthorityError("official fee PDF unavailable")
     if evidence.content_type != "application/pdf":
         raise FeeAuthorityError("official fee source has wrong content type")
     text = _pdf_text(evidence.body)
-    if "Kalshi Fee Schedule" not in text:
-        raise FeeAuthorityError("fee document identity missing")
-    date_match = re.search(r"Last updated and effective\s*:?\s*July 7, 2026", text, re.I)
-    if date_match is None:
-        raise FeeAuthorityError("fee document effective date missing or unexpected")
-    if not re.search(
-        r"round\s*up\s*\(\s*M\s*[\u00d7*]\s*0\.07\s*[\u00d7*]\s*C\s*[\u00d7*]\s*P\s*[\u00d7*]\s*\(\s*1\s*-\s*P\s*\)\s*\)",
+    title = _one_match(r"\b(Kalshi Fee Schedule)\b", text, "fee document identity").group(1)
+    date_match = _one_match(
+        r"Last updated and effective\s*:?\s*([A-Z][a-z]+\s+\d{1,2},\s+\d{4})",
         text,
-        re.I,
+        "fee document effective date",
+    )
+    try:
+        effective_at = datetime.strptime(date_match.group(1), "%B %d, %Y").replace(tzinfo=UTC)
+    except ValueError as exc:
+        raise FeeAuthorityError("fee document effective date is malformed") from exc
+    # The canonical fixed PDF must itself declare the schedule as current; its
+    # effective date alone is never treated as a non-supersession guarantee.
+    _one_match(r"\bcurrent\s+general\s+fee\b", text, "current-fee declaration")
+
+    formula_pattern = (
+        r"fees\s*=\s*round\s*up\s*\(\s*(?:M\s*[\u00d7*]\s*)?"
+        r"(?P<coefficient>0\.\d+)\s*[\u00d7*]\s*C\s*[\u00d7*]\s*P\s*"
+        r"[\u00d7*]\s*\(\s*1\s*-\s*P\s*\)\s*\)"
+    )
+    maker_section = _one_match(r"\bMaker\s+Fees\b", text, "maker-fee section")
+    taker_matches = list(re.finditer(formula_pattern, text[: maker_section.start()], re.I))
+    maker_matches = list(re.finditer(formula_pattern, text[maker_section.end() :], re.I))
+    if len(taker_matches) != 1 or len(maker_matches) != 1:
+        raise FeeAuthorityError("maker/taker formula set is missing, duplicated, or ambiguous")
+    taker_coefficient = Decimal(taker_matches[0].group("coefficient"))
+    maker_coefficient = Decimal(maker_matches[0].group("coefficient"))
+    if taker_coefficient == maker_coefficient:
+        raise FeeAuthorityError("maker and taker coefficients are ambiguous")
+    if (
+        taker_coefficient != AUDITED_TAKER_COEFFICIENT
+        or maker_coefficient != AUDITED_MAKER_COEFFICIENT
     ):
-        raise FeeAuthorityError("taker formula authority missing")
-    if not re.search(
-        r"round\s*up\s*\(\s*M\s*[\u00d7*]\s*0\.0175\s*[\u00d7*]\s*C\s*[\u00d7*]\s*P\s*[\u00d7*]\s*\(\s*1\s*-\s*P\s*\)\s*\)",
-        text,
-        re.I,
-    ):
-        raise FeeAuthorityError("maker formula authority missing")
-    if not re.search(r"P\s*(?:is|=).*contract price.*C\s*(?:is|=).*contract quantity", text, re.I):
-        raise FeeAuthorityError("price or quantity definition missing")
-    if not re.search(r"Maker\s+multiplier\s+Taker\s+multiplier", text, re.I):
-        raise FeeAuthorityError("fee table header missing")
-    rows = re.findall(r"(?:^|\s)KXGDP\s+([^;|]{0,100})", text, re.I)
+        raise FeeAuthorityError("fee formula semantics differ from the reviewed schedule")
+
+    _one_match(r"\bP\s+(?:is|=)\s+contract price\b", text, "price definition")
+    _one_match(r"\bC\s+(?:is|=)\s+contract quantity\b", text, "quantity definition")
+    header = _one_match(r"\bMaker\s+multiplier\s+Taker\s+multiplier\b", text, "fee table header")
+    if re.search(r"\bTaker\s+multiplier\s+Maker\s+multiplier\b", text, re.I):
+        raise FeeAuthorityError("maker/taker table columns are swapped or ambiguous")
+    rows = list(
+        re.finditer(
+            r"\bKXGDP\s+(?P<maker>\d+(?:\.\d+)?)\s+(?P<taker>\d+(?:\.\d+)?)\b",
+            text[header.end() :],
+            re.I,
+        )
+    )
     if len(rows) != 1:
         raise FeeAuthorityError("KXGDP row missing, duplicated, or ambiguous")
-    numbers = re.findall(r"(?<![A-Za-z])(?:0|1)(?:\.0+)?(?![A-Za-z])", rows[0])
-    if len(numbers) != 2:
-        raise FeeAuthorityError("KXGDP maker/taker multiplier row is ambiguous")
-    return FeeSchedule(
-        "kalshi-fee-schedule-effective-2026-07-07",
-        datetime(2026, 7, 7, tzinfo=UTC),
-        Decimal("0.07"),
-        Decimal("0.0175"),
-        Decimal(numbers[1]),
-        Decimal(numbers[0]),
+    row = rows[0]
+    maker_multiplier = Decimal(row.group("maker"))
+    taker_multiplier = Decimal(row.group("taker"))
+    if maker_multiplier < 0 or taker_multiplier < 0:
+        raise FeeAuthorityError("KXGDP multiplier is invalid")
+    return _FeeSchedule(
+        f"{title}|effective-{effective_at.date().isoformat()}",
+        effective_at,
+        taker_coefficient,
+        maker_coefficient,
+        taker_multiplier,
+        maker_multiplier,
         evidence,
+        True,
     )
 
 
 def _decimal(value: object, field: str) -> Decimal:
-    if not isinstance(value, str):
-        raise FeeAuthorityError(f"{field} is not an exact Decimal string")
+    if not isinstance(value, (str, int, Decimal)) or isinstance(value, bool):
+        raise FeeAuthorityError(f"{field} is not an exact numeric value")
     try:
-        result = Decimal(value)
+        result = Decimal(str(value))
     except InvalidOperation as exc:
         raise FeeAuthorityError(f"{field} is malformed") from exc
     if not result.is_finite() or result < 0:
@@ -214,70 +344,94 @@ def _decimal(value: object, field: str) -> Decimal:
     return result
 
 
-def parse_fee_changes(evidence: RawEvidence) -> tuple[FeeChange, ...]:
+def _parse_fee_changes(evidence: _RawEvidence) -> _FeeChangeBatch:
     _validate_evidence(evidence)
     if evidence.source_url != FEE_CHANGES_URL or evidence.status != 200:
         raise FeeAuthorityError("fee-change source unavailable")
     if evidence.content_type != "application/json":
         raise FeeAuthorityError("fee-change source has wrong content type")
     try:
-        payload = json.loads(evidence.body)
+        payload = json.loads(evidence.body, parse_int=Decimal, parse_float=Decimal)
     except (UnicodeDecodeError, json.JSONDecodeError) as exc:
         raise FeeAuthorityError("fee-change JSON malformed") from exc
-    if not isinstance(payload, dict):
-        raise FeeAuthorityError("fee-change JSON must be an object")
-    records = payload.get("fee_changes", payload.get("series_fee_changes"))
+    if not isinstance(payload, dict) or set(payload) != {"series_fee_change_arr"}:
+        raise FeeAuthorityError("fee-change JSON schema is ambiguous or unsupported")
+    records = payload["series_fee_change_arr"]
     if not isinstance(records, list):
         raise FeeAuthorityError("fee-change array missing")
-    result: list[FeeChange] = []
+    result: list[_FeeChange] = []
+    seen_ids: set[str] = set()
     for record in records:
-        if not isinstance(record, dict) or record.get("series_ticker") != KXGDP:
+        if not isinstance(record, dict):
+            raise FeeAuthorityError("fee-change record is malformed")
+        required = {"id", "series_ticker", "fee_type", "fee_multiplier", "scheduled_ts"}
+        if set(record) != required:
+            raise FeeAuthorityError("fee-change record schema is incomplete or ambiguous")
+        if record["series_ticker"] != KXGDP or not isinstance(record["id"], str):
             raise FeeAuthorityError("fee-change record is not positively bound to KXGDP")
-        raw_effective = record.get("effective_at", record.get("effective_ts"))
+        change_id = record["id"]
+        if not change_id or change_id in seen_ids:
+            raise FeeAuthorityError("fee-change ID is missing or duplicated")
+        seen_ids.add(change_id)
+        raw_effective = record["scheduled_ts"]
         if not isinstance(raw_effective, str):
             raise FeeAuthorityError("fee-change effective timestamp missing")
         try:
             effective = _utc(datetime.fromisoformat(raw_effective.replace("Z", "+00:00")))
-            fee_type = FeeType(str(record["fee_type"]))
+            fee_type = _FeeType(str(record["fee_type"]))
         except (KeyError, ValueError) as exc:
             raise FeeAuthorityError("fee-change type or timestamp malformed") from exc
-        if fee_type not in {FeeType.QUADRATIC, FeeType.QUADRATIC_WITH_MAKER_FEES}:
+        if fee_type not in {_FeeType.QUADRATIC, _FeeType.QUADRATIC_WITH_MAKER_FEES}:
             raise FeeAuthorityError("fee-change fee type unsupported")
         result.append(
-            FeeChange(
-                record.get("change_id", record.get("id")),
+            _FeeChange(
+                change_id,
                 effective,
                 fee_type,
-                _decimal(record["multiplier"], "fee-change multiplier"),
+                _decimal(record["fee_multiplier"], "fee-change multiplier"),
                 dict(record),
             )
         )
-    return tuple(result)
+    # The fixed query is the documented all-history series feed: with
+    # show_historical=true it exposes previous and upcoming KXGDP fee changes.
+    # Together with the current-declared canonical PDF and its KXGDP row, this
+    # is the bounded fee override-completeness basis for this module.
+    return _FeeChangeBatch(tuple(result), evidence, True)
 
 
-def resolve_fee_authority(
-    decision_at: datetime, schedule: FeeSchedule, changes: tuple[FeeChange, ...]
-) -> FeeAuthority:
+def _candidate_incomplete(reason: str) -> _AuthorityCandidate:
+    return _AuthorityCandidate(FeeAuthorityStatus.INCOMPLETE, reason, None, (), RESOLVER_ID)
+
+
+def _resolve_fee_authority(
+    decision_at: datetime, schedule: _FeeSchedule, changes: _FeeChangeBatch
+) -> _AuthorityCandidate:
     instant = _utc(decision_at)
+    if not schedule.currentness_proven:
+        return _candidate_incomplete("current fee-schedule status is unproven")
+    if not changes.exhaustive_proven:
+        return _candidate_incomplete("fee-change/override completeness is unproven")
     if schedule.effective_at > instant:
-        return _incomplete("base fee document is future-effective", schedule.raw, None)
-    applicable = tuple(change for change in changes if change.effective_at <= instant)
+        return _candidate_incomplete("base fee document is future-effective")
+    applicable = tuple(change for change in changes.records if change.effective_at <= instant)
+    by_effective: dict[datetime, _FeeChange] = {}
+    for change in applicable:
+        if change.effective_at in by_effective:
+            return _candidate_incomplete("conflicting or ambiguous same-time fee changes")
+        by_effective[change.effective_at] = change
     if applicable:
-        fingerprints = {(c.fee_type, c.multiplier) for c in applicable}
-        if len(fingerprints) != 1:
-            return _incomplete("conflicting applicable KXGDP fee changes", schedule.raw, None)
-        chosen = max(applicable, key=lambda c: c.effective_at)
+        chosen = max(applicable, key=lambda change: change.effective_at)
         fee_type, multiplier = chosen.fee_type, chosen.multiplier
-        ids = tuple(str(c.change_id) for c in applicable if c.change_id is not None)
+        ids = tuple(change.change_id for change in applicable)
         effective = chosen.effective_at
     else:
         fee_type, multiplier, effective, ids = (
-            FeeType.QUADRATIC,
+            _FeeType.QUADRATIC,
             schedule.taker_multiplier,
             schedule.effective_at,
             (),
         )
-    policy = FeePolicy(
+    policy = _FeePolicy(
         "kxgdp-taker-" + effective.date().isoformat(),
         fee_type,
         multiplier,
@@ -289,13 +443,36 @@ def resolve_fee_authority(
         quadratic_coefficient=schedule.taker_coefficient,
         maker_quadratic_coefficient=schedule.maker_coefficient,
     )
+    return _AuthorityCandidate(FeeAuthorityStatus.COMPLETE, None, policy, ids, RESOLVER_ID)
+
+
+def _issue(
+    candidate: _AuthorityCandidate,
+    pdf: _RawEvidence | None,
+    changes: _RawEvidence | None,
+) -> FeeAuthority:
     return FeeAuthority(
-        FeeAuthorityStatus.COMPLETE, None, policy, schedule.raw, None, ids, RESOLVER_ID
+        _token=_AUTHORITY_TOKEN,
+        status=candidate.status,
+        reason=candidate.reason,
+        policy=candidate.policy,
+        pdf_evidence=pdf,
+        fee_change_evidence=changes,
+        applicable_change_ids=candidate.applicable_change_ids,
+        resolver_id=candidate.resolver_id,
     )
 
 
-def _incomplete(reason: str, pdf: RawEvidence | None, changes: RawEvidence | None) -> FeeAuthority:
-    return FeeAuthority(FeeAuthorityStatus.INCOMPLETE, reason, None, pdf, changes, (), RESOLVER_ID)
+def _incomplete(
+    reason: str,
+    pdf: _RawEvidence | None = None,
+    changes: _RawEvidence | None = None,
+) -> FeeAuthority:
+    return _issue(
+        _AuthorityCandidate(FeeAuthorityStatus.INCOMPLETE, reason, None, (), RESOLVER_ID),
+        pdf,
+        changes,
+    )
 
 
 def acquire_fee_authority(decision_at: datetime) -> FeeAuthority:
@@ -308,20 +485,11 @@ def acquire_fee_authority(decision_at: datetime) -> FeeAuthority:
             return _incomplete(
                 "decision instant is beyond contemporaneous acquisition evidence", pdf, changes
             )
-        schedule = parse_fee_schedule(pdf)
-        parsed_changes = parse_fee_changes(changes)
-        result = resolve_fee_authority(decision_at, schedule, parsed_changes)
-        return FeeAuthority(
-            result.status,
-            result.reason,
-            result.policy,
-            pdf,
-            changes,
-            result.applicable_change_ids,
-            result.resolver_id,
-        )
+        schedule = _parse_fee_schedule(pdf)
+        parsed_changes = _parse_fee_changes(changes)
+        return _issue(_resolve_fee_authority(decision_at, schedule, parsed_changes), pdf, changes)
     except FeeAuthorityError as exc:
-        return _incomplete(str(exc), None, None)
+        return _incomplete(str(exc))
 
 
 __all__ = ["FeeAuthority", "FeeAuthorityStatus", "acquire_fee_authority"]
