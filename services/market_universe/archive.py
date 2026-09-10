@@ -413,6 +413,7 @@ class UniverseObservationArchive:
             records = [singleton] if isinstance(singleton, dict) else []
         if not succeeded or not isinstance(records, list):
             records = []
+        authority_id = self.authority_id
         parsed_rows: list[tuple[object, ...]] = []
         observation_ids: list[str] = []
         for raw in records:
@@ -448,7 +449,7 @@ class UniverseObservationArchive:
                 (
                     observation_id,
                     page_id,
-                    self.authority_id,
+                    authority_id,
                     kind.value,
                     entity.ticker,
                     event_ticker,
@@ -470,7 +471,7 @@ class UniverseObservationArchive:
             observation_ids.append(observation_id)
         page_row = (
             page_id,
-            self.authority_id,
+            authority_id,
             provider,
             endpoint,
             parameters_json,
