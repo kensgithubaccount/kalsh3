@@ -146,6 +146,12 @@ def test_pdf_coefficients_are_derived_and_match_reviewed_semantics() -> None:
         )
 
 
+def test_pdf_ascii_multiplication_layout_is_deterministic() -> None:
+    body = _pdf().replace(b"*", b"x")
+    parsed = module._parse_fee_schedule(_evidence(module.PDF_URL, body, "application/pdf"))
+    assert parsed.taker_coefficient == Decimal("0.07")
+
+
 @pytest.mark.parametrize(
     "status,content_type,body",
     [

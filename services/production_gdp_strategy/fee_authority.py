@@ -282,9 +282,9 @@ def _parse_fee_schedule(evidence: _RawEvidence) -> _FeeSchedule:
     _one_match(r"\bcurrent\s+general\s+fee\b", text, "current-fee declaration")
 
     formula_pattern = (
-        r"fees\s*=\s*round\s*up\s*\(\s*(?:M\s*[\u00d7*]\s*)?"
-        r"(?P<coefficient>0\.\d+)\s*[\u00d7*]\s*C\s*[\u00d7*]\s*P\s*"
-        r"[\u00d7*]\s*\(\s*1\s*-\s*P\s*\)\s*\)"
+        r"fees\s*=\s*round\s*up\s*\(\s*(?:M\s*[\u00d7*x]\s*)?"
+        r"(?P<coefficient>0\.\d+)\s*[\u00d7*x]\s*C\s*[\u00d7*x]\s*P\s*"
+        r"[\u00d7*x]\s*\(\s*1\s*-\s*P\s*\)\s*\)"
     )
     maker_section = _one_match(r"\bMaker\s+Fees\b", text, "maker-fee section")
     taker_matches = list(re.finditer(formula_pattern, text[: maker_section.start()], re.I))
