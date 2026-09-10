@@ -1,9 +1,10 @@
 """The smallest research-only GDPNow -> KXGDP decision path.
 
-This module deliberately has no account, order, clock-start, scheduler, or persistence
-authority.  Live acquisition is available only through a source adapter that uses the
-repository's reviewed public transports.  Tests use disposable source adapters; they still
-traverse the same issuer boundary and deterministic decision path.
+The exported one-shot entrypoint owns its acquisition composition and accepts no
+caller-supplied source, response, evidence, or clock.  The lower-level evaluator in
+this module is deliberately private and fixture-only: its self-consistent values prove
+policy logic and integrity, not real-source provenance.  Provenance belongs to fixed,
+reviewed acquisition functions, which are not yet configured for schedule or fee data.
 """
 
 from __future__ import annotations
@@ -73,67 +74,64 @@ class SignalSide(StrEnum):
 
 
 @dataclass(frozen=True, slots=True)
-class ClockSample:
+class _ClockSample:
     wall_utc: datetime
     monotonic_ns: int
 
 
-Clock = Callable[[], ClockSample]
+_Clock = Callable[[], _ClockSample]
 
 
-def system_clock() -> ClockSample:
-    return ClockSample(datetime.now(UTC), time.monotonic_ns())
+def _system_clock() -> _ClockSample:
+    return _ClockSample(datetime.now(UTC), time.monotonic_ns())
 
 
 @dataclass(frozen=True, slots=True)
-class TransportResponse:
-    """Transport output; it is never itself accepted as decision authority."""
+class _TransportResponse:
+    """Disposable transport-shaped fixture output, never source authority."""
 
     path: str
     status: int
     body: bytes
 
 
-class ResearchDecisionSource(Protocol):
-    """One-shot source adapter used by the real entrypoint and disposable fixtures."""
+class _ResearchDecisionSource(Protocol):
+    """Private fixture seam; not a canonical acquisition authority."""
 
-    def schedule(self) -> TransportResponse: ...
+    def schedule(self) -> _TransportResponse: ...
 
-    def market(self, ticker: str) -> TransportResponse: ...
+    def market(self, ticker: str) -> _TransportResponse: ...
 
-    def orderbook(self, ticker: str) -> TransportResponse: ...
+    def orderbook(self, ticker: str) -> _TransportResponse: ...
 
-    def fee(self) -> TransportResponse: ...
+    def fee(self) -> _TransportResponse: ...
 
 
-class PublicKXGDPSource:
+class _FixedPublicKXGDPSource:
     """Public Kalshi transport for market/orderbook reads.
 
     Schedule and fee authority are intentionally supplied by a separately reviewed adapter;
     this class does not infer either from current metadata.
     """
 
-    def __init__(self) -> None:
-        self._authority_capability = _SOURCE_CAPABILITY
-
-    def market(self, ticker: str) -> TransportResponse:
+    def market(self, ticker: str) -> _TransportResponse:
         evidence, body = get_market_with_body(ticker)
         status = evidence.get("status", 0)
         if type(status) is not int:
             raise DecisionError("public market transport returned malformed status")
-        return TransportResponse(str(evidence.get("path", "")), status, body)
+        return _TransportResponse(str(evidence.get("path", "")), status, body)
 
-    def orderbook(self, ticker: str) -> TransportResponse:
+    def orderbook(self, ticker: str) -> _TransportResponse:
         evidence, body = get_orderbook_with_body(ticker)
         status = evidence.get("status", 0)
         if type(status) is not int:
             raise DecisionError("public orderbook transport returned malformed status")
-        return TransportResponse(str(evidence.get("path", "")), status, body)
+        return _TransportResponse(str(evidence.get("path", "")), status, body)
 
-    def schedule(self) -> TransportResponse:
+    def schedule(self) -> _TransportResponse:
         raise DecisionError("reviewed BEA/Kalshi schedule transport is not configured")
 
-    def fee(self) -> TransportResponse:
+    def fee(self) -> _TransportResponse:
         raise DecisionError("reviewed fee-authority transport is not configured")
 
 
@@ -143,8 +141,8 @@ def _utc(value: datetime, field: str) -> datetime:
     return value.astimezone(UTC)
 
 
-def _response_hash(response: TransportResponse) -> str:
-    if type(response) is not TransportResponse or type(response.path) is not str:
+def _response_hash(response: _TransportResponse) -> str:
+    if type(response) is not _TransportResponse or type(response.path) is not str:
         raise DecisionError("transport response type is invalid")
     if type(response.status) is not int or isinstance(response.status, bool):
         raise DecisionError("transport status is invalid")
@@ -153,7 +151,7 @@ def _response_hash(response: TransportResponse) -> str:
     return hashlib.sha256(response.body).hexdigest()
 
 
-def _json(response: TransportResponse, expected_path: str) -> dict[str, object]:
+def _json(response: _TransportResponse, expected_path: str) -> dict[str, object]:
     if response.path != expected_path or response.status != 200:
         raise DecisionError("source response path or status is not authoritative")
     _response_hash(response)
@@ -215,7 +213,7 @@ def _has_sub_cent_precision(value: Decimal) -> bool:
 
 
 @dataclass(frozen=True, slots=True, init=False)
-class ScheduleEvidence:
+class _ScheduleEvidence:
     evidence_id: str
     body: bytes
     body_sha256: str
@@ -229,7 +227,7 @@ class ScheduleEvidence:
     raw: dict[str, object]
 
     def __init__(
-        self, *, response: TransportResponse, completed_at: datetime, _capability: object
+        self, *, response: _TransportResponse, completed_at: datetime, _capability: object
     ) -> None:
         if _capability is not _ISSUER:
             raise DecisionError("schedule evidence requires reviewed issuer")
@@ -286,7 +284,7 @@ class ScheduleEvidence:
 
 
 @dataclass(frozen=True, slots=True, init=False)
-class MarketEvidence:
+class _MarketEvidence:
     evidence_id: str
     body: bytes
     body_sha256: str
@@ -307,9 +305,9 @@ class MarketEvidence:
     def __init__(
         self,
         *,
-        response: TransportResponse,
-        start: ClockSample,
-        end: ClockSample,
+        response: _TransportResponse,
+        start: _ClockSample,
+        end: _ClockSample,
         _capability: object,
     ) -> None:
         if _capability is not _ISSUER:
@@ -386,7 +384,7 @@ class MarketEvidence:
         _register_issued(self, digest)
 
 
-def _decode_market(response: TransportResponse) -> dict[str, object]:
+def _decode_market(response: _TransportResponse) -> dict[str, object]:
     if response.status != 200:
         raise DecisionError("market response status is not 200")
     _response_hash(response)
@@ -400,7 +398,7 @@ def _decode_market(response: TransportResponse) -> dict[str, object]:
 
 
 @dataclass(frozen=True, slots=True, init=False)
-class OrderbookEvidence:
+class _OrderbookEvidence:
     evidence_id: str
     body: bytes
     body_sha256: str
@@ -415,10 +413,10 @@ class OrderbookEvidence:
     def __init__(
         self,
         *,
-        response: TransportResponse,
+        response: _TransportResponse,
         ticker: str,
-        start: ClockSample,
-        end: ClockSample,
+        start: _ClockSample,
+        end: _ClockSample,
         _capability: object,
     ) -> None:
         if _capability is not _ISSUER:
@@ -493,7 +491,7 @@ def _levels(value: object, side: str) -> tuple[tuple[Decimal, Decimal], ...]:
 
 
 @dataclass(frozen=True, slots=True, init=False)
-class FeeEvidence:
+class _FeeEvidence:
     evidence_id: str
     body: bytes
     body_sha256: str
@@ -501,7 +499,7 @@ class FeeEvidence:
     resolver_id: str
 
     def __init__(
-        self, *, response: TransportResponse, completed_at: datetime, _capability: object
+        self, *, response: _TransportResponse, completed_at: datetime, _capability: object
     ) -> None:
         if _capability is not _ISSUER:
             raise DecisionError("fee evidence requires reviewed issuer")
@@ -567,7 +565,6 @@ class FeeEvidence:
 
 
 _ISSUER = object()
-_SOURCE_CAPABILITY = object()
 _ISSUED: dict[int, str] = {}
 _ISSUED_FINGERPRINTS: dict[int, str] = {}
 
@@ -589,11 +586,11 @@ def _check_issued(value: object, name: str) -> None:
 
 @dataclass(frozen=True, slots=True)
 class _Bundle:
-    schedule: ScheduleEvidence
-    before: MarketEvidence
-    book: OrderbookEvidence
-    after: MarketEvidence
-    fee: FeeEvidence
+    schedule: _ScheduleEvidence
+    before: _MarketEvidence
+    book: _OrderbookEvidence
+    after: _MarketEvidence
+    fee: _FeeEvidence
     gdpnow: GDPNowAcquisitionEvidence
     vintage: ParsedGDPNowVintage
 
@@ -819,17 +816,17 @@ def _classify(
     return classification, selected, price, fee, side, elapsed_ms, inside, before_cutoff
 
 
-def _capture(
-    source: ResearchDecisionSource,
+def _evaluate_fixture_decision(
+    source: _ResearchDecisionSource,
     gdpnow: GDPNowAcquisitionEvidence,
     vintage: ParsedGDPNowVintage,
-    clock: Clock,
+    clock: _Clock,
 ) -> DecisionReceipt:
     decision_sample = clock()
     schedule_start = clock()
     schedule_response = source.schedule()
     schedule_end = clock()
-    schedule = ScheduleEvidence(
+    schedule = _ScheduleEvidence(
         response=schedule_response, completed_at=schedule_end.wall_utc, _capability=_ISSUER
     )
     cutoff = schedule.release_at - DECISION_MARGIN
@@ -839,13 +836,13 @@ def _capture(
     before_start = clock()
     before_response = source.market(selected_ticker)
     before_end = clock()
-    before = MarketEvidence(
+    before = _MarketEvidence(
         response=before_response, start=before_start, end=before_end, _capability=_ISSUER
     )
     book_start = clock()
     book_response = source.orderbook(selected_ticker)
     book_end = clock()
-    book = OrderbookEvidence(
+    book = _OrderbookEvidence(
         response=book_response,
         ticker=selected_ticker,
         start=book_start,
@@ -855,12 +852,17 @@ def _capture(
     after_start = clock()
     after_response = source.market(selected_ticker)
     after_end = clock()
-    after = MarketEvidence(
+    after = _MarketEvidence(
         response=after_response, start=after_start, end=after_end, _capability=_ISSUER
     )
     fee_response = source.fee()
     fee_end = clock()
-    fee = FeeEvidence(response=fee_response, completed_at=fee_end.wall_utc, _capability=_ISSUER)
+    try:
+        fee = _FeeEvidence(
+            response=fee_response, completed_at=fee_end.wall_utc, _capability=_ISSUER
+        )
+    except DecisionError:
+        return _incomplete_receipt(fee_end)
     bundle = _Bundle(schedule, before, book, after, fee, gdpnow, vintage)
     pipeline = clock()
     try:
@@ -955,24 +957,18 @@ def _capture(
     return receipt
 
 
-def run_one_research_decision(
-    *,
-    source: ResearchDecisionSource,
-    gdpnow: GDPNowAcquisitionEvidence,
-    vintage: ParsedGDPNowVintage,
-    clock: Clock = system_clock,
-) -> DecisionReceipt:
-    """Execute exactly one research-only decision attempt; never retries or places orders."""
-    if getattr(source, "_authority_capability", None) is not _SOURCE_CAPABILITY:
-        return _incomplete_receipt(clock())
-    try:
-        return _capture(source, gdpnow, vintage, clock)
-    except DecisionError:
-        started = clock()
-        return _incomplete_receipt(started)
+def run_one_research_decision() -> DecisionReceipt:
+    """Run one fixed production composition, failing closed while adapters are absent.
+
+    This public boundary intentionally has no source, response, evidence, or clock
+    parameter.  A later activation review may enable fixed reviewed adapters.  Until
+    then, schedule and fee authority are unavailable, so this function records only
+    ``EVIDENCE_INCOMPLETE`` and performs no live acquisition.
+    """
+    return _incomplete_receipt(_system_clock())
 
 
-def _incomplete_receipt(sample: ClockSample) -> DecisionReceipt:
+def _incomplete_receipt(sample: _ClockSample) -> DecisionReceipt:
     values: dict[str, object] = {
         "decision_id": stable_hash(
             (POLICY_VERSION, "EVIDENCE_INCOMPLETE", sample.wall_utc.isoformat())
@@ -1097,15 +1093,4 @@ def replay_decision(receipt: DecisionReceipt) -> DecisionReceipt:
     return receipt
 
 
-__all__ = [
-    "ClockSample",
-    "DecisionClass",
-    "DecisionError",
-    "DecisionReceipt",
-    "PublicKXGDPSource",
-    "ResearchDecisionSource",
-    "TransportResponse",
-    "replay_decision",
-    "run_one_research_decision",
-    "system_clock",
-]
+__all__ = ["DecisionClass", "DecisionError", "replay_decision", "run_one_research_decision"]

@@ -1,4 +1,9 @@
-"""Append-only hypothetical settlement and economic evaluation."""
+"""Append-only hypothetical settlement and economic evaluation.
+
+The observation constructor below is a private disposable fixture seam.  No reviewed
+final-settlement acquisition adapter is configured, so it is never a production
+authority boundary.  Its calculations test economic semantics only.
+"""
 
 from __future__ import annotations
 
@@ -28,7 +33,7 @@ class OutcomeClass(StrEnum):
 
 
 @dataclass(frozen=True, slots=True, init=False)
-class SettlementEvidence:
+class _FixtureSettlementObservation:
     decision_id: str
     original_decision_hash: str
     market_ticker: str
@@ -110,13 +115,13 @@ class OutcomeReceipt:
     outcome_hash: str
 
 
-def build_outcome_receipt(
-    decision: DecisionReceipt, settlement: SettlementEvidence
+def _build_fixture_outcome_receipt(
+    decision: DecisionReceipt, settlement: _FixtureSettlementObservation
 ) -> OutcomeReceipt:
-    """Build a separate outcome receipt; the original decision is never changed."""
+    """Build a disposable outcome receipt; this does not prove settlement provenance."""
     validate_decision_receipt(decision)
     if (
-        type(settlement) is not SettlementEvidence
+        type(settlement) is not _FixtureSettlementObservation
         or _ISSUED.get(id(settlement)) != settlement.evidence_id
         or _ISSUED_FINGERPRINTS.get(id(settlement)) != stable_hash(repr(settlement))
     ):
@@ -154,7 +159,7 @@ def build_outcome_receipt(
 def _outcome(
     outcome_class: OutcomeClass,
     decision: DecisionReceipt,
-    settlement: SettlementEvidence,
+    settlement: _FixtureSettlementObservation,
     payout: Decimal | None,
     net: Decimal | None,
     duration: Decimal | None,
@@ -184,4 +189,71 @@ def _outcome(
     )
 
 
-__all__ = ["OutcomeClass", "OutcomeReceipt", "SettlementEvidence", "build_outcome_receipt"]
+def _outcome_digest(receipt: OutcomeReceipt) -> str:
+    return hashlib.sha256(
+        repr(
+            (
+                receipt.outcome_class,
+                receipt.decision_id,
+                receipt.original_decision_hash,
+                receipt.settlement_evidence_id,
+                receipt.realized_payout,
+                receipt.net_cash_flow,
+                receipt.capital_duration_seconds,
+            )
+        ).encode()
+    ).hexdigest()
+
+
+def validate_outcome_receipt(
+    receipt: OutcomeReceipt,
+    *,
+    decision: DecisionReceipt | None = None,
+    settlement: _FixtureSettlementObservation | None = None,
+) -> None:
+    """Validate receipt integrity and optional bindings, not source provenance."""
+    if type(receipt) is not OutcomeReceipt:
+        raise DecisionError("outcome receipt type is invalid")
+    if receipt.outcome_hash != _outcome_digest(receipt):
+        raise DecisionError("outcome receipt digest mismatch")
+    if type(receipt.decision_id) is not str or type(receipt.original_decision_hash) is not str:
+        raise DecisionError("outcome decision binding is invalid")
+    if decision is not None:
+        validate_decision_receipt(decision)
+        if (
+            receipt.decision_id != decision.decision_id
+            or receipt.original_decision_hash != decision.payload_hash
+        ):
+            raise DecisionError("outcome does not bind to the supplied decision")
+    if settlement is not None:
+        if (
+            type(settlement) is not _FixtureSettlementObservation
+            or _ISSUED.get(id(settlement)) != settlement.evidence_id
+            or _ISSUED_FINGERPRINTS.get(id(settlement)) != stable_hash(repr(settlement))
+        ):
+            raise DecisionError("settlement observation is reconstructed or tampered")
+        if receipt.settlement_evidence_id != settlement.evidence_id:
+            raise DecisionError("outcome does not bind to the supplied settlement")
+    if receipt.outcome_class is OutcomeClass.COMPLETE:
+        if receipt.realized_payout not in {Decimal("0.00"), Decimal("1.00")}:
+            raise DecisionError("complete outcome payout is invalid")
+        if receipt.net_cash_flow is None or receipt.capital_duration_seconds is None:
+            raise DecisionError("complete outcome economics are incomplete")
+        if receipt.capital_duration_seconds < Decimal("0"):
+            raise DecisionError("capital duration is negative")
+    elif any(
+        value is not None
+        for value in (
+            receipt.realized_payout,
+            receipt.net_cash_flow,
+            receipt.capital_duration_seconds,
+        )
+    ):
+        raise DecisionError("incomplete outcome contains final economics")
+    if decision is not None and settlement is not None:
+        expected = _build_fixture_outcome_receipt(decision, settlement)
+        if receipt != expected:
+            raise DecisionError("outcome economics or binding fields do not replay")
+
+
+__all__ = ["OutcomeClass", "OutcomeReceipt", "validate_outcome_receipt"]

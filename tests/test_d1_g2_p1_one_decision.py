@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import inspect
 import json
+from collections.abc import Callable
 from datetime import UTC, datetime
 from decimal import Decimal
 
@@ -8,24 +10,25 @@ import pytest
 
 import services.forecasting.gdpnow_source_acquisition as gdpnow_acquisition
 import services.production_gdp_strategy.one_decision as one_decision
-from services.forecasting.gdpnow_parsing import parse_gdpnow_commentary
+from services.forecasting.gdpnow_parsing import ParsedGDPNowVintage, parse_gdpnow_commentary
 from services.production_gdp_strategy.one_decision import (
-    ClockSample,
     DecisionClass,
     DecisionError,
-    TransportResponse,
+    _ClockSample,
+    _evaluate_fixture_decision,
+    _TransportResponse,
     replay_decision,
     run_one_research_decision,
 )
 from services.production_gdp_strategy.outcome import (
-    _ISSUER,
     OutcomeClass,
-    SettlementEvidence,
-    build_outcome_receipt,
+    _build_fixture_outcome_receipt,
+    _FixtureSettlementObservation,
+    validate_outcome_receipt,
 )
 
 
-def _gdpnow() -> tuple[object, object]:
+def _gdpnow() -> tuple[gdpnow_acquisition.GDPNowAcquisitionEvidence, ParsedGDPNowVintage]:
     body = (
         b"<h2>September 3, 2026</h2><p>The GDPNow model estimate for real GDP growth "
         b"(seasonally adjusted annual rate) in the third quarter of 2026 is "
@@ -47,13 +50,13 @@ def _gdpnow() -> tuple[object, object]:
     return evidence, parse_gdpnow_commentary(evidence)
 
 
-def _response(path: str, payload: dict[str, object]) -> TransportResponse:
-    return TransportResponse(path, 200, json.dumps(payload, sort_keys=True).encode())
+def _response(path: str, payload: dict[str, object]) -> _TransportResponse:
+    return _TransportResponse(path, 200, json.dumps(payload, sort_keys=True).encode())
 
 
 def _market(
     ticker: str = "KXGDP-26SEP03-T4.5", status: str = "active", close: str = "12:29:00"
-) -> TransportResponse:
+) -> _TransportResponse:
     return _response(
         f"/trade-api/v2/markets/{ticker}",
         {
@@ -77,7 +80,7 @@ def _market(
     )
 
 
-def _schedule(close: str = "08:29:00") -> TransportResponse:
+def _schedule(close: str = "08:29:00") -> _TransportResponse:
     return _response(
         "/reviewed/d1-g2/schedule",
         {
@@ -100,7 +103,7 @@ def _schedule(close: str = "08:29:00") -> TransportResponse:
     )
 
 
-def _book() -> TransportResponse:
+def _book() -> _TransportResponse:
     return _response(
         "/trade-api/v2/markets/orderbooks?tickers=KXGDP-26SEP03-T4.5",
         {
@@ -117,7 +120,7 @@ def _book() -> TransportResponse:
     )
 
 
-def _fee(multiplier: str = "1") -> TransportResponse:
+def _fee(multiplier: str = "1") -> _TransportResponse:
     return _response(
         "/reviewed/d1-g2/fee",
         {
@@ -143,7 +146,6 @@ class FixtureSource:
     def __init__(
         self, *, before: str = "active", after: str = "active", close: str = "08:29:00"
     ) -> None:
-        self._authority_capability = one_decision._SOURCE_CAPABILITY
         market_close = "12:31:00" if close == "08:31:00" else "12:29:00"
         self.responses = [
             _market(status=before, close=market_close),
@@ -152,38 +154,38 @@ class FixtureSource:
         self.close = close
         self.market_calls = 0
 
-    def schedule(self) -> TransportResponse:
+    def schedule(self) -> _TransportResponse:
         return _schedule(self.close)
 
-    def market(self, ticker: str) -> TransportResponse:
+    def market(self, ticker: str) -> _TransportResponse:
         assert ticker == "KXGDP-26SEP03-T4.5"
         response = self.responses[self.market_calls]
         self.market_calls += 1
         return response
 
-    def orderbook(self, ticker: str) -> TransportResponse:
+    def orderbook(self, ticker: str) -> _TransportResponse:
         assert ticker == "KXGDP-26SEP03-T4.5"
         return _book()
 
-    def fee(self) -> TransportResponse:
+    def fee(self) -> _TransportResponse:
         return _fee()
 
 
-def _clock() -> callable:
+def _clock() -> Callable[[], one_decision._ClockSample]:
     samples = iter(
         [
-            ClockSample(datetime(2026, 9, 3, 12, 20, tzinfo=UTC), 0),
-            ClockSample(datetime(2026, 9, 3, 12, 20, tzinfo=UTC), 0),
-            ClockSample(datetime(2026, 9, 3, 12, 20, 0, 100000, tzinfo=UTC), 100_000_000),
-            ClockSample(datetime(2026, 9, 3, 12, 25, tzinfo=UTC), 5_000_000_000),
-            ClockSample(datetime(2026, 9, 3, 12, 25, 0, 100000, tzinfo=UTC), 5_100_000_000),
-            ClockSample(datetime(2026, 9, 3, 12, 25, 0, 200000, tzinfo=UTC), 5_200_000_000),
-            ClockSample(datetime(2026, 9, 3, 12, 25, 0, 300000, tzinfo=UTC), 5_300_000_000),
-            ClockSample(datetime(2026, 9, 3, 12, 25, 0, 400000, tzinfo=UTC), 5_400_000_000),
-            ClockSample(datetime(2026, 9, 3, 12, 25, 0, 500000, tzinfo=UTC), 5_500_000_000),
-            ClockSample(datetime(2026, 9, 3, 12, 25, 0, 600000, tzinfo=UTC), 5_600_000_000),
-            ClockSample(datetime(2026, 9, 3, 12, 25, 0, 700000, tzinfo=UTC), 5_700_000_000),
-            ClockSample(datetime(2026, 9, 3, 12, 25, 0, 800000, tzinfo=UTC), 5_800_000_000),
+            _ClockSample(datetime(2026, 9, 3, 12, 20, tzinfo=UTC), 0),
+            _ClockSample(datetime(2026, 9, 3, 12, 20, tzinfo=UTC), 0),
+            _ClockSample(datetime(2026, 9, 3, 12, 20, 0, 100000, tzinfo=UTC), 100_000_000),
+            _ClockSample(datetime(2026, 9, 3, 12, 25, tzinfo=UTC), 5_000_000_000),
+            _ClockSample(datetime(2026, 9, 3, 12, 25, 0, 100000, tzinfo=UTC), 5_100_000_000),
+            _ClockSample(datetime(2026, 9, 3, 12, 25, 0, 200000, tzinfo=UTC), 5_200_000_000),
+            _ClockSample(datetime(2026, 9, 3, 12, 25, 0, 300000, tzinfo=UTC), 5_300_000_000),
+            _ClockSample(datetime(2026, 9, 3, 12, 25, 0, 400000, tzinfo=UTC), 5_400_000_000),
+            _ClockSample(datetime(2026, 9, 3, 12, 25, 0, 500000, tzinfo=UTC), 5_500_000_000),
+            _ClockSample(datetime(2026, 9, 3, 12, 25, 0, 600000, tzinfo=UTC), 5_600_000_000),
+            _ClockSample(datetime(2026, 9, 3, 12, 25, 0, 700000, tzinfo=UTC), 5_700_000_000),
+            _ClockSample(datetime(2026, 9, 3, 12, 25, 0, 800000, tzinfo=UTC), 5_800_000_000),
         ]
     )
     return lambda: next(samples)
@@ -191,7 +193,7 @@ def _clock() -> callable:
 
 def test_real_shaped_passing_path_replays_and_evaluates_without_mutation() -> None:
     evidence, vintage = _gdpnow()
-    decision = run_one_research_decision(
+    decision = _evaluate_fixture_decision(
         source=FixtureSource(), gdpnow=evidence, vintage=vintage, clock=_clock()
     )
     assert decision.classification is DecisionClass.TRADE_YES
@@ -199,7 +201,7 @@ def test_real_shaped_passing_path_replays_and_evaluates_without_mutation() -> No
     assert decision.all_in_debit == Decimal("0.4168")
     assert replay_decision(decision) == decision
 
-    settlement = SettlementEvidence(
+    settlement = _FixtureSettlementObservation(
         response=json.dumps(
             {
                 "decision_id": decision.decision_id,
@@ -212,9 +214,10 @@ def test_real_shaped_passing_path_replays_and_evaluates_without_mutation() -> No
         ).encode(),
         decision=decision,
         completed_at=datetime(2026, 9, 3, 13, 0, tzinfo=UTC),
-        _capability=_ISSUER,
+        _capability=one_decision._ISSUER,
     )
-    outcome = build_outcome_receipt(decision, settlement)
+    outcome = _build_fixture_outcome_receipt(decision, settlement)
+    validate_outcome_receipt(outcome, decision=decision, settlement=settlement)
     assert outcome.outcome_class is OutcomeClass.COMPLETE
     assert outcome.realized_payout == Decimal("1.00")
     assert outcome.net_cash_flow == Decimal("0.5832")
@@ -223,7 +226,7 @@ def test_real_shaped_passing_path_replays_and_evaluates_without_mutation() -> No
 
 def test_schedule_conflict_is_evidence_incomplete() -> None:
     evidence, vintage = _gdpnow()
-    decision = run_one_research_decision(
+    decision = _evaluate_fixture_decision(
         source=FixtureSource(close="08:31:00"), gdpnow=evidence, vintage=vintage, clock=_clock()
     )
     assert decision.classification is DecisionClass.EVIDENCE_INCOMPLETE
@@ -232,7 +235,7 @@ def test_schedule_conflict_is_evidence_incomplete() -> None:
 
 def test_temporal_failure_is_evidence_incomplete() -> None:
     evidence, vintage = _gdpnow()
-    decision = run_one_research_decision(
+    decision = _evaluate_fixture_decision(
         source=FixtureSource(before="inactive"), gdpnow=evidence, vintage=vintage, clock=_clock()
     )
     assert decision.classification is DecisionClass.EVIDENCE_INCOMPLETE
@@ -240,11 +243,11 @@ def test_temporal_failure_is_evidence_incomplete() -> None:
 
 def test_missing_fee_authority_is_recorded_as_evidence_incomplete() -> None:
     class MissingFee(FixtureSource):
-        def fee(self) -> TransportResponse:
-            return TransportResponse("/reviewed/d1-g2/fee", 503, b"unavailable")
+        def fee(self) -> _TransportResponse:
+            return _TransportResponse("/reviewed/d1-g2/fee", 503, b"unavailable")
 
     evidence, vintage = _gdpnow()
-    decision = run_one_research_decision(
+    decision = _evaluate_fixture_decision(
         source=MissingFee(), gdpnow=evidence, vintage=vintage, clock=_clock()
     )
     assert decision.classification is DecisionClass.EVIDENCE_INCOMPLETE
@@ -253,7 +256,7 @@ def test_missing_fee_authority_is_recorded_as_evidence_incomplete() -> None:
 
 def test_exact_gate_rejects_with_abstain() -> None:
     class HalfPrice(FixtureSource):
-        def orderbook(self, ticker: str) -> TransportResponse:
+        def orderbook(self, ticker: str) -> _TransportResponse:
             del ticker
             return _response(
                 "/trade-api/v2/markets/orderbooks?tickers=KXGDP-26SEP03-T4.5",
@@ -270,11 +273,11 @@ def test_exact_gate_rejects_with_abstain() -> None:
                 },
             )
 
-        def fee(self) -> TransportResponse:
+        def fee(self) -> _TransportResponse:
             return _fee("0")
 
     evidence, vintage = _gdpnow()
-    decision = run_one_research_decision(
+    decision = _evaluate_fixture_decision(
         source=HalfPrice(), gdpnow=evidence, vintage=vintage, clock=_clock()
     )
     assert decision.classification is DecisionClass.ABSTAIN
@@ -283,7 +286,7 @@ def test_exact_gate_rejects_with_abstain() -> None:
 
 def test_sub_one_contract_depth_is_not_identifiable() -> None:
     class ThinBook(FixtureSource):
-        def orderbook(self, ticker: str) -> TransportResponse:
+        def orderbook(self, ticker: str) -> _TransportResponse:
             del ticker
             return _response(
                 "/trade-api/v2/markets/orderbooks?tickers=KXGDP-26SEP03-T4.5",
@@ -301,7 +304,7 @@ def test_sub_one_contract_depth_is_not_identifiable() -> None:
             )
 
     evidence, vintage = _gdpnow()
-    decision = run_one_research_decision(
+    decision = _evaluate_fixture_decision(
         source=ThinBook(), gdpnow=evidence, vintage=vintage, clock=_clock()
     )
     assert decision.classification is DecisionClass.EXECUTION_NOT_IDENTIFIABLE
@@ -309,7 +312,7 @@ def test_sub_one_contract_depth_is_not_identifiable() -> None:
 
 def test_mutated_issued_book_fails_replay() -> None:
     evidence, vintage = _gdpnow()
-    decision = run_one_research_decision(
+    decision = _evaluate_fixture_decision(
         source=FixtureSource(), gdpnow=evidence, vintage=vintage, clock=_clock()
     )
     assert decision.bundle is not None
@@ -319,22 +322,14 @@ def test_mutated_issued_book_fails_replay() -> None:
 
 
 def test_caller_authored_source_cannot_become_positive_authority() -> None:
-    class UnreviewedSource(FixtureSource):
-        def __init__(self) -> None:
-            super().__init__()
-            del self._authority_capability
-
-    evidence, vintage = _gdpnow()
-    decision = run_one_research_decision(
-        source=UnreviewedSource(), gdpnow=evidence, vintage=vintage, clock=_clock()
-    )
+    decision = run_one_research_decision()
     assert decision.classification is DecisionClass.EVIDENCE_INCOMPLETE
     assert decision.bundle is None
 
 
 def test_reconstructed_receipt_is_rejected() -> None:
     evidence, vintage = _gdpnow()
-    decision = run_one_research_decision(
+    decision = _evaluate_fixture_decision(
         source=FixtureSource(), gdpnow=evidence, vintage=vintage, clock=_clock()
     )
     from dataclasses import replace
@@ -342,3 +337,61 @@ def test_reconstructed_receipt_is_rejected() -> None:
     with pytest.raises((DecisionError, TypeError)):
         forged = replace(decision)
         replay_decision(forged)
+
+
+def test_public_entrypoint_has_no_injection_parameters() -> None:
+    signature = inspect.signature(run_one_research_decision)
+    assert tuple(signature.parameters) == ()
+    with pytest.raises(TypeError):
+        run_one_research_decision(source=FixtureSource())  # type: ignore[call-arg]
+
+
+def test_fixture_path_is_not_the_public_authority_path() -> None:
+    evidence, vintage = _gdpnow()
+    decision = _evaluate_fixture_decision(
+        source=FixtureSource(), gdpnow=evidence, vintage=vintage, clock=_clock()
+    )
+    assert decision.classification is DecisionClass.TRADE_YES
+    assert decision.bundle is not None
+    assert decision.bundle.before.evidence_id != decision.bundle.after.evidence_id
+
+
+def test_production_module_does_not_use_private_d1_g1_issuance_symbols() -> None:
+    source = inspect.getsource(one_decision)
+    assert "_GDPNOW_EVIDENCE_ISSUANCE_CAPABILITY" not in source
+    assert "_GDPNowTransportResult" not in source
+
+
+def test_fixture_helpers_are_not_exported() -> None:
+    assert "ResearchDecisionSource" not in one_decision.__all__
+    assert "TransportResponse" not in one_decision.__all__
+    assert (
+        "SettlementEvidence"
+        not in __import__("services.production_gdp_strategy.outcome", fromlist=["__all__"]).__all__
+    )
+
+
+def test_outcome_receipt_tampering_fails_integrity_validation() -> None:
+    evidence, vintage = _gdpnow()
+    decision = _evaluate_fixture_decision(
+        source=FixtureSource(), gdpnow=evidence, vintage=vintage, clock=_clock()
+    )
+    settlement = _FixtureSettlementObservation(
+        response=json.dumps(
+            {
+                "decision_id": decision.decision_id,
+                "original_decision_hash": decision.payload_hash,
+                "market_ticker": decision.selected_market_ticker,
+                "final": True,
+                "result": "yes",
+                "settled_at": "2026-09-03T13:00:00+00:00",
+            }
+        ).encode(),
+        decision=decision,
+        completed_at=datetime(2026, 9, 3, 13, 0, tzinfo=UTC),
+        _capability=one_decision._ISSUER,
+    )
+    outcome = _build_fixture_outcome_receipt(decision, settlement)
+    object.__setattr__(outcome, "net_cash_flow", Decimal("9.99"))
+    with pytest.raises(DecisionError, match="digest"):
+        validate_outcome_receipt(outcome)
