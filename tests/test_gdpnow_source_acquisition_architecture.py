@@ -73,6 +73,36 @@ def test_parsed_vintage_direct_construction_is_confined_to_parsing_module() -> N
     assert references == {owner}
 
 
+def test_receipt_internals_have_exact_single_production_owner() -> None:
+    repo_root = Path(__file__).resolve().parents[1]
+    owner = repo_root / "services/forecasting/gdpnow_parsing.py"
+    restricted = (
+        "_RECEIPT_ISSUANCE_CAPABILITY",
+        "_ISSUED_RECEIPT_FINGERPRINTS",
+    )
+    references: dict[str, set[Path]] = {symbol: set() for symbol in restricted}
+    for path in _production_python_files(repo_root):
+        source = path.read_text(encoding="utf-8")
+        for symbol in restricted:
+            if symbol in source:
+                references[symbol].add(path)
+
+    expected = {owner}
+    assert references == {symbol: expected for symbol in restricted}
+
+
+def test_receipt_direct_construction_is_confined_to_parsing_module() -> None:
+    repo_root = Path(__file__).resolve().parents[1]
+    owner = repo_root / "services/forecasting/gdpnow_parsing.py"
+    constructor = "GDPNowCaptureReceipt("
+    references = {
+        path
+        for path in _production_python_files(repo_root)
+        if constructor in path.read_text(encoding="utf-8")
+    }
+    assert references == {owner}
+
+
 def test_no_gdpnow_module_makes_network_acquisition_automatic_in_ci() -> None:
     repo_root = Path(__file__).resolve().parents[1]
     needles = ("acquire_gdpnow_commentary_page(",)

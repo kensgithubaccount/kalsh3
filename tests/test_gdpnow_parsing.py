@@ -341,3 +341,94 @@ def test_classify_new_update_with_no_previous_baseline(monkeypatch: pytest.Monke
         parsing.classify_gdpnow_update(previous=None, current=current)
         == parsing.UpdateClassification.NEW_UPDATE
     )
+
+
+# ---------------------------------------------------------------------------
+# Blocker 2 regression: ambiguous equally-new parser matches.
+#
+# Multiple valid entries sharing the same newest publisher-stated date but
+# conflicting forecast tuples must fail closed rather than silently selecting
+# whichever came first in document order. These attacks previously succeeded
+# (silent document-order fallback) against reviewed head
+# 6e4916af4ac9846c5c28f22b1170c13ff66d5e0d.
+# ---------------------------------------------------------------------------
+
+
+def test_ambiguous_same_newest_date_different_value_fails_closed(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    first = entry(header_date="September 3, 2026", sentence_date="September 3", value="4.7")
+    second = entry(header_date="September 3, 2026", sentence_date="September 3", value="9.9")
+    evidence = evidence_for(page(first, second), monkeypatch)
+    with pytest.raises(parsing.GDPNowParsingError, match="ambiguous"):
+        parsing.parse_gdpnow_commentary(evidence)
+
+
+def test_ambiguous_same_newest_date_different_quarter_fails_closed(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    first = entry(
+        header_date="September 3, 2026", sentence_date="September 3", ordinal="third", q_year="2026"
+    )
+    second = entry(
+        header_date="September 3, 2026",
+        sentence_date="September 3",
+        ordinal="fourth",
+        q_year="2026",
+    )
+    evidence = evidence_for(page(first, second), monkeypatch)
+    with pytest.raises(parsing.GDPNowParsingError, match="ambiguous"):
+        parsing.parse_gdpnow_commentary(evidence)
+
+
+def test_ambiguous_multiple_conflicting_same_date_candidates_fails_closed(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    a = entry(header_date="September 3, 2026", sentence_date="September 3", value="4.7")
+    b = entry(header_date="September 3, 2026", sentence_date="September 3", value="4.7")
+    c = entry(header_date="September 3, 2026", sentence_date="September 3", value="5.5")
+    evidence = evidence_for(page(a, b, c), monkeypatch)
+    with pytest.raises(parsing.GDPNowParsingError, match="ambiguous"):
+        parsing.parse_gdpnow_commentary(evidence)
+
+
+def test_ambiguous_newest_date_never_falls_back_to_older_entry(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    first = entry(header_date="September 3, 2026", sentence_date="September 3", value="4.7")
+    second = entry(header_date="September 3, 2026", sentence_date="September 3", value="9.9")
+    older = entry(header_date="September 1, 2026", sentence_date="September 1", value="4.8")
+    evidence = evidence_for(page(first, second, older), monkeypatch)
+    with pytest.raises(parsing.GDPNowParsingError, match="ambiguous"):
+        parsing.parse_gdpnow_commentary(evidence)
+
+
+def test_exact_duplicate_same_date_entries_are_deduplicated_not_ambiguous(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Two entries publishing the identical forecast content under the same
+    date are the same information twice, not conflicting information: this is
+    the documented Option-B choice (deduplicate exact identical tuples only,
+    never reject them), so parsing must succeed."""
+    first = entry(
+        header_date="September 3, 2026",
+        sentence_date="September 3",
+        value="4.7",
+        tail=" First mirrored block.",
+    )
+    second = entry(
+        header_date="September 3, 2026",
+        sentence_date="September 3",
+        value="4.7",
+        tail=" Second mirrored block, same forecast.",
+    )
+    evidence = evidence_for(page(first, second), monkeypatch)
+    vintage = parsing.parse_gdpnow_commentary(evidence)
+    assert vintage.target_quarter == "2026-Q3"
+    assert vintage.gdpnow_value == Decimal("4.7")
+    assert vintage.publisher_stated_date == date(2026, 9, 3)
+
+
+# ---------------------------------------------------------------------------
+# End Blocker 2 regression tests.
+# ---------------------------------------------------------------------------

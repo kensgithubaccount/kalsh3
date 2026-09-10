@@ -32,7 +32,7 @@ def capture(output: Path) -> Path:
     evidence = acquire_gdpnow_commentary_page()
     vintage = parse_gdpnow_commentary(evidence)
     receipt = build_gdpnow_capture_receipt(evidence, vintage)
-    receipt_path = write_gdpnow_capture_receipt(receipt, evidence.raw_body, directory=output)
+    receipt_path = write_gdpnow_capture_receipt(evidence, vintage, directory=output)
     print(
         json.dumps(
             {
