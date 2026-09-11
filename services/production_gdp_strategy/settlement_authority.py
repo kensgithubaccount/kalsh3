@@ -421,6 +421,8 @@ def acquire_settlement_authority(decision: DecisionReceipt) -> SettlementAuthori
     edition, value, release_date, _bea_section_id = _parse_bea(bea_evidence, quarter)
     if edition != schedule.raw.get("settlement_edition"):
         raise SettlementAuthorityError("BEA settlement edition does not match schedule")
+    if release_date != schedule.release_at.date():
+        raise SettlementAuthorityError("BEA publication date conflicts with schedule release")
     implied = {
         ">": value > threshold,
         "<": value < threshold,
@@ -432,8 +434,8 @@ def acquire_settlement_authority(decision: DecisionReceipt) -> SettlementAuthori
     if not isinstance(settlement_ts, datetime) or not isinstance(kalshi_result, str):
         raise SettlementAuthorityError("parsed Kalshi authority contract failed")
     if (
-        bea_evidence.acquired_at.date() < release_date
-        or market_evidence.acquired_at.date() < release_date
+        bea_evidence.acquired_at < schedule.release_at
+        or market_evidence.acquired_at < schedule.release_at
         or market_evidence.acquired_at < settlement_ts
     ):
         raise SettlementAuthorityError(

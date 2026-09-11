@@ -14,7 +14,7 @@ import json
 import time
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, fields
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal, InvalidOperation
 from enum import StrEnum
 from typing import Protocol
@@ -164,9 +164,14 @@ def _json(response: _TransportResponse, expected_path: str) -> dict[str, object]
     return value
 
 
-def _parse_local_instant(value: object, *, zone_name: object, field: str) -> datetime:
+def _parse_local_instant(value: object, *, zone_name: object, field: str) -> datetime | date:
     if type(value) is not str or type(zone_name) is not str or zone_name != TIMEZONE_NAME:
         raise DecisionError(f"{field} timezone authority is invalid")
+    if len(value) == 10:
+        try:
+            return date.fromisoformat(value)
+        except ValueError as exc:
+            raise DecisionError(f"{field} local date is malformed") from exc
     try:
         zone = ZoneInfo(zone_name)
         local = datetime.fromisoformat(value)
@@ -183,6 +188,13 @@ def _parse_local_instant(value: object, *, zone_name: object, field: str) -> dat
     if len(candidates) != 1:
         raise DecisionError(f"{field} is ambiguous or nonexistent under IANA timezone")
     return next(iter(candidates)).astimezone(UTC)
+
+
+def _require_exact_instant(value: datetime | date, field: str) -> datetime:
+    """Reject lower-precision schedule values where chronology needs an instant."""
+    if type(value) is not datetime:
+        raise DecisionError(f"{field} must provide an exact local time")
+    return value
 
 
 def _parse_aware(value: object, field: str) -> datetime:
@@ -245,14 +257,19 @@ class _ScheduleEvidence:
         if not all(isinstance(v, str) and v for v in (event_ticker, market_ticker, quarter)):
             raise DecisionError("schedule identities are incomplete")
         zone = raw.get("timezone")
-        release = _parse_local_instant(
-            raw.get("bea_release_local"), zone_name=zone, field="BEA release"
+        release = _require_exact_instant(
+            _parse_local_instant(raw.get("bea_release_local"), zone_name=zone, field="BEA release"),
+            "BEA release",
         )
-        opened = _parse_local_instant(
-            raw.get("market_open_local"), zone_name=zone, field="market open"
+        opened = _require_exact_instant(
+            _parse_local_instant(raw.get("market_open_local"), zone_name=zone, field="market open"),
+            "market open",
         )
-        closed = _parse_local_instant(
-            raw.get("market_close_local"), zone_name=zone, field="market close"
+        closed = _require_exact_instant(
+            _parse_local_instant(
+                raw.get("market_close_local"), zone_name=zone, field="market close"
+            ),
+            "market close",
         )
         threshold_raw = raw.get("listed_thresholds")
         if not isinstance(threshold_raw, list) or not threshold_raw:

@@ -61,13 +61,18 @@ def _market(
 
 
 def _bea(
-    *, value: str = "4.7", quarter: str = "2026-Q3", text_extra: str = ""
+    *,
+    value: str = "4.7",
+    quarter: str = "2026-Q3",
+    acquired_at: datetime = NOW,
+    release_date: str = "September 3, 2026",
+    text_extra: str = "",
 ) -> authority._Evidence:
     ordinal = ("first", "second", "third", "fourth")[int(quarter[-1]) - 1]
     body = (
         f"<h1>Gross Domestic Product, {ordinal.title()} Quarter {quarter[:4]} "
         f"(Advance Estimate)</h1>\n"
-        f"EMBARGOED UNTIL RELEASE AT 8:30 a.m., September 3, 2026\n"
+        f"EMBARGOED UNTIL RELEASE AT 8:30 a.m., {release_date}\n"
         f"<p>Real gross domestic product (GDP) increased at an annual rate of {value} percent "
         f"in the {ordinal} quarter of {quarter[:4]}.</p>\n{text_extra}"
     ).encode()
@@ -75,7 +80,7 @@ def _bea(
         source=authority.BEA_ORIGIN,
         path=f"{authority.BEA_ORIGIN}/news/2027/reviewed-release-{quarter}",
         body=body,
-        acquired_at=NOW,
+        acquired_at=acquired_at,
         capability=authority._BEA_CAPABILITY,
     )
 
@@ -338,6 +343,50 @@ def test_settlement_at_precise_schedule_release_is_accepted(
 ) -> None:
     result = _run(monkeypatch, _market(settlement_ts="2026-09-03T12:30:00+00:00"), _bea())
     assert result.authority_state is authority.AuthorityState.COMPLETE_SETTLEMENT_AUTHORITY
+
+
+@pytest.mark.parametrize(
+    "acquired_at",
+    [
+        datetime(2026, 9, 3, 9, 0, tzinfo=UTC),
+        datetime(2026, 9, 3, 12, 29, 59, tzinfo=UTC),
+    ],
+)
+def test_bea_acquired_before_precise_schedule_release_fails_closed(
+    monkeypatch: pytest.MonkeyPatch, acquired_at: datetime
+) -> None:
+    with pytest.raises(authority.SettlementAuthorityError):
+        _run(monkeypatch, _market(), _bea(acquired_at=acquired_at))
+
+
+def test_bea_acquired_at_precise_schedule_release_is_accepted(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    result = _run(
+        monkeypatch,
+        _market(),
+        _bea(acquired_at=datetime(2026, 9, 3, 12, 30, tzinfo=UTC)),
+    )
+    assert result.authority_state is authority.AuthorityState.COMPLETE_SETTLEMENT_AUTHORITY
+
+
+def test_bea_acquired_after_precise_schedule_release_is_accepted(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    result = _run(
+        monkeypatch,
+        _market(),
+        _bea(acquired_at=datetime(2026, 9, 3, 12, 31, tzinfo=UTC)),
+    )
+    assert result.authority_state is authority.AuthorityState.COMPLETE_SETTLEMENT_AUTHORITY
+
+
+@pytest.mark.parametrize("release_date", ["September 2, 2026", "September 4, 2026"])
+def test_conflicting_bea_publication_date_fails_closed(
+    monkeypatch: pytest.MonkeyPatch, release_date: str
+) -> None:
+    with pytest.raises(authority.SettlementAuthorityError):
+        _run(monkeypatch, _market(), _bea(release_date=release_date))
 
 
 def test_date_only_bea_metadata_cannot_weaken_precise_schedule_release(

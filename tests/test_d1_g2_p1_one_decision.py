@@ -3,7 +3,7 @@ from __future__ import annotations
 import inspect
 import json
 from collections.abc import Callable
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 from decimal import Decimal
 
 import pytest
@@ -101,6 +101,26 @@ def _schedule(close: str = "08:29:00") -> _TransportResponse:
             }
         },
     )
+
+
+def test_date_only_schedule_release_preserves_date_precision() -> None:
+    parsed = one_decision._parse_local_instant(
+        "2026-09-03", zone_name="America/New_York", field="BEA release"
+    )
+    assert type(parsed) is date
+    assert parsed == date(2026, 9, 3)
+
+
+def test_date_only_schedule_release_cannot_satisfy_exact_instant_contract() -> None:
+    response = _schedule()
+    payload = json.loads(response.body)
+    payload["schedule"]["bea_release_local"] = "2026-09-03"
+    with pytest.raises(DecisionError, match="exact local time"):
+        one_decision._ScheduleEvidence(
+            response=_response(response.path, payload),
+            completed_at=datetime(2026, 9, 3, 12, tzinfo=UTC),
+            _capability=one_decision._ISSUER,
+        )
 
 
 def _book() -> _TransportResponse:
