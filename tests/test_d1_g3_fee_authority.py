@@ -177,6 +177,53 @@ def test_direct_authority_registration_rejects_complete() -> None:
         module._register_authority(forged, _capability=module._AUTHORITY_REGISTRATION_CAPABILITY)
 
 
+def _incomplete_candidate() -> module._AuthorityCandidate:
+    return module._candidate_incomplete("test")
+
+
+def test_direct_init_requires_pending_constructor_object() -> None:
+    forged = object.__new__(module.FeeAuthority)
+    with pytest.raises(module.FeeAuthorityError):
+        module.FeeAuthority.__init__(
+            forged, _candidate=_incomplete_candidate(), _pdf=None, _changes=None
+        )
+
+
+def test_pending_constructor_is_one_shot_and_helper_cannot_pre_register() -> None:
+    candidate = _incomplete_candidate()
+    pending = module.FeeAuthority.__new__(module.FeeAuthority, _candidate=candidate)
+    with pytest.raises(module.FeeAuthorityError):
+        module._register_authority(pending, _capability=module._AUTHORITY_REGISTRATION_CAPABILITY)
+    module.FeeAuthority.__init__(pending, _candidate=candidate, _pdf=None, _changes=None)
+    assert pending.status is module.FeeAuthorityStatus.INCOMPLETE
+    with pytest.raises(module.FeeAuthorityError):
+        module.FeeAuthority.__init__(pending, _candidate=candidate, _pdf=None, _changes=None)
+
+
+def test_failed_init_clears_pending_constructor() -> None:
+    candidate = _incomplete_candidate()
+    pending = module.FeeAuthority.__new__(module.FeeAuthority, _candidate=candidate)
+    with pytest.raises(module.FeeAuthorityError):
+        module.FeeAuthority.__init__(
+            pending,
+            _candidate=candidate,
+            _pdf=object(),
+            _changes=None,  # type: ignore[arg-type]
+        )
+    assert id(pending) not in module._PENDING_AUTHORITIES
+    with pytest.raises(module.FeeAuthorityError):
+        module._register_authority(pending, _capability=module._AUTHORITY_REGISTRATION_CAPABILITY)
+
+
+def test_complete_candidate_rejected_by_new_and_pending_init() -> None:
+    complete = _forged_complete_candidate()
+    with pytest.raises(module.FeeAuthorityError):
+        module.FeeAuthority.__new__(module.FeeAuthority, _candidate=complete)
+    pending = module.FeeAuthority.__new__(module.FeeAuthority, _candidate=_incomplete_candidate())
+    with pytest.raises(module.FeeAuthorityError):
+        module.FeeAuthority.__init__(pending, _candidate=complete, _pdf=None, _changes=None)
+
+
 def test_caller_created_raw_evidence_with_valid_hash_is_rejected() -> None:
     body = _pdf()
     with pytest.raises(module.FeeAuthorityError):

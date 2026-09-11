@@ -56,6 +56,8 @@ _ISSUED: dict[int, str] = {}
 _ISSUED_OBJECTS: dict[int, object] = {}
 _ISSUED_AUTHORITIES: dict[int, str] = {}
 _ISSUED_AUTHORITY_OBJECTS: dict[int, object] = {}
+_PENDING_AUTHORITIES: dict[int, FeeAuthority] = {}
+_INITIALIZED_AUTHORITIES: dict[int, FeeAuthority] = {}
 
 
 def _register(value: object) -> None:
@@ -110,6 +112,10 @@ def _require_issued_authority(value: FeeAuthority) -> None:
 def _register_authority(value: FeeAuthority, *, _capability: object | None = None) -> None:
     if _capability is not _AUTHORITY_REGISTRATION_CAPABILITY or type(value) is not FeeAuthority:
         raise FeeAuthorityError("fee authority registration requires issuer capability")
+    pending = _PENDING_AUTHORITIES.get(id(value))
+    initialized = _INITIALIZED_AUTHORITIES.get(id(value))
+    if pending is not value or initialized is not value:
+        raise FeeAuthorityError("fee authority was not created by the issuer constructor")
     status = object.__getattribute__(value, "_status")
     if status is FeeAuthorityStatus.COMPLETE:
         raise FeeAuthorityError("complete fee authority is not available at this checkpoint")
@@ -121,6 +127,8 @@ def _register_authority(value: FeeAuthority, *, _capability: object | None = Non
     ):
         if evidence is not None:
             _validate_evidence(evidence)
+    _PENDING_AUTHORITIES.pop(id(value), None)
+    _INITIALIZED_AUTHORITIES.pop(id(value), None)
     _ISSUED_AUTHORITY_OBJECTS[id(value)] = value
     _ISSUED_AUTHORITIES[id(value)] = _authority_fingerprint(value)
 
@@ -263,7 +271,9 @@ class FeeAuthority:
         _require_issued(candidate, "authority candidate")
         if candidate.status is FeeAuthorityStatus.COMPLETE:
             raise FeeAuthorityError("complete fee authority is not available at this checkpoint")
-        return super().__new__(cls)
+        value = super().__new__(cls)
+        _PENDING_AUTHORITIES[id(value)] = value
+        return value
 
     def __init__(
         self,
@@ -272,22 +282,32 @@ class FeeAuthority:
         _pdf: _RawEvidence | None,
         _changes: _RawEvidence | None,
     ) -> None:
-        _require_issued(_candidate, "authority candidate")
-        if _candidate.status is FeeAuthorityStatus.COMPLETE:
-            raise FeeAuthorityError("complete fee authority is not available at this checkpoint")
-        if _pdf is not None:
-            _validate_evidence(_pdf)
-        if _changes is not None:
-            _validate_evidence(_changes)
-        object.__setattr__(self, "_status", _candidate.status)
-        object.__setattr__(self, "_reason", _candidate.reason)
-        object.__setattr__(self, "_policy", _candidate.policy)
-        object.__setattr__(self, "_pdf_evidence", _pdf)
-        object.__setattr__(self, "_fee_change_evidence", _changes)
-        object.__setattr__(self, "_applicable_change_ids", _candidate.applicable_change_ids)
-        object.__setattr__(self, "_resolver_id", _candidate.resolver_id)
-        object.__setattr__(self, "_sealed", True)
-        _register_authority(self, _capability=_AUTHORITY_REGISTRATION_CAPABILITY)
+        if _PENDING_AUTHORITIES.get(id(self)) is not self:
+            raise FeeAuthorityError("fee authority was not created by the issuer constructor")
+        try:
+            _require_issued(_candidate, "authority candidate")
+            if _candidate.status is FeeAuthorityStatus.COMPLETE:
+                raise FeeAuthorityError(
+                    "complete fee authority is not available at this checkpoint"
+                )
+            if _pdf is not None:
+                _validate_evidence(_pdf)
+            if _changes is not None:
+                _validate_evidence(_changes)
+            object.__setattr__(self, "_status", _candidate.status)
+            object.__setattr__(self, "_reason", _candidate.reason)
+            object.__setattr__(self, "_policy", _candidate.policy)
+            object.__setattr__(self, "_pdf_evidence", _pdf)
+            object.__setattr__(self, "_fee_change_evidence", _changes)
+            object.__setattr__(self, "_applicable_change_ids", _candidate.applicable_change_ids)
+            object.__setattr__(self, "_resolver_id", _candidate.resolver_id)
+            object.__setattr__(self, "_sealed", True)
+            _INITIALIZED_AUTHORITIES[id(self)] = self
+            _register_authority(self, _capability=_AUTHORITY_REGISTRATION_CAPABILITY)
+        except BaseException:
+            _PENDING_AUTHORITIES.pop(id(self), None)
+            _INITIALIZED_AUTHORITIES.pop(id(self), None)
+            raise
 
     def __setattr__(self, name: str, value: object) -> None:
         if getattr(self, "_sealed", False):
