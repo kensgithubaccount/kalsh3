@@ -7,6 +7,7 @@ import http.client
 import json
 import re
 import ssl
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, date, datetime
 from decimal import Decimal, InvalidOperation
@@ -154,9 +155,7 @@ class ScheduleAuthorityResult:
     bea_evidence: SourceEvidence | None
 
 
-_EVIDENCE_REGISTRY: dict[int, tuple[object, ...]] = {}
 _AUTHORITY_REGISTRY: dict[int, tuple[object, ...]] = {}
-_RAW_REGISTRY: dict[int, tuple[object, ...]] = {}
 
 
 def _fingerprint(*values: object) -> str:
@@ -194,42 +193,8 @@ def _authority_fingerprint(values: tuple[object, ...]) -> str:
     return _fingerprint(*(repr(value) for value in values))
 
 
-def _new_evidence(response: _RawResponse) -> SourceEvidence:
-    if type(response) is not _RawResponse or _RAW_REGISTRY.get(id(response)) != _raw_fingerprint(
-        response
-    ):
-        raise ScheduleAuthorityError("raw response is not issuer-registered")
-    if response.status != SUCCESS_STATUS or not response.body:
-        raise ScheduleAuthorityError("only successful non-empty responses become evidence")
-    acquired = _strict_utc(response.acquired_at, "acquired_at")
-    digest = hashlib.sha256(response.body).hexdigest()
-    evidence = object.__new__(SourceEvidence)
-    values: dict[str, object] = {
-        "source_locator": response.locator,
-        "source_path": response.path,
-        "method": response.method,
-        "http_status": response.status,
-        "content_type": response.content_type,
-        "content_length": len(response.body),
-        "acquired_at": acquired,
-        "parser_version": PARSER_VERSION,
-        "raw_body": response.body,
-        "raw_sha256": digest,
-        "headers": response.headers,
-    }
-    values["source_identity"] = _fingerprint(
-        TRANSPORT_POLICY_IDENTITY, *(values[name] for name in values)
-    )
-    for name, value in values.items():
-        object.__setattr__(evidence, name, value)
-    _EVIDENCE_REGISTRY[id(evidence)] = _evidence_fingerprint(evidence)
-    return evidence
-
-
-def _validate_evidence(evidence: SourceEvidence) -> None:
-    if type(evidence) is not SourceEvidence or _EVIDENCE_REGISTRY.get(
-        id(evidence)
-    ) != _evidence_fingerprint(evidence):
+def _validate_evidence_integrity(evidence: SourceEvidence) -> None:
+    if type(evidence) is not SourceEvidence:
         raise ScheduleAuthorityError("source evidence is unissued or mutated")
     if (
         hashlib.sha256(evidence.raw_body).hexdigest() != evidence.raw_sha256
@@ -252,6 +217,107 @@ def _validate_evidence(evidence: SourceEvidence) -> None:
     )
     if evidence.source_identity != expected or evidence.parser_version != PARSER_VERSION:
         raise ScheduleAuthorityError("source evidence fingerprint failed")
+
+
+def _make_acquisition_issuer() -> tuple[
+    Callable[[str, str, str, tuple[str, ...]], SourceEvidence],
+    Callable[[_RawResponse], SourceEvidence],
+    Callable[[SourceEvidence], None],
+]:
+    issued: list[
+        tuple[_RawResponse, tuple[object, ...], SourceEvidence, tuple[object, ...] | None]
+    ] = []
+
+    def new_evidence(response: _RawResponse) -> SourceEvidence:
+        match = next((item for item in issued if item[0] is response), None)
+        if match is None or match[1] != _raw_fingerprint(response):
+            raise ScheduleAuthorityError("raw response is not issuer-acquired")
+
+        if response.status != SUCCESS_STATUS or not response.body:
+            raise ScheduleAuthorityError("only successful non-empty responses become evidence")
+        acquired = _strict_utc(response.acquired_at, "acquired_at")
+        digest = hashlib.sha256(response.body).hexdigest()
+        evidence = match[2]
+        values: dict[str, object] = {
+            "source_locator": response.locator,
+            "source_path": response.path,
+            "method": response.method,
+            "http_status": response.status,
+            "content_type": response.content_type,
+            "content_length": len(response.body),
+            "acquired_at": acquired,
+            "parser_version": PARSER_VERSION,
+            "raw_body": response.body,
+            "raw_sha256": digest,
+            "headers": response.headers,
+        }
+        values["source_identity"] = _fingerprint(
+            TRANSPORT_POLICY_IDENTITY, *(values[name] for name in values)
+        )
+        for name, value in values.items():
+            object.__setattr__(evidence, name, value)
+        for index, item in enumerate(issued):
+            if item[0] is response:
+                issued[index] = (item[0], item[1], evidence, _evidence_fingerprint(evidence))
+                break
+        return evidence
+
+    def validate_evidence(evidence: SourceEvidence) -> None:
+        match = next((item for item in issued if item[2] is evidence), None)
+        if match is None or match[3] is None or _evidence_fingerprint(evidence) != match[3]:
+            raise ScheduleAuthorityError("source evidence is unissued or mutated")
+        _validate_evidence_integrity(evidence)
+
+    def acquire(host: str, origin: str, path: str, expected: tuple[str, ...]) -> SourceEvidence:
+        connection = http.client.HTTPSConnection(
+            host, timeout=10.0, context=ssl.create_default_context()
+        )
+        try:
+            connection.request(HTTP_METHOD, path, headers={"Accept": ",".join(expected)})
+            response = connection.getresponse()
+            body = response.read(MAX_RESPONSE_BYTES + 1)
+            content = response.getheader("Content-Type", "").split(";", 1)[0].strip().casefold()
+            if (
+                response.status != SUCCESS_STATUS
+                or not body
+                or len(body) > MAX_RESPONSE_BYTES
+                or content not in expected
+            ):
+                raise ScheduleAuthorityError("source response is incomplete")
+            headers = tuple(
+                (name, value)
+                for name, value in (
+                    (
+                        "x-kalshi-event-market-count",
+                        response.getheader("X-Kalshi-Event-Market-Count", ""),
+                    ),
+                    (
+                        "x-kalshi-event-pagination-terminal",
+                        response.getheader("X-Kalshi-Event-Pagination-Terminal", ""),
+                    ),
+                )
+                if value
+            )
+            raw = _RawResponse(
+                origin + path,
+                host,
+                path,
+                HTTP_METHOD,
+                response.status,
+                content,
+                body,
+                _utc_now(),
+                headers,
+            )
+            issued.append((raw, _raw_fingerprint(raw), object.__new__(SourceEvidence), None))
+            return new_evidence(raw)
+        finally:
+            connection.close()
+
+    return acquire, new_evidence, validate_evidence
+
+
+_acquire, _new_evidence, _validate_evidence = _make_acquisition_issuer()
 
 
 def _json(evidence: SourceEvidence) -> dict[str, object]:
@@ -402,8 +468,10 @@ def _rules(market: dict[str, object], quarter: Quarter) -> tuple[str, str]:
 class _ScheduleParser(HTMLParser):
     def __init__(self) -> None:
         super().__init__(convert_charrefs=True)
-        self.rows: list[tuple[tuple[str, ...], tuple[str, ...]]] = []
+        self.rows: list[tuple[tuple[str, ...], tuple[str, ...], int | None]] = []
         self.text_parts: list[str] = []
+        self._publication_year: int | None = None
+        self._row_year: int | None = None
         self._row: list[str] | None = None
         self._links: list[str] | None = None
         self._cell: list[str] | None = None
@@ -413,6 +481,7 @@ class _ScheduleParser(HTMLParser):
         lower = tag.casefold()
         if lower == "tr":
             self._row, self._links = [], []
+            self._row_year = self._publication_year
         elif lower in ("td", "th") and self._row is not None:
             self._cell = []
         elif lower == "a" and self._row is not None:
@@ -422,6 +491,10 @@ class _ScheduleParser(HTMLParser):
         self.text_parts.append(data)
         if self._cell is not None:
             self._cell.append(data)
+        else:
+            year = re.fullmatch(r"\s*Year\s+(20\d{2})\s*", data)
+            if year:
+                self._publication_year = int(year.group(1))
 
     def handle_endtag(self, tag: str) -> None:
         lower = tag.casefold()
@@ -434,7 +507,7 @@ class _ScheduleParser(HTMLParser):
             self._href = None
         elif lower == "tr" and self._row is not None and self._links is not None:
             if self._row:
-                self.rows.append((tuple(self._row), tuple(self._links)))
+                self.rows.append((tuple(self._row), tuple(self._links), self._row_year))
             self._row, self._links = None, None
 
 
@@ -462,8 +535,8 @@ def _bea(evidence: SourceEvidence, expected: Quarter) -> BEAReleaseSchedule:
     parser = _ScheduleParser()
     parser.feed(html)
     parser.close()
-    matches: list[tuple[tuple[str, ...], tuple[str, ...]]] = []
-    for row, links in parser.rows:
+    matches: list[tuple[tuple[str, ...], tuple[str, ...], int | None]] = []
+    for row, links, publication_year in parser.rows:
         low = " | ".join(row).casefold()
         try:
             row_quarter = _quarters(list(row))
@@ -476,10 +549,10 @@ def _bea(evidence: SourceEvidence, expected: Quarter) -> BEAReleaseSchedule:
             and "third estimate" not in low
             and row_quarter.canonical == expected.canonical
         ):
-            matches.append((row, links))
+            matches.append((row, links, publication_year))
     if len(matches) != 1:
         raise ScheduleAuthorityError("BEA schedule target is absent or duplicated")
-    row, links = matches[0]
+    row, links, publication_year = matches[0]
     if len(row) < 3 or len(links) != 1:
         raise ScheduleAuthorityError("BEA locator is not exact-row-bound")
     match = re.fullmatch(r"([A-Za-z]+)\s+(\d{1,2})", row[0])
@@ -492,12 +565,9 @@ def _bea(evidence: SourceEvidence, expected: Quarter) -> BEAReleaseSchedule:
     # Prefer the publication-year heading on the source page.  The quarter
     # year in the release description is the target quarter, not necessarily
     # the publication year (Q4 releases commonly publish in the next year).
-    year_match = re.search(r"\bYear\s+(20\d{2})\b", " ".join(parser.text_parts), re.IGNORECASE)
-    if year_match is None:
-        year_match = re.search(r"\b(20\d{2})\b", " ".join(row))
-    if year_match is None:
+    if publication_year is None:
         raise ScheduleAuthorityError("BEA publication year is not source-bound")
-    release_date = date(int(year_match.group(1)), month, int(match.group(2)))
+    release_date = date(publication_year, month, int(match.group(2)))
     if not row[1].strip():
         raise ScheduleAuthorityError("BEA release timing precision is insufficient")
     release = _local(f"{release_date.isoformat()} {row[1]}", "BEA release")
@@ -505,6 +575,8 @@ def _bea(evidence: SourceEvidence, expected: Quarter) -> BEAReleaseSchedule:
     if not (link.startswith("/") or link.startswith(BEA_ORIGIN + "/")):
         raise ScheduleAuthorityError("BEA locator is not first-party")
     locator = link if link.startswith("http") else BEA_ORIGIN + link
+    if f"/news/{publication_year}/" not in locator:
+        raise ScheduleAuthorityError("BEA locator year disagrees with publication year")
     quarter_words = {"Q1": "first", "Q2": "second", "Q3": "third", "Q4": "fourth"}
     expected_suffix = expected.canonical[5:]
     expected_word = quarter_words[expected_suffix]
@@ -683,57 +755,11 @@ def acquire_schedule_authority() -> ScheduleAuthorityResult:
     event_evidence: SourceEvidence | None = None
     bea_evidence: SourceEvidence | None = None
 
-    def fixed_get(host: str, origin: str, path: str, expected: tuple[str, ...]) -> SourceEvidence:
-        connection = http.client.HTTPSConnection(
-            host, timeout=10.0, context=ssl.create_default_context()
-        )
-        try:
-            connection.request(HTTP_METHOD, path, headers={"Accept": ",".join(expected)})
-            response = connection.getresponse()
-            body = response.read(MAX_RESPONSE_BYTES + 1)
-            content = response.getheader("Content-Type", "").split(";", 1)[0].strip().casefold()
-            if (
-                response.status != SUCCESS_STATUS
-                or not body
-                or len(body) > MAX_RESPONSE_BYTES
-                or content not in expected
-            ):
-                raise ScheduleAuthorityError("source response is incomplete")
-            headers = tuple(
-                (name, value)
-                for name, value in (
-                    (
-                        "x-kalshi-event-market-count",
-                        response.getheader("X-Kalshi-Event-Market-Count", ""),
-                    ),
-                    (
-                        "x-kalshi-event-pagination-terminal",
-                        response.getheader("X-Kalshi-Event-Pagination-Terminal", ""),
-                    ),
-                )
-                if value
-            )
-            raw = _RawResponse(
-                origin + path,
-                host,
-                path,
-                HTTP_METHOD,
-                response.status,
-                content,
-                body,
-                _utc_now(),
-                headers,
-            )
-            _RAW_REGISTRY[id(raw)] = _raw_fingerprint(raw)
-            return _new_evidence(raw)
-        finally:
-            connection.close()
-
     try:
-        event_evidence = fixed_get(
+        event_evidence = _acquire(
             KALSHI_HOST, KALSHI_ORIGIN, KALSHI_EVENT_PATH, ("application/json",)
         )
-        bea_evidence = fixed_get(BEA_HOST, BEA_ORIGIN, BEA_SCHEDULE_PATH, ("text/html",))
+        bea_evidence = _acquire(BEA_HOST, BEA_ORIGIN, BEA_SCHEDULE_PATH, ("text/html",))
         return _issue_authority(event_evidence, None, bea_evidence)
     except (
         ScheduleAuthorityError,

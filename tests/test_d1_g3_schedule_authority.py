@@ -241,6 +241,7 @@ def test_public_contract_is_research_only() -> None:
 
 
 def test_caller_raw_response_and_direct_helpers_cannot_issue_authority() -> None:
+    assert not hasattr(subject, "_RAW_REGISTRY")
     raw = subject._RawResponse(
         subject.BEA_ORIGIN + subject.BEA_SCHEDULE_PATH,
         subject.BEA_HOST,
@@ -293,6 +294,23 @@ def test_q4_publication_uses_following_source_year(monkeypatch: pytest.MonkeyPat
     assert result.status is subject.AuthorityStatus.COMPLETE_AUTHORITY
     assert result.authority is not None
     assert result.authority.bea_release_at.year == 2026
+
+
+def test_multiyear_page_binds_year_and_locator_to_selected_row(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    Connection.responses = {
+        subject.BEA_HOST + subject.BEA_SCHEDULE_PATH: Response(
+            200, "text/html", (FIXTURES / "d1_g3_bea_schedule_multiyear_q4_2025.html").read_bytes()
+        )
+    }
+    monkeypatch.setattr(subject.http.client, "HTTPSConnection", Connection)
+    evidence = subject._acquire(
+        subject.BEA_HOST, subject.BEA_ORIGIN, subject.BEA_SCHEDULE_PATH, ("text/html",)
+    )
+    schedule = subject._bea(evidence, subject.Quarter("2025-Q4", "2025-Q4"))
+    assert schedule.release_at.year == 2026
+    assert schedule.bea_release_locator.endswith("gdp-advance-estimate-fourth-quarter-2025")
 
 
 def test_nested_market_mutation_invalidates_authority(monkeypatch: pytest.MonkeyPatch) -> None:
