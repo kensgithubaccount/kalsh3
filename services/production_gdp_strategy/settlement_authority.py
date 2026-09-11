@@ -197,7 +197,35 @@ def _rule(market: dict[str, object]) -> tuple[Decimal, str, str]:
     threshold = _decimal(market.get("threshold"), "threshold")
     if matches and Decimal(matches[-1]) != threshold:
         raise SettlementAuthorityError("rule threshold conflicts with market threshold")
-    return threshold, found[0], stable_hash((primary, secondary, str(threshold), found[0]))
+    # The prospective fixture uses the literal word "threshold", while the
+    # exchange's finalized response normally substitutes the selected number.
+    # Normalize only that representation; all other rule text remains bound.
+    normalized_primary = re.sub(r"(?i)\b(threshold|strike)\b", "<selected-threshold>", primary)
+    normalized_primary = re.sub(
+        r"(?i)((?:more|less) than|at least|at most)\s+-?\d+(?:\.\d+)?",
+        r"\1 <selected-threshold>",
+        normalized_primary,
+    )
+    normalized_secondary = secondary
+    return (
+        threshold,
+        found[0],
+        stable_hash((normalized_primary, normalized_secondary, str(threshold), found[0])),
+    )
+
+
+def _bound_rule_contract(decision: DecisionReceipt) -> tuple[Decimal, str, str]:
+    if decision.bundle is None:
+        raise SettlementAuthorityError("decision schedule binding is missing")
+    before = decision.bundle.before
+    after = decision.bundle.after
+    before_contract = _rule(before.raw)
+    after_contract = _rule(after.raw)
+    if before_contract != after_contract:
+        raise SettlementAuthorityError("prospective market rule semantics changed")
+    if before.threshold != decision.selected_threshold:
+        raise SettlementAuthorityError("selected threshold is not bound to prospective market")
+    return before_contract
 
 
 def _parse_market(
@@ -218,6 +246,17 @@ def _parse_market(
         or decision.bundle.schedule.event_ticker != event
     ):
         raise SettlementAuthorityError("decision schedule identity does not bind market")
+    if (
+        "target_quarter" in market
+        and market["target_quarter"] != decision.bundle.schedule.target_quarter
+    ):
+        raise SettlementAuthorityError("market target quarter does not match schedule")
+    if "settlement_edition" in market and market[
+        "settlement_edition"
+    ] != decision.bundle.schedule.raw.get("settlement_edition"):
+        raise SettlementAuthorityError("market settlement edition does not match schedule")
+    if "schedule_id" in market and market["schedule_id"] != decision.schedule_id:
+        raise SettlementAuthorityError("market schedule identity does not match decision")
     if not ticker.startswith("KXGDP-") or _field(market, "market_type") != "binary":
         raise SettlementAuthorityError("market is not ordinary binary KXGDP")
     if _field(market, "status") != "finalized":
@@ -227,6 +266,13 @@ def _parse_market(
         raise SettlementAuthorityError("final result is not binary")
     settlement_ts = _utc(market.get("settlement_ts"), "settlement_ts")
     threshold, comparator, rule_identity = _rule(market)
+    bound_threshold, bound_comparator, bound_rule_identity = _bound_rule_contract(decision)
+    if (threshold, comparator, rule_identity) != (
+        bound_threshold,
+        bound_comparator,
+        bound_rule_identity,
+    ):
+        raise SettlementAuthorityError("settlement market semantics redefine original decision")
     settlement_value = _decimal(market.get("settlement_value_dollars"), "settlement value")
     if settlement_value != (ONE if result == "yes" else ZERO):
         raise SettlementAuthorityError("result conflicts with settlement_value_dollars")
@@ -373,6 +419,8 @@ def acquire_settlement_authority(decision: DecisionReceipt) -> SettlementAuthori
     market, threshold, comparator, rule_identity = _parse_market(market_evidence, decision)
     bea_evidence = _acquire_bea(locator)
     edition, value, release_date, _bea_section_id = _parse_bea(bea_evidence, quarter)
+    if edition != schedule.raw.get("settlement_edition"):
+        raise SettlementAuthorityError("BEA settlement edition does not match schedule")
     implied = {
         ">": value > threshold,
         "<": value < threshold,
@@ -386,11 +434,14 @@ def acquire_settlement_authority(decision: DecisionReceipt) -> SettlementAuthori
     if (
         bea_evidence.acquired_at.date() < release_date
         or market_evidence.acquired_at.date() < release_date
-        or settlement_ts.date() < release_date
         or market_evidence.acquired_at < settlement_ts
     ):
         raise SettlementAuthorityError(
             "acquisition or settlement chronology precedes authoritative outcome"
+        )
+    if not decision.decision_timestamp < schedule.release_at <= settlement_ts:
+        raise SettlementAuthorityError(
+            "settlement chronology does not cross exact schedule release"
         )
     updated = _utc(market["updated_time"], "updated_time") if market.get("updated_time") else None
     if updated is not None and updated < settlement_ts:

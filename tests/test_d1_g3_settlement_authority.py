@@ -18,7 +18,7 @@ from services.production_gdp_strategy.one_decision import (
 
 TICKER = "KXGDP-26SEP03-T4.5"
 EVENT = "KXGDP-26SEP03"
-NOW = datetime(2026, 9, 3, 12, 0, tzinfo=UTC)
+NOW = datetime(2026, 9, 3, 13, 0, tzinfo=UTC)
 
 
 def _market(
@@ -84,6 +84,14 @@ def _decision() -> DecisionReceipt:
     evidence, vintage = _gdpnow()
 
     class BoundedFixtureSource(FixtureSource):
+        def market(self, ticker: str) -> _TransportResponse:
+            response = super().market(ticker)
+            payload = json.loads(response.body)
+            payload["market"]["rules_secondary"] = (
+                "Settlement is based on the reported percent value."
+            )
+            return _TransportResponse(response.path, response.status, json.dumps(payload).encode())
+
         def schedule(self) -> _TransportResponse:
             response = super().schedule()
             payload = json.loads(response.body)
@@ -283,6 +291,62 @@ def test_settlement_before_release_fails_closed(monkeypatch: pytest.MonkeyPatch)
     before_release = (NOW - timedelta(days=1)).isoformat()
     with pytest.raises(authority.SettlementAuthorityError):
         _run(monkeypatch, _market(settlement_ts=before_release), _bea())
+
+
+@pytest.mark.parametrize(
+    "changes",
+    [
+        {"threshold": "4.0", "expiration_value": "4.7"},
+        {
+            "rules_primary": (
+                "US real GDP seasonally adjusted annualized BEA Advance Estimate at least 4.5"
+            )
+        },
+        {
+            "rules_primary": (
+                "US real GDP seasonally adjusted annualized BEA Advance Estimate "
+                "more than 4.5; revised rules apply"
+            )
+        },
+    ],
+)
+def test_finalized_market_cannot_redefine_original_contract(
+    monkeypatch: pytest.MonkeyPatch, changes: dict[str, object]
+) -> None:
+    with pytest.raises(authority.SettlementAuthorityError):
+        _run(monkeypatch, _market(**changes), _bea())  # type: ignore[arg-type]
+
+
+def test_non_material_final_metadata_change_is_accepted(monkeypatch: pytest.MonkeyPatch) -> None:
+    result = _run(monkeypatch, _market(title="A later descriptive title"), _bea())
+    assert result.authority_state is authority.AuthorityState.COMPLETE_SETTLEMENT_AUTHORITY
+
+
+@pytest.mark.parametrize(
+    "settlement_ts",
+    ["2026-09-03T12:29:59+00:00", "2026-09-03T12:29:00+00:00"],
+)
+def test_settlement_before_precise_schedule_release_fails_closed(
+    monkeypatch: pytest.MonkeyPatch, settlement_ts: str
+) -> None:
+    with pytest.raises(authority.SettlementAuthorityError):
+        _run(monkeypatch, _market(settlement_ts=settlement_ts), _bea())
+
+
+def test_settlement_at_precise_schedule_release_is_accepted(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    result = _run(monkeypatch, _market(settlement_ts="2026-09-03T12:30:00+00:00"), _bea())
+    assert result.authority_state is authority.AuthorityState.COMPLETE_SETTLEMENT_AUTHORITY
+
+
+def test_date_only_bea_metadata_cannot_weaken_precise_schedule_release(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # _parse_bea intentionally returns only a date; the schedule's exact UTC
+    # instant remains authoritative for settlement chronology.
+    with pytest.raises(authority.SettlementAuthorityError):
+        _run(monkeypatch, _market(settlement_ts="2026-09-03T12:29:59+00:00"), _bea())
 
 
 def test_market_acquisition_before_settlement_fails_closed(monkeypatch: pytest.MonkeyPatch) -> None:
