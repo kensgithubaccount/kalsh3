@@ -80,14 +80,41 @@ def test_caller_created_policy_cannot_become_positive_authority() -> None:
         True,
         quadratic_coefficient=Decimal("0.07"),
     )
-    candidate = module._AuthorityCandidate(
-        capability=module._RESOLVER_CAPABILITY,
-        status=module.FeeAuthorityStatus.COMPLETE,
-        reason=None,
-        policy=policy,
-        applicable_change_ids=(),
-        resolver_id=module.RESOLVER_ID,
+    with pytest.raises(module.FeeAuthorityError):
+        module._AuthorityCandidate(
+            capability=module._RESOLVER_CAPABILITY,
+            status=module.FeeAuthorityStatus.COMPLETE,
+            reason=None,
+            policy=policy,
+            applicable_change_ids=(),
+            resolver_id=module.RESOLVER_ID,
+        )
+
+
+def test_caller_created_exhaustive_batch_cannot_make_resolver_complete() -> None:
+    batch = module._FeeChangeBatch(
+        capability=module._PARSER_CAPABILITY,
+        records=(),
+        raw=_issued(module.FEE_CHANGES_URL, b'{"series_fee_change_arr":[]}', "application/json"),
+        exhaustive_proven=True,
     )
+    assert (
+        module._resolve_fee_authority(NOW, _schedule(), batch).status
+        is module.FeeAuthorityStatus.INCOMPLETE
+    )
+
+
+def test_issue_style_bypass_is_disabled_even_for_a_forged_candidate() -> None:
+    candidate = object.__new__(module._AuthorityCandidate)
+    for name, value in {
+        "status": module.FeeAuthorityStatus.COMPLETE,
+        "reason": None,
+        "policy": None,
+        "applicable_change_ids": (),
+        "resolver_id": module.RESOLVER_ID,
+    }.items():
+        object.__setattr__(candidate, name, value)
+    module._register(candidate)
     with pytest.raises(module.FeeAuthorityError):
         module._issue(candidate, None, None)
 
@@ -154,6 +181,14 @@ def test_contradictory_kxgdp_table_rows_fail_closed() -> None:
         module._parse_fee_schedule(
             _issued(module.PDF_URL, _pdf(row="KXGDP 1 1 KXGDP 2 2"), "application/pdf")
         )
+
+
+def test_contradictory_kxgdp_row_before_table_header_fails_closed() -> None:
+    body = _pdf().replace(
+        b"Maker multiplier Taker multiplier", b"KXGDP 2 2\nMaker multiplier Taker multiplier", 1
+    )
+    with pytest.raises(module.FeeAuthorityError):
+        module._parse_fee_schedule(_issued(module.PDF_URL, body, "application/pdf"))
 
 
 def test_date_only_effective_information_is_not_midnight_utc() -> None:

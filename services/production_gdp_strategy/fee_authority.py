@@ -52,16 +52,17 @@ _RAW_EVIDENCE_CAPABILITY: Final = object()
 _PARSER_CAPABILITY: Final = object()
 _RESOLVER_CAPABILITY: Final = object()
 _ISSUED: dict[int, str] = {}
-_ISSUED_POLICIES: dict[int, str] = {}
+_ISSUED_OBJECTS: dict[int, object] = {}
 
 
 def _register(value: object) -> None:
+    _ISSUED_OBJECTS[id(value)] = value
     _ISSUED[id(value)] = hashlib.sha256(repr(value).encode()).hexdigest()
 
 
 def _require_issued(value: object, label: str) -> None:
     expected = hashlib.sha256(repr(value).encode()).hexdigest()
-    if _ISSUED.get(id(value)) != expected:
+    if _ISSUED_OBJECTS.get(id(value)) is not value or _ISSUED.get(id(value)) != expected:
         raise FeeAuthorityError(f"{label} is reconstructed or not issuer-issued")
 
 
@@ -164,6 +165,10 @@ class _AuthorityCandidate:
     def __init__(self, *, capability: object, **values: object) -> None:
         if capability is not _RESOLVER_CAPABILITY:
             raise FeeAuthorityError("authority candidates require reviewed resolver capability")
+        # The currently reviewed evidence does not prove override coverage,
+        # effective-time applicability, or balance precision.
+        if values.get("status") is FeeAuthorityStatus.COMPLETE:
+            raise FeeAuthorityError("complete fee authority is not available at this checkpoint")
         for name in ("status", "reason", "policy", "applicable_change_ids", "resolver_id"):
             object.__setattr__(self, name, values[name])
         _register(self)
@@ -388,13 +393,13 @@ def _parse_fee_schedule(evidence: _RawEvidence) -> _FeeSchedule:
 
     _one_match(r"\bP\s+(?:is|=)\s+contract price\b", text, "price definition")
     _one_match(r"\bC\s+(?:is|=)\s+contract quantity\b", text, "quantity definition")
-    header = _one_match(r"\bMaker\s+multiplier\s+Taker\s+multiplier\b", text, "fee table header")
+    _one_match(r"\bMaker\s+multiplier\s+Taker\s+multiplier\b", text, "fee table header")
     if re.search(r"\bTaker\s+multiplier\s+Maker\s+multiplier\b", text, re.I):
         raise FeeAuthorityError("maker/taker table columns are swapped or ambiguous")
     rows = list(
         re.finditer(
             r"\bKXGDP\s+(?P<maker>\d+(?:\.\d+)?)\s+(?P<taker>\d+(?:\.\d+)?)\b",
-            text[header.end() :],
+            text,
             re.I,
         )
     )
@@ -503,53 +508,16 @@ def _resolve_fee_authority(
 ) -> _AuthorityCandidate:
     _require_issued(schedule, "fee schedule")
     _require_issued(changes, "fee-change batch")
-    instant = _utc(decision_at)
-    if not schedule.currentness_proven:
-        return _candidate_incomplete("current fee-schedule status is unproven")
-    if not changes.exhaustive_proven:
-        return _candidate_incomplete("fee-change/override completeness is unproven")
-    if instant.date() <= schedule.effective_date:
-        return _candidate_incomplete(
-            "date-only fee effective information cannot prove intraday applicability"
-        )
-    applicable = tuple(change for change in changes.records if change.effective_at <= instant)
-    by_effective: dict[datetime, _FeeChange] = {}
-    for change in applicable:
-        if change.effective_at in by_effective:
-            return _candidate_incomplete("conflicting or ambiguous same-time fee changes")
-        by_effective[change.effective_at] = change
-    if applicable:
-        chosen = max(applicable, key=lambda change: change.effective_at)
-        fee_type, multiplier = chosen.fee_type, chosen.multiplier
-        ids = tuple(change.change_id for change in applicable)
-        effective = chosen.effective_at
-    else:
-        fee_type, multiplier, effective, ids = (
-            _FeeType.QUADRATIC,
-            schedule.taker_multiplier,
-            datetime.combine(schedule.effective_date, datetime.min.time(), tzinfo=UTC),
-            (),
-        )
-    policy = _FeePolicy(
-        "kxgdp-taker-" + effective.date().isoformat(),
-        fee_type,
-        multiplier,
-        effective,
-        None,
-        FORMULA_VERSION,
-        schedule.document_identity,
-        True,
-        quadratic_coefficient=schedule.taker_coefficient,
-        maker_quadratic_coefficient=schedule.maker_coefficient,
-    )
-    _ISSUED_POLICIES[id(policy)] = hashlib.sha256(repr(policy).encode()).hexdigest()
-    return _AuthorityCandidate(
-        capability=_RESOLVER_CAPABILITY,
-        status=FeeAuthorityStatus.COMPLETE,
-        reason=None,
-        policy=policy,
-        applicable_change_ids=ids,
-        resolver_id=RESOLVER_ID,
+    # Parsed objects and the caller-controlled exhaustive_proven flag are
+    # research data only.  Current evidence does not prove market/event
+    # override coverage, exact effective-time applicability, or precision and
+    # rounding semantics, so this resolver cannot issue COMPLETE.
+    _validate_evidence(schedule.raw)
+    _validate_evidence(changes.raw)
+    del decision_at
+    return _candidate_incomplete(
+        "market/event overrides, fee effective-time applicability, and balance precision "
+        "are unproven"
     )
 
 
@@ -559,16 +527,12 @@ def _issue(
     changes: _RawEvidence | None,
 ) -> FeeAuthority:
     _require_issued(candidate, "authority candidate")
+    if candidate.status is FeeAuthorityStatus.COMPLETE:
+        raise FeeAuthorityError("complete fee authority is disabled at this checkpoint")
     if pdf is not None:
         _validate_evidence(pdf)
     if changes is not None:
         _validate_evidence(changes)
-    if candidate.status is FeeAuthorityStatus.COMPLETE and (
-        candidate.policy is None
-        or _ISSUED_POLICIES.get(id(candidate.policy))
-        != hashlib.sha256(repr(candidate.policy).encode()).hexdigest()
-    ):
-        raise FeeAuthorityError("complete authority requires issuer-created policy")
     return FeeAuthority(
         _candidate=candidate,
         _pdf=pdf,
