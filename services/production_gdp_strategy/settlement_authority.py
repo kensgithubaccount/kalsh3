@@ -34,7 +34,8 @@ ONE = Decimal("1.00")
 
 _MARKET_CAPABILITY = object()
 _BEA_CAPABILITY = object()
-_ISSUED: dict[int, tuple[object, str]] = {}
+_EvidenceFingerprint = tuple[str, str, str, str, int, str]
+_ISSUED: dict[int, tuple[object, str, _EvidenceFingerprint]] = {}
 
 
 class SettlementAuthorityError(ValueError):
@@ -71,7 +72,8 @@ class _Evidence:
             raise SettlementAuthorityError("evidence is unbounded or timestamp is naive")
         at = acquired_at.astimezone(UTC)
         digest = hashlib.sha256(body).hexdigest()
-        identity = stable_hash((PARSER_VERSION, source, path, digest, len(body), at.isoformat()))
+        fingerprint = (PARSER_VERSION, source, path, digest, len(body), at.isoformat())
+        identity = stable_hash(fingerprint)
         for name, value in {
             "source": source,
             "path": path,
@@ -81,17 +83,51 @@ class _Evidence:
             "evidence_id": identity,
         }.items():
             object.__setattr__(self, name, value)
-        _ISSUED[id(self)] = (self, identity)
+        _ISSUED[id(self)] = (self, identity, fingerprint)
+
+
+def _current_evidence_fingerprint(evidence: _Evidence) -> tuple[_EvidenceFingerprint, str]:
+    """Return the identity material currently represented by issued evidence."""
+    source = getattr(evidence, "source", None)
+    path = getattr(evidence, "path", None)
+    raw_body = getattr(evidence, "raw_body", None)
+    raw_sha256 = getattr(evidence, "raw_sha256", None)
+    acquired_at = getattr(evidence, "acquired_at", None)
+    evidence_id = getattr(evidence, "evidence_id", None)
+    if (
+        source not in {KALSHI_ORIGIN, BEA_ORIGIN}
+        or not isinstance(path, str)
+        or type(raw_body) is not bytes
+        or not raw_body
+        or len(raw_body) > MAX_RESPONSE_BYTES
+        or not isinstance(raw_sha256, str)
+        or not isinstance(acquired_at, datetime)
+        or acquired_at.tzinfo is None
+        or acquired_at.utcoffset() is None
+        or not isinstance(evidence_id, str)
+    ):
+        raise SettlementAuthorityError("evidence identity fields are malformed")
+    acquired_utc = acquired_at.astimezone(UTC)
+    digest = hashlib.sha256(raw_body).hexdigest()
+    if digest != raw_sha256:
+        raise SettlementAuthorityError("evidence bytes/hash mismatch")
+    fingerprint = (PARSER_VERSION, source, path, digest, len(raw_body), acquired_utc.isoformat())
+    return fingerprint, stable_hash(fingerprint)
 
 
 def _validate_evidence(evidence: _Evidence, source: str) -> None:
     if type(evidence) is not _Evidence or evidence.source != source:
         raise SettlementAuthorityError("evidence type or source is not authoritative")
     issued = _ISSUED.get(id(evidence))
-    if issued is None or issued[0] is not evidence or issued[1] != evidence.evidence_id:
+    if issued is None or issued[0] is not evidence:
         raise SettlementAuthorityError("evidence was reconstructed or mutated")
-    if hashlib.sha256(evidence.raw_body).hexdigest() != evidence.raw_sha256:
-        raise SettlementAuthorityError("evidence bytes/hash mismatch")
+    current_fingerprint, current_identity = _current_evidence_fingerprint(evidence)
+    if (
+        current_fingerprint != issued[2]
+        or current_identity != evidence.evidence_id
+        or current_identity != issued[1]
+    ):
+        raise SettlementAuthorityError("evidence was reconstructed or mutated")
 
 
 def _utc(value: object, field: str) -> datetime:

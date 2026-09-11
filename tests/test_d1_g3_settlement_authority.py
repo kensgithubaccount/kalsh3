@@ -204,6 +204,40 @@ def test_caller_authored_or_reconstructed_evidence_has_no_authority() -> None:
         authority._parse_market(forged, _decision())
 
 
+@pytest.mark.parametrize("kind", ["market", "bea"])
+@pytest.mark.parametrize(
+    "field", ["acquired_at", "source", "path", "raw_body", "raw_sha256", "evidence_id"]
+)
+def test_post_issuance_authority_field_mutation_fails_validation(kind: str, field: str) -> None:
+    evidence = _market() if kind == "market" else _bea()
+    original = getattr(evidence, field)
+    replacements: dict[str, object] = {
+        "acquired_at": NOW + timedelta(hours=1),
+        "source": authority.BEA_ORIGIN if kind == "market" else authority.KALSHI_ORIGIN,
+        "path": "/forged/path",
+        "raw_body": evidence.raw_body + b" forged",
+        "raw_sha256": "0" * 64,
+        "evidence_id": "0" * 64,
+    }
+    object.__setattr__(evidence, field, replacements[field])
+    try:
+        with pytest.raises(authority.SettlementAuthorityError):
+            authority._validate_evidence(
+                evidence,
+                authority.KALSHI_ORIGIN if kind == "market" else authority.BEA_ORIGIN,
+            )
+    finally:
+        object.__setattr__(evidence, field, original)
+
+
+@pytest.mark.parametrize("kind", ["market", "bea"])
+def test_unmutated_issued_evidence_remains_valid(kind: str) -> None:
+    evidence = _market() if kind == "market" else _bea()
+    authority._validate_evidence(
+        evidence, authority.KALSHI_ORIGIN if kind == "market" else authority.BEA_ORIGIN
+    )
+
+
 def test_bea_wrong_quarter_and_missing_value_fail_closed(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(authority, "_acquire_market", lambda _ticker: _market())
     monkeypatch.setattr(authority, "_acquire_bea", lambda _quarter: _bea(quarter="2026-Q2"))
@@ -424,3 +458,25 @@ def test_reconstructed_evidence_cannot_be_used_with_immutable_decision() -> None
         object.__setattr__(forged, field, getattr(evidence, field))
     with pytest.raises(authority.SettlementAuthorityError):
         authority._parse_market(forged, _decision())
+
+
+@pytest.mark.parametrize("kind", ["market", "bea"])
+def test_pre_release_evidence_cannot_be_forged_post_release_by_acquired_at_mutation(
+    monkeypatch: pytest.MonkeyPatch, kind: str
+) -> None:
+    if kind == "market":
+        market = _market()
+        original = authority._Evidence(
+            source=market.source,
+            path=market.path,
+            body=market.raw_body,
+            acquired_at=datetime(2026, 9, 3, 9, tzinfo=UTC),
+            capability=authority._MARKET_CAPABILITY,
+        )
+    else:
+        original = _bea(acquired_at=datetime(2026, 9, 3, 9, tzinfo=UTC))
+    object.__setattr__(original, "acquired_at", datetime(2026, 9, 3, 13, tzinfo=UTC))
+    market = original if kind == "market" else _market()
+    bea = original if kind == "bea" else _bea()
+    with pytest.raises(authority.SettlementAuthorityError):
+        _run(monkeypatch, market, bea)
