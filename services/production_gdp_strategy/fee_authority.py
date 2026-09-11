@@ -14,7 +14,7 @@ import urllib.error
 import urllib.request
 import zlib
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 from decimal import Decimal, InvalidOperation
 from enum import StrEnum
 from typing import Final
@@ -48,17 +48,54 @@ class FeeAuthorityError(ValueError):
     """Evidence could not prove the exact prospective fee policy."""
 
 
-@dataclass(frozen=True, slots=True)
+_RAW_EVIDENCE_CAPABILITY: Final = object()
+_PARSER_CAPABILITY: Final = object()
+_RESOLVER_CAPABILITY: Final = object()
+_ISSUED: dict[int, str] = {}
+_ISSUED_POLICIES: dict[int, str] = {}
+
+
+def _register(value: object) -> None:
+    _ISSUED[id(value)] = hashlib.sha256(repr(value).encode()).hexdigest()
+
+
+def _require_issued(value: object, label: str) -> None:
+    expected = hashlib.sha256(repr(value).encode()).hexdigest()
+    if _ISSUED.get(id(value)) != expected:
+        raise FeeAuthorityError(f"{label} is reconstructed or not issuer-issued")
+
+
+@dataclass(frozen=True, slots=True, init=False)
 class _RawEvidence:
     source_url: str
+    method: str
     status: int
     content_type: str
     acquired_at: datetime
     body: bytes
     body_sha256: str
 
+    def __init__(
+        self,
+        source_url: str,
+        method: str,
+        status: int,
+        content_type: str,
+        acquired_at: datetime,
+        body: bytes,
+        body_sha256: str,
+        *,
+        _capability: object | None = None,
+    ) -> None:
+        if _capability is not _RAW_EVIDENCE_CAPABILITY:
+            raise FeeAuthorityError("raw evidence requires reviewed acquisition capability")
+        for name, value in locals().copy().items():
+            if name not in {"self", "_capability"}:
+                object.__setattr__(self, name, value)
+        _register(self)
 
-@dataclass(frozen=True, slots=True)
+
+@dataclass(frozen=True, slots=True, init=False)
 class _FeeChange:
     change_id: str
     effective_at: datetime
@@ -66,11 +103,18 @@ class _FeeChange:
     multiplier: Decimal
     raw: dict[str, object]
 
+    def __init__(self, *, capability: object, **values: object) -> None:
+        if capability is not _PARSER_CAPABILITY:
+            raise FeeAuthorityError("parsed fee changes require issuer parser capability")
+        for name in ("change_id", "effective_at", "fee_type", "multiplier", "raw"):
+            object.__setattr__(self, name, values[name])
+        _register(self)
 
-@dataclass(frozen=True, slots=True)
+
+@dataclass(frozen=True, slots=True, init=False)
 class _FeeSchedule:
     document_identity: str
-    effective_at: datetime
+    effective_date: date
     taker_coefficient: Decimal
     maker_coefficient: Decimal
     taker_multiplier: Decimal
@@ -78,15 +122,38 @@ class _FeeSchedule:
     raw: _RawEvidence
     currentness_proven: bool
 
+    def __init__(self, *, capability: object, **values: object) -> None:
+        if capability is not _PARSER_CAPABILITY:
+            raise FeeAuthorityError("parsed fee schedule requires issuer parser capability")
+        for name in (
+            "document_identity",
+            "effective_date",
+            "taker_coefficient",
+            "maker_coefficient",
+            "taker_multiplier",
+            "maker_multiplier",
+            "raw",
+            "currentness_proven",
+        ):
+            object.__setattr__(self, name, values[name])
+        _register(self)
 
-@dataclass(frozen=True, slots=True)
+
+@dataclass(frozen=True, slots=True, init=False)
 class _FeeChangeBatch:
     records: tuple[_FeeChange, ...]
     raw: _RawEvidence
     exhaustive_proven: bool
 
+    def __init__(self, *, capability: object, **values: object) -> None:
+        if capability is not _PARSER_CAPABILITY:
+            raise FeeAuthorityError("parsed fee changes require issuer parser capability")
+        for name in ("records", "raw", "exhaustive_proven"):
+            object.__setattr__(self, name, values[name])
+        _register(self)
 
-@dataclass(frozen=True, slots=True)
+
+@dataclass(frozen=True, slots=True, init=False)
 class _AuthorityCandidate:
     status: FeeAuthorityStatus
     reason: str | None
@@ -94,8 +161,12 @@ class _AuthorityCandidate:
     applicable_change_ids: tuple[str, ...]
     resolver_id: str
 
-
-_AUTHORITY_TOKEN: Final = object()
+    def __init__(self, *, capability: object, **values: object) -> None:
+        if capability is not _RESOLVER_CAPABILITY:
+            raise FeeAuthorityError("authority candidates require reviewed resolver capability")
+        for name in ("status", "reason", "policy", "applicable_change_ids", "resolver_id"):
+            object.__setattr__(self, name, values[name])
+        _register(self)
 
 
 class FeeAuthority:
@@ -122,30 +193,27 @@ class FeeAuthority:
     )
 
     def __new__(cls, *args: object, **kwargs: object) -> FeeAuthority:
-        if kwargs.pop("_token", None) is not _AUTHORITY_TOKEN or args:
+        candidate = kwargs.pop("_candidate", None)
+        if args or type(candidate) is not _AuthorityCandidate:
             raise TypeError("FeeAuthority is issued by acquire_fee_authority only")
+        _require_issued(candidate, "authority candidate")
         return super().__new__(cls)
 
     def __init__(
         self,
         *,
-        status: FeeAuthorityStatus,
-        reason: str | None,
-        policy: _FeePolicy | None,
-        pdf_evidence: _RawEvidence | None,
-        fee_change_evidence: _RawEvidence | None,
-        applicable_change_ids: tuple[str, ...],
-        resolver_id: str,
-        _token: object | None = None,
+        _candidate: _AuthorityCandidate,
+        _pdf: _RawEvidence | None,
+        _changes: _RawEvidence | None,
     ) -> None:
-        del _token
-        object.__setattr__(self, "_status", status)
-        object.__setattr__(self, "_reason", reason)
-        object.__setattr__(self, "_policy", policy)
-        object.__setattr__(self, "_pdf_evidence", pdf_evidence)
-        object.__setattr__(self, "_fee_change_evidence", fee_change_evidence)
-        object.__setattr__(self, "_applicable_change_ids", applicable_change_ids)
-        object.__setattr__(self, "_resolver_id", resolver_id)
+        _require_issued(_candidate, "authority candidate")
+        object.__setattr__(self, "_status", _candidate.status)
+        object.__setattr__(self, "_reason", _candidate.reason)
+        object.__setattr__(self, "_policy", _candidate.policy)
+        object.__setattr__(self, "_pdf_evidence", _pdf)
+        object.__setattr__(self, "_fee_change_evidence", _changes)
+        object.__setattr__(self, "_applicable_change_ids", _candidate.applicable_change_ids)
+        object.__setattr__(self, "_resolver_id", _candidate.resolver_id)
         object.__setattr__(self, "_sealed", True)
 
     def __setattr__(self, name: str, value: object) -> None:
@@ -184,6 +252,11 @@ class FeeAuthority:
     def calculate_one_contract(self, price: Decimal) -> _FeeCalculation:
         if self.status is not FeeAuthorityStatus.COMPLETE or self.policy is None:
             raise FeeAuthorityError("fee authority is incomplete")
+        # The reviewed experiment covers one whole contract at a cent-aligned
+        # marketable/taker price only.  It does not authorize arbitrary fills,
+        # subpenny prices, maker economics, rebates, or member-class variants.
+        if price != price.quantize(Decimal("0.01")):
+            raise FeeAuthorityError("unsupported subpenny price")
         return _calculate_fee(self.policy, price, Decimal("1"), maker=False)
 
 
@@ -223,13 +296,25 @@ def _fetch(url: str, *, accept: str) -> _RawEvidence:
     if len(body) > MAX_RESPONSE_BYTES:
         raise FeeAuthorityError("response truncated or exceeds bound")
     return _RawEvidence(
-        url, status, content_type, acquired_at, body, hashlib.sha256(body).hexdigest()
+        url,
+        "GET",
+        status,
+        content_type,
+        acquired_at,
+        body,
+        hashlib.sha256(body).hexdigest(),
+        _capability=_RAW_EVIDENCE_CAPABILITY,
     )
 
 
 def _validate_evidence(evidence: _RawEvidence) -> None:
+    if type(evidence) is not _RawEvidence:
+        raise FeeAuthorityError("evidence has an unsupported runtime type")
+    _require_issued(evidence, "raw evidence")
     if evidence.source_url not in {PDF_URL, FEE_CHANGES_URL}:
         raise FeeAuthorityError("evidence source is outside fixed authority")
+    if evidence.method != "GET":
+        raise FeeAuthorityError("evidence method is outside fixed authority")
     if type(evidence.body) is not bytes or not evidence.body:
         raise FeeAuthorityError("evidence body is missing")
     if type(evidence.acquired_at) is not datetime or evidence.acquired_at.tzinfo is None:
@@ -274,7 +359,7 @@ def _parse_fee_schedule(evidence: _RawEvidence) -> _FeeSchedule:
         "fee document effective date",
     )
     try:
-        effective_at = datetime.strptime(date_match.group(1), "%B %d, %Y").replace(tzinfo=UTC)
+        effective_date = datetime.strptime(date_match.group(1), "%B %d, %Y").date()
     except ValueError as exc:
         raise FeeAuthorityError("fee document effective date is malformed") from exc
     # The canonical fixed PDF must itself declare the schedule as current; its
@@ -321,14 +406,15 @@ def _parse_fee_schedule(evidence: _RawEvidence) -> _FeeSchedule:
     if maker_multiplier < 0 or taker_multiplier < 0:
         raise FeeAuthorityError("KXGDP multiplier is invalid")
     return _FeeSchedule(
-        f"{title}|effective-{effective_at.date().isoformat()}",
-        effective_at,
-        taker_coefficient,
-        maker_coefficient,
-        taker_multiplier,
-        maker_multiplier,
-        evidence,
-        True,
+        capability=_PARSER_CAPABILITY,
+        document_identity=f"{title}|effective-{effective_date.isoformat()}",
+        effective_date=effective_date,
+        taker_coefficient=taker_coefficient,
+        maker_coefficient=maker_coefficient,
+        taker_multiplier=taker_multiplier,
+        maker_multiplier=maker_multiplier,
+        raw=evidence,
+        currentness_proven=True,
     )
 
 
@@ -385,34 +471,47 @@ def _parse_fee_changes(evidence: _RawEvidence) -> _FeeChangeBatch:
             raise FeeAuthorityError("fee-change fee type unsupported")
         result.append(
             _FeeChange(
-                change_id,
-                effective,
-                fee_type,
-                _decimal(record["fee_multiplier"], "fee-change multiplier"),
-                dict(record),
+                capability=_PARSER_CAPABILITY,
+                change_id=change_id,
+                effective_at=effective,
+                fee_type=fee_type,
+                multiplier=_decimal(record["fee_multiplier"], "fee-change multiplier"),
+                raw=dict(record),
             )
         )
-    # The fixed query is the documented all-history series feed: with
-    # show_historical=true it exposes previous and upcoming KXGDP fee changes.
-    # Together with the current-declared canonical PDF and its KXGDP row, this
-    # is the bounded fee override-completeness basis for this module.
-    return _FeeChangeBatch(tuple(result), evidence, True)
+    # The response schema does not prove market- and event-level override
+    # absence, nor complete coverage for the decision interval.  An empty
+    # array is therefore data, not an exhaustiveness assertion.
+    return _FeeChangeBatch(
+        capability=_PARSER_CAPABILITY, records=tuple(result), raw=evidence, exhaustive_proven=False
+    )
 
 
 def _candidate_incomplete(reason: str) -> _AuthorityCandidate:
-    return _AuthorityCandidate(FeeAuthorityStatus.INCOMPLETE, reason, None, (), RESOLVER_ID)
+    return _AuthorityCandidate(
+        capability=_RESOLVER_CAPABILITY,
+        status=FeeAuthorityStatus.INCOMPLETE,
+        reason=reason,
+        policy=None,
+        applicable_change_ids=(),
+        resolver_id=RESOLVER_ID,
+    )
 
 
 def _resolve_fee_authority(
     decision_at: datetime, schedule: _FeeSchedule, changes: _FeeChangeBatch
 ) -> _AuthorityCandidate:
+    _require_issued(schedule, "fee schedule")
+    _require_issued(changes, "fee-change batch")
     instant = _utc(decision_at)
     if not schedule.currentness_proven:
         return _candidate_incomplete("current fee-schedule status is unproven")
     if not changes.exhaustive_proven:
         return _candidate_incomplete("fee-change/override completeness is unproven")
-    if schedule.effective_at > instant:
-        return _candidate_incomplete("base fee document is future-effective")
+    if instant.date() <= schedule.effective_date:
+        return _candidate_incomplete(
+            "date-only fee effective information cannot prove intraday applicability"
+        )
     applicable = tuple(change for change in changes.records if change.effective_at <= instant)
     by_effective: dict[datetime, _FeeChange] = {}
     for change in applicable:
@@ -428,7 +527,7 @@ def _resolve_fee_authority(
         fee_type, multiplier, effective, ids = (
             _FeeType.QUADRATIC,
             schedule.taker_multiplier,
-            schedule.effective_at,
+            datetime.combine(schedule.effective_date, datetime.min.time(), tzinfo=UTC),
             (),
         )
     policy = _FeePolicy(
@@ -443,7 +542,15 @@ def _resolve_fee_authority(
         quadratic_coefficient=schedule.taker_coefficient,
         maker_quadratic_coefficient=schedule.maker_coefficient,
     )
-    return _AuthorityCandidate(FeeAuthorityStatus.COMPLETE, None, policy, ids, RESOLVER_ID)
+    _ISSUED_POLICIES[id(policy)] = hashlib.sha256(repr(policy).encode()).hexdigest()
+    return _AuthorityCandidate(
+        capability=_RESOLVER_CAPABILITY,
+        status=FeeAuthorityStatus.COMPLETE,
+        reason=None,
+        policy=policy,
+        applicable_change_ids=ids,
+        resolver_id=RESOLVER_ID,
+    )
 
 
 def _issue(
@@ -451,15 +558,21 @@ def _issue(
     pdf: _RawEvidence | None,
     changes: _RawEvidence | None,
 ) -> FeeAuthority:
+    _require_issued(candidate, "authority candidate")
+    if pdf is not None:
+        _validate_evidence(pdf)
+    if changes is not None:
+        _validate_evidence(changes)
+    if candidate.status is FeeAuthorityStatus.COMPLETE and (
+        candidate.policy is None
+        or _ISSUED_POLICIES.get(id(candidate.policy))
+        != hashlib.sha256(repr(candidate.policy).encode()).hexdigest()
+    ):
+        raise FeeAuthorityError("complete authority requires issuer-created policy")
     return FeeAuthority(
-        _token=_AUTHORITY_TOKEN,
-        status=candidate.status,
-        reason=candidate.reason,
-        policy=candidate.policy,
-        pdf_evidence=pdf,
-        fee_change_evidence=changes,
-        applicable_change_ids=candidate.applicable_change_ids,
-        resolver_id=candidate.resolver_id,
+        _candidate=candidate,
+        _pdf=pdf,
+        _changes=changes,
     )
 
 
@@ -469,7 +582,14 @@ def _incomplete(
     changes: _RawEvidence | None = None,
 ) -> FeeAuthority:
     return _issue(
-        _AuthorityCandidate(FeeAuthorityStatus.INCOMPLETE, reason, None, (), RESOLVER_ID),
+        _AuthorityCandidate(
+            capability=_RESOLVER_CAPABILITY,
+            status=FeeAuthorityStatus.INCOMPLETE,
+            reason=reason,
+            policy=None,
+            applicable_change_ids=(),
+            resolver_id=RESOLVER_ID,
+        ),
         pdf,
         changes,
     )
