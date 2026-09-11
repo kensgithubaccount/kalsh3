@@ -119,6 +119,64 @@ def test_issue_style_bypass_is_disabled_even_for_a_forged_candidate() -> None:
         module._issue(candidate, None, None)
 
 
+def _forged_complete_candidate() -> module._AuthorityCandidate:
+    candidate = object.__new__(module._AuthorityCandidate)
+    for name, value in {
+        "status": module.FeeAuthorityStatus.COMPLETE,
+        "reason": None,
+        "policy": None,
+        "applicable_change_ids": (),
+        "resolver_id": module.RESOLVER_ID,
+    }.items():
+        object.__setattr__(candidate, name, value)
+    module._register(candidate)
+    return candidate
+
+
+def test_direct_constructor_rejects_registered_complete_candidate() -> None:
+    with pytest.raises(module.FeeAuthorityError):
+        module.FeeAuthority(_candidate=_forged_complete_candidate(), _pdf=None, _changes=None)
+
+
+def test_object_new_authority_is_unusable_for_all_public_operations() -> None:
+    forged = object.__new__(module.FeeAuthority)
+    for name, value in {
+        "_status": module.FeeAuthorityStatus.COMPLETE,
+        "_reason": None,
+        "_policy": None,
+        "_pdf_evidence": None,
+        "_fee_change_evidence": None,
+        "_applicable_change_ids": (),
+        "_resolver_id": module.RESOLVER_ID,
+        "_sealed": True,
+    }.items():
+        object.__setattr__(forged, name, value)
+    for operation in (
+        lambda: forged.status,
+        lambda: forged.policy,
+        lambda: forged.calculate_one_contract(Decimal("0.50")),
+    ):
+        with pytest.raises(module.FeeAuthorityError):
+            operation()
+
+
+def test_direct_authority_registration_rejects_complete() -> None:
+    forged = object.__new__(module.FeeAuthority)
+    for name, value in {
+        "_status": module.FeeAuthorityStatus.COMPLETE,
+        "_reason": None,
+        "_policy": None,
+        "_pdf_evidence": None,
+        "_fee_change_evidence": None,
+        "_applicable_change_ids": (),
+        "_resolver_id": module.RESOLVER_ID,
+        "_sealed": True,
+    }.items():
+        object.__setattr__(forged, name, value)
+    with pytest.raises(module.FeeAuthorityError):
+        module._register_authority(forged, _capability=module._AUTHORITY_REGISTRATION_CAPABILITY)
+
+
 def test_caller_created_raw_evidence_with_valid_hash_is_rejected() -> None:
     body = _pdf()
     with pytest.raises(module.FeeAuthorityError):
@@ -226,6 +284,26 @@ def test_public_fixed_acquisition_is_incomplete_without_override_proof(
     result = module.acquire_fee_authority(NOW)
     assert result.status is module.FeeAuthorityStatus.INCOMPLETE
     assert result.policy is None
+
+
+def test_issued_incomplete_authority_evidence_accessors_revalidate_mutation(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    pdf = _issued(module.PDF_URL, _pdf(), "application/pdf")
+    changes = _issued(module.FEE_CHANGES_URL, b'{"series_fee_change_arr":[]}', "application/json")
+    monkeypatch.setattr(
+        module, "_fetch", lambda url, *, accept: pdf if url == module.PDF_URL else changes
+    )
+    authority = module.acquire_fee_authority(NOW)
+    object.__setattr__(pdf, "body", b"changed")
+    with pytest.raises(module.FeeAuthorityError):
+        _ = authority.pdf_evidence
+    object.__setattr__(pdf, "body", _pdf())
+    object.__setattr__(changes, "body", b"changed")
+    with pytest.raises(module.FeeAuthorityError):
+        _ = authority.fee_change_evidence
+    with pytest.raises(module.FeeAuthorityError):
+        authority.calculate_one_contract(Decimal("0.50"))
 
 
 def test_public_constructor_is_not_an_issuer() -> None:

@@ -51,8 +51,11 @@ class FeeAuthorityError(ValueError):
 _RAW_EVIDENCE_CAPABILITY: Final = object()
 _PARSER_CAPABILITY: Final = object()
 _RESOLVER_CAPABILITY: Final = object()
+_AUTHORITY_REGISTRATION_CAPABILITY: Final = object()
 _ISSUED: dict[int, str] = {}
 _ISSUED_OBJECTS: dict[int, object] = {}
+_ISSUED_AUTHORITIES: dict[int, str] = {}
+_ISSUED_AUTHORITY_OBJECTS: dict[int, object] = {}
 
 
 def _register(value: object) -> None:
@@ -64,6 +67,62 @@ def _require_issued(value: object, label: str) -> None:
     expected = hashlib.sha256(repr(value).encode()).hexdigest()
     if _ISSUED_OBJECTS.get(id(value)) is not value or _ISSUED.get(id(value)) != expected:
         raise FeeAuthorityError(f"{label} is reconstructed or not issuer-issued")
+
+
+def _authority_fingerprint(value: FeeAuthority) -> str:
+    fields = (
+        object.__getattribute__(value, "_status"),
+        object.__getattribute__(value, "_reason"),
+        repr(object.__getattribute__(value, "_policy")),
+        object.__getattribute__(value, "_applicable_change_ids"),
+        object.__getattribute__(value, "_resolver_id"),
+    )
+    evidence_hashes = tuple(
+        None
+        if evidence is None
+        else (id(evidence), object.__getattribute__(evidence, "body_sha256"))
+        for evidence in (
+            object.__getattribute__(value, "_pdf_evidence"),
+            object.__getattribute__(value, "_fee_change_evidence"),
+        )
+    )
+    return hashlib.sha256(repr((fields, evidence_hashes)).encode()).hexdigest()
+
+
+def _require_issued_authority(value: FeeAuthority) -> None:
+    if (
+        type(value) is not FeeAuthority
+        or _ISSUED_AUTHORITY_OBJECTS.get(id(value)) is not value
+        or _ISSUED_AUTHORITIES.get(id(value)) != _authority_fingerprint(value)
+    ):
+        raise FeeAuthorityError("fee authority is reconstructed, mutated, or not issuer-issued")
+    status = object.__getattribute__(value, "_status")
+    if type(status) is not FeeAuthorityStatus or status is FeeAuthorityStatus.COMPLETE:
+        raise FeeAuthorityError("complete fee authority is not available at this checkpoint")
+    for evidence in (
+        object.__getattribute__(value, "_pdf_evidence"),
+        object.__getattribute__(value, "_fee_change_evidence"),
+    ):
+        if evidence is not None:
+            _validate_evidence(evidence)
+
+
+def _register_authority(value: FeeAuthority, *, _capability: object | None = None) -> None:
+    if _capability is not _AUTHORITY_REGISTRATION_CAPABILITY or type(value) is not FeeAuthority:
+        raise FeeAuthorityError("fee authority registration requires issuer capability")
+    status = object.__getattribute__(value, "_status")
+    if status is FeeAuthorityStatus.COMPLETE:
+        raise FeeAuthorityError("complete fee authority is not available at this checkpoint")
+    if id(value) in _ISSUED_AUTHORITIES:
+        _require_issued_authority(value)
+    for evidence in (
+        object.__getattribute__(value, "_pdf_evidence"),
+        object.__getattribute__(value, "_fee_change_evidence"),
+    ):
+        if evidence is not None:
+            _validate_evidence(evidence)
+    _ISSUED_AUTHORITY_OBJECTS[id(value)] = value
+    _ISSUED_AUTHORITIES[id(value)] = _authority_fingerprint(value)
 
 
 @dataclass(frozen=True, slots=True, init=False)
@@ -202,6 +261,8 @@ class FeeAuthority:
         if args or type(candidate) is not _AuthorityCandidate:
             raise TypeError("FeeAuthority is issued by acquire_fee_authority only")
         _require_issued(candidate, "authority candidate")
+        if candidate.status is FeeAuthorityStatus.COMPLETE:
+            raise FeeAuthorityError("complete fee authority is not available at this checkpoint")
         return super().__new__(cls)
 
     def __init__(
@@ -212,6 +273,12 @@ class FeeAuthority:
         _changes: _RawEvidence | None,
     ) -> None:
         _require_issued(_candidate, "authority candidate")
+        if _candidate.status is FeeAuthorityStatus.COMPLETE:
+            raise FeeAuthorityError("complete fee authority is not available at this checkpoint")
+        if _pdf is not None:
+            _validate_evidence(_pdf)
+        if _changes is not None:
+            _validate_evidence(_changes)
         object.__setattr__(self, "_status", _candidate.status)
         object.__setattr__(self, "_reason", _candidate.reason)
         object.__setattr__(self, "_policy", _candidate.policy)
@@ -220,6 +287,7 @@ class FeeAuthority:
         object.__setattr__(self, "_applicable_change_ids", _candidate.applicable_change_ids)
         object.__setattr__(self, "_resolver_id", _candidate.resolver_id)
         object.__setattr__(self, "_sealed", True)
+        _register_authority(self, _capability=_AUTHORITY_REGISTRATION_CAPABILITY)
 
     def __setattr__(self, name: str, value: object) -> None:
         if getattr(self, "_sealed", False):
@@ -228,41 +296,49 @@ class FeeAuthority:
 
     @property
     def status(self) -> FeeAuthorityStatus:
+        _require_issued_authority(self)
         return self._status
 
     @property
     def reason(self) -> str | None:
+        _require_issued_authority(self)
         return self._reason
 
     @property
     def policy(self) -> _FeePolicy | None:
+        _require_issued_authority(self)
         return self._policy
 
     @property
     def pdf_evidence(self) -> _RawEvidence | None:
+        _require_issued_authority(self)
         return self._pdf_evidence
 
     @property
     def fee_change_evidence(self) -> _RawEvidence | None:
+        _require_issued_authority(self)
         return self._fee_change_evidence
 
     @property
     def applicable_change_ids(self) -> tuple[str, ...]:
+        _require_issued_authority(self)
         return self._applicable_change_ids
 
     @property
     def resolver_id(self) -> str:
+        _require_issued_authority(self)
         return self._resolver_id
 
     def calculate_one_contract(self, price: Decimal) -> _FeeCalculation:
-        if self.status is not FeeAuthorityStatus.COMPLETE or self.policy is None:
+        _require_issued_authority(self)
+        if self._status is not FeeAuthorityStatus.COMPLETE or self._policy is None:
             raise FeeAuthorityError("fee authority is incomplete")
         # The reviewed experiment covers one whole contract at a cent-aligned
         # marketable/taker price only.  It does not authorize arbitrary fills,
         # subpenny prices, maker economics, rebates, or member-class variants.
         if price != price.quantize(Decimal("0.01")):
             raise FeeAuthorityError("unsupported subpenny price")
-        return _calculate_fee(self.policy, price, Decimal("1"), maker=False)
+        return _calculate_fee(self._policy, price, Decimal("1"), maker=False)
 
 
 class _NoRedirect(urllib.request.HTTPRedirectHandler):
