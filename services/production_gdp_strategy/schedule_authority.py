@@ -1,12 +1,4 @@
-"""Fixed, research-only KXGDP/BEA schedule authority acquisition.
-
-This module owns the only public acquisition entrypoint.  It is deliberately
-limited to the one D1-G3-S1 event and one selected market; it does not discover
-series, acquire fees, evaluate a trade, start a clock, or access an account.
-
-Positive authority is issuer-controlled.  Callers cannot provide locators,
-methods, timestamps, transports, raw bodies, or parsed source objects.
-"""
+"""Issuer-bound, research-only authority for one reviewed GDP event."""
 
 from __future__ import annotations
 
@@ -16,36 +8,33 @@ import json
 import re
 import ssl
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 from enum import StrEnum
 from html.parser import HTMLParser
-from typing import Final
+from typing import Final, cast
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 EVENT_TICKER: Final = "KXGDP-26OCT30"
-SELECTED_MARKET_TICKER: Final = "KXGDP-26OCT30-T1.0"
-TARGET_QUARTER: Final = "Q3 2026"
 SERIES_TICKER: Final = "KXGDP"
 TIMEZONE_NAME: Final = "America/New_York"
 METRIC_SEMANTICS: Final = "real GDP quarter-over-quarter growth, seasonally adjusted annual rate"
 SETTLEMENT_EDITION: Final = "BEA Advance Estimate"
-
 KALSHI_ORIGIN: Final = "https://external-api.kalshi.com"
 KALSHI_HOST: Final = "external-api.kalshi.com"
 KALSHI_EVENT_PATH: Final = f"/trade-api/v2/events/{EVENT_TICKER}?with_nested_markets=true"
-KALSHI_MARKET_PATH: Final = f"/trade-api/v2/markets/{SELECTED_MARKET_TICKER}"
+KALSHI_MARKET_PATH: Final = "/trade-api/v2/markets/"
 BEA_ORIGIN: Final = "https://www.bea.gov"
 BEA_HOST: Final = "www.bea.gov"
 BEA_SCHEDULE_PATH: Final = "/news/schedule/"
 HTTP_METHOD: Final = "GET"
 SUCCESS_STATUS: Final = 200
-TIMEOUT_SECONDS: Final = 10.0
 MAX_RESPONSE_BYTES: Final = 4_000_000
-PARSER_VERSION: Final = "d1-g3-s1-schedule-parser-v1"
-TIMEZONE_POLICY_IDENTITY: Final = "iana-america-new-york-strict-local-v1"
-TRANSPORT_POLICY_IDENTITY: Final = "d1-g3-s1-fixed-public-get-v1"
-_UTC = UTC
-_AUTHORITY_ISSUER = object()
+PARSER_VERSION: Final = "d1-g3-schedule-parser-v2"
+TIMEZONE_POLICY_IDENTITY: Final = "iana-america-new-york-strict-local-v2"
+TRANSPORT_POLICY_IDENTITY: Final = "d1-g3-public-event-and-bea-get-v2"
+
+_EVIDENCE_REGISTRY: dict[int, tuple[object, ...]] = {}
+_AUTHORITY_REGISTRY: dict[int, tuple[object, ...]] = {}
 
 
 class AuthorityStatus(StrEnum):
@@ -54,7 +43,7 @@ class AuthorityStatus(StrEnum):
 
 
 class ScheduleAuthorityError(ValueError):
-    """An acquisition or parsing failure that must remain incomplete."""
+    """Acquisition, provenance, or semantic validation failed closed."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -69,89 +58,127 @@ class _RawResponse:
     acquired_at: datetime
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True, slots=True, init=False)
 class SourceEvidence:
-    """Exact source bytes issued by this module's fixed acquisition path."""
-
     source_locator: str
-    source_identity: str
+    source_path: str
+    method: str
     http_status: int
     content_type: str
+    content_length: int
     acquired_at: datetime
+    parser_version: str
     raw_body: bytes
     raw_sha256: str
+    source_identity: str
 
-    def __init__(self, *, response: _RawResponse, _capability: object) -> None:
-        if _capability is not _AUTHORITY_ISSUER:
-            raise ScheduleAuthorityError("source evidence requires the reviewed issuer")
-        if response.status != SUCCESS_STATUS or not response.body:
-            raise ScheduleAuthorityError("only successful non-empty responses become evidence")
-        if response.acquired_at.tzinfo is not UTC:
-            raise ScheduleAuthorityError("acquisition completion time must be canonical UTC")
-        raw_hash = hashlib.sha256(response.body).hexdigest()
-        identity = hashlib.sha256(
-            "\x00".join(
-                (
-                    TRANSPORT_POLICY_IDENTITY,
-                    response.locator,
-                    response.method,
-                    str(response.status),
-                    response.content_type,
-                    raw_hash,
-                )
-            ).encode("utf-8")
-        ).hexdigest()
-        object.__setattr__(self, "source_locator", response.locator)
-        object.__setattr__(self, "source_identity", identity)
-        object.__setattr__(self, "http_status", response.status)
-        object.__setattr__(self, "content_type", response.content_type)
-        object.__setattr__(self, "acquired_at", response.acquired_at)
-        object.__setattr__(self, "raw_body", response.body)
-        object.__setattr__(self, "raw_sha256", raw_hash)
+    def __init__(self, **_: object) -> None:
+        raise ScheduleAuthorityError("source evidence is issuer-issued only")
+
+
+def _new_evidence(response: _RawResponse) -> SourceEvidence:
+    if response.status != SUCCESS_STATUS or not response.body:
+        raise ScheduleAuthorityError("only successful non-empty responses become evidence")
+    evidence = object.__new__(SourceEvidence)
+    acquired = _strict_utc(response.acquired_at, "acquired_at")
+    digest = hashlib.sha256(response.body).hexdigest()
+    identity = _fingerprint(
+        response.locator,
+        response.path,
+        response.method,
+        response.status,
+        response.content_type,
+        len(response.body),
+        acquired.isoformat(),
+        digest,
+        PARSER_VERSION,
+    )
+    for name, value in {
+        "source_locator": response.locator,
+        "source_path": response.path,
+        "method": response.method,
+        "http_status": response.status,
+        "content_type": response.content_type,
+        "content_length": len(response.body),
+        "acquired_at": acquired,
+        "parser_version": PARSER_VERSION,
+        "raw_body": response.body,
+        "raw_sha256": digest,
+        "source_identity": identity,
+    }.items():
+        object.__setattr__(evidence, name, value)
+    _EVIDENCE_REGISTRY[id(evidence)] = _evidence_fingerprint(evidence)
+    return evidence
 
 
 @dataclass(frozen=True, slots=True)
-class ScheduleAuthority:
-    """Issuer-created positive authority; direct caller construction is blocked."""
+class Quarter:
+    canonical: str
+    raw: str
 
+
+class StrikeType(StrEnum):
+    GREATER = "greater"
+    LESS = "less"
+    BETWEEN = "between"
+
+
+@dataclass(frozen=True, slots=True)
+class StrikeSemantics:
+    strike_type: StrikeType
+    floor_strike: str
+    cap_strike: str | None
+    comparator: str
+
+
+@dataclass(frozen=True, slots=True)
+class EligibleMarket:
+    ticker: str
     event_ticker: str
-    series_ticker: str | None
-    market_ticker: str
+    status: str
+    strike: StrikeSemantics
+    open_at: datetime
+    close_at: datetime
+    expected_expiration_at: datetime | None
+    latest_expiration_at: datetime | None
+    rule_identity: str
+    rules_primary: str
+    rules_secondary: str
+
+
+@dataclass(frozen=True, slots=True)
+class BEAReleaseSchedule:
+    release_at: datetime | date
+    timezone: str
+    bea_release_locator: str
+    edition: str
+    quarter: Quarter
+
+
+@dataclass(frozen=True, slots=True, init=False)
+class ScheduleAuthority:
+    event_ticker: str
+    series_ticker: str
+    quarter: Quarter
     target_quarter: str
     metric_semantics: str
     settlement_edition: str
-    bea_release_at: datetime
-    kalshi_open_at: datetime
-    kalshi_close_at: datetime
-    kalshi_expected_expiration_at: datetime | None
-    kalshi_latest_expiration_at: datetime | None
-    market_status: str
-    kalshi_rule_evidence_id: str
-    kalshi_rule_sha256: str
-    kalshi_event_evidence_id: str
-    kalshi_event_sha256: str
-    kalshi_market_evidence_id: str
-    kalshi_market_sha256: str
-    bea_schedule_evidence_id: str
-    bea_schedule_sha256: str
-    event_acquired_at: datetime
-    market_acquired_at: datetime
-    bea_acquired_at: datetime
+    bea_schedule: BEAReleaseSchedule
+    bea_release_at: datetime | date
+    bea_release_locator: str
+    eligible_markets: tuple[EligibleMarket, ...]
+    evidence_ids: tuple[str, ...]
+    evidence_sha256: tuple[str, ...]
     timezone_policy_identity: str
     parser_version: str
     contradiction_result: str
 
-    def __init__(self, *, values: dict[str, object], _capability: object) -> None:
-        if _capability is not _AUTHORITY_ISSUER:
-            raise ScheduleAuthorityError("positive authority requires the reviewed issuer")
-        for key, value in values.items():
-            object.__setattr__(self, key, value)
+    def __init__(self, **_: object) -> None:
+        raise ScheduleAuthorityError("positive authority is issuer-issued only")
 
 
 @dataclass(frozen=True, slots=True)
 class ScheduleAuthorityResult:
-    """Public result.  Incomplete results may expose diagnostic source evidence."""
-
     status: AuthorityStatus
     authority: ScheduleAuthority | None
     contradiction: str | None
@@ -160,165 +187,58 @@ class ScheduleAuthorityResult:
     bea_evidence: SourceEvidence | None
 
 
-def _utc_now() -> datetime:
-    return datetime.now(UTC)
+def _fingerprint(*values: object) -> str:
+    return hashlib.sha256("\x00".join(map(str, values)).encode()).hexdigest()
 
 
 def _strict_utc(value: datetime, field: str) -> datetime:
     if type(value) is not datetime or value.tzinfo is None or value.utcoffset() is None:
         raise ScheduleAuthorityError(f"{field} must be timezone-aware")
-    result = value.astimezone(UTC)
-    if result.tzinfo is not UTC:
-        result = result.replace(tzinfo=UTC)
-    return result
+    return value.astimezone(UTC).replace(tzinfo=UTC)
 
 
-def _strict_local(value: str, field: str) -> datetime:
-    try:
-        zone = ZoneInfo(TIMEZONE_NAME)
-        local = datetime.strptime(value, "%Y-%m-%d %I:%M %p")
-    except (ValueError, ZoneInfoNotFoundError) as exc:
-        raise ScheduleAuthorityError(f"{field} local time is malformed") from exc
-    candidates: list[datetime] = []
-    for fold in (0, 1):
-        candidate = local.replace(tzinfo=zone, fold=fold)
-        if candidate.astimezone(UTC).astimezone(zone).replace(tzinfo=None) == local:
-            candidates.append(candidate.astimezone(UTC))
-    if len(set(candidates)) != 1:
-        raise ScheduleAuthorityError(f"{field} is ambiguous or nonexistent")
-    return candidates[0].replace(tzinfo=UTC)
-
-
-def _aware_source_timestamp(value: object, field: str) -> datetime:
-    if type(value) is not str or value.startswith("0001-"):
-        raise ScheduleAuthorityError(f"{field} timestamp is missing or sentinel")
-    try:
-        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
-    except ValueError as exc:
-        raise ScheduleAuthorityError(f"{field} timestamp is malformed") from exc
-    return _strict_utc(parsed, field)
-
-
-def _content_type(value: str, expected: tuple[str, ...]) -> str:
-    normalized = value.split(";", 1)[0].strip().casefold()
-    if normalized not in expected:
-        raise ScheduleAuthorityError("source content type is not authoritative")
-    return normalized
-
-
-def _fixed_get(host: str, origin: str, path: str, expected_types: tuple[str, ...]) -> _RawResponse:
-    if host not in (KALSHI_HOST, BEA_HOST) or origin not in (KALSHI_ORIGIN, BEA_ORIGIN):
-        raise ScheduleAuthorityError("source origin is outside the reviewed allowlist")
-    if not path.startswith("/") or ".." in path.split("/") or "//" in path:
-        raise ScheduleAuthorityError("source path is outside the reviewed allowlist")
-    connection = http.client.HTTPSConnection(
-        host, timeout=TIMEOUT_SECONDS, context=ssl.create_default_context()
+def _evidence_fingerprint(evidence: SourceEvidence) -> tuple[object, ...]:
+    return (
+        evidence.source_locator,
+        evidence.source_path,
+        evidence.method,
+        evidence.http_status,
+        evidence.content_type,
+        evidence.content_length,
+        evidence.acquired_at,
+        evidence.parser_version,
+        evidence.raw_body,
+        evidence.raw_sha256,
+        evidence.source_identity,
     )
-    try:
-        connection.request(HTTP_METHOD, path, headers={"Accept": ",".join(expected_types)})
-        response = connection.getresponse()
-        if response.status >= 300 and response.status < 400:
-            raise ScheduleAuthorityError("source redirect rejected")
-        declared = response.getheader("Content-Length")
-        if declared is not None and int(declared) > MAX_RESPONSE_BYTES:
-            raise ScheduleAuthorityError("source response exceeded bounded size")
-        body = response.read(MAX_RESPONSE_BYTES + 1)
-        if len(body) > MAX_RESPONSE_BYTES:
-            raise ScheduleAuthorityError("source response exceeded bounded size")
-        content_type = response.getheader("Content-Type", "")
-        checked_type = _content_type(content_type, expected_types)
-        return _RawResponse(
-            locator=origin + path,
-            host=host,
-            path=path,
-            method=HTTP_METHOD,
-            status=response.status,
-            content_type=checked_type,
-            body=body,
-            acquired_at=_utc_now(),
-        )
-    except ScheduleAuthorityError:
-        raise
-    except (OSError, TimeoutError, ValueError, http.client.HTTPException) as exc:
-        raise ScheduleAuthorityError("fixed public source acquisition failed") from exc
-    finally:
-        connection.close()
 
 
-class _TableParser(HTMLParser):
-    def __init__(self) -> None:
-        super().__init__(convert_charrefs=True)
-        self.rows: list[tuple[str, ...]] = []
-        self.text_parts: list[str] = []
-        self._row: list[str] | None = None
-        self._cell: list[str] | None = None
-
-    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
-        if tag.casefold() == "tr":
-            self._row = []
-        elif tag.casefold() in ("td", "th") and self._row is not None:
-            self._cell = []
-
-    def handle_data(self, data: str) -> None:
-        self.text_parts.append(data)
-        if self._cell is not None:
-            self._cell.append(data)
-
-    def handle_endtag(self, tag: str) -> None:
-        lowered = tag.casefold()
-        if lowered in ("td", "th") and self._row is not None and self._cell is not None:
-            self._row.append(" ".join(" ".join(self._cell).split()))
-            self._cell = None
-        elif lowered == "tr" and self._row is not None:
-            if self._row:
-                self.rows.append(tuple(self._row))
-            self._row = None
+def _validate_evidence(evidence: SourceEvidence) -> None:
+    if type(evidence) is not SourceEvidence or _EVIDENCE_REGISTRY.get(
+        id(evidence)
+    ) != _evidence_fingerprint(evidence):
+        raise ScheduleAuthorityError("source evidence is unissued or mutated")
+    if (
+        hashlib.sha256(evidence.raw_body).hexdigest() != evidence.raw_sha256
+        or len(evidence.raw_body) != evidence.content_length
+    ):
+        raise ScheduleAuthorityError("source evidence body integrity failed")
+    expected = _fingerprint(
+        evidence.source_locator,
+        evidence.source_path,
+        evidence.method,
+        evidence.http_status,
+        evidence.content_type,
+        evidence.content_length,
+        evidence.acquired_at.isoformat(),
+        evidence.raw_sha256,
+        evidence.parser_version,
+    )
+    if evidence.source_identity != expected or evidence.parser_version != PARSER_VERSION:
+        raise ScheduleAuthorityError("source evidence fingerprint failed")
 
 
-def _parse_bea_schedule(evidence: SourceEvidence) -> datetime:
-    try:
-        html = evidence.raw_body.decode("utf-8")
-    except UnicodeDecodeError as exc:
-        raise ScheduleAuthorityError("BEA schedule is not UTF-8 HTML") from exc
-    parser = _TableParser()
-    try:
-        parser.feed(html)
-        parser.close()
-    except Exception as exc:  # HTMLParser can expose malformed source exceptions.
-        raise ScheduleAuthorityError("BEA schedule HTML is malformed") from exc
-    year_text = " ".join(parser.text_parts)
-    if "year 2026" not in year_text.casefold():
-        raise ScheduleAuthorityError("BEA schedule year authority is missing")
-    matches: list[tuple[str, str]] = []
-    for row in parser.rows:
-        joined = " | ".join(row)
-        lowered = joined.casefold()
-        if (
-            "gdp" in lowered
-            and "advance estimate" in lowered
-            and "second estimate" not in lowered
-            and "third estimate" not in lowered
-            and "annual" not in lowered
-            and "3rd quarter 2026" in lowered
-        ):
-            if len(row) < 3:
-                raise ScheduleAuthorityError("BEA schedule row layout drifted")
-            matches.append((row[0], row[1]))
-    if len(matches) != 1:
-        raise ScheduleAuthorityError("BEA schedule has zero or duplicate target matches")
-    date_text, time_text = matches[0]
-    try:
-        month, day = date_text.split()
-        month_number = datetime.strptime(month, "%B").month
-        date_value = f"2026-{month_number:02d}-{int(day):02d}"
-    except (ValueError, TypeError) as exc:
-        raise ScheduleAuthorityError("BEA schedule release date is malformed") from exc
-    if not re.fullmatch(r"\d{1,2}:\d{2} [AP]M", time_text):
-        raise ScheduleAuthorityError("BEA schedule release time is missing or malformed")
-    return _strict_local(f"{date_value} {time_text}", "BEA release")
-
-
-def _json_object(evidence: SourceEvidence) -> dict[str, object]:
+def _json(evidence: SourceEvidence) -> dict[str, object]:
     try:
         value = json.loads(evidence.raw_body)
     except (UnicodeDecodeError, json.JSONDecodeError) as exc:
@@ -328,251 +248,392 @@ def _json_object(evidence: SourceEvidence) -> dict[str, object]:
     return value
 
 
-def _validate_source_evidence(evidence: SourceEvidence) -> None:
-    if type(evidence) is not SourceEvidence or type(evidence.raw_body) is not bytes:
-        raise ScheduleAuthorityError("source evidence type is not issuer-controlled")
-    if hashlib.sha256(evidence.raw_body).hexdigest() != evidence.raw_sha256:
-        raise ScheduleAuthorityError("source evidence raw-body hash mismatch")
-    if evidence.http_status != SUCCESS_STATUS or evidence.acquired_at.tzinfo is not UTC:
-        raise ScheduleAuthorityError("source evidence acquisition metadata is invalid")
-    expected_identity = hashlib.sha256(
-        "\x00".join(
-            (
-                TRANSPORT_POLICY_IDENTITY,
-                evidence.source_locator,
-                HTTP_METHOD,
-                str(evidence.http_status),
-                evidence.content_type,
-                evidence.raw_sha256,
-            )
-        ).encode("utf-8")
-    ).hexdigest()
-    if evidence.source_identity != expected_identity:
-        raise ScheduleAuthorityError("source evidence identity mismatch")
-
-
-def _dict(value: object, field: str) -> dict[str, object]:
-    if not isinstance(value, dict):
-        raise ScheduleAuthorityError(f"{field} object is missing")
-    return value
-
-
-def _string(value: object, field: str, *, nonempty: bool = True) -> str:
-    if type(value) is not str or (nonempty and not value):
+def _string(value: object, field: str) -> str:
+    if type(value) is not str or not value.strip():
         raise ScheduleAuthorityError(f"{field} is missing or malformed")
-    return value
+    return value.strip()
+
+
+def _timestamp(value: object, field: str) -> datetime:
+    if type(value) is not str or value.startswith("0001-"):
+        raise ScheduleAuthorityError(f"{field} timestamp is missing or sentinel")
+    try:
+        return _strict_utc(datetime.fromisoformat(value.replace("Z", "+00:00")), field)
+    except ValueError as exc:
+        raise ScheduleAuthorityError(f"{field} timestamp is malformed") from exc
 
 
 def _optional_timestamp(value: object, field: str) -> datetime | None:
-    if value is None or value == "":
-        return None
-    return _aware_source_timestamp(value, field)
+    return None if value in (None, "") else _timestamp(value, field)
 
 
-def _market_from_event(event_payload: dict[str, object]) -> dict[str, object]:
-    event = _dict(event_payload.get("event"), "event")
-    nested = event.get("markets")
-    if not isinstance(nested, list):
-        raise ScheduleAuthorityError("event nested markets are missing")
-    matches = [
-        item
-        for item in nested
-        if isinstance(item, dict) and item.get("ticker") == SELECTED_MARKET_TICKER
-    ]
-    if len(matches) != 1:
-        raise ScheduleAuthorityError("selected market is absent or duplicated in event")
-    return matches[0]
+def _quarter(raw: object, field: str) -> Quarter:
+    value = _string(raw, field)
+    match = re.fullmatch(r"Q([1-4])\s+(20\d{2})", value, re.IGNORECASE)
+    if not match:
+        raise ScheduleAuthorityError(f"{field} quarter is not canonicalizable")
+    return Quarter(f"{match.group(2)}-Q{match.group(1)}", value)
 
 
-def _validate_semantics(
-    *,
-    event: dict[str, object],
-    event_market: dict[str, object],
-    direct_market: dict[str, object],
-    bea_release: datetime,
-) -> tuple[dict[str, object], str | None]:
-    if event.get("event_ticker") != EVENT_TICKER:
-        raise ScheduleAuthorityError("event identity mismatch")
-    if event.get("series_ticker") not in (SERIES_TICKER, None):
-        raise ScheduleAuthorityError("series identity mismatch")
-    if event.get("strike_period") != TARGET_QUARTER:
-        raise ScheduleAuthorityError("target quarter mismatch")
-    if event_market != direct_market:
-        comparable = (
-            "ticker",
-            "event_ticker",
-            "rules_primary",
-            "rules_secondary",
-            "open_time",
-            "close_time",
-            "expected_expiration_time",
-            "latest_expiration_time",
-            "status",
-        )
-        if any(event_market.get(key) != direct_market.get(key) for key in comparable):
-            raise ScheduleAuthorityError("event and direct market authority disagree")
-    ticker = _string(direct_market.get("ticker"), "market ticker")
-    if ticker != SELECTED_MARKET_TICKER or direct_market.get("event_ticker") != EVENT_TICKER:
-        raise ScheduleAuthorityError("market identity mismatch")
-    primary = _string(direct_market.get("rules_primary"), "primary rules")
-    secondary = _string(direct_market.get("rules_secondary"), "secondary rules")
-    rules = f"{primary}\n{secondary}"
-    lowered = rules.casefold()
-    if not all(
-        phrase in lowered
-        for phrase in (
-            "real gdp",
-            "seasonally adjusted",
-            "annualized",
-            "advance estimate",
-            "q3 2026",
-        )
-    ):
-        raise ScheduleAuthorityError("GDP metric or Advance Estimate semantics are incomplete")
-    if "second estimate" in lowered or "third estimate" in lowered or "nominal gdp" in lowered:
-        raise ScheduleAuthorityError("wrong GDP edition or metric")
-    open_at = _aware_source_timestamp(direct_market.get("open_time"), "Kalshi open")
-    close_at = _aware_source_timestamp(direct_market.get("close_time"), "Kalshi close")
-    expected = _optional_timestamp(
-        direct_market.get("expected_expiration_time"), "Kalshi expected expiration"
-    )
-    latest = _optional_timestamp(
-        direct_market.get("latest_expiration_time"), "Kalshi latest expiration"
-    )
-    status = _string(direct_market.get("status"), "Kalshi status")
-    updated = _aware_source_timestamp(direct_market.get("updated_time"), "Kalshi updated")
-    del updated
-    contradiction: str | None = None
-    if close_at >= bea_release:
-        contradiction = "KALSHI_CLOSE_NOT_STRICTLY_BEFORE_BEA_RELEASE"
+def _quarters(texts: list[object]) -> Quarter:
+    found: list[Quarter] = []
+    for item in texts:
+        if isinstance(item, str):
+            for match in re.finditer(r"\bQ([1-4])\s+(20\d{2})\b", item, re.IGNORECASE):
+                found.append(Quarter(f"{match.group(2)}-Q{match.group(1)}", match.group(0)))
+            for match in re.finditer(
+                r"\b([1-4])(?:st|nd|rd|th)\s+Quarter\s+(20\d{2})\b", item, re.IGNORECASE
+            ):
+                found.append(Quarter(f"{match.group(2)}-Q{match.group(1)}", match.group(0)))
+    if not found or len({item.canonical for item in found}) != 1:
+        raise ScheduleAuthorityError("quarter evidence is absent or contradictory")
+    return found[0]
+
+
+def _decimal_text(value: object, field: str) -> str:
+    if isinstance(value, bool) or not isinstance(value, (str, int, float)):
+        raise ScheduleAuthorityError(f"{field} is malformed")
+    text = str(value)
+    if not re.fullmatch(r"[-+]?\d+(?:\.\d+)?", text):
+        raise ScheduleAuthorityError(f"{field} is malformed")
+    return text
+
+
+def _strike(raw: dict[str, object], ticker: str) -> StrikeSemantics:
+    try:
+        kind = StrikeType(_string(raw.get("strike_type"), "strike_type").casefold())
+    except ValueError as exc:
+        raise ScheduleAuthorityError("unsupported strike_type") from exc
+    floor = _decimal_text(raw.get("floor_strike"), "floor_strike")
+    cap_value = raw.get("cap_strike")
+    cap = None if cap_value in (None, "") else _decimal_text(cap_value, "cap_strike")
+    if kind is StrikeType.BETWEEN and cap is None:
+        raise ScheduleAuthorityError("between strike requires cap_strike")
+    if kind is not StrikeType.BETWEEN and cap is not None:
+        raise ScheduleAuthorityError("floor/cap contradiction")
+    if cap is not None and float(floor) >= float(cap):
+        raise ScheduleAuthorityError("floor/cap contradiction")
+    suffix = ticker.rsplit("-T", 1)[-1] if "-T" in ticker else ""
+    if suffix and suffix != floor:
+        raise ScheduleAuthorityError("ticker disagrees with explicit strike")
+    comparator = {
+        StrikeType.GREATER: "greater_than",
+        StrikeType.LESS: "less_than",
+        StrikeType.BETWEEN: "between",
+    }[kind]
+    return StrikeSemantics(kind, floor, cap, comparator)
+
+
+def _rules(market: dict[str, object], quarter: Quarter) -> tuple[str, str, str]:
+    primary = _string(market.get("rules_primary"), "rules_primary")
+    secondary = _string(market.get("rules_secondary"), "rules_secondary")
+    low = f"{primary}\n{secondary}".casefold()
     if (
-        expected is not None
-        and expected.astimezone(ZoneInfo(TIMEZONE_NAME)).date()
-        != bea_release.astimezone(ZoneInfo(TIMEZONE_NAME)).date()
-        and contradiction is None
+        any(
+            item not in low
+            for item in ("real gdp", "seasonally adjusted", "annualized", "advance estimate")
+        )
+        or "nominal gdp" in low
     ):
-        contradiction = "KALSHI_EXPECTED_EXPIRATION_DATE_CONTRADICTS_BEA_RELEASE_DATE"
-    if "day of the expected release" not in secondary.casefold() and contradiction is None:
-        contradiction = "KALSHI_RELEASE_DAY_SEMANTICS_MISSING"
-    return {
-        "event_ticker": EVENT_TICKER,
-        "series_ticker": event.get("series_ticker"),
-        "market_ticker": ticker,
-        "target_quarter": TARGET_QUARTER,
-        "metric_semantics": METRIC_SEMANTICS,
-        "settlement_edition": SETTLEMENT_EDITION,
-        "bea_release_at": bea_release,
-        "kalshi_open_at": open_at,
-        "kalshi_close_at": close_at,
-        "kalshi_expected_expiration_at": expected,
-        "kalshi_latest_expiration_at": latest,
-        "market_status": status,
-        "rule_text": rules,
-    }, contradiction
+        raise ScheduleAuthorityError("GDP rule semantics are unsupported")
+    editions = re.findall(r"\b(?:advance|second|third) estimate\b", low)
+    if editions != ["advance estimate"] or "revised" in low or "later estimate" in low:
+        raise ScheduleAuthorityError("settlement edition is not exclusively Advance Estimate")
+    if not any(item in low for item in ("more than", "less than", "between")):
+        raise ScheduleAuthorityError("comparator semantics are ambiguous")
+    if _quarters([primary, secondary]).canonical != quarter.canonical:
+        raise ScheduleAuthorityError("market rule quarter disagrees")
+    return primary, secondary, _fingerprint(primary, secondary, quarter.canonical)
+
+
+class _ScheduleParser(HTMLParser):
+    def __init__(self) -> None:
+        super().__init__(convert_charrefs=True)
+        self.rows: list[tuple[str, ...]] = []
+        self.links: list[str] = []
+        self._row: list[str] | None = None
+        self._cell: list[str] | None = None
+        self._href: str | None = None
+
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        if tag.casefold() == "tr":
+            self._row = []
+        elif tag.casefold() in ("td", "th") and self._row is not None:
+            self._cell = []
+        elif tag.casefold() == "a":
+            self._href = dict(attrs).get("href")
+
+    def handle_data(self, data: str) -> None:
+        if self._cell is not None:
+            self._cell.append(data)
+
+    def handle_endtag(self, tag: str) -> None:
+        lowered = tag.casefold()
+        if lowered in ("td", "th") and self._row is not None and self._cell is not None:
+            self._row.append(" ".join(" ".join(self._cell).split()))
+            self._cell = None
+        elif lowered == "a":
+            if self._href:
+                self.links.append(self._href)
+            self._href = None
+        elif lowered == "tr" and self._row is not None:
+            if self._row:
+                self.rows.append(tuple(self._row))
+            self._row = None
+
+
+def _local(value: str, field: str) -> datetime:
+    try:
+        zone = ZoneInfo(TIMEZONE_NAME)
+        local = datetime.strptime(value, "%Y-%m-%d %I:%M %p")
+    except (ValueError, ZoneInfoNotFoundError) as exc:
+        raise ScheduleAuthorityError(f"{field} local time malformed") from exc
+    candidates = []
+    for fold in (0, 1):
+        candidate = local.replace(tzinfo=zone, fold=fold)
+        if candidate.astimezone(UTC).astimezone(zone).replace(tzinfo=None) == local:
+            candidates.append(candidate.astimezone(UTC))
+    if len(set(candidates)) != 1:
+        raise ScheduleAuthorityError(f"{field} is ambiguous or nonexistent")
+    return candidates[0].replace(tzinfo=UTC)
+
+
+def _bea(evidence: SourceEvidence, expected: Quarter) -> BEAReleaseSchedule:
+    try:
+        html = evidence.raw_body.decode("utf-8")
+    except UnicodeDecodeError as exc:
+        raise ScheduleAuthorityError("BEA schedule is not UTF-8") from exc
+    parser = _ScheduleParser()
+    parser.feed(html)
+    parser.close()
+    matches = []
+    for row in parser.rows:
+        low = " | ".join(row).casefold()
+        if (
+            "gdp" in low
+            and "advance estimate" in low
+            and "second estimate" not in low
+            and "third estimate" not in low
+            and _quarters(list(row)).canonical == expected.canonical
+        ):
+            matches.append(row)
+    if len(matches) != 1:
+        raise ScheduleAuthorityError("BEA schedule target is absent or duplicated")
+    row = matches[0]
+    if len(row) < 3:
+        raise ScheduleAuthorityError("BEA schedule row layout drifted")
+    match = re.fullmatch(r"([A-Za-z]+)\s+(\d{1,2})", row[0])
+    if not match:
+        raise ScheduleAuthorityError("BEA release date is malformed")
+    release_date = date(2026, datetime.strptime(match.group(1), "%B").month, int(match.group(2)))
+    release: datetime | date = (
+        release_date
+        if not row[1].strip()
+        else _local(f"{release_date.isoformat()} {row[1]}", "BEA release")
+    )
+    links = [link for link in parser.links if link.startswith("/") or link.startswith(BEA_ORIGIN)]
+    if len(links) != 1:
+        raise ScheduleAuthorityError("bea_release_locator is absent or ambiguous")
+    locator = links[0] if links[0].startswith("http") else BEA_ORIGIN + links[0]
+    return BEAReleaseSchedule(release, TIMEZONE_NAME, locator, SETTLEMENT_EDITION, expected)
+
+
+def _market(raw: dict[str, object], quarter: Quarter) -> EligibleMarket:
+    ticker = _string(raw.get("ticker"), "market ticker")
+    if raw.get("event_ticker") != EVENT_TICKER:
+        raise ScheduleAuthorityError("wrong-event market")
+    status = _string(raw.get("status"), "market status")
+    if status not in {"active", "open"}:
+        raise ScheduleAuthorityError("inactive/ineligible market")
+    primary, secondary, identity = _rules(raw, quarter)
+    return EligibleMarket(
+        ticker,
+        EVENT_TICKER,
+        status,
+        _strike(raw, ticker),
+        _timestamp(raw.get("open_time"), "market open"),
+        _timestamp(raw.get("close_time"), "market close"),
+        _optional_timestamp(raw.get("expected_expiration_time"), "expected expiration"),
+        _optional_timestamp(raw.get("latest_expiration_time"), "latest expiration"),
+        identity,
+        primary,
+        secondary,
+    )
 
 
 def _incomplete(
     reason: str,
-    event_evidence: SourceEvidence | None = None,
-    market_evidence: SourceEvidence | None = None,
-    bea_evidence: SourceEvidence | None = None,
+    event: SourceEvidence | None = None,
+    market: SourceEvidence | None = None,
+    bea: SourceEvidence | None = None,
 ) -> ScheduleAuthorityResult:
     return ScheduleAuthorityResult(
-        status=AuthorityStatus.EVIDENCE_INCOMPLETE,
-        authority=None,
-        contradiction=reason,
-        event_evidence=event_evidence,
-        market_evidence=market_evidence,
-        bea_evidence=bea_evidence,
+        AuthorityStatus.EVIDENCE_INCOMPLETE, None, reason, event, market, bea
     )
 
 
 def _issue_authority(
-    event_evidence: SourceEvidence, market_evidence: SourceEvidence, bea_evidence: SourceEvidence
+    event_evidence: SourceEvidence,
+    market_evidence: SourceEvidence | None,
+    bea_evidence: SourceEvidence,
 ) -> ScheduleAuthorityResult:
     try:
-        _validate_source_evidence(event_evidence)
-        _validate_source_evidence(market_evidence)
-        _validate_source_evidence(bea_evidence)
-        event_payload = _json_object(event_evidence)
-        event = _dict(event_payload.get("event"), "event")
-        event_market = _market_from_event(event_payload)
-        market_payload = _json_object(market_evidence)
-        direct_market = _dict(market_payload.get("market"), "market")
-        bea_release = _parse_bea_schedule(bea_evidence)
-        values, contradiction = _validate_semantics(
-            event=event,
-            event_market=event_market,
-            direct_market=direct_market,
-            bea_release=bea_release,
+        _validate_evidence(event_evidence)
+        _validate_evidence(bea_evidence)
+        if market_evidence is not None:
+            _validate_evidence(market_evidence)
+        payload = _json(event_evidence)
+        event = payload.get("event")
+        if (
+            not isinstance(event, dict)
+            or event.get("event_ticker") != EVENT_TICKER
+            or event.get("series_ticker") != SERIES_TICKER
+        ):
+            raise ScheduleAuthorityError("event identity mismatch")
+        nested = event.get("markets")
+        if not isinstance(nested, list) or not nested:
+            raise ScheduleAuthorityError("eligible market set is absent")
+        container = event
+        pagination = payload.get("pagination", container.get("pagination"))
+        if not isinstance(pagination, dict) or "cursor" not in pagination:
+            raise ScheduleAuthorityError("market result completeness is unproven")
+        if isinstance(pagination, dict) and pagination.get("cursor") not in (None, ""):
+            raise ScheduleAuthorityError("market result set has omitted pages")
+        market_count = payload.get("market_count", container.get("market_count"))
+        if market_count != len(nested):
+            raise ScheduleAuthorityError("market count does not prove completeness")
+        quarter = _quarters(
+            [event.get("strike_period"), event.get("title"), event.get("sub_title")]
         )
-        if contradiction is not None:
-            return _incomplete(contradiction, event_evidence, market_evidence, bea_evidence)
-        rule_text = values.pop("rule_text")
-        if not isinstance(rule_text, str):
-            raise ScheduleAuthorityError("rule evidence is malformed")
-        authority_values: dict[str, object] = {
-            **values,
-            "kalshi_rule_evidence_id": market_evidence.source_identity,
-            "kalshi_rule_sha256": hashlib.sha256(rule_text.encode("utf-8")).hexdigest(),
-            "kalshi_event_evidence_id": event_evidence.source_identity,
-            "kalshi_event_sha256": event_evidence.raw_sha256,
-            "kalshi_market_evidence_id": market_evidence.source_identity,
-            "kalshi_market_sha256": market_evidence.raw_sha256,
-            "bea_schedule_evidence_id": bea_evidence.source_identity,
-            "bea_schedule_sha256": bea_evidence.raw_sha256,
-            "event_acquired_at": event_evidence.acquired_at,
-            "market_acquired_at": market_evidence.acquired_at,
-            "bea_acquired_at": bea_evidence.acquired_at,
-            "timezone_policy_identity": TIMEZONE_POLICY_IDENTITY,
-            "parser_version": PARSER_VERSION,
-            "contradiction_result": "NONE",
+        markets = tuple(
+            sorted(
+                (_market(item, quarter) for item in nested if isinstance(item, dict)),
+                key=lambda m: (m.strike.floor_strike, m.ticker),
+            )
+        )
+        if len(markets) != len(nested) or len({m.ticker for m in markets}) != len(markets):
+            raise ScheduleAuthorityError("duplicate or malformed market set")
+        equivalents = {
+            (m.strike.strike_type, m.strike.floor_strike, m.strike.cap_strike, m.strike.comparator)
+            for m in markets
         }
-        authority = ScheduleAuthority(values=authority_values, _capability=_AUTHORITY_ISSUER)
-        return ScheduleAuthorityResult(
-            status=AuthorityStatus.COMPLETE_AUTHORITY,
-            authority=authority,
-            contradiction=None,
-            event_evidence=event_evidence,
-            market_evidence=market_evidence,
-            bea_evidence=bea_evidence,
+        if len(equivalents) != len(markets):
+            raise ScheduleAuthorityError("duplicate equivalent strike")
+        schedule = _bea(bea_evidence, quarter)
+        if isinstance(schedule.release_at, datetime) and any(
+            item.close_at >= schedule.release_at for item in markets
+        ):
+            raise ScheduleAuthorityError("KALSHI_CLOSE_NOT_STRICTLY_BEFORE_BEA_RELEASE")
+        authority = object.__new__(ScheduleAuthority)
+        values = (
+            EVENT_TICKER,
+            SERIES_TICKER,
+            quarter,
+            quarter.canonical,
+            METRIC_SEMANTICS,
+            SETTLEMENT_EDITION,
+            schedule,
+            schedule.release_at,
+            schedule.bea_release_locator,
+            markets,
+            (event_evidence.source_identity, bea_evidence.source_identity),
+            (event_evidence.raw_sha256, bea_evidence.raw_sha256),
+            TIMEZONE_POLICY_IDENTITY,
+            PARSER_VERSION,
+            "NONE",
         )
-    except ScheduleAuthorityError as exc:
+        for name, value in zip(ScheduleAuthority.__dataclass_fields__, values, strict=True):
+            object.__setattr__(authority, name, value)
+        _AUTHORITY_REGISTRY[id(authority)] = (*values, event_evidence, bea_evidence)
+        return ScheduleAuthorityResult(
+            AuthorityStatus.COMPLETE_AUTHORITY,
+            authority,
+            None,
+            event_evidence,
+            market_evidence,
+            bea_evidence,
+        )
+    except (ScheduleAuthorityError, TypeError, ValueError) as exc:
         return _incomplete(str(exc), event_evidence, market_evidence, bea_evidence)
+
+
+def _utc_now() -> datetime:
+    return datetime.now(UTC)
+
+
+def _fixed_get(host: str, origin: str, path: str, expected: tuple[str, ...]) -> _RawResponse:
+    if (host, origin) not in ((KALSHI_HOST, KALSHI_ORIGIN), (BEA_HOST, BEA_ORIGIN)):
+        raise ScheduleAuthorityError("source outside allowlist")
+    connection = http.client.HTTPSConnection(
+        host, timeout=10.0, context=ssl.create_default_context()
+    )
+    try:
+        connection.request(HTTP_METHOD, path, headers={"Accept": ",".join(expected)})
+        response = connection.getresponse()
+        body = response.read(MAX_RESPONSE_BYTES + 1)
+        if len(body) > MAX_RESPONSE_BYTES or response.status != SUCCESS_STATUS:
+            raise ScheduleAuthorityError("source response is incomplete")
+        content = response.getheader("Content-Type", "").split(";", 1)[0].strip().casefold()
+        if content not in expected:
+            raise ScheduleAuthorityError("source content type is not authoritative")
+        return _RawResponse(
+            origin + path, host, path, HTTP_METHOD, response.status, content, body, _utc_now()
+        )
+    except ScheduleAuthorityError:
+        raise
+    except (OSError, TimeoutError, ValueError, http.client.HTTPException) as exc:
+        raise ScheduleAuthorityError("fixed public source acquisition failed") from exc
+    finally:
+        connection.close()
 
 
 def acquire_schedule_authority() -> ScheduleAuthorityResult:
-    """Acquire and parse the fixed one-event KXGDP/BEA schedule authority."""
-    event_evidence: SourceEvidence | None = None
-    market_evidence: SourceEvidence | None = None
-    bea_evidence: SourceEvidence | None = None
+    """Acquire research-only event, market-set, and BEA schedule facts."""
+    event = bea = None
     try:
-        event_response = _fixed_get(
-            KALSHI_HOST, KALSHI_ORIGIN, KALSHI_EVENT_PATH, ("application/json",)
+        event = _new_evidence(
+            _fixed_get(KALSHI_HOST, KALSHI_ORIGIN, KALSHI_EVENT_PATH, ("application/json",))
         )
-        if event_response.status != SUCCESS_STATUS:
-            return _incomplete("KALSHI_EVENT_NON_200")
-        event_evidence = SourceEvidence(response=event_response, _capability=_AUTHORITY_ISSUER)
-        market_response = _fixed_get(
-            KALSHI_HOST, KALSHI_ORIGIN, KALSHI_MARKET_PATH, ("application/json",)
-        )
-        if market_response.status != SUCCESS_STATUS:
-            return _incomplete("KALSHI_MARKET_NON_200", event_evidence)
-        market_evidence = SourceEvidence(response=market_response, _capability=_AUTHORITY_ISSUER)
-        bea_response = _fixed_get(BEA_HOST, BEA_ORIGIN, BEA_SCHEDULE_PATH, ("text/html",))
-        if bea_response.status != SUCCESS_STATUS:
-            return _incomplete("BEA_SCHEDULE_NON_200", event_evidence, market_evidence)
-        bea_evidence = SourceEvidence(response=bea_response, _capability=_AUTHORITY_ISSUER)
+        bea = _new_evidence(_fixed_get(BEA_HOST, BEA_ORIGIN, BEA_SCHEDULE_PATH, ("text/html",)))
+        return _issue_authority(event, None, bea)
     except ScheduleAuthorityError as exc:
-        return _incomplete(str(exc), event_evidence, market_evidence, bea_evidence)
-    return _issue_authority(event_evidence, market_evidence, bea_evidence)
+        return _incomplete(str(exc), event, None, bea)
+
+
+def validate_schedule_authority(authority: ScheduleAuthority) -> None:
+    """Validate issuer registration and every bound field before authoritative use."""
+    if type(authority) is not ScheduleAuthority or _AUTHORITY_REGISTRY.get(id(authority)) is None:
+        raise ScheduleAuthorityError("schedule authority is unissued")
+    try:
+        values = tuple(getattr(authority, name) for name in ScheduleAuthority.__dataclass_fields__)
+    except AttributeError as exc:
+        raise ScheduleAuthorityError("schedule authority is uninitialized") from exc
+    record = _AUTHORITY_REGISTRY[id(authority)]
+    if record[: len(values)] != values:
+        raise ScheduleAuthorityError("schedule authority was mutated")
+    _validate_evidence(cast(SourceEvidence, record[-2]))
+    _validate_evidence(cast(SourceEvidence, record[-1]))
+    if authority.event_ticker != EVENT_TICKER or authority.series_ticker != SERIES_TICKER:
+        raise ScheduleAuthorityError("schedule authority identity mismatch")
+    if not authority.bea_release_locator.startswith(BEA_ORIGIN + "/"):
+        raise ScheduleAuthorityError("release locator is not first-party")
+    if not authority.eligible_markets or len({m.ticker for m in authority.eligible_markets}) != len(
+        authority.eligible_markets
+    ):
+        raise ScheduleAuthorityError("schedule authority market set is invalid")
 
 
 __all__ = [
     "AuthorityStatus",
+    "BEAReleaseSchedule",
+    "EligibleMarket",
+    "Quarter",
     "ScheduleAuthority",
     "ScheduleAuthorityError",
     "ScheduleAuthorityResult",
     "SourceEvidence",
+    "StrikeSemantics",
+    "StrikeType",
     "acquire_schedule_authority",
+    "validate_schedule_authority",
 ]
