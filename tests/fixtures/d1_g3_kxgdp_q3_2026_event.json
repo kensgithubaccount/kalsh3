@@ -1,0 +1,31 @@
+{
+  "event": {
+    "event_ticker": "KXGDP-26OCT30",
+    "series_ticker": "KXGDP",
+    "title": "US real GDP growth in Q3 2026?",
+    "sub_title": "In Q3 2026",
+    "category": "Economics",
+    "strike_period": "Q3 2026",
+    "markets": [
+      {
+        "ticker": "KXGDP-26OCT30-T1.0",
+        "event_ticker": "KXGDP-26OCT30",
+        "strike_type": "greater",
+        "floor_strike": "1.0",
+        "cap_strike": null,
+        "title": "Will real GDP increase by more than 1.0% in Q3 2026?",
+        "subtitle": "1.0%",
+        "rules_primary": "If real GDP (as measured by the BEA's seasonally adjusted and annualized Advance Estimate) increases by more than 1.0, then the market resolves to Yes.",
+        "rules_secondary": "The market will close at 8:29 AM on the day of the expected release of the data for Q3 2026, or three months following that expected date.",
+        "open_time": "2026-06-24T14:00:00Z",
+        "close_time": "2026-10-29T12:29:00Z",
+        "expected_expiration_time": "2026-10-29T14:00:00Z",
+        "latest_expiration_time": "2027-01-29T14:00:00Z",
+        "updated_time": "2026-08-06T17:56:26.054346Z",
+        "status": "active"
+      }
+    ],
+    "market_count": 1,
+    "pagination": {"cursor": ""}
+  }
+}
