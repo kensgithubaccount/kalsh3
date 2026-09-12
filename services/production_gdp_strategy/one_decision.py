@@ -26,8 +26,15 @@ from services.forecasting.gdpnow_parsing import (
 )
 from services.forecasting.gdpnow_source_acquisition import (
     GDPNowAcquisitionEvidence,
+    acquire_gdpnow_commentary_page,
     validate_gdpnow_acquisition_evidence,
 )
+from services.production_gdp_strategy.fee_authority import acquire_fee_authority
+from services.production_gdp_strategy.schedule_authority import (
+    AuthorityStatus,
+    acquire_schedule_authority,
+)
+from services.forecasting.gdpnow_parsing import parse_gdpnow_commentary
 from services.market_universe.domain import (
     Market,
     MarketStatus,
@@ -605,6 +612,7 @@ class DecisionReceipt:
     tradability_protocol_version: str
     tradability_protocol_hash: str
     decision_timestamp: datetime
+    pipeline_start_timestamp: datetime
     pipeline_completion_timestamp: datetime
     schedule_id: str
     schedule_gate_passed: bool
@@ -912,7 +920,8 @@ def _evaluate_fixture_decision(
         "tradability_protocol_hash": stable_hash(
             (TRADABILITY_PROTOCOL_VERSION, MAX_STATUS_BOOK_STATUS_WINDOW_MS, "active-book-active")
         ),
-        "decision_timestamp": _utc(decision_sample.wall_utc, "decision timestamp"),
+        "decision_timestamp": _utc(pipeline.wall_utc, "decision timestamp"),
+        "pipeline_start_timestamp": _utc(decision_sample.wall_utc, "pipeline start timestamp"),
         "pipeline_completion_timestamp": _utc(pipeline.wall_utc, "pipeline completion"),
         "schedule_id": schedule.evidence_id,
         "schedule_gate_passed": classification is not DecisionClass.EVIDENCE_INCOMPLETE,
@@ -958,17 +967,29 @@ def _evaluate_fixture_decision(
 
 
 def run_one_research_decision() -> DecisionReceipt:
-    """Run one fixed production composition, failing closed while adapters are absent.
+    """Run the fixed research composition and fail closed on incomplete authority."""
+    pipeline_start = _system_clock()
+    try:
+        gdpnow = acquire_gdpnow_commentary_page()
+        vintage = parse_gdpnow_commentary(gdpnow)
+        schedule_result = acquire_schedule_authority()
+        if schedule_result.status is not AuthorityStatus.COMPLETE_AUTHORITY:
+            return _incomplete_receipt(_system_clock(), pipeline_start=pipeline_start)
+        # The reviewed fee adapter intentionally cannot issue COMPLETE at this
+        # checkpoint. Acquire it before deciding, then preserve that blocker.
+        fee = acquire_fee_authority(_system_clock().wall_utc)
+        if fee.policy is None:
+            return _incomplete_receipt(_system_clock(), pipeline_start=pipeline_start)
+        del vintage
+    except Exception:
+        return _incomplete_receipt(_system_clock(), pipeline_start=pipeline_start)
+    return _incomplete_receipt(_system_clock(), pipeline_start=pipeline_start)
 
-    This public boundary intentionally has no source, response, evidence, or clock
-    parameter.  A later activation review may enable fixed reviewed adapters.  Until
-    then, schedule and fee authority are unavailable, so this function records only
-    ``EVIDENCE_INCOMPLETE`` and performs no live acquisition.
-    """
-    return _incomplete_receipt(_system_clock())
 
-
-def _incomplete_receipt(sample: _ClockSample) -> DecisionReceipt:
+def _incomplete_receipt(
+    sample: _ClockSample, *, pipeline_start: _ClockSample | None = None
+) -> DecisionReceipt:
+    start = pipeline_start or sample
     values: dict[str, object] = {
         "decision_id": stable_hash(
             (POLICY_VERSION, "EVIDENCE_INCOMPLETE", sample.wall_utc.isoformat())
@@ -982,6 +1003,7 @@ def _incomplete_receipt(sample: _ClockSample) -> DecisionReceipt:
             (TRADABILITY_PROTOCOL_VERSION, MAX_STATUS_BOOK_STATUS_WINDOW_MS)
         ),
         "decision_timestamp": _utc(sample.wall_utc, "decision timestamp"),
+        "pipeline_start_timestamp": _utc(start.wall_utc, "pipeline start timestamp"),
         "pipeline_completion_timestamp": _utc(sample.wall_utc, "pipeline completion"),
         "schedule_id": "UNAVAILABLE",
         "schedule_gate_passed": False,
@@ -1020,6 +1042,8 @@ def validate_decision_receipt(receipt: DecisionReceipt) -> None:
         raise DecisionError("decision receipt is not research-only")
     if receipt.quantity != ONE or receipt.entry_gate_value != GATE:
         raise DecisionError("decision receipt policy constants changed")
+    if receipt.decision_timestamp < receipt.pipeline_completion_timestamp:
+        raise DecisionError("decision timestamp cannot precede pipeline completion")
     payload_values = {
         field.name: getattr(receipt, field.name)
         for field in fields(DecisionReceipt)
