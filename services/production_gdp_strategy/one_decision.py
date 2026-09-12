@@ -22,6 +22,7 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from services.forecasting.gdpnow_parsing import (
     ParsedGDPNowVintage,
+    parse_gdpnow_commentary,
     validate_parsed_gdpnow_vintage,
 )
 from services.forecasting.gdpnow_source_acquisition import (
@@ -29,12 +30,6 @@ from services.forecasting.gdpnow_source_acquisition import (
     acquire_gdpnow_commentary_page,
     validate_gdpnow_acquisition_evidence,
 )
-from services.production_gdp_strategy.fee_authority import acquire_fee_authority
-from services.production_gdp_strategy.schedule_authority import (
-    AuthorityStatus,
-    acquire_schedule_authority,
-)
-from services.forecasting.gdpnow_parsing import parse_gdpnow_commentary
 from services.market_universe.domain import (
     Market,
     MarketStatus,
@@ -46,6 +41,11 @@ from services.market_universe.public_read import (
     get_orderbook_with_body,
 )
 from services.opportunity_engine.fees import FeePolicy, FeeType, calculate_fee
+from services.production_gdp_strategy.fee_authority import acquire_fee_authority
+from services.production_gdp_strategy.schedule_authority import (
+    AuthorityStatus,
+    acquire_schedule_authority,
+)
 
 POLICY_VERSION = "d1-g2-p1-one-decision-v1"
 ENTRY_RULE_VERSION = "d1-g2-fixed-low-debit-v1"
