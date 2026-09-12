@@ -25,6 +25,7 @@ from services.opportunity_engine.engine import (
     ResearchThresholds,
     decide,
     evaluate_both,
+    evaluate_outcome,
     outcome_probabilities,
     rank_score,
     stale_reasons,
@@ -105,6 +106,22 @@ def test_depth_walk_fractional_subpenny_vwap_monotonic_and_insufficient() -> Non
         )
     )
     assert subpenny.yes_best_ask == Decimal(".4487")
+
+
+def test_vwap_depth_is_not_charged_again_as_slippage() -> None:
+    result = evaluate_outcome(
+        OutcomeSide.YES,
+        Decimal("0.50"),
+        Decimal("0.50"),
+        Decimal("0.45"),
+        FeePolicy(
+            "zero", FeeType.FLAT, Decimal("0"), NOW, None, "test", "test", True,
+            flat_rate=Decimal("0"),
+        ),
+        Decimal("2"),
+        Decimal("0.05"),
+    )
+    assert result.break_even_probability == Decimal("0.45")
 
 
 def test_yes_no_interval_complements_and_adversarial_economics() -> None:
