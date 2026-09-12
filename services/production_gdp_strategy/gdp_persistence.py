@@ -161,6 +161,20 @@ class DecisionArchive:
             os.fsync(stream.fileno())
 
     def load(self, trial_id: str) -> DecisionReceipt:
+        from services.production_gdp_strategy.one_decision import _restore_archived_decision
+
+        receipt = _restore_archived_decision(self, trial_id)
+        record = self._records()[trial_id]
+        if record.get("payload_hash") != receipt.payload_hash:
+            raise GDPPersistenceError("decision payload hash does not match archive")
+        if (
+            receipt.trial_id != record["trial_id"]
+            or receipt.underlying_event_id != record["underlying_event_id"]
+        ):
+            raise GDPPersistenceError("decision archive identity binding failed")
+        return receipt
+
+    def authenticated_values(self, trial_id: str) -> dict[str, object]:
         records = self._records()
         if trial_id not in records:
             raise GDPPersistenceError("decision is not archived")
@@ -174,29 +188,7 @@ class DecisionArchive:
         values: dict[str, object] = {}
         for name, encoded in payload.items():
             values[name] = _decoded(encoded, name)
-        record_without_mac = {k: v for k, v in record.items() if k != "issuer_mac"}
-        from services.production_gdp_strategy.one_decision import (
-            _restore_decision_from_authenticated_record,
-        )
-
-        try:
-            receipt = _restore_decision_from_authenticated_record(
-                values=values,
-                record_without_mac=record_without_mac,
-                claimed_mac=mac,
-                signing_key=self._key,
-                canonicalize=_canonical,
-            )
-        except ValueError as exc:
-            raise GDPPersistenceError(str(exc)) from exc
-        if record.get("payload_hash") != receipt.payload_hash:
-            raise GDPPersistenceError("decision payload hash does not match archive")
-        if (
-            receipt.trial_id != record["trial_id"]
-            or receipt.underlying_event_id != record["underlying_event_id"]
-        ):
-            raise GDPPersistenceError("decision archive identity binding failed")
-        return receipt
+        return values
 
     def _records(self) -> dict[str, dict[str, object]]:
         if not self._journal.exists():

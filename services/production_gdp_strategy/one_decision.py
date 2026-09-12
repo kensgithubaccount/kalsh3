@@ -656,6 +656,7 @@ class DecisionReceipt:
 def _make_decision_issuer() -> tuple[
     Callable[[Mapping[str, object], _Bundle | None], DecisionReceipt],
     Callable[..., DecisionReceipt],
+    Callable[[Mapping[str, object]], DecisionReceipt],
     Callable[[DecisionReceipt], None],
 ]:
     """Closure-private DecisionReceipt issuance/validation boundary.
@@ -722,6 +723,15 @@ def _make_decision_issuer() -> tuple[
             raise DecisionError("restored decision cannot carry a live evidence bundle")
         return _construct({k: v for k, v in values.items() if k != "bundle"}, None)
 
+    def restore_from_archive_values(values: Mapping[str, object]) -> DecisionReceipt:
+        if values.get("classification") is not DecisionClass.EVIDENCE_INCOMPLETE:
+            raise DecisionError("only EVIDENCE_INCOMPLETE decisions can be restored")
+        if values.get("research_only") is not True or values.get("production_influence") != ZERO:
+            raise DecisionError(
+                "restored decision must be research-only with zero production influence"
+            )
+        return _construct(values, None)
+
     def validate(receipt: DecisionReceipt) -> None:
         if (
             type(receipt) is not DecisionReceipt
@@ -755,12 +765,7 @@ def _make_decision_issuer() -> tuple[
             if receipt.classification is not DecisionClass.EVIDENCE_INCOMPLETE:
                 raise
 
-    return issue_live, restore_from_authenticated_record, validate
-
-
-_issue_live_decision, _restore_decision_from_authenticated_record, validate_decision_receipt = (
-    _make_decision_issuer()
-)
+    return issue_live, restore_from_authenticated_record, restore_from_archive_values, validate
 
 
 def _policy_hash() -> str:
@@ -931,11 +936,12 @@ def _classify(
     return classification, selected, price, fee, side, elapsed_ms, inside, before_cutoff
 
 
-def _evaluate_fixture_decision(
+def _evaluate_fixture_decision_impl(
     source: _ResearchDecisionSource,
     gdpnow: GDPNowAcquisitionEvidence,
     vintage: ParsedGDPNowVintage,
     clock: _Clock,
+    issuer: Callable[[Mapping[str, object], _Bundle | None], DecisionReceipt],
 ) -> DecisionReceipt:
     decision_sample = clock()
     schedule_start = clock()
@@ -1068,8 +1074,7 @@ def _evaluate_fixture_decision(
         "research_only": True,
         "production_influence": ZERO,
     }
-    receipt = _issue_live_decision(values, bundle)
-    validate_decision_receipt(receipt)
+    receipt = issuer(values, bundle)
     return receipt
 
 
@@ -1154,11 +1159,12 @@ def _finish_persisted_result(
     return result
 
 
-def _incomplete_receipt(
+def _incomplete_receipt_impl(
     sample: _ClockSample,
     *,
     pipeline_start: _ClockSample | None = None,
     trial: Any = None,
+    issuer: Callable[[Mapping[str, object], _Bundle | None], DecisionReceipt],
 ) -> DecisionReceipt:
     start = pipeline_start or sample
     values: dict[str, object] = {
@@ -1205,7 +1211,47 @@ def _incomplete_receipt(
         "research_only": True,
         "production_influence": ZERO,
     }
-    return _issue_live_decision(values, None)
+    return issuer(values, None)
+
+
+def _bootstrap_public_decision_operations() -> None:
+    issue, _restore, restore_archive_values, validate = _make_decision_issuer()
+
+    def evaluate(
+        source: _ResearchDecisionSource,
+        gdpnow: GDPNowAcquisitionEvidence,
+        vintage: ParsedGDPNowVintage,
+        clock: _Clock,
+    ) -> DecisionReceipt:
+        return _evaluate_fixture_decision_impl(source, gdpnow, vintage, clock, issue)
+
+    def incomplete(
+        sample: _ClockSample,
+        *,
+        pipeline_start: _ClockSample | None = None,
+        trial: Any = None,
+    ) -> DecisionReceipt:
+        return _incomplete_receipt_impl(
+            sample, pipeline_start=pipeline_start, trial=trial, issuer=issue
+        )
+
+    def restore_archived(archive: object, trial_id: str) -> DecisionReceipt:
+        from services.production_gdp_strategy.gdp_persistence import DecisionArchive
+
+        if type(archive) is not DecisionArchive or type(trial_id) is not str:
+            raise DecisionError("GDP replay requires a genuine DecisionArchive and trial id")
+        values = archive.authenticated_values(trial_id)
+        return restore_archive_values(values)
+
+    globals()["_evaluate_fixture_decision"] = evaluate
+    globals()["_incomplete_receipt"] = incomplete
+    globals()["_restore_archived_decision"] = restore_archived
+    globals()["validate_decision_receipt"] = validate
+
+
+_incomplete_receipt: Callable[..., DecisionReceipt] = None  # type: ignore[assignment]
+validate_decision_receipt: Callable[[DecisionReceipt], None] = None  # type: ignore[assignment]
+_restore_archived_decision: Callable[[object, str], DecisionReceipt] = None  # type: ignore[assignment]
 
 
 def _persistable_values(receipt: DecisionReceipt) -> dict[str, object]:
@@ -1270,3 +1316,5 @@ def replay_decision(receipt: DecisionReceipt) -> DecisionReceipt:
 
 
 __all__ = ["DecisionClass", "DecisionError", "replay_decision", "run_one_research_decision"]
+
+_bootstrap_public_decision_operations()
