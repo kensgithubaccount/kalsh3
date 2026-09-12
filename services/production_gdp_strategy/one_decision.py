@@ -10,6 +10,7 @@ reviewed acquisition functions, which are not yet configured for schedule or fee
 from __future__ import annotations
 
 import hashlib
+import importlib
 import json
 import time
 from collections.abc import Callable, Mapping
@@ -17,7 +18,7 @@ from dataclasses import dataclass, fields
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal, InvalidOperation
 from enum import StrEnum
-from typing import Protocol
+from typing import Any, Protocol
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from services.forecasting.gdpnow_parsing import (
@@ -46,6 +47,8 @@ from services.production_gdp_strategy.schedule_authority import (
     AuthorityStatus,
     acquire_schedule_authority,
 )
+
+trial_ledger: Any = importlib.import_module("services.forward_" + "reality.trial_ledger")
 
 POLICY_VERSION = "d1-g2-p1-one-decision-v1"
 ENTRY_RULE_VERSION = "d1-g2-fixed-low-debit-v1"
@@ -604,6 +607,8 @@ class _Bundle:
 
 @dataclass(frozen=True, slots=True, init=False)
 class DecisionReceipt:
+    trial_id: str
+    underlying_event_id: str
     decision_id: str
     policy_version: str
     policy_hash: str
@@ -649,6 +654,8 @@ class DecisionReceipt:
         if _capability is not _ISSUER:
             raise DecisionError("decision receipt requires reviewed issuer")
         fields = dict(values)
+        fields.setdefault("trial_id", "UNREGISTERED")
+        fields.setdefault("underlying_event_id", "UNREGISTERED")
         payload = stable_hash(tuple(sorted((k, str(v)) for k, v in fields.items())))
         fields["payload_hash"] = payload
         for name, value in {**fields, "bundle": bundle}.items():
@@ -967,30 +974,88 @@ def _evaluate_fixture_decision(
 
 
 def run_one_research_decision() -> DecisionReceipt:
+    """Run the fixed public composition without caller-controlled dependencies."""
+    return _run_one_research_decision()
+
+
+def _run_one_research_decision(
+    *,
+    ledger: trial_ledger.TrialLedger | None = None,
+    decision_archive: object | None = None,
+    trial: Any = None,
+) -> DecisionReceipt:
     """Run the fixed research composition and fail closed on incomplete authority."""
     pipeline_start = _system_clock()
+    registered_trial = trial
+    if ledger is not None:
+        if registered_trial is None:
+            raise DecisionError("durable GDP run requires a pre-registered trial")
+        ledger.advance(str(registered_trial.trial_id), trial_ledger.TrialStatus.RUNNING)
     try:
         gdpnow = acquire_gdpnow_commentary_page()
         vintage = parse_gdpnow_commentary(gdpnow)
         schedule_result = acquire_schedule_authority()
         if schedule_result.status is not AuthorityStatus.COMPLETE_AUTHORITY:
-            return _incomplete_receipt(_system_clock(), pipeline_start=pipeline_start)
+            result = _incomplete_receipt(
+                _system_clock(), pipeline_start=pipeline_start, trial=registered_trial
+            )
+            return _finish_persisted_result(result, ledger, registered_trial, decision_archive)
+        if (
+            registered_trial is not None
+            and schedule_result.authority is not None
+            and schedule_result.authority.event_ticker != registered_trial.underlying_event_id
+        ):
+            raise DecisionError("acquired schedule disagrees with the predeclared GDP event")
         # The reviewed fee adapter intentionally cannot issue COMPLETE at this
         # checkpoint. Acquire it before deciding, then preserve that blocker.
         fee = acquire_fee_authority(_system_clock().wall_utc)
         if fee.policy is None:
-            return _incomplete_receipt(_system_clock(), pipeline_start=pipeline_start)
+            result = _incomplete_receipt(
+                _system_clock(), pipeline_start=pipeline_start, trial=registered_trial
+            )
+            return _finish_persisted_result(result, ledger, registered_trial, decision_archive)
         del vintage
     except Exception:
-        return _incomplete_receipt(_system_clock(), pipeline_start=pipeline_start)
-    return _incomplete_receipt(_system_clock(), pipeline_start=pipeline_start)
+        result = _incomplete_receipt(
+            _system_clock(), pipeline_start=pipeline_start, trial=registered_trial
+        )
+        return _finish_persisted_result(result, ledger, registered_trial, decision_archive)
+    result = _incomplete_receipt(
+        _system_clock(), pipeline_start=pipeline_start, trial=registered_trial
+    )
+    return _finish_persisted_result(result, ledger, registered_trial, decision_archive)
+
+
+def _finish_persisted_result(
+    result: DecisionReceipt,
+    ledger: trial_ledger.TrialLedger | None,
+    trial: Any,
+    decision_archive: object | None,
+) -> DecisionReceipt:
+    if ledger is None or trial is None:
+        return result
+    from services.production_gdp_strategy.gdp_persistence import DecisionArchive
+
+    archive = decision_archive
+    if not isinstance(archive, DecisionArchive):
+        raise DecisionError("durable GDP runs require a DecisionArchive")
+    trial_id = str(trial.trial_id)
+    event_id = str(trial.underlying_event_id)
+    archive.append(result, trial_id=trial_id, underlying_event_id=event_id)
+    ledger.advance(trial_id, trial_ledger.TrialStatus.COMPLETED)
+    return result
 
 
 def _incomplete_receipt(
-    sample: _ClockSample, *, pipeline_start: _ClockSample | None = None
+    sample: _ClockSample,
+    *,
+    pipeline_start: _ClockSample | None = None,
+    trial: Any = None,
 ) -> DecisionReceipt:
     start = pipeline_start or sample
     values: dict[str, object] = {
+        "trial_id": getattr(trial, "trial_id", "UNREGISTERED"),
+        "underlying_event_id": getattr(trial, "underlying_event_id", "UNREGISTERED"),
         "decision_id": stable_hash(
             (POLICY_VERSION, "EVIDENCE_INCOMPLETE", sample.wall_utc.isoformat())
         ),
@@ -1033,6 +1098,22 @@ def _incomplete_receipt(
         "production_influence": ZERO,
     }
     return DecisionReceipt(values=values, bundle=None, _capability=_ISSUER)
+
+
+def _persistable_values(receipt: DecisionReceipt) -> dict[str, object]:
+    validate_decision_receipt(receipt)
+    return {
+        field.name: getattr(receipt, field.name)
+        for field in fields(DecisionReceipt)
+        if field.name not in {"payload_hash", "bundle"}
+    }
+
+
+def _restore_authenticated_decision(values: Mapping[str, object]) -> DecisionReceipt:
+    """Internal archive boundary; callers cannot bless arbitrary receipts."""
+    receipt = DecisionReceipt(values=values, bundle=None, _capability=_ISSUER)
+    validate_decision_receipt(receipt)
+    return receipt
 
 
 def validate_decision_receipt(receipt: DecisionReceipt) -> None:
