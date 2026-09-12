@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 from datetime import UTC, datetime
 from pathlib import Path
@@ -406,3 +407,300 @@ def test_evidence_provenance_mutation_invalidates_authority(
     object.__setattr__(result.event_evidence, field, value)
     with pytest.raises(subject.ScheduleAuthorityError):
         subject.validate_schedule_authority(result.authority)
+
+
+def _forged_source_evidence(**overrides: object) -> subject.SourceEvidence:
+    forged = object.__new__(subject.SourceEvidence)
+    values: dict[str, object] = {
+        "source_locator": KALSHI_ORIGIN + KALSHI_EVENT_PATH,
+        "source_host": KALSHI_HOST,
+        "source_path": KALSHI_EVENT_PATH,
+        "method": "GET",
+        "http_status": 200,
+        "content_type": "application/json",
+        "content_length": len(event_bytes()),
+        "acquired_at": ACQUIRED,
+        "parser_version": subject.PARSER_VERSION,
+        "raw_body": event_bytes(),
+        "raw_sha256": hashlib.sha256(event_bytes()).hexdigest(),
+        "headers": (
+            ("x-kalshi-event-market-count", "1"),
+            ("x-kalshi-event-pagination-terminal", "true"),
+        ),
+        "source_identity": "forged",
+    }
+    values.update(overrides)
+    for name, value in values.items():
+        object.__setattr__(forged, name, value)
+    return forged
+
+
+@pytest.mark.parametrize(
+    "kalshi_noop, bea_noop",
+    [(True, False), (False, True), (True, True)],
+)
+def test_validator_rebinding_does_not_weaken_issuance(
+    monkeypatch: pytest.MonkeyPatch, kalshi_noop: bool, bea_noop: bool
+) -> None:
+    if kalshi_noop:
+        monkeypatch.setattr(subject, "_validate_kalshi_evidence", lambda _: None)
+    if bea_noop:
+        monkeypatch.setattr(subject, "_validate_bea_evidence", lambda _: None)
+    forged_event = _forged_source_evidence()
+    forged_bea = _forged_source_evidence(
+        source_locator=BEA_ORIGIN + BEA_SCHEDULE_PATH,
+        source_host=BEA_HOST,
+        source_path=BEA_SCHEDULE_PATH,
+        content_type="text/html",
+        raw_body=bea_bytes(),
+        content_length=len(bea_bytes()),
+        raw_sha256=hashlib.sha256(bea_bytes()).hexdigest(),
+        headers=(),
+    )
+    result = subject._issue_authority(forged_event, None, forged_bea)
+    assert result.status is subject.AuthorityStatus.EVIDENCE_INCOMPLETE
+    assert result.authority is None
+
+
+@pytest.mark.parametrize("both", [True, False])
+def test_validator_rebinding_does_not_weaken_forged_authority_validation(
+    monkeypatch: pytest.MonkeyPatch, both: bool
+) -> None:
+    monkeypatch.setattr(subject, "_validate_kalshi_evidence", lambda _: None)
+    if both:
+        monkeypatch.setattr(subject, "_validate_bea_evidence", lambda _: None)
+    forged = object.__new__(subject.ScheduleAuthority)
+    with pytest.raises(subject.ScheduleAuthorityError):
+        subject.validate_schedule_authority(forged)
+
+
+def test_validator_rebinding_does_not_mask_linked_evidence_mutation(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    result = acquire(monkeypatch)
+    assert result.authority is not None
+    assert result.event_evidence is not None
+    subject.validate_schedule_authority(result.authority)
+    object.__setattr__(result.event_evidence, "raw_body", b"forged-after-issuance")
+    monkeypatch.setattr(subject, "_validate_kalshi_evidence", lambda _: None)
+    monkeypatch.setattr(subject, "_validate_bea_evidence", lambda _: None)
+    with pytest.raises(subject.ScheduleAuthorityError):
+        subject.validate_schedule_authority(result.authority)
+
+
+def test_caller_created_source_evidence_cannot_produce_complete_authority() -> None:
+    forged_event = _forged_source_evidence()
+    forged_bea = _forged_source_evidence(
+        source_locator=BEA_ORIGIN + BEA_SCHEDULE_PATH,
+        source_host=BEA_HOST,
+        source_path=BEA_SCHEDULE_PATH,
+        content_type="text/html",
+        raw_body=bea_bytes(),
+    )
+    result = subject._issue_authority(forged_event, None, forged_bea)
+    assert result.status is subject.AuthorityStatus.EVIDENCE_INCOMPLETE
+
+
+def test_populated_forged_evidence_remains_rejected() -> None:
+    forged_event = _forged_source_evidence(
+        headers=(
+            ("x-kalshi-event-market-count", "1"),
+            ("x-kalshi-event-pagination-terminal", "true"),
+        )
+    )
+    forged_bea = _forged_source_evidence(
+        source_locator=BEA_ORIGIN + BEA_SCHEDULE_PATH,
+        source_host=BEA_HOST,
+        source_path=BEA_SCHEDULE_PATH,
+        content_type="text/html",
+        raw_body=bea_bytes(),
+        content_length=len(bea_bytes()),
+    )
+    result = subject._issue_authority(forged_event, None, forged_bea)
+    assert result.status is subject.AuthorityStatus.EVIDENCE_INCOMPLETE
+    with pytest.raises(subject.ScheduleAuthorityError):
+        subject.validate_schedule_authority(object.__new__(subject.ScheduleAuthority))
+
+
+def test_self_computed_evidence_hash_remains_insufficient() -> None:
+    body = event_bytes()
+    identity = subject._fingerprint(
+        subject.TRANSPORT_POLICY_IDENTITY,
+        "kalshi-kxgdp-event-v1",
+        KALSHI_ORIGIN + KALSHI_EVENT_PATH,
+        KALSHI_HOST,
+        KALSHI_EVENT_PATH,
+        "GET",
+        200,
+        "application/json",
+        len(body),
+        ACQUIRED,
+        subject.PARSER_VERSION,
+        body,
+        hashlib.sha256(body).hexdigest(),
+        (),
+    )
+    forged_event = _forged_source_evidence(source_identity=identity, headers=())
+    forged_bea = _forged_source_evidence(
+        source_locator=BEA_ORIGIN + BEA_SCHEDULE_PATH,
+        source_host=BEA_HOST,
+        source_path=BEA_SCHEDULE_PATH,
+        content_type="text/html",
+        raw_body=bea_bytes(),
+        content_length=len(bea_bytes()),
+    )
+    result = subject._issue_authority(forged_event, None, forged_bea)
+    assert result.status is subject.AuthorityStatus.EVIDENCE_INCOMPLETE
+
+
+def test_rebinding_json_helper_does_not_redirect_legitimate_issuance(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        subject,
+        "_json",
+        lambda evidence: {
+            "event": {
+                "event_ticker": subject.EVENT_TICKER,
+                "series_ticker": subject.SERIES_TICKER,
+                "markets": [{"forged": True}],
+                "market_count": 1,
+            }
+        },
+    )
+    result = acquire(monkeypatch)
+    assert result.status is subject.AuthorityStatus.COMPLETE_AUTHORITY
+    assert result.authority is not None
+    assert result.authority.eligible_markets[0].strike.floor_strike == "1.0"
+
+
+def test_rebinding_bea_helper_does_not_redirect_legitimate_issuance(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        subject,
+        "_bea",
+        lambda evidence, expected, bea_origin=subject.BEA_ORIGIN: (_ for _ in ()).throw(
+            AssertionError("rebound _bea must not be reachable from the frozen issuer")
+        ),
+    )
+    result = acquire(monkeypatch)
+    assert result.status is subject.AuthorityStatus.COMPLETE_AUTHORITY
+    assert result.authority is not None
+    assert result.authority.bea_release_locator.endswith("gdp-advance-estimate-third-quarter-2026")
+
+
+def test_rebinding_market_helper_does_not_redirect_legitimate_issuance(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        subject,
+        "_market",
+        lambda raw, quarter: (_ for _ in ()).throw(
+            AssertionError("rebound _market must not be reachable from the frozen issuer")
+        ),
+    )
+    result = acquire(monkeypatch)
+    assert result.status is subject.AuthorityStatus.COMPLETE_AUTHORITY
+    assert result.authority is not None
+    assert len(result.authority.eligible_markets) == 1
+
+
+def test_rebinding_authority_fingerprint_does_not_weaken_validation(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    result = acquire(monkeypatch)
+    assert result.authority is not None
+    monkeypatch.setattr(subject, "_authority_fingerprint", lambda values: "forged-constant")
+    subject.validate_schedule_authority(result.authority)
+    object.__setattr__(result.authority, "target_quarter", "2099-Q1")
+    with pytest.raises(subject.ScheduleAuthorityError):
+        subject.validate_schedule_authority(result.authority)
+
+
+@pytest.mark.parametrize("constant", ["EVENT_TICKER", "SERIES_TICKER"])
+def test_rebinding_event_series_identity_constants_does_not_relabel_authority(
+    monkeypatch: pytest.MonkeyPatch, constant: str
+) -> None:
+    monkeypatch.setattr(subject, constant, "evil-identity")
+    result = acquire(monkeypatch)
+    assert result.status is subject.AuthorityStatus.COMPLETE_AUTHORITY
+    assert result.authority is not None
+    assert result.authority.event_ticker == "KXGDP-26OCT30"
+    assert result.authority.series_ticker == "KXGDP"
+    subject.validate_schedule_authority(result.authority)
+
+
+@pytest.mark.parametrize("constant", ["METRIC_SEMANTICS", "SETTLEMENT_EDITION"])
+def test_rebinding_metric_edition_identity_constants_does_not_relabel_authority(
+    monkeypatch: pytest.MonkeyPatch, constant: str
+) -> None:
+    original = getattr(subject, constant)
+    monkeypatch.setattr(subject, constant, "evil-semantics")
+    result = acquire(monkeypatch)
+    assert result.status is subject.AuthorityStatus.COMPLETE_AUTHORITY
+    assert result.authority is not None
+    assert getattr(result.authority, constant.lower()) == original
+    subject.validate_schedule_authority(result.authority)
+
+
+def test_rebinding_evidence_fingerprint_does_not_mask_mutation(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    result = acquire(monkeypatch)
+    assert result.authority is not None
+    assert result.event_evidence is not None
+    subject.validate_schedule_authority(result.authority)
+    stale_identity = result.event_evidence.source_identity
+    monkeypatch.setattr(subject, "_evidence_fingerprint", lambda evidence: object())
+    object.__setattr__(result.event_evidence, "raw_body", b"forged-after-issuance")
+    object.__setattr__(result.event_evidence, "source_identity", stale_identity)
+    with pytest.raises(subject.ScheduleAuthorityError):
+        subject.validate_schedule_authority(result.authority)
+
+
+def test_forged_authority_from_object_new_is_unissued() -> None:
+    forged = object.__new__(subject.ScheduleAuthority)
+    with pytest.raises(subject.ScheduleAuthorityError):
+        subject.validate_schedule_authority(forged)
+
+
+def test_copied_legitimate_authority_values_remain_unissued(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    result = acquire(monkeypatch)
+    assert result.authority is not None
+    copy = object.__new__(subject.ScheduleAuthority)
+    for name in subject.ScheduleAuthority.__dataclass_fields__:
+        object.__setattr__(copy, name, getattr(result.authority, name))
+    with pytest.raises(subject.ScheduleAuthorityError):
+        subject.validate_schedule_authority(copy)
+
+
+def test_legitimate_evidence_attached_to_forged_authority_does_not_help(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    result = acquire(monkeypatch)
+    assert result.authority is not None
+    forged = object.__new__(subject.ScheduleAuthority)
+    for name in subject.ScheduleAuthority.__dataclass_fields__:
+        object.__setattr__(forged, name, getattr(result.authority, name))
+    object.__setattr__(forged, "target_quarter", result.authority.quarter.canonical)
+    with pytest.raises(subject.ScheduleAuthorityError):
+        subject.validate_schedule_authority(forged)
+
+
+def test_post_issuance_top_level_authority_mutation_fails(monkeypatch: pytest.MonkeyPatch) -> None:
+    result = acquire(monkeypatch)
+    assert result.authority is not None
+    subject.validate_schedule_authority(result.authority)
+    object.__setattr__(result.authority, "target_quarter", "2099-Q1")
+    with pytest.raises(subject.ScheduleAuthorityError):
+        subject.validate_schedule_authority(result.authority)
+
+
+def test_no_module_visible_authority_registry_or_registration_helper() -> None:
+    assert not hasattr(subject, "_AUTHORITY_REGISTRY")
+    assert not hasattr(subject, "_ISSUED_AUTHORITIES")
+    assert not hasattr(subject, "_register_authority")
+    assert not hasattr(subject, "_bless_authority")

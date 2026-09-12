@@ -191,12 +191,28 @@ def _authority_fingerprint(values: tuple[object, ...]) -> str:
     return _fingerprint(*(repr(value) for value in values))
 
 
-def _make_evidence_issuer() -> tuple[
+def _make_evidence_issuer(
+    *,
+    source_evidence_cls: type[SourceEvidence] = SourceEvidence,
+    fingerprint: Callable[..., str] = _fingerprint,
+    strict_utc: Callable[[datetime, str], datetime] = _strict_utc,
+    raw_fingerprint: Callable[[_RawResponse], tuple[object, ...]] = _raw_fingerprint,
+    evidence_fingerprint: Callable[[SourceEvidence], tuple[object, ...]] = _evidence_fingerprint,
+    success_status: int = SUCCESS_STATUS,
+    max_response_bytes: int = MAX_RESPONSE_BYTES,
+    parser_version: str = PARSER_VERSION,
+    transport_policy_identity: str = TRANSPORT_POLICY_IDENTITY,
+) -> tuple[
     Callable[[], SourceEvidence],
     Callable[[], SourceEvidence],
     Callable[[SourceEvidence], None],
     Callable[[SourceEvidence], None],
 ]:
+    # Trust-critical dependencies are captured as defaults above, evaluated once
+    # at module load before any caller could rebind the module globals of the
+    # same name. `validate`/`acquire` below must reference only these captured
+    # names, not the bare module globals, so later rebinding cannot weaken the
+    # provenance/integrity checks that gate evidence acceptance.
     kalshi_contract = (
         "kalshi-kxgdp-event-v1",
         KALSHI_HOST,
@@ -219,16 +235,16 @@ def _make_evidence_issuer() -> tuple[
         contract: tuple[str, str, str, str, str, tuple[str, ...]], evidence: SourceEvidence
     ) -> None:
         match = next((item for item in issued if item[2] is evidence), None)
-        if match is None or _evidence_fingerprint(evidence) != match[3]:
+        if match is None or evidence_fingerprint(evidence) != match[3]:
             raise ScheduleAuthorityError("source evidence is unissued or mutated")
         identity, host, origin, path, method, allowed_content_types = contract
         if (
-            type(evidence) is not SourceEvidence
+            type(evidence) is not source_evidence_cls
             or evidence.source_host != host
             or evidence.source_locator != origin + path
             or evidence.source_path != path
             or evidence.method != method
-            or evidence.http_status != SUCCESS_STATUS
+            or evidence.http_status != success_status
             or evidence.content_type not in allowed_content_types
         ):
             raise ScheduleAuthorityError("source evidence endpoint binding failed")
@@ -237,8 +253,8 @@ def _make_evidence_issuer() -> tuple[
             or len(evidence.raw_body) != evidence.content_length
         ):
             raise ScheduleAuthorityError("source evidence body integrity failed")
-        expected = _fingerprint(
-            TRANSPORT_POLICY_IDENTITY,
+        expected = fingerprint(
+            transport_policy_identity,
             identity,
             evidence.source_locator,
             evidence.source_host,
@@ -253,7 +269,7 @@ def _make_evidence_issuer() -> tuple[
             evidence.raw_sha256,
             evidence.headers,
         )
-        if evidence.source_identity != expected or evidence.parser_version != PARSER_VERSION:
+        if evidence.source_identity != expected or evidence.parser_version != parser_version:
             raise ScheduleAuthorityError("source evidence fingerprint failed")
 
     def acquire(contract: tuple[str, str, str, str, str, tuple[str, ...]]) -> SourceEvidence:
@@ -264,12 +280,12 @@ def _make_evidence_issuer() -> tuple[
         try:
             connection.request(method, path, headers={"Accept": ",".join(expected)})
             response = connection.getresponse()
-            body = response.read(MAX_RESPONSE_BYTES + 1)
+            body = response.read(max_response_bytes + 1)
             content = response.getheader("Content-Type", "").split(";", 1)[0].strip().casefold()
             if (
-                response.status != SUCCESS_STATUS
+                response.status != success_status
                 or not body
-                or len(body) > MAX_RESPONSE_BYTES
+                or len(body) > max_response_bytes
                 or content not in expected
             ):
                 raise ScheduleAuthorityError("source response is incomplete")
@@ -298,7 +314,7 @@ def _make_evidence_issuer() -> tuple[
                 _utc_now(),
                 headers,
             )
-            evidence = object.__new__(SourceEvidence)
+            evidence = object.__new__(source_evidence_cls)
             values: dict[str, object] = {
                 "source_locator": raw.locator,
                 "source_host": raw.host,
@@ -307,18 +323,18 @@ def _make_evidence_issuer() -> tuple[
                 "http_status": raw.status,
                 "content_type": raw.content_type,
                 "content_length": len(raw.body),
-                "acquired_at": _strict_utc(raw.acquired_at, "acquired_at"),
-                "parser_version": PARSER_VERSION,
+                "acquired_at": strict_utc(raw.acquired_at, "acquired_at"),
+                "parser_version": parser_version,
                 "raw_body": raw.body,
                 "raw_sha256": hashlib.sha256(raw.body).hexdigest(),
                 "headers": raw.headers,
             }
-            values["source_identity"] = _fingerprint(
-                TRANSPORT_POLICY_IDENTITY, identity, *(values[name] for name in values)
+            values["source_identity"] = fingerprint(
+                transport_policy_identity, identity, *(values[name] for name in values)
             )
             for name, value in values.items():
                 object.__setattr__(evidence, name, value)
-            issued.append((raw, _raw_fingerprint(raw), evidence, _evidence_fingerprint(evidence)))
+            issued.append((raw, raw_fingerprint(raw), evidence, evidence_fingerprint(evidence)))
             return evidence
         finally:
             connection.close()
@@ -640,132 +656,453 @@ def _market(raw: dict[str, object], quarter: Quarter) -> EligibleMarket:
     )
 
 
-def _incomplete(
-    reason: str,
-    event: SourceEvidence | None = None,
-    market: SourceEvidence | None = None,
-    bea: SourceEvidence | None = None,
-) -> ScheduleAuthorityResult:
-    return ScheduleAuthorityResult(
-        AuthorityStatus.EVIDENCE_INCOMPLETE, None, reason, event, market, bea
-    )
-
-
-def _issue_authority_impl(
-    event_evidence: SourceEvidence,
-    market_evidence: SourceEvidence | None,
-    bea_evidence: SourceEvidence,
-) -> ScheduleAuthorityResult:
-    try:
-        _validate_kalshi_evidence(event_evidence)
-        _validate_bea_evidence(bea_evidence)
-        if market_evidence is not None:
-            _validate_kalshi_evidence(market_evidence)
-        payload = _json(event_evidence)
-        event = payload.get("event")
-        if (
-            not isinstance(event, dict)
-            or event.get("event_ticker") != EVENT_TICKER
-            or event.get("series_ticker") != SERIES_TICKER
-        ):
-            raise ScheduleAuthorityError("event identity mismatch")
-        nested = event.get("markets")
-        if not isinstance(nested, list) or not nested:
-            raise ScheduleAuthorityError("eligible market set is absent")
-        declared_body_count = event.get("market_count", payload.get("market_count"))
-        if declared_body_count is not None and declared_body_count != len(nested):
-            raise ScheduleAuthorityError("market collection is internally inconsistent")
-        headers = dict(event_evidence.headers)
-        expected_count, terminal = (
-            headers.get("x-kalshi-event-market-count"),
-            headers.get("x-kalshi-event-pagination-terminal"),
-        )
-        if expected_count is None or terminal != "true":
-            raise ScheduleAuthorityError("market result completeness is unproven")
-        if int(expected_count) != len(nested):
-            raise ScheduleAuthorityError("source market count disagrees")
-        pagination = event.get("pagination", payload.get("pagination"))
-        if not isinstance(pagination, dict) or pagination.get("cursor") not in (None, ""):
-            raise ScheduleAuthorityError("market result set has omitted pages")
-        quarter = _quarters(
-            [event.get("strike_period"), event.get("title"), event.get("sub_title")]
-        )
-        markets = tuple(
-            sorted(
-                (_market(item, quarter) for item in nested if isinstance(item, dict)),
-                key=lambda item: (item.strike.normalized_floor, item.ticker),
-            )
-        )
-        if len(markets) != len(nested) or len({item.ticker for item in markets}) != len(markets):
-            raise ScheduleAuthorityError("duplicate or malformed market set")
-        identities = {
-            (
-                item.strike.strike_type,
-                item.strike.normalized_floor,
-                item.strike.normalized_cap,
-                item.strike.comparator,
-            )
-            for item in markets
-        }
-        if len(identities) != len(markets):
-            raise ScheduleAuthorityError("duplicate equivalent strike")
-        schedule = _bea(bea_evidence, quarter)
-        for item in markets:
-            if not item.open_at < item.close_at:
-                raise ScheduleAuthorityError("market lifecycle ordering is invalid")
-            if (
-                item.expected_expiration_at is not None
-                and item.expected_expiration_at < item.close_at
-            ):
-                raise ScheduleAuthorityError("expected expiration precedes close")
-            if (
-                item.latest_expiration_at is not None
-                and item.expected_expiration_at is not None
-                and item.latest_expiration_at < item.expected_expiration_at
-            ):
-                raise ScheduleAuthorityError("latest expiration precedes expected expiration")
-            if item.close_at >= schedule.release_at:
-                raise ScheduleAuthorityError("KALSHI_CLOSE_NOT_STRICTLY_BEFORE_BEA_RELEASE")
-        values = (
-            EVENT_TICKER,
-            SERIES_TICKER,
-            quarter,
-            quarter.canonical,
-            METRIC_SEMANTICS,
-            SETTLEMENT_EDITION,
-            schedule,
-            schedule.release_at,
-            schedule.bea_release_locator,
-            markets,
-            (event_evidence.source_identity, bea_evidence.source_identity),
-            (event_evidence.raw_sha256, bea_evidence.raw_sha256),
-            TIMEZONE_POLICY_IDENTITY,
-            PARSER_VERSION,
-            "NONE",
-        )
-        authority = object.__new__(ScheduleAuthority)
-        for name, value in zip(ScheduleAuthority.__dataclass_fields__, values, strict=True):
-            object.__setattr__(authority, name, value)
-        return ScheduleAuthorityResult(
-            AuthorityStatus.COMPLETE_AUTHORITY,
-            authority,
-            None,
-            event_evidence,
-            market_evidence,
-            bea_evidence,
-        )
-    except (ScheduleAuthorityError, TypeError, ValueError) as exc:
-        return _incomplete(str(exc), event_evidence, market_evidence, bea_evidence)
+# NOTE: `_json`, `_quarter`, `_quarters`, `_decimal`, `_strike`, `_rules`,
+# `_ScheduleParser`, `_local`, `_bea`, `_market` above remain as standalone,
+# fully-functional module-level definitions: several are exercised directly by
+# tests (`_quarter`, `_quarters`, `_bea`), and the rest are kept as meaningful
+# rebind targets for adversarial tests. None of them are called by the frozen
+# issuance/validation path below -- `_make_authority_issuer()` below defines
+# its own closure-local reimplementation of the entire semantic call graph
+# (constants, types, and helpers alike, captured as parameters with defaults
+# evaluated once at module load) so that ordinary rebinding of any of the
+# module globals of the same name, at any depth of the call graph, cannot
+# alter what the canonical issuer accepts as COMPLETE_AUTHORITY.
 
 
 def _utc_now() -> datetime:
     return datetime.now(UTC)
 
 
-def _make_authority_issuer() -> tuple[
+def _make_authority_issuer(
+    validate_kalshi: Callable[[SourceEvidence], None],
+    validate_bea: Callable[[SourceEvidence], None],
+    *,
+    event_ticker: str = EVENT_TICKER,
+    series_ticker: str = SERIES_TICKER,
+    metric_semantics: str = METRIC_SEMANTICS,
+    settlement_edition: str = SETTLEMENT_EDITION,
+    timezone_name: str = TIMEZONE_NAME,
+    timezone_policy_identity: str = TIMEZONE_POLICY_IDENTITY,
+    parser_version: str = PARSER_VERSION,
+    bea_origin_default: str = BEA_ORIGIN,
+    quarter_cls: type[Quarter] = Quarter,
+    strike_type_cls: type[StrikeType] = StrikeType,
+    strike_semantics_cls: type[StrikeSemantics] = StrikeSemantics,
+    eligible_market_cls: type[EligibleMarket] = EligibleMarket,
+    bea_release_schedule_cls: type[BEAReleaseSchedule] = BEAReleaseSchedule,
+    schedule_authority_cls: type[ScheduleAuthority] = ScheduleAuthority,
+    authority_status_cls: type[AuthorityStatus] = AuthorityStatus,
+    result_cls: type[ScheduleAuthorityResult] = ScheduleAuthorityResult,
+    error_cls: type[ScheduleAuthorityError] = ScheduleAuthorityError,
+    fingerprint: Callable[..., str] = _fingerprint,
+    strict_utc: Callable[[datetime, str], datetime] = _strict_utc,
+    authority_fingerprint: Callable[[tuple[object, ...]], str] = _authority_fingerprint,
+) -> tuple[
     Callable[[SourceEvidence, SourceEvidence | None, SourceEvidence], ScheduleAuthorityResult],
     Callable[[ScheduleAuthority], None],
 ]:
+    # Every callable/class/constant this canonical issuer needs is captured
+    # above as a parameter default, evaluated once when this `def` executes at
+    # module load -- before any caller has had a chance to run. The nested
+    # helpers below reference only these captured names (or each other, which
+    # Python resolves via this function's own enclosing scope, not the module
+    # globals of the same name), so later `subject.<name> = ...` rebinding of
+    # any of them cannot change what this issuer accepts.
+
+    def _string(value: object, field: str) -> str:
+        if type(value) is not str or not value.strip():
+            raise error_cls(f"{field} is missing or malformed")
+        return value.strip()
+
+    def _timestamp(value: object, field: str) -> datetime:
+        if type(value) is not str or value.startswith("0001-"):
+            raise error_cls(f"{field} timestamp is missing or sentinel")
+        try:
+            return strict_utc(datetime.fromisoformat(value.replace("Z", "+00:00")), field)
+        except ValueError as exc:
+            raise error_cls(f"{field} timestamp is malformed") from exc
+
+    def _optional_timestamp(value: object, field: str) -> datetime | None:
+        return None if value in (None, "") else _timestamp(value, field)
+
+    def _quarters(texts: list[object]) -> Quarter:
+        found: list[Quarter] = []
+        for item in texts:
+            if not isinstance(item, str):
+                continue
+            for match in re.finditer(r"\bQ([1-4])\s+(20\d{2})\b", item, re.IGNORECASE):
+                found.append(quarter_cls(f"{match.group(2)}-Q{match.group(1)}", match.group(0)))
+            for match in re.finditer(r"\b(20\d{2})-Q([1-4])\b", item, re.IGNORECASE):
+                found.append(quarter_cls(f"{match.group(1)}-Q{match.group(2)}", match.group(0)))
+            for match in re.finditer(
+                r"\b([1-4])(?:st|nd|rd|th)\s+Quarter\s+(20\d{2})\b", item, re.IGNORECASE
+            ):
+                found.append(quarter_cls(f"{match.group(2)}-Q{match.group(1)}", match.group(0)))
+        if not found or len({item.canonical for item in found}) != 1:
+            raise error_cls("quarter evidence is absent or contradictory")
+        return found[0]
+
+    def _decimal(value: object, field: str) -> Decimal:
+        if isinstance(value, bool) or not isinstance(value, (str, int, float)):
+            raise error_cls(f"{field} is malformed")
+        try:
+            result = Decimal(str(value))
+        except InvalidOperation as exc:
+            raise error_cls(f"{field} is malformed") from exc
+        if not result.is_finite():
+            raise error_cls(f"{field} is malformed")
+        return result
+
+    def _strike(
+        raw: dict[str, object], ticker: str, primary: str, secondary: str
+    ) -> StrikeSemantics:
+        try:
+            kind = strike_type_cls(_string(raw.get("strike_type"), "strike_type").casefold())
+        except ValueError as exc:
+            raise error_cls("unsupported strike_type") from exc
+        floor_text = _string(raw.get("floor_strike"), "floor_strike")
+        floor = _decimal(floor_text, "floor_strike")
+        cap_value = raw.get("cap_strike")
+        cap_text = None if cap_value in (None, "") else _string(cap_value, "cap_strike")
+        cap = None if cap_text is None else _decimal(cap_text, "cap_strike")
+        if kind is strike_type_cls.BETWEEN and cap is None:
+            raise error_cls("between strike requires cap_strike")
+        if kind is not strike_type_cls.BETWEEN and cap is not None:
+            raise error_cls("floor/cap contradiction")
+        if cap is not None and floor >= cap:
+            raise error_cls("floor/cap contradiction")
+        suffix = ticker.rsplit("-T", 1)[-1] if "-T" in ticker else ""
+        if suffix and _decimal(suffix, "ticker strike") != floor:
+            raise error_cls("ticker disagrees with explicit strike")
+        lower = f"{primary}\n{secondary}".casefold()
+        if kind is strike_type_cls.GREATER:
+            comparator, pattern = "greater_than", r"more\s+than\s+([-+]?\d+(?:\.\d+)?)"
+            if "more than" not in lower or re.search(r"less\s+than|between", lower):
+                raise error_cls("comparator disagrees with strike_type")
+            threshold = re.search(pattern, lower)
+            if threshold is None or _decimal(threshold.group(1), "rule threshold") != floor:
+                raise error_cls("rule threshold disagrees with floor_strike")
+        elif kind is strike_type_cls.LESS:
+            comparator, pattern = "less_than", r"less\s+than\s+([-+]?\d+(?:\.\d+)?)"
+            if "less than" not in lower or re.search(r"more\s+than|between", lower):
+                raise error_cls("comparator disagrees with strike_type")
+            threshold = re.search(pattern, lower)
+            if threshold is None or _decimal(threshold.group(1), "rule threshold") != floor:
+                raise error_cls("rule threshold disagrees with floor_strike")
+        else:
+            comparator = "between"
+            threshold = re.search(
+                r"between\s+([-+]?\d+(?:\.\d+)?)[^\d]+([-+]?\d+(?:\.\d+)?)", lower
+            )
+            if (
+                threshold is None
+                or cap is None
+                or _decimal(threshold.group(1), "rule floor") != floor
+                or _decimal(threshold.group(2), "rule cap") != cap
+            ):
+                raise error_cls("rule thresholds disagree with floor/cap")
+        return strike_semantics_cls(
+            kind,
+            floor_text,
+            cap_text,
+            floor,
+            cap,
+            comparator,
+            fingerprint(lower, floor, cap, comparator),
+        )
+
+    def _rules(market: dict[str, object], quarter: Quarter) -> tuple[str, str]:
+        primary = _string(market.get("rules_primary"), "rules_primary")
+        secondary = _string(market.get("rules_secondary"), "rules_secondary")
+        low = f"{primary}\n{secondary}".casefold()
+        if (
+            any(
+                item not in low
+                for item in ("real gdp", "seasonally adjusted", "annualized", "advance estimate")
+            )
+            or "nominal gdp" in low
+        ):
+            raise error_cls("GDP rule semantics are unsupported")
+        editions = re.findall(r"\b(?:advance|second|third) estimate\b", low)
+        if editions != ["advance estimate"] or "revised" in low or "later estimate" in low:
+            raise error_cls("settlement edition is not exclusively Advance Estimate")
+        if _quarters([primary, secondary]).canonical != quarter.canonical:
+            raise error_cls("market rule quarter disagrees")
+        return primary, secondary
+
+    class _ScheduleParser(HTMLParser):
+        def __init__(self) -> None:
+            super().__init__(convert_charrefs=True)
+            self.rows: list[tuple[tuple[str, ...], tuple[str, ...], int | None]] = []
+            self.text_parts: list[str] = []
+            self._publication_year: int | None = None
+            self._row_year: int | None = None
+            self._row: list[str] | None = None
+            self._links: list[str] | None = None
+            self._cell: list[str] | None = None
+            self._href: str | None = None
+
+        def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+            lower = tag.casefold()
+            if lower == "tr":
+                self._row, self._links = [], []
+                self._row_year = self._publication_year
+            elif lower in ("td", "th") and self._row is not None:
+                self._cell = []
+            elif lower == "a" and self._row is not None:
+                self._href = dict(attrs).get("href")
+
+        def handle_data(self, data: str) -> None:
+            self.text_parts.append(data)
+            if self._cell is not None:
+                self._cell.append(data)
+            else:
+                year = re.fullmatch(r"\s*Year\s+(20\d{2})\s*", data)
+                if year:
+                    self._publication_year = int(year.group(1))
+
+        def handle_endtag(self, tag: str) -> None:
+            lower = tag.casefold()
+            if lower in ("td", "th") and self._row is not None and self._cell is not None:
+                self._row.append(" ".join(" ".join(self._cell).split()))
+                self._cell = None
+            elif lower == "a":
+                if self._href and self._links is not None:
+                    self._links.append(self._href)
+                self._href = None
+            elif lower == "tr" and self._row is not None and self._links is not None:
+                if self._row:
+                    self.rows.append((tuple(self._row), tuple(self._links), self._row_year))
+                self._row, self._links = None, None
+
+    def _local(value: str, field: str) -> datetime:
+        try:
+            zone = ZoneInfo(timezone_name)
+            local = datetime.strptime(value, "%Y-%m-%d %I:%M %p")
+        except (ValueError, ZoneInfoNotFoundError) as exc:
+            raise error_cls(f"{field} local time malformed") from exc
+        candidates = []
+        for fold in (0, 1):
+            candidate = local.replace(tzinfo=zone, fold=fold)
+            if candidate.astimezone(UTC).astimezone(zone).replace(tzinfo=None) == local:
+                candidates.append(candidate.astimezone(UTC))
+        if len(set(candidates)) != 1:
+            raise error_cls(f"{field} is ambiguous or nonexistent")
+        return candidates[0].replace(tzinfo=UTC)
+
+    def _bea(
+        evidence: SourceEvidence, expected: Quarter, bea_origin: str = bea_origin_default
+    ) -> BEAReleaseSchedule:
+        try:
+            html = evidence.raw_body.decode("utf-8")
+        except UnicodeDecodeError as exc:
+            raise error_cls("BEA schedule is not UTF-8") from exc
+        parser = _ScheduleParser()
+        parser.feed(html)
+        parser.close()
+        matches: list[tuple[tuple[str, ...], tuple[str, ...], int | None]] = []
+        for row, links, publication_year in parser.rows:
+            low = " | ".join(row).casefold()
+            try:
+                row_quarter = _quarters(list(row))
+            except error_cls:
+                continue
+            if (
+                "gdp" in low
+                and "advance estimate" in low
+                and "second estimate" not in low
+                and "third estimate" not in low
+                and row_quarter.canonical == expected.canonical
+            ):
+                matches.append((row, links, publication_year))
+        if len(matches) != 1:
+            raise error_cls("BEA schedule target is absent or duplicated")
+        row, links, publication_year = matches[0]
+        if len(row) < 3 or len(links) != 1:
+            raise error_cls("BEA locator is not exact-row-bound")
+        match = re.fullmatch(r"([A-Za-z]+)\s+(\d{1,2})", row[0])
+        if not match:
+            raise error_cls("BEA release date is malformed")
+        try:
+            month = datetime.strptime(match.group(1), "%B").month
+        except ValueError as exc:
+            raise error_cls("BEA release month is malformed") from exc
+        if publication_year is None:
+            raise error_cls("BEA publication year is not source-bound")
+        release_date = date(publication_year, month, int(match.group(2)))
+        if not row[1].strip():
+            raise error_cls("BEA release timing precision is insufficient")
+        release = _local(f"{release_date.isoformat()} {row[1]}", "BEA release")
+        link = links[0]
+        if not (link.startswith("/") or link.startswith(bea_origin + "/")):
+            raise error_cls("BEA locator is not first-party")
+        locator = link if link.startswith("http") else bea_origin + link
+        if f"/news/{publication_year}/" not in locator:
+            raise error_cls("BEA locator year disagrees with publication year")
+        quarter_words = {"Q1": "first", "Q2": "second", "Q3": "third", "Q4": "fourth"}
+        expected_suffix = expected.canonical[5:]
+        expected_word = quarter_words[expected_suffix]
+        if (
+            "advance-estimate" not in locator.casefold()
+            or expected.canonical[:4] not in locator.casefold()
+            or f"{expected_word}-quarter-{expected.canonical[:4]}" not in locator.casefold()
+        ):
+            raise error_cls("BEA locator does not identify matched row")
+        return bea_release_schedule_cls(
+            release, timezone_name, locator, settlement_edition, expected
+        )
+
+    def _json(evidence: SourceEvidence) -> dict[str, object]:
+        try:
+            value = json.loads(evidence.raw_body)
+        except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+            raise error_cls("Kalshi response is malformed JSON") from exc
+        if not isinstance(value, dict):
+            raise error_cls("Kalshi response must be an object")
+        return value
+
+    def _market(raw: dict[str, object], quarter: Quarter) -> EligibleMarket:
+        ticker = _string(raw.get("ticker"), "market ticker")
+        if raw.get("event_ticker") != event_ticker:
+            raise error_cls("wrong-event market")
+        status = _string(raw.get("status"), "market status")
+        if status not in {"active", "open"}:
+            raise error_cls("inactive/ineligible market")
+        primary, secondary = _rules(raw, quarter)
+        return eligible_market_cls(
+            ticker,
+            event_ticker,
+            status,
+            _strike(raw, ticker, primary, secondary),
+            _timestamp(raw.get("open_time"), "market open"),
+            _timestamp(raw.get("close_time"), "market close"),
+            _optional_timestamp(raw.get("expected_expiration_time"), "expected expiration"),
+            _optional_timestamp(raw.get("latest_expiration_time"), "latest expiration"),
+            fingerprint(primary, secondary, quarter.canonical),
+            primary,
+            secondary,
+        )
+
+    def _incomplete(
+        reason: str,
+        event: SourceEvidence | None = None,
+        market: SourceEvidence | None = None,
+        bea: SourceEvidence | None = None,
+    ) -> ScheduleAuthorityResult:
+        return result_cls(
+            authority_status_cls.EVIDENCE_INCOMPLETE, None, reason, event, market, bea
+        )
+
+    def _issue_authority_impl(
+        event_evidence: SourceEvidence,
+        market_evidence: SourceEvidence | None,
+        bea_evidence: SourceEvidence,
+    ) -> ScheduleAuthorityResult:
+        try:
+            validate_kalshi(event_evidence)
+            validate_bea(bea_evidence)
+            if market_evidence is not None:
+                validate_kalshi(market_evidence)
+            payload = _json(event_evidence)
+            event = payload.get("event")
+            if (
+                not isinstance(event, dict)
+                or event.get("event_ticker") != event_ticker
+                or event.get("series_ticker") != series_ticker
+            ):
+                raise error_cls("event identity mismatch")
+            nested = event.get("markets")
+            if not isinstance(nested, list) or not nested:
+                raise error_cls("eligible market set is absent")
+            declared_body_count = event.get("market_count", payload.get("market_count"))
+            if declared_body_count is not None and declared_body_count != len(nested):
+                raise error_cls("market collection is internally inconsistent")
+            headers = dict(event_evidence.headers)
+            expected_count, terminal = (
+                headers.get("x-kalshi-event-market-count"),
+                headers.get("x-kalshi-event-pagination-terminal"),
+            )
+            if expected_count is None or terminal != "true":
+                raise error_cls("market result completeness is unproven")
+            if int(expected_count) != len(nested):
+                raise error_cls("source market count disagrees")
+            pagination = event.get("pagination", payload.get("pagination"))
+            if not isinstance(pagination, dict) or pagination.get("cursor") not in (None, ""):
+                raise error_cls("market result set has omitted pages")
+            quarter = _quarters(
+                [event.get("strike_period"), event.get("title"), event.get("sub_title")]
+            )
+            markets = tuple(
+                sorted(
+                    (_market(item, quarter) for item in nested if isinstance(item, dict)),
+                    key=lambda item: (item.strike.normalized_floor, item.ticker),
+                )
+            )
+            if len(markets) != len(nested) or len({item.ticker for item in markets}) != len(
+                markets
+            ):
+                raise error_cls("duplicate or malformed market set")
+            identities = {
+                (
+                    item.strike.strike_type,
+                    item.strike.normalized_floor,
+                    item.strike.normalized_cap,
+                    item.strike.comparator,
+                )
+                for item in markets
+            }
+            if len(identities) != len(markets):
+                raise error_cls("duplicate equivalent strike")
+            schedule = _bea(bea_evidence, quarter)
+            for item in markets:
+                if not item.open_at < item.close_at:
+                    raise error_cls("market lifecycle ordering is invalid")
+                if (
+                    item.expected_expiration_at is not None
+                    and item.expected_expiration_at < item.close_at
+                ):
+                    raise error_cls("expected expiration precedes close")
+                if (
+                    item.latest_expiration_at is not None
+                    and item.expected_expiration_at is not None
+                    and item.latest_expiration_at < item.expected_expiration_at
+                ):
+                    raise error_cls("latest expiration precedes expected expiration")
+                if item.close_at >= schedule.release_at:
+                    raise error_cls("KALSHI_CLOSE_NOT_STRICTLY_BEFORE_BEA_RELEASE")
+            values = (
+                event_ticker,
+                series_ticker,
+                quarter,
+                quarter.canonical,
+                metric_semantics,
+                settlement_edition,
+                schedule,
+                schedule.release_at,
+                schedule.bea_release_locator,
+                markets,
+                (event_evidence.source_identity, bea_evidence.source_identity),
+                (event_evidence.raw_sha256, bea_evidence.raw_sha256),
+                timezone_policy_identity,
+                parser_version,
+                "NONE",
+            )
+            authority = object.__new__(schedule_authority_cls)
+            for name, value in zip(
+                schedule_authority_cls.__dataclass_fields__, values, strict=True
+            ):
+                object.__setattr__(authority, name, value)
+            return result_cls(
+                authority_status_cls.COMPLETE_AUTHORITY,
+                authority,
+                None,
+                event_evidence,
+                market_evidence,
+                bea_evidence,
+            )
+        except (error_cls, TypeError, ValueError) as exc:
+            return _incomplete(str(exc), event_evidence, market_evidence, bea_evidence)
+
     issued: dict[
         int, tuple[ScheduleAuthority, tuple[object, ...], str, SourceEvidence, SourceEvidence]
     ] = {}
@@ -776,12 +1113,13 @@ def _make_authority_issuer() -> tuple[
         result = _issue_authority_impl(event, market, bea)
         if result.authority is not None:
             values = tuple(
-                getattr(result.authority, name) for name in ScheduleAuthority.__dataclass_fields__
+                getattr(result.authority, name)
+                for name in schedule_authority_cls.__dataclass_fields__
             )
             issued[id(result.authority)] = (
                 result.authority,
                 values,
-                _authority_fingerprint(values),
+                authority_fingerprint(values),
                 event,
                 bea,
             )
@@ -789,40 +1127,48 @@ def _make_authority_issuer() -> tuple[
 
     def validate(authority: ScheduleAuthority) -> None:
         record = issued.get(id(authority))
-        if type(authority) is not ScheduleAuthority or record is None or record[0] is not authority:
-            raise ScheduleAuthorityError("schedule authority is unissued")
-        values = tuple(getattr(authority, name) for name in ScheduleAuthority.__dataclass_fields__)
-        if record[1] != values or record[2] != _authority_fingerprint(values):
-            raise ScheduleAuthorityError("schedule authority was mutated")
-        _validate_kalshi_evidence(record[3])
-        _validate_bea_evidence(record[4])
         if (
-            authority.event_ticker != EVENT_TICKER
-            or authority.series_ticker != SERIES_TICKER
+            type(authority) is not schedule_authority_cls
+            or record is None
+            or record[0] is not authority
+        ):
+            raise error_cls("schedule authority is unissued")
+        values = tuple(
+            getattr(authority, name) for name in schedule_authority_cls.__dataclass_fields__
+        )
+        if record[1] != values or record[2] != authority_fingerprint(values):
+            raise error_cls("schedule authority was mutated")
+        validate_kalshi(record[3])
+        validate_bea(record[4])
+        if (
+            authority.event_ticker != event_ticker
+            or authority.series_ticker != series_ticker
             or authority.target_quarter != authority.quarter.canonical
         ):
-            raise ScheduleAuthorityError("schedule authority identity mismatch")
+            raise error_cls("schedule authority identity mismatch")
         bea_origin = record[4].source_locator.removesuffix(record[4].source_path)
         if (
             not authority.bea_release_locator.startswith(bea_origin + "/")
             or authority.bea_release_locator != authority.bea_schedule.bea_release_locator
         ):
-            raise ScheduleAuthorityError("release locator binding failed")
+            raise error_cls("release locator binding failed")
         if not authority.eligible_markets or len(
             {item.ticker for item in authority.eligible_markets}
         ) != len(authority.eligible_markets):
-            raise ScheduleAuthorityError("schedule authority market set is invalid")
+            raise error_cls("schedule authority market set is invalid")
         for item in authority.eligible_markets:
             if not item.open_at < item.close_at or (
                 item.expected_expiration_at is not None
                 and item.expected_expiration_at < item.close_at
             ):
-                raise ScheduleAuthorityError("schedule authority lifecycle is invalid")
+                raise error_cls("schedule authority lifecycle is invalid")
 
     return issue, validate
 
 
-_issue_authority, validate_schedule_authority = _make_authority_issuer()
+_issue_authority, validate_schedule_authority = _make_authority_issuer(
+    _validate_kalshi_evidence, _validate_bea_evidence
+)
 
 
 def acquire_schedule_authority() -> ScheduleAuthorityResult:
@@ -841,7 +1187,9 @@ def acquire_schedule_authority() -> ScheduleAuthorityResult:
         ValueError,
         http.client.HTTPException,
     ) as exc:
-        return _incomplete(str(exc), event_evidence, None, bea_evidence)
+        return ScheduleAuthorityResult(
+            AuthorityStatus.EVIDENCE_INCOMPLETE, None, str(exc), event_evidence, None, bea_evidence
+        )
 
 
 __all__ = [
