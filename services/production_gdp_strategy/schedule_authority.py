@@ -156,8 +156,12 @@ class ScheduleAuthorityResult:
     bea_evidence: SourceEvidence | None
 
 
-def _fingerprint(*values: object, _sha256: Callable[..., Any] = hashlib.sha256) -> str:
-    return cast(str, _sha256("\x00".join(map(str, values)).encode()).hexdigest())
+def _fingerprint(
+    *values: object,
+    _sha256: Callable[..., Any] = hashlib.sha256,
+    _cast: Callable[..., str] = cast,
+) -> str:
+    return _cast(str, _sha256("\x00".join(map(str, values)).encode()).hexdigest())
 
 
 def _strict_utc(

@@ -667,6 +667,17 @@ def test_rebinding_evidence_fingerprint_does_not_mask_mutation(
         subject.validate_schedule_authority(result.authority)
 
 
+@pytest.mark.parametrize("replacement", [lambda typ, value: "POISONED", None])
+def test_rebinding_cast_does_not_change_or_break_canonical_acquisition(
+    monkeypatch: pytest.MonkeyPatch, replacement: object
+) -> None:
+    monkeypatch.setattr(subject, "cast", replacement)
+    result = acquire(monkeypatch)
+    assert result.status is subject.AuthorityStatus.COMPLETE_AUTHORITY
+    assert result.authority is not None
+    subject.validate_schedule_authority(result.authority)
+
+
 def test_forged_authority_from_object_new_is_unissued() -> None:
     forged = object.__new__(subject.ScheduleAuthority)
     with pytest.raises(subject.ScheduleAuthorityError):
@@ -779,22 +790,44 @@ def test_frozen_issuer_survives_systematic_dependency_rebinding(
 def test_frozen_trust_call_graph_has_no_runtime_module_global_loads() -> None:
     code_type = type(subject._issue_authority.__code__)
     codes: list[object] = []
+    inspected_codes: list[object] = []
     seen: set[int] = set()
 
-    def collect(value: object) -> None:
+    def collect(value: object, *, authority_dependency: bool = True) -> None:
         if isinstance(value, code_type) and id(value) not in seen:
             seen.add(id(value))
-            codes.append(value)
+            inspected_codes.append(value)
+            if authority_dependency:
+                codes.append(value)
             for constant in value.co_consts:
-                collect(constant)
+                collect(constant, authority_dependency=authority_dependency)
+        elif (
+            isinstance(value, type)
+            and id(value) not in seen
+            and getattr(value, "__module__", None) == subject.__name__
+        ):
+            seen.add(id(value))
+            for member in value.__dict__.values():
+                if isinstance(member, (staticmethod, classmethod)):
+                    member = member.__func__
+                elif isinstance(member, property):
+                    for accessor in (member.fget, member.fset, member.fdel):
+                        if accessor is not None:
+                            collect(accessor, authority_dependency=False)
+                    continue
+                # Class objects captured by the issuer include dataclass and
+                # enum machinery; inspect their hand-written callables for
+                # coverage without treating generated internals as issuer
+                # authority dependencies.
+                collect(member, authority_dependency=False)
         elif (
             callable(value)
             and getattr(value, "__module__", None) == subject.__name__
             and getattr(value, "__code__", None) is not None
         ):
-            collect(value.__code__)
+            collect(value.__code__, authority_dependency=authority_dependency)
             for cell in value.__closure__ or ():
-                collect(cell.cell_contents)
+                collect(cell.cell_contents, authority_dependency=authority_dependency)
 
     for root in (
         subject._acquire_kalshi_event,
@@ -804,11 +837,19 @@ def test_frozen_trust_call_graph_has_no_runtime_module_global_loads() -> None:
         subject.acquire_schedule_authority,
     ):
         collect(root)
+    # The module-level parser is intentionally not part of the frozen issuer's
+    # authority graph, but its hand-written methods must remain covered by the
+    # structural walker so future class-method dependencies cannot be missed.
+    collect(subject._ScheduleParser, authority_dependency=False)
     loads = {
         instruction.argval
         for code in codes
         for instruction in dis.get_instructions(code)
         if instruction.opname == "LOAD_GLOBAL"
     }
-    approved = {name for name in loads if hasattr(builtins, name)} | {"cast"}
+    approved = {name for name in loads if hasattr(builtins, name)}
     assert loads <= approved
+    assert any(
+        getattr(code, "co_qualname", "").endswith("_ScheduleParser.handle_starttag")
+        for code in inspected_codes
+    )
