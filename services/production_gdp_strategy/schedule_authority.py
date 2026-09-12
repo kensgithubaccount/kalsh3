@@ -13,7 +13,7 @@ from datetime import UTC, date, datetime
 from decimal import Decimal, InvalidOperation
 from enum import StrEnum
 from html.parser import HTMLParser
-from typing import Final, cast
+from typing import Final
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 EVENT_TICKER: Final = "KXGDP-26OCT30"
@@ -57,9 +57,20 @@ class _RawResponse:
     headers: tuple[tuple[str, str], ...] = ()
 
 
+@dataclass(frozen=True, slots=True)
+class _ReviewedEndpoint:
+    identity: str
+    host: str
+    origin: str
+    path: str
+    method: str
+    content_types: tuple[str, ...]
+
+
 @dataclass(frozen=True, slots=True, init=False)
 class SourceEvidence:
     source_locator: str
+    source_host: str
     source_path: str
     method: str
     http_status: int
@@ -155,7 +166,22 @@ class ScheduleAuthorityResult:
     bea_evidence: SourceEvidence | None
 
 
-_AUTHORITY_REGISTRY: dict[int, tuple[object, ...]] = {}
+_KALSHI_ENDPOINT = _ReviewedEndpoint(
+    "kalshi-kxgdp-event-v1",
+    KALSHI_HOST,
+    KALSHI_ORIGIN,
+    KALSHI_EVENT_PATH,
+    HTTP_METHOD,
+    ("application/json",),
+)
+_BEA_ENDPOINT = _ReviewedEndpoint(
+    "bea-release-schedule-v1",
+    BEA_HOST,
+    BEA_ORIGIN,
+    BEA_SCHEDULE_PATH,
+    HTTP_METHOD,
+    ("text/html",),
+)
 
 
 def _fingerprint(*values: object) -> str:
@@ -193,53 +219,43 @@ def _authority_fingerprint(values: tuple[object, ...]) -> str:
     return _fingerprint(*(repr(value) for value in values))
 
 
-def _validate_evidence_integrity(evidence: SourceEvidence) -> None:
-    if type(evidence) is not SourceEvidence:
-        raise ScheduleAuthorityError("source evidence is unissued or mutated")
-    if (
-        hashlib.sha256(evidence.raw_body).hexdigest() != evidence.raw_sha256
-        or len(evidence.raw_body) != evidence.content_length
-    ):
-        raise ScheduleAuthorityError("source evidence body integrity failed")
-    expected = _fingerprint(
-        TRANSPORT_POLICY_IDENTITY,
-        evidence.source_locator,
-        evidence.source_path,
-        evidence.method,
-        evidence.http_status,
-        evidence.content_type,
-        evidence.content_length,
-        evidence.acquired_at,
-        evidence.parser_version,
-        evidence.raw_body,
-        evidence.raw_sha256,
-        evidence.headers,
-    )
-    if evidence.source_identity != expected or evidence.parser_version != PARSER_VERSION:
-        raise ScheduleAuthorityError("source evidence fingerprint failed")
-
-
-def _make_acquisition_issuer() -> tuple[
-    Callable[[str, str, str, tuple[str, ...]], SourceEvidence],
-    Callable[[_RawResponse], SourceEvidence],
-    Callable[[SourceEvidence], None],
+def _make_evidence_issuer() -> tuple[
+    Callable[[_RawResponse, _ReviewedEndpoint | None], SourceEvidence],
+    Callable[[_RawResponse, _ReviewedEndpoint], SourceEvidence],
+    Callable[[SourceEvidence, _ReviewedEndpoint | None], None],
 ]:
-    issued: list[
-        tuple[_RawResponse, tuple[object, ...], SourceEvidence, tuple[object, ...] | None]
-    ] = []
+    raw_registry: dict[int, tuple[_RawResponse, tuple[object, ...]]] = {}
+    evidence_registry: dict[int, tuple[SourceEvidence, tuple[object, ...]]] = {}
 
-    def new_evidence(response: _RawResponse) -> SourceEvidence:
-        match = next((item for item in issued if item[0] is response), None)
-        if match is None or match[1] != _raw_fingerprint(response):
-            raise ScheduleAuthorityError("raw response is not issuer-acquired")
-
-        if response.status != SUCCESS_STATUS or not response.body:
+    def new_evidence(
+        response: _RawResponse, endpoint: _ReviewedEndpoint | None = None
+    ) -> SourceEvidence:
+        record = raw_registry.get(id(response))
+        if (
+            endpoint is None
+            or (endpoint is not _KALSHI_ENDPOINT and endpoint is not _BEA_ENDPOINT)
+            or type(response) is not _RawResponse
+            or record is None
+            or record[0] is not response
+            or record[1] != _raw_fingerprint(response)
+            or response.host != endpoint.host
+            or response.locator != endpoint.origin + endpoint.path
+            or response.path != endpoint.path
+            or response.method != endpoint.method
+        ):
+            raise ScheduleAuthorityError("raw response is not issuer-registered")
+        if (
+            response.status != SUCCESS_STATUS
+            or not response.body
+            or response.content_type not in endpoint.content_types
+        ):
             raise ScheduleAuthorityError("only successful non-empty responses become evidence")
         acquired = _strict_utc(response.acquired_at, "acquired_at")
         digest = hashlib.sha256(response.body).hexdigest()
-        evidence = match[2]
+        evidence = object.__new__(SourceEvidence)
         values: dict[str, object] = {
             "source_locator": response.locator,
+            "source_host": response.host,
             "source_path": response.path,
             "method": response.method,
             "http_status": response.status,
@@ -252,72 +268,79 @@ def _make_acquisition_issuer() -> tuple[
             "headers": response.headers,
         }
         values["source_identity"] = _fingerprint(
-            TRANSPORT_POLICY_IDENTITY, *(values[name] for name in values)
+            TRANSPORT_POLICY_IDENTITY, endpoint.identity, *(values[name] for name in values)
         )
         for name, value in values.items():
             object.__setattr__(evidence, name, value)
-        for index, item in enumerate(issued):
-            if item[0] is response:
-                issued[index] = (item[0], item[1], evidence, _evidence_fingerprint(evidence))
-                break
+        evidence_registry[id(evidence)] = (evidence, _evidence_fingerprint(evidence))
         return evidence
 
-    def validate_evidence(evidence: SourceEvidence) -> None:
-        match = next((item for item in issued if item[2] is evidence), None)
-        if match is None or match[3] is None or _evidence_fingerprint(evidence) != match[3]:
+    def acquire_evidence(response: _RawResponse, endpoint: _ReviewedEndpoint) -> SourceEvidence:
+        if endpoint is not _KALSHI_ENDPOINT and endpoint is not _BEA_ENDPOINT:
+            raise ScheduleAuthorityError("endpoint is not reviewed")
+        raw_registry[id(response)] = (response, _raw_fingerprint(response))
+        return new_evidence(response, endpoint)
+
+    def validate_evidence(
+        evidence: SourceEvidence, endpoint: _ReviewedEndpoint | None = None
+    ) -> None:
+        record = evidence_registry.get(id(evidence))
+        if (
+            type(evidence) is not SourceEvidence
+            or record is None
+            or record[0] is not evidence
+            or record[1] != _evidence_fingerprint(evidence)
+        ):
             raise ScheduleAuthorityError("source evidence is unissued or mutated")
-        _validate_evidence_integrity(evidence)
-
-    def acquire(host: str, origin: str, path: str, expected: tuple[str, ...]) -> SourceEvidence:
-        connection = http.client.HTTPSConnection(
-            host, timeout=10.0, context=ssl.create_default_context()
+        if (
+            hashlib.sha256(evidence.raw_body).hexdigest() != evidence.raw_sha256
+            or len(evidence.raw_body) != evidence.content_length
+        ):
+            raise ScheduleAuthorityError("source evidence body integrity failed")
+        expected = _fingerprint(
+            TRANSPORT_POLICY_IDENTITY,
+            endpoint.identity if endpoint is not None else _endpoint_identity(evidence),
+            evidence.source_locator,
+            evidence.source_host,
+            evidence.source_path,
+            evidence.method,
+            evidence.http_status,
+            evidence.content_type,
+            evidence.content_length,
+            evidence.acquired_at,
+            evidence.parser_version,
+            evidence.raw_body,
+            evidence.raw_sha256,
+            evidence.headers,
         )
-        try:
-            connection.request(HTTP_METHOD, path, headers={"Accept": ",".join(expected)})
-            response = connection.getresponse()
-            body = response.read(MAX_RESPONSE_BYTES + 1)
-            content = response.getheader("Content-Type", "").split(";", 1)[0].strip().casefold()
-            if (
-                response.status != SUCCESS_STATUS
-                or not body
-                or len(body) > MAX_RESPONSE_BYTES
-                or content not in expected
-            ):
-                raise ScheduleAuthorityError("source response is incomplete")
-            headers = tuple(
-                (name, value)
-                for name, value in (
-                    (
-                        "x-kalshi-event-market-count",
-                        response.getheader("X-Kalshi-Event-Market-Count", ""),
-                    ),
-                    (
-                        "x-kalshi-event-pagination-terminal",
-                        response.getheader("X-Kalshi-Event-Pagination-Terminal", ""),
-                    ),
-                )
-                if value
-            )
-            raw = _RawResponse(
-                origin + path,
-                host,
-                path,
-                HTTP_METHOD,
-                response.status,
-                content,
-                body,
-                _utc_now(),
-                headers,
-            )
-            issued.append((raw, _raw_fingerprint(raw), object.__new__(SourceEvidence), None))
-            return new_evidence(raw)
-        finally:
-            connection.close()
+        if evidence.source_identity != expected or evidence.parser_version != PARSER_VERSION:
+            raise ScheduleAuthorityError("source evidence fingerprint failed")
+        if endpoint is not None and (
+            evidence.source_host != endpoint.host
+            or evidence.source_locator != endpoint.origin + endpoint.path
+            or evidence.source_path != endpoint.path
+            or evidence.method != endpoint.method
+            or evidence.http_status != SUCCESS_STATUS
+            or evidence.content_type not in endpoint.content_types
+        ):
+            raise ScheduleAuthorityError("source evidence endpoint binding failed")
 
-    return acquire, new_evidence, validate_evidence
+    return new_evidence, acquire_evidence, validate_evidence
 
 
-_acquire, _new_evidence, _validate_evidence = _make_acquisition_issuer()
+def _endpoint_identity(evidence: SourceEvidence) -> str:
+    for endpoint in (_KALSHI_ENDPOINT, _BEA_ENDPOINT):
+        if (
+            evidence.source_host == endpoint.host
+            and evidence.source_locator == endpoint.origin + endpoint.path
+            and evidence.source_path == endpoint.path
+            and evidence.method == endpoint.method
+        ):
+            return endpoint.identity
+    raise ScheduleAuthorityError("source evidence endpoint is not reviewed")
+
+
+_new_evidence, _acquire_evidence, _validate_evidence = _make_evidence_issuer()
 
 
 def _json(evidence: SourceEvidence) -> dict[str, object]:
@@ -623,26 +646,16 @@ def _incomplete(
     )
 
 
-def _issue_authority(
+def _issue_authority_impl(
     event_evidence: SourceEvidence,
     market_evidence: SourceEvidence | None,
     bea_evidence: SourceEvidence,
 ) -> ScheduleAuthorityResult:
     try:
-        _validate_evidence(event_evidence)
-        _validate_evidence(bea_evidence)
+        _validate_evidence(event_evidence, _KALSHI_ENDPOINT)
+        _validate_evidence(bea_evidence, _BEA_ENDPOINT)
         if market_evidence is not None:
-            _validate_evidence(market_evidence)
-        if (
-            event_evidence.source_locator != KALSHI_ORIGIN + KALSHI_EVENT_PATH
-            or event_evidence.method != HTTP_METHOD
-        ):
-            raise ScheduleAuthorityError("event provenance is outside reviewed acquisition path")
-        if (
-            bea_evidence.source_locator != BEA_ORIGIN + BEA_SCHEDULE_PATH
-            or bea_evidence.method != HTTP_METHOD
-        ):
-            raise ScheduleAuthorityError("BEA provenance is outside reviewed acquisition path")
+            _validate_evidence(market_evidence, _KALSHI_ENDPOINT)
         payload = _json(event_evidence)
         event = payload.get("event")
         if (
@@ -728,12 +741,6 @@ def _issue_authority(
         authority = object.__new__(ScheduleAuthority)
         for name, value in zip(ScheduleAuthority.__dataclass_fields__, values, strict=True):
             object.__setattr__(authority, name, value)
-        _AUTHORITY_REGISTRY[id(authority)] = (
-            *values,
-            _authority_fingerprint(values),
-            event_evidence,
-            bea_evidence,
-        )
         return ScheduleAuthorityResult(
             AuthorityStatus.COMPLETE_AUTHORITY,
             authority,
@@ -750,16 +757,126 @@ def _utc_now() -> datetime:
     return datetime.now(UTC)
 
 
+def _acquire_fixed(endpoint: _ReviewedEndpoint) -> SourceEvidence:
+    if endpoint is not _KALSHI_ENDPOINT and endpoint is not _BEA_ENDPOINT:
+        raise ScheduleAuthorityError("endpoint is not reviewed")
+    connection = http.client.HTTPSConnection(
+        endpoint.host, timeout=10.0, context=ssl.create_default_context()
+    )
+    try:
+        connection.request(
+            endpoint.method, endpoint.path, headers={"Accept": ",".join(endpoint.content_types)}
+        )
+        response = connection.getresponse()
+        body = response.read(MAX_RESPONSE_BYTES + 1)
+        content = response.getheader("Content-Type", "").split(";", 1)[0].strip().casefold()
+        if (
+            response.status != SUCCESS_STATUS
+            or not body
+            or len(body) > MAX_RESPONSE_BYTES
+            or content not in endpoint.content_types
+        ):
+            raise ScheduleAuthorityError("source response is incomplete")
+        headers = tuple(
+            (name, value)
+            for name, value in (
+                (
+                    "x-kalshi-event-market-count",
+                    response.getheader("X-Kalshi-Event-Market-Count", ""),
+                ),
+                (
+                    "x-kalshi-event-pagination-terminal",
+                    response.getheader("X-Kalshi-Event-Pagination-Terminal", ""),
+                ),
+            )
+            if value
+        )
+        raw = _RawResponse(
+            endpoint.origin + endpoint.path,
+            endpoint.host,
+            endpoint.path,
+            endpoint.method,
+            response.status,
+            content,
+            body,
+            _utc_now(),
+            headers,
+        )
+        return _acquire_evidence(raw, endpoint)
+    finally:
+        connection.close()
+
+
+def _make_authority_issuer() -> tuple[
+    Callable[[SourceEvidence, SourceEvidence | None, SourceEvidence], ScheduleAuthorityResult],
+    Callable[[ScheduleAuthority], None],
+]:
+    issued: dict[
+        int, tuple[ScheduleAuthority, tuple[object, ...], str, SourceEvidence, SourceEvidence]
+    ] = {}
+
+    def issue(
+        event: SourceEvidence, market: SourceEvidence | None, bea: SourceEvidence
+    ) -> ScheduleAuthorityResult:
+        result = _issue_authority_impl(event, market, bea)
+        if result.authority is not None:
+            values = tuple(
+                getattr(result.authority, name) for name in ScheduleAuthority.__dataclass_fields__
+            )
+            issued[id(result.authority)] = (
+                result.authority,
+                values,
+                _authority_fingerprint(values),
+                event,
+                bea,
+            )
+        return result
+
+    def validate(authority: ScheduleAuthority) -> None:
+        record = issued.get(id(authority))
+        if type(authority) is not ScheduleAuthority or record is None or record[0] is not authority:
+            raise ScheduleAuthorityError("schedule authority is unissued")
+        values = tuple(getattr(authority, name) for name in ScheduleAuthority.__dataclass_fields__)
+        if record[1] != values or record[2] != _authority_fingerprint(values):
+            raise ScheduleAuthorityError("schedule authority was mutated")
+        _validate_evidence(record[3], _KALSHI_ENDPOINT)
+        _validate_evidence(record[4], _BEA_ENDPOINT)
+        if (
+            authority.event_ticker != EVENT_TICKER
+            or authority.series_ticker != SERIES_TICKER
+            or authority.target_quarter != authority.quarter.canonical
+        ):
+            raise ScheduleAuthorityError("schedule authority identity mismatch")
+        if (
+            not authority.bea_release_locator.startswith(BEA_ORIGIN + "/")
+            or authority.bea_release_locator != authority.bea_schedule.bea_release_locator
+        ):
+            raise ScheduleAuthorityError("release locator binding failed")
+        if not authority.eligible_markets or len(
+            {item.ticker for item in authority.eligible_markets}
+        ) != len(authority.eligible_markets):
+            raise ScheduleAuthorityError("schedule authority market set is invalid")
+        for item in authority.eligible_markets:
+            if not item.open_at < item.close_at or (
+                item.expected_expiration_at is not None
+                and item.expected_expiration_at < item.close_at
+            ):
+                raise ScheduleAuthorityError("schedule authority lifecycle is invalid")
+
+    return issue, validate
+
+
+_issue_authority, validate_schedule_authority = _make_authority_issuer()
+
+
 def acquire_schedule_authority() -> ScheduleAuthorityResult:
     """Acquire research-only event, market-set, and BEA schedule facts."""
     event_evidence: SourceEvidence | None = None
     bea_evidence: SourceEvidence | None = None
 
     try:
-        event_evidence = _acquire(
-            KALSHI_HOST, KALSHI_ORIGIN, KALSHI_EVENT_PATH, ("application/json",)
-        )
-        bea_evidence = _acquire(BEA_HOST, BEA_ORIGIN, BEA_SCHEDULE_PATH, ("text/html",))
+        event_evidence = _acquire_fixed(_KALSHI_ENDPOINT)
+        bea_evidence = _acquire_fixed(_BEA_ENDPOINT)
         return _issue_authority(event_evidence, None, bea_evidence)
     except (
         ScheduleAuthorityError,
@@ -769,39 +886,6 @@ def acquire_schedule_authority() -> ScheduleAuthorityResult:
         http.client.HTTPException,
     ) as exc:
         return _incomplete(str(exc), event_evidence, None, bea_evidence)
-
-
-def validate_schedule_authority(authority: ScheduleAuthority) -> None:
-    """Revalidate issuer registration and all authority-bearing fields."""
-    if type(authority) is not ScheduleAuthority or id(authority) not in _AUTHORITY_REGISTRY:
-        raise ScheduleAuthorityError("schedule authority is unissued")
-    values = tuple(getattr(authority, name) for name in ScheduleAuthority.__dataclass_fields__)
-    record = _AUTHORITY_REGISTRY[id(authority)]
-    if record[: len(values)] != values or record[len(values)] != _authority_fingerprint(values):
-        raise ScheduleAuthorityError("schedule authority was mutated")
-    event, bea = cast(SourceEvidence, record[-2]), cast(SourceEvidence, record[-1])
-    _validate_evidence(event)
-    _validate_evidence(bea)
-    if (
-        authority.event_ticker != EVENT_TICKER
-        or authority.series_ticker != SERIES_TICKER
-        or authority.target_quarter != authority.quarter.canonical
-    ):
-        raise ScheduleAuthorityError("schedule authority identity mismatch")
-    if (
-        not authority.bea_release_locator.startswith(BEA_ORIGIN + "/")
-        or authority.bea_release_locator != authority.bea_schedule.bea_release_locator
-    ):
-        raise ScheduleAuthorityError("release locator binding failed")
-    if not authority.eligible_markets or len(
-        {item.ticker for item in authority.eligible_markets}
-    ) != len(authority.eligible_markets):
-        raise ScheduleAuthorityError("schedule authority market set is invalid")
-    for item in authority.eligible_markets:
-        if not item.open_at < item.close_at or (
-            item.expected_expiration_at is not None and item.expected_expiration_at < item.close_at
-        ):
-            raise ScheduleAuthorityError("schedule authority lifecycle is invalid")
 
 
 __all__ = [

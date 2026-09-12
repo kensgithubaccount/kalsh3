@@ -305,9 +305,7 @@ def test_multiyear_page_binds_year_and_locator_to_selected_row(
         )
     }
     monkeypatch.setattr(subject.http.client, "HTTPSConnection", Connection)
-    evidence = subject._acquire(
-        subject.BEA_HOST, subject.BEA_ORIGIN, subject.BEA_SCHEDULE_PATH, ("text/html",)
-    )
+    evidence = subject._acquire_fixed(subject._BEA_ENDPOINT)
     schedule = subject._bea(evidence, subject.Quarter("2025-Q4", "2025-Q4"))
     assert schedule.release_at.year == 2026
     assert schedule.bea_release_locator.endswith("gdp-advance-estimate-fourth-quarter-2025")
@@ -320,3 +318,102 @@ def test_nested_market_mutation_invalidates_authority(monkeypatch: pytest.Monkey
     object.__setattr__(result.authority.eligible_markets[0].strike, "floor_strike", "9.0")
     with pytest.raises(subject.ScheduleAuthorityError):
         subject.validate_schedule_authority(result.authority)
+
+
+@pytest.mark.parametrize(
+    ("host", "locator", "path"),
+    [
+        (
+            "attacker.example",
+            subject.KALSHI_ORIGIN + subject.KALSHI_EVENT_PATH,
+            subject.KALSHI_EVENT_PATH,
+        ),
+        (
+            subject.KALSHI_HOST,
+            "https://attacker.example" + subject.KALSHI_EVENT_PATH,
+            subject.KALSHI_EVENT_PATH,
+        ),
+        (subject.KALSHI_HOST, subject.KALSHI_ORIGIN + "/wrong", "/wrong"),
+        (
+            subject.KALSHI_HOST,
+            subject.BEA_ORIGIN + subject.BEA_SCHEDULE_PATH,
+            subject.BEA_SCHEDULE_PATH,
+        ),
+        (
+            subject.BEA_HOST,
+            subject.KALSHI_ORIGIN + subject.KALSHI_EVENT_PATH,
+            subject.KALSHI_EVENT_PATH,
+        ),
+    ],
+)
+def test_unreviewed_endpoint_identity_cannot_create_evidence(
+    host: str, locator: str, path: str
+) -> None:
+    raw = subject._RawResponse(
+        locator, host, path, subject.HTTP_METHOD, 200, "application/json", event_bytes(), ACQUIRED
+    )
+    with pytest.raises(subject.ScheduleAuthorityError):
+        subject._acquire_evidence(raw, subject._KALSHI_ENDPOINT)
+
+
+def test_caller_cannot_supply_a_new_reviewed_endpoint() -> None:
+    endpoint = subject._ReviewedEndpoint(
+        "caller-created",
+        subject.KALSHI_HOST,
+        subject.KALSHI_ORIGIN,
+        subject.KALSHI_EVENT_PATH,
+        subject.HTTP_METHOD,
+        ("application/json",),
+    )
+    raw = subject._RawResponse(
+        subject.KALSHI_ORIGIN + subject.KALSHI_EVENT_PATH,
+        subject.KALSHI_HOST,
+        subject.KALSHI_EVENT_PATH,
+        subject.HTTP_METHOD,
+        200,
+        "application/json",
+        event_bytes(),
+        ACQUIRED,
+    )
+    with pytest.raises(subject.ScheduleAuthorityError):
+        subject._acquire_evidence(raw, endpoint)
+
+
+def test_source_host_and_locator_mutation_invalidates_evidence(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    result = acquire(monkeypatch)
+    assert result.event_evidence is not None
+    subject._validate_evidence(result.event_evidence, subject._KALSHI_ENDPOINT)
+    old_host = result.event_evidence.source_host
+    object.__setattr__(result.event_evidence, "source_host", "attacker.example")
+    with pytest.raises(subject.ScheduleAuthorityError):
+        subject._validate_evidence(result.event_evidence, subject._KALSHI_ENDPOINT)
+    object.__setattr__(result.event_evidence, "source_host", old_host)
+    old_locator = result.event_evidence.source_locator
+    object.__setattr__(result.event_evidence, "source_locator", "https://attacker.example/event")
+    with pytest.raises(subject.ScheduleAuthorityError):
+        subject._validate_evidence(result.event_evidence, subject._KALSHI_ENDPOINT)
+    object.__setattr__(result.event_evidence, "source_locator", old_locator)
+
+
+def test_authority_registry_is_not_module_visible_and_copied_values_fail(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    result = acquire(monkeypatch)
+    assert result.authority is not None
+    subject.validate_schedule_authority(result.authority)
+    assert not hasattr(subject, "_AUTHORITY_REGISTRY")
+    forged = object.__new__(subject.ScheduleAuthority)
+    for name in subject.ScheduleAuthority.__dataclass_fields__:
+        object.__setattr__(forged, name, getattr(result.authority, name))
+    with pytest.raises(subject.ScheduleAuthorityError):
+        subject.validate_schedule_authority(forged)
+
+
+def test_wrong_host_evidence_cannot_issue_authority(monkeypatch: pytest.MonkeyPatch) -> None:
+    result = acquire(monkeypatch)
+    assert result.event_evidence is not None and result.bea_evidence is not None
+    object.__setattr__(result.event_evidence, "source_host", "attacker.example")
+    incomplete = subject._issue_authority(result.event_evidence, None, result.bea_evidence)
+    assert incomplete.status is subject.AuthorityStatus.EVIDENCE_INCOMPLETE
