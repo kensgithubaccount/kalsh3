@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import builtins
+import dis
 import hashlib
 import json
 from datetime import UTC, datetime
@@ -62,6 +64,10 @@ class Connection:
         pass
 
 
+def evidence_test_issuer() -> tuple[object, object, object, object]:
+    return subject._make_evidence_issuer(https_connection=Connection, utc_now=lambda: ACQUIRED)
+
+
 def acquire(
     monkeypatch: pytest.MonkeyPatch, *, event: bytes | None = None, bea: bytes | None = None
 ) -> subject.ScheduleAuthorityResult:
@@ -83,9 +89,10 @@ def acquire(
         BEA_HOST + BEA_SCHEDULE_PATH: Response(200, "text/html", bea or bea_bytes()),
     }
     Connection.seen_hosts = []
-    monkeypatch.setattr(subject.http.client, "HTTPSConnection", Connection)
-    monkeypatch.setattr(subject, "_utc_now", lambda: ACQUIRED)
-    return subject.acquire_schedule_authority()
+    acquire_event, acquire_bea, validate_kalshi, validate_bea = evidence_test_issuer()
+    issue, validate_authority = subject._make_authority_issuer(validate_kalshi, validate_bea)
+    monkeypatch.setattr(subject, "validate_schedule_authority", validate_authority)
+    return issue(acquire_event(), None, acquire_bea())
 
 
 def payload() -> dict[str, object]:
@@ -314,8 +321,8 @@ def test_multiyear_page_binds_year_and_locator_to_selected_row(
             200, "text/html", (FIXTURES / "d1_g3_bea_schedule_multiyear_q4_2025.html").read_bytes()
         )
     }
-    monkeypatch.setattr(subject.http.client, "HTTPSConnection", Connection)
-    evidence = subject._acquire_bea_schedule()
+    _, acquire_bea, _, _ = evidence_test_issuer()
+    evidence = acquire_bea()
     schedule = subject._bea(evidence, subject.Quarter("2025-Q4", "2025-Q4"))
     assert schedule.release_at.year == 2026
     assert schedule.bea_release_locator.endswith("gdp-advance-estimate-fourth-quarter-2025")
@@ -363,10 +370,10 @@ def test_rebinding_endpoint_constants_does_not_redirect_captured_acquisition(
         BEA_HOST + BEA_SCHEDULE_PATH: Response(200, "text/html", bea_bytes()),
     }
     Connection.seen_hosts = []
-    monkeypatch.setattr(subject.http.client, "HTTPSConnection", Connection)
-    monkeypatch.setattr(subject, "_utc_now", lambda: ACQUIRED)
+    acquire_event, acquire_bea, validate_kalshi, validate_bea = evidence_test_issuer()
     monkeypatch.setattr(subject, constant, replacement)
-    result = subject.acquire_schedule_authority()
+    issue, _ = subject._make_authority_issuer(validate_kalshi, validate_bea)
+    result = issue(acquire_event(), None, acquire_bea())
     assert result.status is subject.AuthorityStatus.COMPLETE_AUTHORITY
     assert Connection.seen_hosts == [KALSHI_HOST, BEA_HOST]
 
@@ -382,10 +389,11 @@ def test_wrong_host_transport_cannot_masquerade_as_reviewed_evidence(
         def getresponse(self) -> Response:
             raise OSError(f"unexpected transport host: {self.host}")
 
-    monkeypatch.setattr(subject.http.client, "HTTPSConnection", WrongHostConnection)
-    monkeypatch.setattr(subject, "_utc_now", lambda: ACQUIRED)
-    result = subject.acquire_schedule_authority()
-    assert result.status is subject.AuthorityStatus.EVIDENCE_INCOMPLETE
+    acquire_event, _acquire_bea, _validate_kalshi, _validate_bea = subject._make_evidence_issuer(
+        https_connection=WrongHostConnection, utc_now=lambda: ACQUIRED
+    )
+    with pytest.raises(OSError):
+        acquire_event()
 
 
 @pytest.mark.parametrize(
@@ -704,3 +712,103 @@ def test_no_module_visible_authority_registry_or_registration_helper() -> None:
     assert not hasattr(subject, "_ISSUED_AUTHORITIES")
     assert not hasattr(subject, "_register_authority")
     assert not hasattr(subject, "_bless_authority")
+
+
+def test_frozen_issuer_survives_systematic_dependency_rebinding(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    Connection.responses = {
+        KALSHI_HOST + KALSHI_EVENT_PATH: Response(
+            200,
+            "application/json",
+            event_bytes(),
+            {
+                "x-kalshi-event-market-count": "1",
+                "x-kalshi-event-pagination-terminal": "true",
+            },
+        ),
+        BEA_HOST + BEA_SCHEDULE_PATH: Response(200, "text/html", bea_bytes()),
+    }
+    acquire_event, acquire_bea, validate_kalshi, validate_bea = evidence_test_issuer()
+    issue, validate_authority = subject._make_authority_issuer(validate_kalshi, validate_bea)
+
+    replacements = {
+        "_utc_now": lambda: datetime(2099, 1, 1, tzinfo=UTC),
+        "Decimal": lambda value: (_ for _ in ()).throw(AssertionError("fake Decimal called")),
+        "InvalidOperation": RuntimeError,
+        "datetime": object(),
+        "date": lambda *args: (_ for _ in ()).throw(AssertionError("fake date called")),
+        "UTC": object(),
+        "ZoneInfo": lambda name: (_ for _ in ()).throw(AssertionError("fake zone called")),
+        "re": object(),
+        "hashlib": object(),
+        "_validate_kalshi_evidence": lambda evidence: (_ for _ in ()).throw(
+            AssertionError("fake validator called")
+        ),
+        "_validate_bea_evidence": lambda evidence: (_ for _ in ()).throw(
+            AssertionError("fake validator called")
+        ),
+        "_fingerprint": lambda *values: "fake-fingerprint",
+        "_authority_fingerprint": lambda values: "fake-authority-fingerprint",
+        "_json": lambda evidence: {},
+        "_bea": lambda *args: (_ for _ in ()).throw(AssertionError("fake parser called")),
+        "_market": lambda *args: (_ for _ in ()).throw(AssertionError("fake parser called")),
+        "EVENT_TICKER": "evil-event",
+        "SERIES_TICKER": "evil-series",
+        "METRIC_SEMANTICS": "evil-metric",
+        "SETTLEMENT_EDITION": "evil-edition",
+        "TIMEZONE_POLICY_IDENTITY": "evil-timezone-policy",
+        "PARSER_VERSION": "evil-parser",
+        "SourceEvidence": object,
+        "ScheduleAuthority": object,
+        "AuthorityStatus": object,
+        "ScheduleAuthorityError": RuntimeError,
+    }
+    for name, replacement in replacements.items():
+        monkeypatch.setattr(subject, name, replacement)
+
+    result = issue(acquire_event(), None, acquire_bea())
+    assert result.status.value == "COMPLETE AUTHORITY"
+    assert result.authority is not None
+    validate_authority(result.authority)
+    assert result.authority.event_ticker == "KXGDP-26OCT30"
+    assert result.authority.series_ticker == "KXGDP"
+    assert result.authority.bea_release_at.year == 2026
+
+
+def test_frozen_trust_call_graph_has_no_runtime_module_global_loads() -> None:
+    code_type = type(subject._issue_authority.__code__)
+    codes: list[object] = []
+    seen: set[int] = set()
+
+    def collect(value: object) -> None:
+        if isinstance(value, code_type) and id(value) not in seen:
+            seen.add(id(value))
+            codes.append(value)
+            for constant in value.co_consts:
+                collect(constant)
+        elif (
+            callable(value)
+            and getattr(value, "__module__", None) == subject.__name__
+            and getattr(value, "__code__", None) is not None
+        ):
+            collect(value.__code__)
+            for cell in value.__closure__ or ():
+                collect(cell.cell_contents)
+
+    for root in (
+        subject._acquire_kalshi_event,
+        subject._acquire_bea_schedule,
+        subject._issue_authority,
+        subject.validate_schedule_authority,
+        subject.acquire_schedule_authority,
+    ):
+        collect(root)
+    loads = {
+        instruction.argval
+        for code in codes
+        for instruction in dis.get_instructions(code)
+        if instruction.opname == "LOAD_GLOBAL"
+    }
+    approved = {name for name in loads if hasattr(builtins, name)} | {"cast"}
+    assert loads <= approved

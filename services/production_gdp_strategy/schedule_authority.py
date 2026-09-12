@@ -13,7 +13,7 @@ from datetime import UTC, date, datetime
 from decimal import Decimal, InvalidOperation
 from enum import StrEnum
 from html.parser import HTMLParser
-from typing import Final
+from typing import Any, Final, cast
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 EVENT_TICKER: Final = "KXGDP-26OCT30"
@@ -156,14 +156,20 @@ class ScheduleAuthorityResult:
     bea_evidence: SourceEvidence | None
 
 
-def _fingerprint(*values: object) -> str:
-    return hashlib.sha256("\x00".join(map(str, values)).encode()).hexdigest()
+def _fingerprint(*values: object, _sha256: Callable[..., Any] = hashlib.sha256) -> str:
+    return cast(str, _sha256("\x00".join(map(str, values)).encode()).hexdigest())
 
 
-def _strict_utc(value: datetime, field: str) -> datetime:
-    if type(value) is not datetime or value.tzinfo is None or value.utcoffset() is None:
-        raise ScheduleAuthorityError(f"{field} must be timezone-aware")
-    return value.astimezone(UTC).replace(tzinfo=UTC)
+def _strict_utc(
+    value: datetime,
+    field: str,
+    _datetime: type[datetime] = datetime,
+    _utc: Any = UTC,
+    _error_cls: type[ScheduleAuthorityError] = ScheduleAuthorityError,
+) -> datetime:
+    if type(value) is not _datetime or value.tzinfo is None or value.utcoffset() is None:
+        raise _error_cls(f"{field} must be timezone-aware")
+    return value.astimezone(_utc).replace(tzinfo=_utc)
 
 
 def _raw_fingerprint(response: _RawResponse) -> tuple[object, ...]:
@@ -180,15 +186,24 @@ def _raw_fingerprint(response: _RawResponse) -> tuple[object, ...]:
     )
 
 
-def _evidence_fingerprint(evidence: SourceEvidence) -> tuple[object, ...]:
+def _evidence_fingerprint(
+    evidence: SourceEvidence, _source_evidence_cls: type[SourceEvidence] = SourceEvidence
+) -> tuple[object, ...]:
     try:
-        return tuple(getattr(evidence, name) for name in SourceEvidence.__dataclass_fields__)
+        return tuple(getattr(evidence, name) for name in _source_evidence_cls.__dataclass_fields__)
     except AttributeError:
         return ("<uninitialized-evidence>",)
 
 
-def _authority_fingerprint(values: tuple[object, ...]) -> str:
-    return _fingerprint(*(repr(value) for value in values))
+def _authority_fingerprint(
+    values: tuple[object, ...], _fingerprint_fn: Callable[..., str] = _fingerprint
+) -> str:
+    return _fingerprint_fn(*(repr(value) for value in values))
+
+
+def _utc_now(_datetime: type[datetime] = datetime, _utc: Any = UTC) -> datetime:
+    """The real clock used by the canonical evidence issuer."""
+    return _datetime.now(_utc)
 
 
 def _make_evidence_issuer(
@@ -202,6 +217,12 @@ def _make_evidence_issuer(
     max_response_bytes: int = MAX_RESPONSE_BYTES,
     parser_version: str = PARSER_VERSION,
     transport_policy_identity: str = TRANSPORT_POLICY_IDENTITY,
+    raw_response_cls: type[_RawResponse] = _RawResponse,
+    sha256: Callable[..., Any] = hashlib.sha256,
+    https_connection: Callable[..., Any] = http.client.HTTPSConnection,
+    create_default_context: Callable[[], Any] = ssl.create_default_context,
+    utc_now: Callable[[], datetime] = _utc_now,
+    error_cls: type[ScheduleAuthorityError] = ScheduleAuthorityError,
 ) -> tuple[
     Callable[[], SourceEvidence],
     Callable[[], SourceEvidence],
@@ -236,7 +257,7 @@ def _make_evidence_issuer(
     ) -> None:
         match = next((item for item in issued if item[2] is evidence), None)
         if match is None or evidence_fingerprint(evidence) != match[3]:
-            raise ScheduleAuthorityError("source evidence is unissued or mutated")
+            raise error_cls("source evidence is unissued or mutated")
         identity, host, origin, path, method, allowed_content_types = contract
         if (
             type(evidence) is not source_evidence_cls
@@ -247,12 +268,12 @@ def _make_evidence_issuer(
             or evidence.http_status != success_status
             or evidence.content_type not in allowed_content_types
         ):
-            raise ScheduleAuthorityError("source evidence endpoint binding failed")
+            raise error_cls("source evidence endpoint binding failed")
         if (
-            hashlib.sha256(evidence.raw_body).hexdigest() != evidence.raw_sha256
+            sha256(evidence.raw_body).hexdigest() != evidence.raw_sha256
             or len(evidence.raw_body) != evidence.content_length
         ):
-            raise ScheduleAuthorityError("source evidence body integrity failed")
+            raise error_cls("source evidence body integrity failed")
         expected = fingerprint(
             transport_policy_identity,
             identity,
@@ -270,13 +291,11 @@ def _make_evidence_issuer(
             evidence.headers,
         )
         if evidence.source_identity != expected or evidence.parser_version != parser_version:
-            raise ScheduleAuthorityError("source evidence fingerprint failed")
+            raise error_cls("source evidence fingerprint failed")
 
     def acquire(contract: tuple[str, str, str, str, str, tuple[str, ...]]) -> SourceEvidence:
         identity, host, origin, path, method, expected = contract
-        connection = http.client.HTTPSConnection(
-            host, timeout=10.0, context=ssl.create_default_context()
-        )
+        connection = https_connection(host, timeout=10.0, context=create_default_context())
         try:
             connection.request(method, path, headers={"Accept": ",".join(expected)})
             response = connection.getresponse()
@@ -288,7 +307,7 @@ def _make_evidence_issuer(
                 or len(body) > max_response_bytes
                 or content not in expected
             ):
-                raise ScheduleAuthorityError("source response is incomplete")
+                raise error_cls("source response is incomplete")
             headers = tuple(
                 (name, value)
                 for name, value in (
@@ -303,7 +322,7 @@ def _make_evidence_issuer(
                 )
                 if value
             )
-            raw = _RawResponse(
+            raw = raw_response_cls(
                 origin + path,
                 host,
                 path,
@@ -311,7 +330,7 @@ def _make_evidence_issuer(
                 response.status,
                 content,
                 body,
-                _utc_now(),
+                utc_now(),
                 headers,
             )
             evidence = object.__new__(source_evidence_cls)
@@ -326,7 +345,7 @@ def _make_evidence_issuer(
                 "acquired_at": strict_utc(raw.acquired_at, "acquired_at"),
                 "parser_version": parser_version,
                 "raw_body": raw.body,
-                "raw_sha256": hashlib.sha256(raw.body).hexdigest(),
+                "raw_sha256": sha256(raw.body).hexdigest(),
                 "headers": raw.headers,
             }
             values["source_identity"] = fingerprint(
@@ -669,10 +688,6 @@ def _market(raw: dict[str, object], quarter: Quarter) -> EligibleMarket:
 # alter what the canonical issuer accepts as COMPLETE_AUTHORITY.
 
 
-def _utc_now() -> datetime:
-    return datetime.now(UTC)
-
-
 def _make_authority_issuer(
     validate_kalshi: Callable[[SourceEvidence], None],
     validate_bea: Callable[[SourceEvidence], None],
@@ -697,6 +712,16 @@ def _make_authority_issuer(
     fingerprint: Callable[..., str] = _fingerprint,
     strict_utc: Callable[[datetime, str], datetime] = _strict_utc,
     authority_fingerprint: Callable[[tuple[object, ...]], str] = _authority_fingerprint,
+    json: Any = json,
+    re: Any = re,
+    Decimal: Any = Decimal,
+    InvalidOperation: Any = InvalidOperation,
+    datetime: Any = datetime,
+    date: Any = date,
+    UTC: Any = UTC,
+    ZoneInfo: Any = ZoneInfo,
+    ZoneInfoNotFoundError: Any = ZoneInfoNotFoundError,
+    HTMLParser: Any = HTMLParser,
 ) -> tuple[
     Callable[[SourceEvidence, SourceEvidence | None, SourceEvidence], ScheduleAuthorityResult],
     Callable[[ScheduleAuthority], None],
@@ -830,7 +855,7 @@ def _make_authority_issuer(
             raise error_cls("market rule quarter disagrees")
         return primary, secondary
 
-    class _ScheduleParser(HTMLParser):
+    class _ScheduleParser(HTMLParser):  # type: ignore[misc]
         def __init__(self) -> None:
             super().__init__(convert_charrefs=True)
             self.rows: list[tuple[tuple[str, ...], tuple[str, ...], int | None]] = []
@@ -1171,25 +1196,56 @@ _issue_authority, validate_schedule_authority = _make_authority_issuer(
 )
 
 
-def acquire_schedule_authority() -> ScheduleAuthorityResult:
-    """Acquire research-only event, market-set, and BEA schedule facts."""
-    event_evidence: SourceEvidence | None = None
-    bea_evidence: SourceEvidence | None = None
+def _make_acquisition_runner(
+    acquire_event: Callable[[], SourceEvidence],
+    acquire_bea: Callable[[], SourceEvidence],
+    issue: Callable[
+        [SourceEvidence, SourceEvidence | None, SourceEvidence], ScheduleAuthorityResult
+    ],
+    *,
+    error_cls: type[ScheduleAuthorityError] = ScheduleAuthorityError,
+    http_exception: type[http.client.HTTPException] = http.client.HTTPException,
+    status_cls: type[AuthorityStatus] = AuthorityStatus,
+    result_cls: type[ScheduleAuthorityResult] = ScheduleAuthorityResult,
+) -> Callable[[], ScheduleAuthorityResult]:
+    def run() -> ScheduleAuthorityResult:
+        """Acquire research-only event, market-set, and BEA schedule facts."""
+        event_evidence: SourceEvidence | None = None
+        bea_evidence: SourceEvidence | None = None
 
-    try:
-        event_evidence = _acquire_kalshi_event()
-        bea_evidence = _acquire_bea_schedule()
-        return _issue_authority(event_evidence, None, bea_evidence)
-    except (
-        ScheduleAuthorityError,
-        OSError,
-        TimeoutError,
-        ValueError,
-        http.client.HTTPException,
-    ) as exc:
-        return ScheduleAuthorityResult(
-            AuthorityStatus.EVIDENCE_INCOMPLETE, None, str(exc), event_evidence, None, bea_evidence
-        )
+        try:
+            event_evidence = acquire_event()
+            bea_evidence = acquire_bea()
+            return issue(event_evidence, None, bea_evidence)
+        except (error_cls, OSError, TimeoutError, ValueError, http_exception) as exc:
+            return result_cls(
+                status_cls.EVIDENCE_INCOMPLETE,
+                None,
+                str(exc),
+                event_evidence,
+                None,
+                bea_evidence,
+            )
+
+    return run
+
+
+_run_acquisition = _make_acquisition_runner(
+    _acquire_kalshi_event, _acquire_bea_schedule, _issue_authority
+)
+
+
+def _make_public_acquirer(
+    run: Callable[[], ScheduleAuthorityResult],
+) -> Callable[[], ScheduleAuthorityResult]:
+    def acquire_schedule_authority() -> ScheduleAuthorityResult:
+        """Acquire research-only event, market-set, and BEA schedule facts."""
+        return run()
+
+    return acquire_schedule_authority
+
+
+acquire_schedule_authority = _make_public_acquirer(_run_acquisition)
 
 
 __all__ = [
