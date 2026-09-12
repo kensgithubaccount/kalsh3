@@ -10,6 +10,7 @@ reviewed acquisition functions, which are not yet configured for schedule or fee
 from __future__ import annotations
 
 import hashlib
+import hmac
 import importlib
 import json
 import time
@@ -648,19 +649,118 @@ class DecisionReceipt:
     payload_hash: str
     bundle: _Bundle | None
 
-    def __init__(
-        self, *, values: Mapping[str, object], bundle: _Bundle | None, _capability: object
-    ) -> None:
-        if _capability is not _ISSUER:
-            raise DecisionError("decision receipt requires reviewed issuer")
-        fields = dict(values)
-        fields.setdefault("trial_id", "UNREGISTERED")
-        fields.setdefault("underlying_event_id", "UNREGISTERED")
-        payload = stable_hash(tuple(sorted((k, str(v)) for k, v in fields.items())))
-        fields["payload_hash"] = payload
-        for name, value in {**fields, "bundle": bundle}.items():
-            object.__setattr__(self, name, value)
-        _register_issued(self, payload)
+    def __init__(self, *args: object, **kwargs: object) -> None:
+        raise DecisionError("DecisionReceipt is issued by the reviewed decision issuer only")
+
+
+def _make_decision_issuer() -> tuple[
+    Callable[[Mapping[str, object], _Bundle | None], DecisionReceipt],
+    Callable[..., DecisionReceipt],
+    Callable[[DecisionReceipt], None],
+]:
+    """Closure-private DecisionReceipt issuance/validation boundary.
+
+    ``_issued``/``_issued_fingerprints`` below are never module attributes: no
+    module-visible capability, registry, or generic constructor can bless a
+    DecisionReceipt. ``issue_live`` and ``restore_from_authenticated_record``
+    are the only two functions that ever add an entry, and both build the
+    receipt via ``object.__new__`` because ``DecisionReceipt.__init__`` always
+    fails closed.
+    """
+    _issued: dict[int, str] = {}
+    _issued_fingerprints: dict[int, str] = {}
+
+    def _construct(values: Mapping[str, object], bundle: _Bundle | None) -> DecisionReceipt:
+        live_fields = dict(values)
+        live_fields.setdefault("trial_id", "UNREGISTERED")
+        live_fields.setdefault("underlying_event_id", "UNREGISTERED")
+        payload = stable_hash(tuple(sorted((k, str(v)) for k, v in live_fields.items())))
+        live_fields["payload_hash"] = payload
+        receipt = object.__new__(DecisionReceipt)
+        for name, value in {**live_fields, "bundle": bundle}.items():
+            object.__setattr__(receipt, name, value)
+        _issued[id(receipt)] = payload
+        _issued_fingerprints[id(receipt)] = stable_hash(repr(receipt))
+        return receipt
+
+    def issue_live(values: Mapping[str, object], bundle: _Bundle | None) -> DecisionReceipt:
+        """Issue a decision receipt for a freshly computed, in-process decision."""
+        return _construct(values, bundle)
+
+    def restore_from_authenticated_record(
+        *,
+        values: Mapping[str, object],
+        record_without_mac: Mapping[str, object],
+        claimed_mac: str,
+        signing_key: bytes,
+        canonicalize: Callable[[object], bytes],
+    ) -> DecisionReceipt:
+        """Issue a decision receipt reconstructed from a durable archive record.
+
+        Independently re-verifies the archive's own issuer MAC against the
+        supplied signing key before ever constructing a receipt. A caller-
+        authored, self-consistent mapping without that authentication -- for
+        example one built by hand and passed with a guessed or wrong signing
+        key -- can never reach ``_construct``.
+        """
+        if type(claimed_mac) is not str or type(signing_key) is not bytes:
+            raise DecisionError("decision restoration requires an authenticated issuer MAC")
+        expected_mac = hmac.new(
+            signing_key, canonicalize(record_without_mac), hashlib.sha256
+        ).hexdigest()
+        if not hmac.compare_digest(claimed_mac, expected_mac):
+            raise DecisionError("decision restoration failed issuer authentication")
+        if values.get("classification") is not DecisionClass.EVIDENCE_INCOMPLETE:
+            raise DecisionError(
+                "only EVIDENCE_INCOMPLETE decisions can be restored at this checkpoint"
+            )
+        if values.get("research_only") is not True or values.get("production_influence") != ZERO:
+            raise DecisionError(
+                "restored decision must be research-only with zero production influence"
+            )
+        if values.get("bundle") is not None:
+            raise DecisionError("restored decision cannot carry a live evidence bundle")
+        return _construct({k: v for k, v in values.items() if k != "bundle"}, None)
+
+    def validate(receipt: DecisionReceipt) -> None:
+        if (
+            type(receipt) is not DecisionReceipt
+            or _issued.get(id(receipt)) != getattr(receipt, "payload_hash", None)
+            or _issued_fingerprints.get(id(receipt)) != stable_hash(repr(receipt))
+        ):
+            raise DecisionError("decision receipt is reconstructed, replaced, or tampered")
+        if receipt.research_only is not True or receipt.production_influence != ZERO:
+            raise DecisionError("decision receipt is not research-only")
+        if receipt.quantity != ONE or receipt.entry_gate_value != GATE:
+            raise DecisionError("decision receipt policy constants changed")
+        if receipt.decision_timestamp < receipt.pipeline_completion_timestamp:
+            raise DecisionError("decision timestamp cannot precede pipeline completion")
+        payload_values = {
+            field.name: getattr(receipt, field.name)
+            for field in fields(DecisionReceipt)
+            if field.name not in {"payload_hash", "bundle"}
+        }
+        expected_payload_hash = stable_hash(
+            tuple(sorted((name, str(value)) for name, value in payload_values.items()))
+        )
+        if receipt.payload_hash != expected_payload_hash:
+            raise DecisionError("decision payload hash does not match immutable fields")
+        if receipt.bundle is None:
+            if receipt.classification is not DecisionClass.EVIDENCE_INCOMPLETE:
+                raise DecisionError("non-incomplete receipt is missing evidence bundle")
+            return
+        try:
+            _validate_bundle(receipt.bundle, receipt.bundle.schedule.release_at - DECISION_MARGIN)
+        except DecisionError:
+            if receipt.classification is not DecisionClass.EVIDENCE_INCOMPLETE:
+                raise
+
+    return issue_live, restore_from_authenticated_record, validate
+
+
+_issue_live_decision, _restore_decision_from_authenticated_record, validate_decision_receipt = (
+    _make_decision_issuer()
+)
 
 
 def _policy_hash() -> str:
@@ -968,42 +1068,57 @@ def _evaluate_fixture_decision(
         "research_only": True,
         "production_influence": ZERO,
     }
-    receipt = DecisionReceipt(values=values, bundle=bundle, _capability=_ISSUER)
+    receipt = _issue_live_decision(values, bundle)
     validate_decision_receipt(receipt)
     return receipt
 
 
 def run_one_research_decision() -> DecisionReceipt:
-    """Run the fixed public composition without caller-controlled dependencies."""
-    return _run_one_research_decision()
+    """Run the durable, fixed public composition without caller-controlled dependencies.
+
+    Resolves the canonical durable research storage location, registers the
+    prospective attempt in the durable TrialLedger *before* any evidence
+    acquisition, rejects a duplicate attempt against that same durable state,
+    and archives the resulting decision. This entrypoint accepts no evidence,
+    clock, source-response, or authority arguments -- storage location is
+    resolved internally (see ``gdp_persistence.open_default_research_storage``)
+    and is not a caller-supplied evidence, clock, or authority seam.
+    """
+    from services.production_gdp_strategy.gdp_persistence import (
+        open_default_research_storage,
+        register_gdp_attempt,
+    )
+
+    ledger, archive = open_default_research_storage()
+    trial = register_gdp_attempt(ledger)
+    return _run_one_research_decision(ledger=ledger, decision_archive=archive, trial=trial)
 
 
 def _run_one_research_decision(
     *,
-    ledger: trial_ledger.TrialLedger | None = None,
-    decision_archive: object | None = None,
-    trial: Any = None,
+    ledger: trial_ledger.TrialLedger,
+    decision_archive: object,
+    trial: Any,
 ) -> DecisionReceipt:
-    """Run the fixed research composition and fail closed on incomplete authority."""
+    """Run the fixed research composition and fail closed on incomplete authority.
+
+    Always durable: the caller must have already registered ``trial`` against
+    ``ledger`` before evidence acquisition begins.
+    """
     pipeline_start = _system_clock()
-    registered_trial = trial
-    if ledger is not None:
-        if registered_trial is None:
-            raise DecisionError("durable GDP run requires a pre-registered trial")
-        ledger.advance(str(registered_trial.trial_id), trial_ledger.TrialStatus.RUNNING)
+    ledger.advance(str(trial.trial_id), trial_ledger.TrialStatus.RUNNING)
     try:
         gdpnow = acquire_gdpnow_commentary_page()
         vintage = parse_gdpnow_commentary(gdpnow)
         schedule_result = acquire_schedule_authority()
         if schedule_result.status is not AuthorityStatus.COMPLETE_AUTHORITY:
             result = _incomplete_receipt(
-                _system_clock(), pipeline_start=pipeline_start, trial=registered_trial
+                _system_clock(), pipeline_start=pipeline_start, trial=trial
             )
-            return _finish_persisted_result(result, ledger, registered_trial, decision_archive)
+            return _finish_persisted_result(result, ledger, trial, decision_archive)
         if (
-            registered_trial is not None
-            and schedule_result.authority is not None
-            and schedule_result.authority.event_ticker != registered_trial.underlying_event_id
+            schedule_result.authority is not None
+            and schedule_result.authority.event_ticker != trial.underlying_event_id
         ):
             raise DecisionError("acquired schedule disagrees with the predeclared GDP event")
         # The reviewed fee adapter intentionally cannot issue COMPLETE at this
@@ -1011,37 +1126,30 @@ def _run_one_research_decision(
         fee = acquire_fee_authority(_system_clock().wall_utc)
         if fee.policy is None:
             result = _incomplete_receipt(
-                _system_clock(), pipeline_start=pipeline_start, trial=registered_trial
+                _system_clock(), pipeline_start=pipeline_start, trial=trial
             )
-            return _finish_persisted_result(result, ledger, registered_trial, decision_archive)
+            return _finish_persisted_result(result, ledger, trial, decision_archive)
         del vintage
     except Exception:
-        result = _incomplete_receipt(
-            _system_clock(), pipeline_start=pipeline_start, trial=registered_trial
-        )
-        return _finish_persisted_result(result, ledger, registered_trial, decision_archive)
-    result = _incomplete_receipt(
-        _system_clock(), pipeline_start=pipeline_start, trial=registered_trial
-    )
-    return _finish_persisted_result(result, ledger, registered_trial, decision_archive)
+        result = _incomplete_receipt(_system_clock(), pipeline_start=pipeline_start, trial=trial)
+        return _finish_persisted_result(result, ledger, trial, decision_archive)
+    result = _incomplete_receipt(_system_clock(), pipeline_start=pipeline_start, trial=trial)
+    return _finish_persisted_result(result, ledger, trial, decision_archive)
 
 
 def _finish_persisted_result(
     result: DecisionReceipt,
-    ledger: trial_ledger.TrialLedger | None,
+    ledger: trial_ledger.TrialLedger,
     trial: Any,
-    decision_archive: object | None,
+    decision_archive: object,
 ) -> DecisionReceipt:
-    if ledger is None or trial is None:
-        return result
     from services.production_gdp_strategy.gdp_persistence import DecisionArchive
 
-    archive = decision_archive
-    if not isinstance(archive, DecisionArchive):
+    if not isinstance(decision_archive, DecisionArchive):
         raise DecisionError("durable GDP runs require a DecisionArchive")
     trial_id = str(trial.trial_id)
     event_id = str(trial.underlying_event_id)
-    archive.append(result, trial_id=trial_id, underlying_event_id=event_id)
+    decision_archive.append(result, trial_id=trial_id, underlying_event_id=event_id)
     ledger.advance(trial_id, trial_ledger.TrialStatus.COMPLETED)
     return result
 
@@ -1097,7 +1205,7 @@ def _incomplete_receipt(
         "research_only": True,
         "production_influence": ZERO,
     }
-    return DecisionReceipt(values=values, bundle=None, _capability=_ISSUER)
+    return _issue_live_decision(values, None)
 
 
 def _persistable_values(receipt: DecisionReceipt) -> dict[str, object]:
@@ -1107,43 +1215,6 @@ def _persistable_values(receipt: DecisionReceipt) -> dict[str, object]:
         for field in fields(DecisionReceipt)
         if field.name not in {"payload_hash", "bundle"}
     }
-
-
-def _restore_authenticated_decision(values: Mapping[str, object]) -> DecisionReceipt:
-    """Internal archive boundary; callers cannot bless arbitrary receipts."""
-    receipt = DecisionReceipt(values=values, bundle=None, _capability=_ISSUER)
-    validate_decision_receipt(receipt)
-    return receipt
-
-
-def validate_decision_receipt(receipt: DecisionReceipt) -> None:
-    if type(receipt) is not DecisionReceipt or _ISSUED.get(id(receipt)) != receipt.payload_hash:
-        raise DecisionError("decision receipt is reconstructed, replaced, or tampered")
-    if receipt.research_only is not True or receipt.production_influence != ZERO:
-        raise DecisionError("decision receipt is not research-only")
-    if receipt.quantity != ONE or receipt.entry_gate_value != GATE:
-        raise DecisionError("decision receipt policy constants changed")
-    if receipt.decision_timestamp < receipt.pipeline_completion_timestamp:
-        raise DecisionError("decision timestamp cannot precede pipeline completion")
-    payload_values = {
-        field.name: getattr(receipt, field.name)
-        for field in fields(DecisionReceipt)
-        if field.name not in {"payload_hash", "bundle"}
-    }
-    expected_payload_hash = stable_hash(
-        tuple(sorted((name, str(value)) for name, value in payload_values.items()))
-    )
-    if receipt.payload_hash != expected_payload_hash:
-        raise DecisionError("decision payload hash does not match immutable fields")
-    if receipt.bundle is None:
-        if receipt.classification is not DecisionClass.EVIDENCE_INCOMPLETE:
-            raise DecisionError("non-incomplete receipt is missing evidence bundle")
-        return
-    try:
-        _validate_bundle(receipt.bundle, receipt.bundle.schedule.release_at - DECISION_MARGIN)
-    except DecisionError:
-        if receipt.classification is not DecisionClass.EVIDENCE_INCOMPLETE:
-            raise
 
 
 def replay_decision(receipt: DecisionReceipt) -> DecisionReceipt:

@@ -14,7 +14,7 @@ import json
 import os
 import secrets
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Final
 
 from services.production_gdp_strategy.schedule_authority import EVENT_TICKER
 
@@ -32,6 +32,13 @@ EXPERIMENT_IDENTITY = "d1-g2-public-one-event-one-attempt-v1"
 UNDERLYING_EVENT_ID = EVENT_TICKER
 TARGET_QUARTER = "2026-Q3"
 _ARCHIVE_SCHEMA = "kalsh3.gdp.decision-archive.v1"
+
+# Narrowly scoped storage-location escape hatch for isolated testing only: it
+# controls where authenticated research state lives on disk, never decision or
+# authority semantics. `run_one_research_decision()` itself stays zero-argument;
+# this is read from the environment, not accepted as a function parameter.
+RESEARCH_STORAGE_ROOT_ENV: Final = "KALSH3_GDP_RESEARCH_STORAGE_ROOT"
+_DEFAULT_RESEARCH_STORAGE_ROOT: Final = Path.home() / ".kalsh3" / "gdp-research"
 
 
 def _canonical(value: object) -> bytes:
@@ -158,15 +165,30 @@ class DecisionArchive:
         if trial_id not in records:
             raise GDPPersistenceError("decision is not archived")
         record = records[trial_id]
+        mac = record.get("issuer_mac")
+        if not isinstance(mac, str):
+            raise GDPPersistenceError("decision archive record is missing issuer authentication")
         payload = record.get("payload")
         if not isinstance(payload, dict):
             raise GDPPersistenceError("decision archive payload is invalid")
         values: dict[str, object] = {}
         for name, encoded in payload.items():
             values[name] = _decoded(encoded, name)
-        from services.production_gdp_strategy.one_decision import _restore_authenticated_decision
+        record_without_mac = {k: v for k, v in record.items() if k != "issuer_mac"}
+        from services.production_gdp_strategy.one_decision import (
+            _restore_decision_from_authenticated_record,
+        )
 
-        receipt = _restore_authenticated_decision(values)
+        try:
+            receipt = _restore_decision_from_authenticated_record(
+                values=values,
+                record_without_mac=record_without_mac,
+                claimed_mac=mac,
+                signing_key=self._key,
+                canonicalize=_canonical,
+            )
+        except ValueError as exc:
+            raise GDPPersistenceError(str(exc)) from exc
         if record.get("payload_hash") != receipt.payload_hash:
             raise GDPPersistenceError("decision payload hash does not match archive")
         if (
@@ -240,14 +262,29 @@ def register_gdp_attempt(ledger: trial_ledger.TrialLedger) -> trial_ledger.Trial
         raise GDPPersistenceError(str(exc)) from exc
 
 
-def run_one_persisted_research_decision(
-    ledger: trial_ledger.TrialLedger, archive: DecisionArchive
-) -> DecisionReceipt:
-    """Run the public composition with durable registration and archival."""
-    trial = register_gdp_attempt(ledger)
-    from services.production_gdp_strategy.one_decision import _run_one_research_decision
+def _research_storage_root() -> Path:
+    override = os.environ.get(RESEARCH_STORAGE_ROOT_ENV)
+    return Path(override) if override else _DEFAULT_RESEARCH_STORAGE_ROOT
 
-    return _run_one_research_decision(ledger=ledger, decision_archive=archive, trial=trial)
+
+def open_default_research_storage() -> tuple[trial_ledger.TrialLedger, DecisionArchive]:
+    """Open the durable GDP research ledger and decision archive.
+
+    The storage location is resolved from ``KALSH3_GDP_RESEARCH_STORAGE_ROOT``
+    when set -- an isolated-testing escape hatch that controls only where
+    authenticated research state is stored, never decision or authority
+    semantics -- else a fixed canonical per-user location. Fails closed if the
+    location cannot be opened rather than silently running unregistered.
+    """
+    root = _research_storage_root()
+    try:
+        ledger = trial_ledger.TrialLedger(root / "ledger.sqlite")
+        archive = DecisionArchive(root / "decisions")
+    except (OSError, trial_ledger.LedgerError) as exc:
+        raise GDPPersistenceError(
+            f"durable GDP research storage could not be opened: {exc}"
+        ) from exc
+    return ledger, archive
 
 
 def replay_gdp_decision(

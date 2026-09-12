@@ -5,12 +5,14 @@ import json
 from collections.abc import Callable
 from datetime import UTC, datetime
 from decimal import Decimal
+from pathlib import Path
 
 import pytest
 
 import services.forecasting.gdpnow_source_acquisition as gdpnow_acquisition
 import services.production_gdp_strategy.one_decision as one_decision
 from services.forecasting.gdpnow_parsing import ParsedGDPNowVintage, parse_gdpnow_commentary
+from services.production_gdp_strategy.gdp_persistence import RESEARCH_STORAGE_ROOT_ENV
 from services.production_gdp_strategy.one_decision import (
     DecisionClass,
     DecisionError,
@@ -26,6 +28,15 @@ from services.production_gdp_strategy.outcome import (
     _FixtureSettlementObservation,
     validate_outcome_receipt,
 )
+
+
+@pytest.fixture(autouse=True)
+def _isolated_gdp_research_storage(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Isolate the durable storage location `run_one_research_decision()` uses.
+
+    See the identical fixture in test_gdp_public_composition_acceptance.py.
+    """
+    monkeypatch.setenv(RESEARCH_STORAGE_ROOT_ENV, str(tmp_path / "gdp-research"))
 
 
 def _gdpnow() -> tuple[gdpnow_acquisition.GDPNowAcquisitionEvidence, ParsedGDPNowVintage]:

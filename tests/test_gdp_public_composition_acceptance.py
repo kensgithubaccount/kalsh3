@@ -4,10 +4,25 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 from decimal import Decimal
+from pathlib import Path
 
 import pytest
 
 from services.production_gdp_strategy import one_decision
+from services.production_gdp_strategy.gdp_persistence import RESEARCH_STORAGE_ROOT_ENV
+
+
+@pytest.fixture(autouse=True)
+def _isolated_gdp_research_storage(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Each test gets its own durable storage location.
+
+    ``run_one_research_decision()`` is now durable and rejects a second
+    prospective attempt against the same storage location, so acceptance
+    tests that call it repeatedly need per-test isolated storage. This is the
+    narrowly scoped storage-location escape hatch: it controls only where
+    state is written, never decision or authority semantics.
+    """
+    monkeypatch.setenv(RESEARCH_STORAGE_ROOT_ENV, str(tmp_path / "gdp-research"))
 
 
 def test_public_boundary_is_research_only_and_fee_incomplete() -> None:
