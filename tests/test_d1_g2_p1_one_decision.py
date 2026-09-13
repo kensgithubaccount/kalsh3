@@ -18,8 +18,8 @@ from services.production_gdp_strategy.one_decision import (
     DecisionError,
     _ClockSample,
     _evaluate_fixture_decision,
+    _replay_fixture_decision,
     _TransportResponse,
-    replay_decision,
     run_one_research_decision,
 )
 from services.production_gdp_strategy.outcome import (
@@ -210,7 +210,7 @@ def test_real_shaped_passing_path_replays_and_evaluates_without_mutation() -> No
     assert decision.classification is DecisionClass.TRADE_YES
     assert decision.entry_price == Decimal("0.40")
     assert decision.all_in_debit == Decimal("0.4168")
-    assert replay_decision(decision) == decision
+    assert _replay_fixture_decision(decision) == decision
 
     settlement = _FixtureSettlementObservation(
         response=json.dumps(
@@ -241,7 +241,7 @@ def test_schedule_conflict_is_evidence_incomplete() -> None:
         source=FixtureSource(close="08:31:00"), gdpnow=evidence, vintage=vintage, clock=_clock()
     )
     assert decision.classification is DecisionClass.EVIDENCE_INCOMPLETE
-    assert replay_decision(decision) == decision
+    assert _replay_fixture_decision(decision) == decision
 
 
 def test_temporal_failure_is_evidence_incomplete() -> None:
@@ -262,7 +262,7 @@ def test_missing_fee_authority_is_recorded_as_evidence_incomplete() -> None:
         source=MissingFee(), gdpnow=evidence, vintage=vintage, clock=_clock()
     )
     assert decision.classification is DecisionClass.EVIDENCE_INCOMPLETE
-    assert replay_decision(decision) == decision
+    assert _replay_fixture_decision(decision) == decision
 
 
 def test_exact_gate_rejects_with_abstain() -> None:
@@ -329,7 +329,7 @@ def test_mutated_issued_book_fails_replay() -> None:
     assert decision.bundle is not None
     object.__setattr__(decision.bundle.book, "body", b"substituted")
     with pytest.raises(DecisionError, match=r"reconstructed|tampered"):
-        replay_decision(decision)
+        _replay_fixture_decision(decision)
 
 
 def test_caller_authored_source_cannot_become_positive_authority() -> None:
@@ -347,7 +347,7 @@ def test_reconstructed_receipt_is_rejected() -> None:
 
     with pytest.raises((DecisionError, TypeError)):
         forged = replace(decision)
-        replay_decision(forged)
+        _replay_fixture_decision(forged)
 
 
 def test_public_entrypoint_has_no_injection_parameters() -> None:

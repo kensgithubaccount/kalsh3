@@ -1201,13 +1201,34 @@ def _incomplete_receipt_impl(
 def _bootstrap_public_decision_operations() -> None:
     issue, restore, _restore_archive_values, validate = _make_decision_issuer()
 
+    # The fixture evaluator gets its OWN closure-private registry, never the
+    # canonical one above. `_make_decision_issuer()` returns fresh, mutually
+    # invisible `_issued`/`_issued_fingerprints` dicts each call, so a receipt
+    # issued here can never satisfy `validate` (the canonical validator):
+    # fixture-only, caller-controlled inputs must never acquire canonical
+    # prospective authority.
+    fixture_issue, _fixture_restore, _fixture_restore_archive_values, fixture_validate = (
+        _make_decision_issuer()
+    )
+
+    # Captured once, here, rather than read from the module-global `trial_ledger`
+    # name at call time: that name is reassignable after import (it is set via
+    # `importlib.import_module` above), so a replay boundary that looked it up
+    # lazily could be pointed at an attacker-supplied stand-in module/class.
+    # Binding the genuine types into this closure at bootstrap time means no
+    # later rebinding of the `trial_ledger` module attribute changes what
+    # counts as an authentic TrialLedger for replay.
+    trusted_trial_ledger_type = trial_ledger.TrialLedger
+    trusted_evaluation_plan_type = trial_ledger.EvaluationPlan
+    trusted_trial_status_type = trial_ledger.TrialStatus
+
     def evaluate(
         source: _ResearchDecisionSource,
         gdpnow: GDPNowAcquisitionEvidence,
         vintage: ParsedGDPNowVintage,
         clock: _Clock,
     ) -> DecisionReceipt:
-        return _evaluate_fixture_decision_impl(source, gdpnow, vintage, clock, issue)
+        return _evaluate_fixture_decision_impl(source, gdpnow, vintage, clock, fixture_issue)
 
     def run() -> DecisionReceipt:
         from services.production_gdp_strategy.gdp_persistence import (
@@ -1226,11 +1247,15 @@ def _bootstrap_public_decision_operations() -> None:
     def replay(ledger: Any, archive: Any, trial_id: str) -> DecisionReceipt:
         from services.production_gdp_strategy.gdp_persistence import DecisionArchive
 
-        if type(archive) is not DecisionArchive or type(trial_id) is not str:
+        if (
+            type(ledger) is not trusted_trial_ledger_type
+            or type(archive) is not DecisionArchive
+            or type(trial_id) is not str
+        ):
             raise DecisionError("GDP replay requires a genuine ledger, archive, and trial id")
         try:
             trial = ledger.get(trial_id)
-            expected_plan = trial_ledger.EvaluationPlan(
+            expected_plan = trusted_evaluation_plan_type(
                 {
                     "experiment_identity": "d1-g2-public-one-event-one-attempt-v1",
                     "policy_version": "d1-g2-p1-one-decision-v1",
@@ -1252,7 +1277,7 @@ def _bootstrap_public_decision_operations() -> None:
             or trial.underlying_event_id != "KXGDP-26OCT30"
             or trial.research_only is not True
             or trial.production_influence != 0
-            or trial.status is not trial_ledger.TrialStatus.COMPLETED
+            or trial.status is not trusted_trial_status_type.COMPLETED
         ):
             raise DecisionError("GDP replay ledger authority or identity failed")
         try:
@@ -1291,15 +1316,31 @@ def _bootstrap_public_decision_operations() -> None:
             canonicalize=archive.canonicalize,
         )
 
+    def replay_fixture(receipt: DecisionReceipt) -> DecisionReceipt:
+        """Fixture-only bundle replay/equality check.
+
+        Recomputes classification from preserved evidence exactly like
+        `replay_decision`, but validates against the isolated fixture
+        registry above -- never the canonical one. A fixture receipt cannot
+        satisfy this by being canonical, and a canonical receipt cannot
+        satisfy this by being fixture-issued; the two registries never
+        recognize each other's receipts.
+        """
+        return _replay_decision_impl(receipt, fixture_validate)
+
     globals()["_evaluate_fixture_decision"] = evaluate
     globals()["run_one_research_decision"] = run
     globals()["replay_gdp_decision"] = replay
     globals()["validate_decision_receipt"] = validate
+    globals()["_validate_fixture_decision_receipt"] = fixture_validate
+    globals()["_replay_fixture_decision"] = replay_fixture
 
 
 validate_decision_receipt: Callable[[DecisionReceipt], None] = None  # type: ignore[assignment]
 run_one_research_decision: Callable[[], DecisionReceipt] = None  # type: ignore[assignment]
 replay_gdp_decision: Callable[[Any, Any, str], DecisionReceipt] = None  # type: ignore[assignment]
+_validate_fixture_decision_receipt: Callable[[DecisionReceipt], None] = None  # type: ignore[assignment]
+_replay_fixture_decision: Callable[[DecisionReceipt], DecisionReceipt] = None  # type: ignore[assignment]
 
 
 def _persistable_values(receipt: DecisionReceipt) -> dict[str, object]:
@@ -1311,9 +1352,10 @@ def _persistable_values(receipt: DecisionReceipt) -> dict[str, object]:
     }
 
 
-def replay_decision(receipt: DecisionReceipt) -> DecisionReceipt:
-    """Recompute the decision from its preserved evidence and require exact persisted equality."""
-    validate_decision_receipt(receipt)
+def _replay_decision_impl(
+    receipt: DecisionReceipt, validate: Callable[[DecisionReceipt], None]
+) -> DecisionReceipt:
+    validate(receipt)
     if receipt.bundle is None:
         return receipt
     bundle = receipt.bundle
@@ -1361,6 +1403,11 @@ def replay_decision(receipt: DecisionReceipt) -> DecisionReceipt:
         if getattr(receipt, name) != expected:
             raise DecisionError(f"decision replay mismatch: {name}")
     return receipt
+
+
+def replay_decision(receipt: DecisionReceipt) -> DecisionReceipt:
+    """Recompute the decision from its preserved evidence and require exact persisted equality."""
+    return _replay_decision_impl(receipt, validate_decision_receipt)
 
 
 __all__ = [
