@@ -983,7 +983,7 @@ def _evaluate_fixture_decision_impl(
             response=fee_response, completed_at=fee_end.wall_utc, _capability=_ISSUER
         )
     except DecisionError:
-        return _incomplete_receipt(fee_end)
+        return _incomplete_receipt_impl(fee_end, issuer=issuer)
     bundle = _Bundle(schedule, before, book, after, fee, gdpnow, vintage)
     pipeline = clock()
     try:
@@ -1078,32 +1078,12 @@ def _evaluate_fixture_decision_impl(
     return receipt
 
 
-def run_one_research_decision() -> DecisionReceipt:
-    """Run the durable, fixed public composition without caller-controlled dependencies.
-
-    Resolves the canonical durable research storage location, registers the
-    prospective attempt in the durable TrialLedger *before* any evidence
-    acquisition, rejects a duplicate attempt against that same durable state,
-    and archives the resulting decision. This entrypoint accepts no evidence,
-    clock, source-response, or authority arguments -- storage location is
-    resolved internally (see ``gdp_persistence.open_default_research_storage``)
-    and is not a caller-supplied evidence, clock, or authority seam.
-    """
-    from services.production_gdp_strategy.gdp_persistence import (
-        open_default_research_storage,
-        register_gdp_attempt,
-    )
-
-    ledger, archive = open_default_research_storage()
-    trial = register_gdp_attempt(ledger)
-    return _run_one_research_decision(ledger=ledger, decision_archive=archive, trial=trial)
-
-
 def _run_one_research_decision(
     *,
     ledger: trial_ledger.TrialLedger,
     decision_archive: object,
     trial: Any,
+    issuer: Callable[[Mapping[str, object], _Bundle | None], DecisionReceipt],
 ) -> DecisionReceipt:
     """Run the fixed research composition and fail closed on incomplete authority.
 
@@ -1117,8 +1097,8 @@ def _run_one_research_decision(
         vintage = parse_gdpnow_commentary(gdpnow)
         schedule_result = acquire_schedule_authority()
         if schedule_result.status is not AuthorityStatus.COMPLETE_AUTHORITY:
-            result = _incomplete_receipt(
-                _system_clock(), pipeline_start=pipeline_start, trial=trial
+            result = _incomplete_receipt_impl(
+                _system_clock(), pipeline_start=pipeline_start, trial=trial, issuer=issuer
             )
             return _finish_persisted_result(result, ledger, trial, decision_archive)
         if (
@@ -1130,15 +1110,19 @@ def _run_one_research_decision(
         # checkpoint. Acquire it before deciding, then preserve that blocker.
         fee = acquire_fee_authority(_system_clock().wall_utc)
         if fee.policy is None:
-            result = _incomplete_receipt(
-                _system_clock(), pipeline_start=pipeline_start, trial=trial
+            result = _incomplete_receipt_impl(
+                _system_clock(), pipeline_start=pipeline_start, trial=trial, issuer=issuer
             )
             return _finish_persisted_result(result, ledger, trial, decision_archive)
         del vintage
     except Exception:
-        result = _incomplete_receipt(_system_clock(), pipeline_start=pipeline_start, trial=trial)
+        result = _incomplete_receipt_impl(
+            _system_clock(), pipeline_start=pipeline_start, trial=trial, issuer=issuer
+        )
         return _finish_persisted_result(result, ledger, trial, decision_archive)
-    result = _incomplete_receipt(_system_clock(), pipeline_start=pipeline_start, trial=trial)
+    result = _incomplete_receipt_impl(
+        _system_clock(), pipeline_start=pipeline_start, trial=trial, issuer=issuer
+    )
     return _finish_persisted_result(result, ledger, trial, decision_archive)
 
 
@@ -1215,7 +1199,7 @@ def _incomplete_receipt_impl(
 
 
 def _bootstrap_public_decision_operations() -> None:
-    issue, _restore, restore_archive_values, validate = _make_decision_issuer()
+    issue, restore, _restore_archive_values, validate = _make_decision_issuer()
 
     def evaluate(
         source: _ResearchDecisionSource,
@@ -1225,33 +1209,97 @@ def _bootstrap_public_decision_operations() -> None:
     ) -> DecisionReceipt:
         return _evaluate_fixture_decision_impl(source, gdpnow, vintage, clock, issue)
 
-    def incomplete(
-        sample: _ClockSample,
-        *,
-        pipeline_start: _ClockSample | None = None,
-        trial: Any = None,
-    ) -> DecisionReceipt:
-        return _incomplete_receipt_impl(
-            sample, pipeline_start=pipeline_start, trial=trial, issuer=issue
+    def run() -> DecisionReceipt:
+        from services.production_gdp_strategy.gdp_persistence import (
+            open_default_research_storage,
+            register_gdp_attempt,
         )
 
-    def restore_archived(archive: object, trial_id: str) -> DecisionReceipt:
+        ledger, archive = open_default_research_storage()
+        trial = register_gdp_attempt(ledger)
+        return _run_one_research_decision(
+            ledger=ledger, decision_archive=archive, trial=trial, issuer=issue
+        )
+
+    run.__name__ = "run_one_research_decision"
+
+    def replay(ledger: Any, archive: Any, trial_id: str) -> DecisionReceipt:
         from services.production_gdp_strategy.gdp_persistence import DecisionArchive
 
         if type(archive) is not DecisionArchive or type(trial_id) is not str:
-            raise DecisionError("GDP replay requires a genuine DecisionArchive and trial id")
-        values = archive.authenticated_values(trial_id)
-        return restore_archive_values(values)
+            raise DecisionError("GDP replay requires a genuine ledger, archive, and trial id")
+        try:
+            trial = ledger.get(trial_id)
+            expected_plan = trial_ledger.EvaluationPlan(
+                {
+                    "experiment_identity": "d1-g2-public-one-event-one-attempt-v1",
+                    "policy_version": "d1-g2-p1-one-decision-v1",
+                    "target_quarter": "2026-Q3",
+                    "one_contract": True,
+                    "research_only": True,
+                    "production_influence": 0,
+                }
+            )
+        except Exception as exc:
+            raise DecisionError("GDP replay ledger authority is unavailable") from exc
+        if (
+            trial.trial_id != trial_id
+            or trial.candidate_family != "D1-G2"
+            or trial.model_identity != "d1-g2-p1-one-decision-v1"
+            or trial.feature_specification_identity != "d1-g2-fixed-low-debit-v1"
+            or trial.definition.evaluation_plan.identity != expected_plan.identity
+            or trial.reason != "d1-g2-public-one-event-one-attempt-v1"
+            or trial.underlying_event_id != "KXGDP-26OCT30"
+            or trial.research_only is not True
+            or trial.production_influence != 0
+            or trial.status is not trial_ledger.TrialStatus.COMPLETED
+        ):
+            raise DecisionError("GDP replay ledger authority or identity failed")
+        try:
+            values, record, claimed_mac, signing_key = archive._authenticated_restore_material(
+                trial_id
+            )
+        except Exception as exc:
+            raise DecisionError("GDP replay archive authority is unavailable") from exc
+        expected_hash = stable_hash(
+            tuple(sorted((name, str(value)) for name, value in values.items()))
+        )
+        if (
+            record.get("schema") != "kalsh3.gdp.decision-archive.v1"
+            or record.get("trial_id") != trial_id
+            or record.get("underlying_event_id") != trial.underlying_event_id
+            or values.get("trial_id") != trial_id
+            or values.get("underlying_event_id") != trial.underlying_event_id
+            or record.get("payload_hash") != expected_hash
+            or values.get("classification") is not DecisionClass.EVIDENCE_INCOMPLETE
+            or values.get("research_only") is not True
+            or values.get("production_influence") != ZERO
+            or values.get("policy_version") != POLICY_VERSION
+            or values.get("policy_hash") != _policy_hash()
+            or values.get("entry_rule_version") != ENTRY_RULE_VERSION
+            or values.get("entry_rule_hash") != stable_hash((ENTRY_RULE_VERSION, str(GATE)))
+            or values.get("tradability_protocol_version") != TRADABILITY_PROTOCOL_VERSION
+            or values.get("tradability_protocol_hash")
+            != stable_hash((TRADABILITY_PROTOCOL_VERSION, MAX_STATUS_BOOK_STATUS_WINDOW_MS))
+        ):
+            raise DecisionError("GDP replay archive identity or payload authority failed")
+        return restore(
+            values=values,
+            record_without_mac=record,
+            claimed_mac=claimed_mac,
+            signing_key=signing_key,
+            canonicalize=archive.canonicalize,
+        )
 
     globals()["_evaluate_fixture_decision"] = evaluate
-    globals()["_incomplete_receipt"] = incomplete
-    globals()["_restore_archived_decision"] = restore_archived
+    globals()["run_one_research_decision"] = run
+    globals()["replay_gdp_decision"] = replay
     globals()["validate_decision_receipt"] = validate
 
 
-_incomplete_receipt: Callable[..., DecisionReceipt] = None  # type: ignore[assignment]
 validate_decision_receipt: Callable[[DecisionReceipt], None] = None  # type: ignore[assignment]
-_restore_archived_decision: Callable[[object, str], DecisionReceipt] = None  # type: ignore[assignment]
+run_one_research_decision: Callable[[], DecisionReceipt] = None  # type: ignore[assignment]
+replay_gdp_decision: Callable[[Any, Any, str], DecisionReceipt] = None  # type: ignore[assignment]
 
 
 def _persistable_values(receipt: DecisionReceipt) -> dict[str, object]:
@@ -1315,6 +1363,12 @@ def replay_decision(receipt: DecisionReceipt) -> DecisionReceipt:
     return receipt
 
 
-__all__ = ["DecisionClass", "DecisionError", "replay_decision", "run_one_research_decision"]
+__all__ = [
+    "DecisionClass",
+    "DecisionError",
+    "replay_decision",
+    "replay_gdp_decision",
+    "run_one_research_decision",
+]
 
 _bootstrap_public_decision_operations()

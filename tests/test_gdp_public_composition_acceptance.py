@@ -36,8 +36,7 @@ def test_public_boundary_is_research_only_and_fee_incomplete() -> None:
 
 
 def test_decision_timestamp_cannot_predate_pipeline_completion() -> None:
-    sample = one_decision._ClockSample(datetime.now(UTC), 1)
-    receipt = one_decision._incomplete_receipt(sample)
+    receipt = one_decision.run_one_research_decision()
     object.__setattr__(receipt, "decision_timestamp", datetime(2020, 1, 1, tzinfo=UTC))
     with pytest.raises(one_decision.DecisionError):
         one_decision.validate_decision_receipt(receipt)

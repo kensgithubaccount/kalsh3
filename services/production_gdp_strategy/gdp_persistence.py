@@ -160,19 +160,34 @@ class DecisionArchive:
             stream.flush()
             os.fsync(stream.fileno())
 
-    def load(self, trial_id: str) -> DecisionReceipt:
-        from services.production_gdp_strategy.one_decision import _restore_archived_decision
+    def load(self, trial_id: str) -> dict[str, object]:
+        """Reject archive-only loading; canonical replay needs the ledger too."""
+        raise GDPPersistenceError(
+            "archive-only decision loading is unavailable; use replay_gdp_decision"
+        )
 
-        receipt = _restore_archived_decision(self, trial_id)
-        record = self._records()[trial_id]
-        if record.get("payload_hash") != receipt.payload_hash:
-            raise GDPPersistenceError("decision payload hash does not match archive")
-        if (
-            receipt.trial_id != record["trial_id"]
-            or receipt.underlying_event_id != record["underlying_event_id"]
-        ):
-            raise GDPPersistenceError("decision archive identity binding failed")
-        return receipt
+    def _authenticated_restore_material(
+        self, trial_id: str
+    ) -> tuple[dict[str, object], dict[str, object], str, bytes]:
+        """Return authenticated archive material for the complete replay boundary."""
+        records = self._records()
+        if trial_id not in records:
+            raise GDPPersistenceError("decision is not archived")
+        record = records[trial_id]
+        mac = record.get("issuer_mac")
+        if not isinstance(mac, str):
+            raise GDPPersistenceError("decision archive record is missing issuer authentication")
+        payload = record.get("payload")
+        if not isinstance(payload, dict):
+            raise GDPPersistenceError("decision archive payload is invalid")
+        values = {name: _decoded(encoded, name) for name, encoded in payload.items()}
+        without_mac = dict(record)
+        without_mac.pop("issuer_mac", None)
+        return values, without_mac, mac, self._key
+
+    @staticmethod
+    def canonicalize(value: object) -> bytes:
+        return _canonical(value)
 
     def authenticated_values(self, trial_id: str) -> dict[str, object]:
         records = self._records()
@@ -282,16 +297,10 @@ def open_default_research_storage() -> tuple[trial_ledger.TrialLedger, DecisionA
 def replay_gdp_decision(
     ledger: trial_ledger.TrialLedger, archive: DecisionArchive, trial_id: str
 ) -> DecisionReceipt:
-    """Reopen a completed GDP decision only after both durable authorities validate."""
+    """Reopen a completed GDP decision through the complete semantic boundary."""
+    from services.production_gdp_strategy.one_decision import replay_gdp_decision as replay
+
     try:
-        trial = ledger.get(trial_id)
-    except trial_ledger.LedgerError as exc:
+        return replay(ledger, archive, trial_id)
+    except (ValueError, TypeError, AttributeError) as exc:
         raise GDPPersistenceError(str(exc)) from exc
-    if trial.underlying_event_id != UNDERLYING_EVENT_ID:
-        raise GDPPersistenceError("trial is not bound to the predeclared GDP event")
-    if trial.status.value != "COMPLETED":
-        raise GDPPersistenceError("GDP decision trial is not completed")
-    receipt = archive.load(trial_id)
-    if receipt.trial_id != trial_id or receipt.underlying_event_id != trial.underlying_event_id:
-        raise GDPPersistenceError("GDP decision and trial identities disagree")
-    return receipt
