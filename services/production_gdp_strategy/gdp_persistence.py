@@ -31,14 +31,12 @@ class GDPPersistenceError(ValueError):
 EXPERIMENT_IDENTITY = "d1-g2-public-one-event-one-attempt-v1"
 UNDERLYING_EVENT_ID = EVENT_TICKER
 TARGET_QUARTER = "2026-Q3"
-_ARCHIVE_SCHEMA = "kalsh3.gdp.decision-archive.v1"
+_ARCHIVE_SCHEMA = "kalsh3.gdp.decision-archive.v2"
 
-# Narrowly scoped storage-location escape hatch for isolated testing only: it
-# controls where authenticated research state lives on disk, never decision or
-# authority semantics. `run_one_research_decision()` itself stays zero-argument;
-# this is read from the environment, not accepted as a function parameter.
-RESEARCH_STORAGE_ROOT_ENV: Final = "KALSH3_GDP_RESEARCH_STORAGE_ROOT"
-_DEFAULT_RESEARCH_STORAGE_ROOT: Final = Path.home() / ".kalsh3" / "gdp-research"
+# The canonical location is derived from this installed module, not from
+# caller-controlled environment, HOME, cwd, or a function argument.
+RESEARCH_STORAGE_ROOT_ENV: Final = "KALSH3_GDP_RESEARCH_STORAGE_ROOT"  # noncanonical test legacy
+_DEFAULT_RESEARCH_STORAGE_ROOT: Final = Path(__file__).resolve().parents[2] / ".kalsh3-gdp-research"
 
 
 def _canonical(value: object) -> bytes:
@@ -126,6 +124,11 @@ class DecisionArchive:
         self.root.mkdir(parents=True, exist_ok=True)
         self._journal = self.root / "decisions.journal"
         self._key = _archive_key(self.root / "decisions.issuer-key")
+        self._ledger: trial_ledger.TrialLedger | None = None
+
+    @property
+    def authority_id(self) -> str:
+        return hashlib.sha256(self._key).hexdigest()
 
     @staticmethod
     def _mac(record: dict[str, object], key: bytes) -> str:
@@ -140,11 +143,22 @@ class DecisionArchive:
             or payload.get("underlying_event_id") != underlying_event_id
         ):
             raise GDPPersistenceError("decision is not bound to its durable trial")
+        ledger = self._ledger
+        if ledger is None:
+            raise GDPPersistenceError("decision archive is not paired with a ledger")
+        payload_hash = receipt.payload_hash
+        ledger_id = ledger._ledger_id()
+        pair_binding = ledger.decision_archive_binding(
+            self.authority_id, trial_id, underlying_event_id, _ARCHIVE_SCHEMA, payload_hash
+        )
         record: dict[str, object] = {
             "schema": _ARCHIVE_SCHEMA,
+            "ledger_id": ledger_id,
+            "archive_id": self.authority_id,
             "trial_id": trial_id,
             "underlying_event_id": underlying_event_id,
-            "payload_hash": receipt.payload_hash,
+            "payload_hash": payload_hash,
+            "pair_binding": pair_binding,
             "payload": {name: _encoded(value) for name, value in payload.items()},
         }
         record["issuer_mac"] = self._mac(record, self._key)
@@ -234,9 +248,36 @@ class DecisionArchive:
         return result
 
 
+# Persistence authorities are captured at module bootstrap. Public callers may
+# inspect or rebind the compatibility names above, but canonical operations use
+# these immutable references.
+_TRUSTED_LEDGER_MODULE = trial_ledger
+_TRUSTED_DECISION_ARCHIVE_TYPE = DecisionArchive
+
+
+def open_isolated_research_storage(
+    root: str | Path,
+) -> tuple[trial_ledger.TrialLedger, DecisionArchive]:
+    """Create an explicitly noncanonical persistence unit for tests/tools.
+
+    This factory is intentionally separate from the zero-argument public run;
+    its caller-selected root can never redirect canonical issuance.
+    """
+    try:
+        ledger = _TRUSTED_LEDGER_MODULE.TrialLedger(Path(root) / "ledger.sqlite")
+        archive = _TRUSTED_DECISION_ARCHIVE_TYPE(Path(root) / "decisions")
+        archive._ledger = ledger
+        ledger.bind_decision_archive(archive.authority_id)
+    except (OSError, _TRUSTED_LEDGER_MODULE.LedgerError, GDPPersistenceError) as exc:
+        raise GDPPersistenceError(
+            f"isolated GDP research storage could not be opened: {exc}"
+        ) from exc
+    return ledger, archive
+
+
 def register_gdp_attempt(ledger: trial_ledger.TrialLedger) -> trial_ledger.Trial:
     """Register the fixed GDP attempt before any evidence acquisition."""
-    plan = trial_ledger.EvaluationPlan(
+    plan = _TRUSTED_LEDGER_MODULE.EvaluationPlan(
         {
             "experiment_identity": EXPERIMENT_IDENTITY,
             "policy_version": "d1-g2-p1-one-decision-v1",
@@ -265,33 +306,39 @@ def register_gdp_attempt(ledger: trial_ledger.TrialLedger) -> trial_ledger.Trial
             underlying_event_id=UNDERLYING_EVENT_ID,
             reason=EXPERIMENT_IDENTITY,
         )
-    except trial_ledger.LedgerError as exc:
+    except _TRUSTED_LEDGER_MODULE.LedgerError as exc:
         raise GDPPersistenceError(str(exc)) from exc
 
 
 def _research_storage_root() -> Path:
-    override = os.environ.get(RESEARCH_STORAGE_ROOT_ENV)
-    return Path(override) if override else _DEFAULT_RESEARCH_STORAGE_ROOT
+    return _DEFAULT_RESEARCH_STORAGE_ROOT
 
 
-def open_default_research_storage() -> tuple[trial_ledger.TrialLedger, DecisionArchive]:
-    """Open the durable GDP research ledger and decision archive.
+def _make_default_storage_opener(
+    root: Path,
+    ledger_module: Any,
+    archive_type: type[DecisionArchive],
+) -> Any:
+    """Capture canonical storage identity and persistence authorities once."""
 
-    The storage location is resolved from ``KALSH3_GDP_RESEARCH_STORAGE_ROOT``
-    when set -- an isolated-testing escape hatch that controls only where
-    authenticated research state is stored, never decision or authority
-    semantics -- else a fixed canonical per-user location. Fails closed if the
-    location cannot be opened rather than silently running unregistered.
-    """
-    root = _research_storage_root()
-    try:
-        ledger = trial_ledger.TrialLedger(root / "ledger.sqlite")
-        archive = DecisionArchive(root / "decisions")
-    except (OSError, trial_ledger.LedgerError) as exc:
-        raise GDPPersistenceError(
-            f"durable GDP research storage could not be opened: {exc}"
-        ) from exc
-    return ledger, archive
+    def open_storage() -> tuple[trial_ledger.TrialLedger, DecisionArchive]:
+        try:
+            ledger = ledger_module.TrialLedger(root / "ledger.sqlite")
+            archive = archive_type(root / "decisions")
+            archive._ledger = ledger
+            ledger.bind_decision_archive(archive.authority_id)
+        except (OSError, ledger_module.LedgerError, GDPPersistenceError) as exc:
+            raise GDPPersistenceError(
+                f"durable GDP research storage could not be opened: {exc}"
+            ) from exc
+        return ledger, archive
+
+    return open_storage
+
+
+open_default_research_storage = _make_default_storage_opener(
+    _DEFAULT_RESEARCH_STORAGE_ROOT, _TRUSTED_LEDGER_MODULE, _TRUSTED_DECISION_ARCHIVE_TYPE
+)
 
 
 def replay_gdp_decision(

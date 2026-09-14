@@ -19,7 +19,7 @@ from dataclasses import dataclass, fields
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal, InvalidOperation
 from enum import StrEnum
-from typing import Any, Protocol
+from typing import Any, Protocol, cast
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from services.forecasting.gdpnow_parsing import (
@@ -1084,6 +1084,7 @@ def _run_one_research_decision(
     decision_archive: object,
     trial: Any,
     issuer: Callable[[Mapping[str, object], _Bundle | None], DecisionReceipt],
+    decision_archive_type: type,
 ) -> DecisionReceipt:
     """Run the fixed research composition and fail closed on incomplete authority.
 
@@ -1100,7 +1101,9 @@ def _run_one_research_decision(
             result = _incomplete_receipt_impl(
                 _system_clock(), pipeline_start=pipeline_start, trial=trial, issuer=issuer
             )
-            return _finish_persisted_result(result, ledger, trial, decision_archive)
+            return _finish_persisted_result(
+                result, ledger, trial, decision_archive, decision_archive_type
+            )
         if (
             schedule_result.authority is not None
             and schedule_result.authority.event_ticker != trial.underlying_event_id
@@ -1113,17 +1116,21 @@ def _run_one_research_decision(
             result = _incomplete_receipt_impl(
                 _system_clock(), pipeline_start=pipeline_start, trial=trial, issuer=issuer
             )
-            return _finish_persisted_result(result, ledger, trial, decision_archive)
+            return _finish_persisted_result(
+                result, ledger, trial, decision_archive, decision_archive_type
+            )
         del vintage
     except Exception:
         result = _incomplete_receipt_impl(
             _system_clock(), pipeline_start=pipeline_start, trial=trial, issuer=issuer
         )
-        return _finish_persisted_result(result, ledger, trial, decision_archive)
+        return _finish_persisted_result(
+            result, ledger, trial, decision_archive, decision_archive_type
+        )
     result = _incomplete_receipt_impl(
         _system_clock(), pipeline_start=pipeline_start, trial=trial, issuer=issuer
     )
-    return _finish_persisted_result(result, ledger, trial, decision_archive)
+    return _finish_persisted_result(result, ledger, trial, decision_archive, decision_archive_type)
 
 
 def _finish_persisted_result(
@@ -1131,14 +1138,14 @@ def _finish_persisted_result(
     ledger: trial_ledger.TrialLedger,
     trial: Any,
     decision_archive: object,
+    decision_archive_type: type,
 ) -> DecisionReceipt:
-    from services.production_gdp_strategy.gdp_persistence import DecisionArchive
-
-    if not isinstance(decision_archive, DecisionArchive):
+    if type(decision_archive) is not decision_archive_type:
         raise DecisionError("durable GDP runs require a DecisionArchive")
+    archive = cast(Any, decision_archive)
     trial_id = str(trial.trial_id)
     event_id = str(trial.underlying_event_id)
-    decision_archive.append(result, trial_id=trial_id, underlying_event_id=event_id)
+    archive.append(result, trial_id=trial_id, underlying_event_id=event_id)
     ledger.advance(trial_id, trial_ledger.TrialStatus.COMPLETED)
     return result
 
@@ -1199,6 +1206,8 @@ def _incomplete_receipt_impl(
 
 
 def _bootstrap_public_decision_operations() -> None:
+    from services.production_gdp_strategy import gdp_persistence
+
     issue, restore, _restore_archive_values, validate = _make_decision_issuer()
 
     # The fixture evaluator gets its OWN closure-private registry, never the
@@ -1221,6 +1230,9 @@ def _bootstrap_public_decision_operations() -> None:
     trusted_trial_ledger_type = trial_ledger.TrialLedger
     trusted_evaluation_plan_type = trial_ledger.EvaluationPlan
     trusted_trial_status_type = trial_ledger.TrialStatus
+    trusted_decision_archive_type = gdp_persistence.DecisionArchive
+    trusted_open_default_research_storage = gdp_persistence.open_default_research_storage
+    trusted_register_gdp_attempt = gdp_persistence.register_gdp_attempt
 
     def evaluate(
         source: _ResearchDecisionSource,
@@ -1231,25 +1243,22 @@ def _bootstrap_public_decision_operations() -> None:
         return _evaluate_fixture_decision_impl(source, gdpnow, vintage, clock, fixture_issue)
 
     def run() -> DecisionReceipt:
-        from services.production_gdp_strategy.gdp_persistence import (
-            open_default_research_storage,
-            register_gdp_attempt,
-        )
-
-        ledger, archive = open_default_research_storage()
-        trial = register_gdp_attempt(ledger)
+        ledger, archive = trusted_open_default_research_storage()
+        trial = trusted_register_gdp_attempt(ledger)
         return _run_one_research_decision(
-            ledger=ledger, decision_archive=archive, trial=trial, issuer=issue
+            ledger=ledger,
+            decision_archive=archive,
+            trial=trial,
+            issuer=issue,
+            decision_archive_type=trusted_decision_archive_type,
         )
 
     run.__name__ = "run_one_research_decision"
 
     def replay(ledger: Any, archive: Any, trial_id: str) -> DecisionReceipt:
-        from services.production_gdp_strategy.gdp_persistence import DecisionArchive
-
         if (
             type(ledger) is not trusted_trial_ledger_type
-            or type(archive) is not DecisionArchive
+            or type(archive) is not trusted_decision_archive_type
             or type(trial_id) is not str
         ):
             raise DecisionError("GDP replay requires a genuine ledger, archive, and trial id")
@@ -1290,12 +1299,22 @@ def _bootstrap_public_decision_operations() -> None:
             tuple(sorted((name, str(value)) for name, value in values.items()))
         )
         if (
-            record.get("schema") != "kalsh3.gdp.decision-archive.v1"
+            record.get("schema") != "kalsh3.gdp.decision-archive.v2"
+            or record.get("ledger_id") != ledger._ledger_id()
+            or record.get("archive_id") != archive.authority_id
             or record.get("trial_id") != trial_id
             or record.get("underlying_event_id") != trial.underlying_event_id
             or values.get("trial_id") != trial_id
             or values.get("underlying_event_id") != trial.underlying_event_id
             or record.get("payload_hash") != expected_hash
+            or record.get("pair_binding")
+            != ledger.decision_archive_binding(
+                archive.authority_id,
+                trial_id,
+                trial.underlying_event_id,
+                "kalsh3.gdp.decision-archive.v2",
+                str(record.get("payload_hash")),
+            )
             or values.get("classification") is not DecisionClass.EVIDENCE_INCOMPLETE
             or values.get("research_only") is not True
             or values.get("production_influence") != ZERO

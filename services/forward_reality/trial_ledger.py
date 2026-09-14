@@ -107,6 +107,7 @@ class TrialLedger:
     """Authenticated journal authority with a rebuildable SQLite index."""
 
     __slots__ = (
+        "_archive_binding_path",
         "_head_path",
         "_journal_path",
         "_key",
@@ -120,6 +121,9 @@ class TrialLedger:
         self._journal_path = self._path.with_name(self._path.name + ".journal")
         self._key_path = self._path.with_name(self._path.name + ".issuer-key")
         self._head_path = self._path.with_name(self._path.name + ".head")
+        self._archive_binding_path = self._path.with_name(
+            self._path.name + ".decision-archive-binding"
+        )
         self._key_existed = self._key_path.exists()
         self._key = _fr_a2_load_issuer_key(self._key_path)
         self._open_or_create()
@@ -347,6 +351,55 @@ class TrialLedger:
 
     def _ledger_id(self) -> str:
         return str(self._head()["ledger_id"])
+
+    def bind_decision_archive(self, archive_id: str) -> None:
+        """Durably bind one decision archive authority to this ledger."""
+        if type(archive_id) is not str or not archive_id:
+            raise LedgerError("decision archive identity is invalid")
+        binding = {
+            "schema_version": SCHEMA_VERSION,
+            "ledger_id": self._ledger_id(),
+            "archive_id": archive_id,
+        }
+        if self._archive_binding_path.exists():
+            try:
+                stored = json.loads(self._archive_binding_path.read_text())
+                mac = stored.pop("issuer_mac")
+                if not hmac.compare_digest(str(mac), _mac(self._key, stored)):
+                    raise LedgerError("decision archive binding authentication failed")
+                if stored != binding:
+                    raise LedgerError("decision archive authority is bound to another archive")
+                return
+            except (OSError, KeyError, TypeError, ValueError, json.JSONDecodeError) as exc:
+                raise LedgerError("decision archive binding is corrupt") from exc
+        binding["issuer_mac"] = _mac(self._key, binding)
+        try:
+            with self._archive_binding_path.open("x") as stream:
+                stream.write(_canonical(binding).decode() + "\n")
+                stream.flush()
+                os.fsync(stream.fileno())
+        except FileExistsError:
+            self.bind_decision_archive(archive_id)
+
+    def decision_archive_binding(
+        self,
+        archive_id: str,
+        trial_id: str,
+        underlying_event_id: str,
+        schema: str,
+        payload_hash: str,
+    ) -> str:
+        """Authenticate the complete ledger/archive pairing and payload identity."""
+        self.bind_decision_archive(archive_id)
+        value = {
+            "ledger_id": self._ledger_id(),
+            "archive_id": archive_id,
+            "trial_id": trial_id,
+            "underlying_event_id": underlying_event_id,
+            "schema": schema,
+            "payload_hash": payload_hash,
+        }
+        return _mac(self._key, value)
 
     def _events(self) -> tuple[TrialStatusEvent, ...]:
         definitions = self._definitions()
