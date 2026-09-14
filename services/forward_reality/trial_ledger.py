@@ -107,6 +107,7 @@ class TrialLedger:
     """Authenticated journal authority with a rebuildable SQLite index."""
 
     __slots__ = (
+        "_archive_binding_path",
         "_head_path",
         "_journal_path",
         "_key",
@@ -120,6 +121,9 @@ class TrialLedger:
         self._journal_path = self._path.with_name(self._path.name + ".journal")
         self._key_path = self._path.with_name(self._path.name + ".issuer-key")
         self._head_path = self._path.with_name(self._path.name + ".head")
+        self._archive_binding_path = self._path.with_name(
+            self._path.name + ".decision-archive-binding"
+        )
         self._key_existed = self._key_path.exists()
         self._key = _fr_a2_load_issuer_key(self._key_path)
         self._open_or_create()
@@ -136,62 +140,7 @@ class TrialLedger:
         sibling_market_ids: tuple[str, ...] = (),
         parent_trial_ids: tuple[str, ...] = (),
     ) -> Trial:
-        for value, name in (
-            (candidate_family, "candidate_family"),
-            (model_identity, "model_identity"),
-            (feature_specification_identity, "feature_specification_identity"),
-            (underlying_event_id, "underlying_event_id"),
-            (reason, "reason"),
-        ):
-            _text(value, name)
-        if type(evaluation_plan) is not EvaluationPlan:
-            raise LedgerError("evaluation plan must be an EvaluationPlan")
-        siblings = _strings(sibling_market_ids, "sibling_market_ids")
-        parents = _strings(parent_trial_ids, "parent_trial_ids")
-        existing = self._definitions()
-        if any(parent not in existing for parent in parents):
-            raise LedgerError("parent trial is not registered")
-        created_at = self._now()
-        identity = {
-            "candidate_family": candidate_family,
-            "model_identity": model_identity,
-            "feature_specification_identity": feature_specification_identity,
-            "evaluation_plan_identity": evaluation_plan.identity,
-            "parent_trial_ids": parents,
-            "reason": reason,
-            "underlying_event_id": underlying_event_id,
-            "sibling_market_ids": siblings,
-        }
-        trial_id = "trial-" + _hash(_canonical(identity))
-        payload = {
-            "trial_id": trial_id,
-            "created_at": _timestamp(created_at),
-            **identity,
-            "evaluation_plan": evaluation_plan.value,
-            "initial_status": TrialStatus.PLANNED.value,
-            "initial_recorded_at": _timestamp(created_at),
-            "research_only": True,
-            "production_influence": 0,
-            "schema_version": SCHEMA_VERSION,
-        }
-        definition = TrialDefinition(
-            trial_id,
-            created_at,
-            candidate_family,
-            model_identity,
-            feature_specification_identity,
-            evaluation_plan,
-            parents,
-            reason,
-            underlying_event_id,
-            siblings,
-            True,
-            0,
-            SCHEMA_VERSION,
-            _hash(_canonical(payload)),
-            "",
-        )
-        return self._append_registration(definition)
+        raise LedgerError("registration bootstrap is incomplete")
 
     def advance(self, trial_id: str, status: TrialStatus) -> Trial:
         trial = self.get(trial_id)
@@ -348,6 +297,55 @@ class TrialLedger:
     def _ledger_id(self) -> str:
         return str(self._head()["ledger_id"])
 
+    def bind_decision_archive(self, archive_id: str) -> None:
+        """Durably bind one decision archive authority to this ledger."""
+        if type(archive_id) is not str or not archive_id:
+            raise LedgerError("decision archive identity is invalid")
+        binding = {
+            "schema_version": SCHEMA_VERSION,
+            "ledger_id": self._ledger_id(),
+            "archive_id": archive_id,
+        }
+        if self._archive_binding_path.exists():
+            try:
+                stored = json.loads(self._archive_binding_path.read_text())
+                mac = stored.pop("issuer_mac")
+                if not hmac.compare_digest(str(mac), _mac(self._key, stored)):
+                    raise LedgerError("decision archive binding authentication failed")
+                if stored != binding:
+                    raise LedgerError("decision archive authority is bound to another archive")
+                return
+            except (OSError, KeyError, TypeError, ValueError, json.JSONDecodeError) as exc:
+                raise LedgerError("decision archive binding is corrupt") from exc
+        binding["issuer_mac"] = _mac(self._key, binding)
+        try:
+            with self._archive_binding_path.open("x") as stream:
+                stream.write(_canonical(binding).decode() + "\n")
+                stream.flush()
+                os.fsync(stream.fileno())
+        except FileExistsError:
+            self.bind_decision_archive(archive_id)
+
+    def decision_archive_binding(
+        self,
+        archive_id: str,
+        trial_id: str,
+        underlying_event_id: str,
+        schema: str,
+        payload_hash: str,
+    ) -> str:
+        """Authenticate the complete ledger/archive pairing and payload identity."""
+        self.bind_decision_archive(archive_id)
+        value = {
+            "ledger_id": self._ledger_id(),
+            "archive_id": archive_id,
+            "trial_id": trial_id,
+            "underlying_event_id": underlying_event_id,
+            "schema": schema,
+            "payload_hash": payload_hash,
+        }
+        return _mac(self._key, value)
+
     def _events(self) -> tuple[TrialStatusEvent, ...]:
         definitions = self._definitions()
         result: list[TrialStatusEvent] = []
@@ -465,35 +463,7 @@ def _registration_payload(d: TrialDefinition) -> dict[str, object]:
 def _definition_from_payload(
     payload: Mapping[str, Any], entry: Mapping[str, Any]
 ) -> TrialDefinition:
-    plan = EvaluationPlan(payload["evaluation_plan"])
-    if (
-        plan.identity != payload["evaluation_plan_identity"]
-        or payload["research_only"] is not True
-        or payload["production_influence"] != 0
-        or payload["initial_status"] != TrialStatus.PLANNED.value
-        or payload["initial_recorded_at"] != payload["created_at"]
-    ):
-        raise LedgerError("definition safety or evaluation identity mismatch")
-    content_hash = _hash(_canonical(payload))
-    if content_hash != entry["content_hash"]:
-        raise LedgerError("definition content hash mismatch")
-    return TrialDefinition(
-        str(payload["trial_id"]),
-        _parse_timestamp(payload["created_at"]),
-        str(payload["candidate_family"]),
-        str(payload["model_identity"]),
-        str(payload["feature_specification_identity"]),
-        plan,
-        tuple(payload["parent_trial_ids"]),
-        str(payload["reason"]),
-        str(payload["underlying_event_id"]),
-        tuple(payload["sibling_market_ids"]),
-        True,
-        0,
-        SCHEMA_VERSION,
-        content_hash,
-        str(entry["issuer_mac"]),
-    )
+    raise LedgerError("replay bootstrap is incomplete")
 
 
 def _read_entries(path: Path, key: bytes, head: Mapping[str, Any]) -> tuple[dict[str, Any], ...]:
@@ -644,3 +614,118 @@ def _strings(value: object, name: str) -> tuple[str, ...]:
     if type(value) is not tuple or any(type(item) is not str or not item for item in value):
         raise LedgerError(f"{name} must be a tuple of strings")
     return tuple(sorted(set(value)))
+
+
+def _bootstrap_evaluation_plan_operations() -> None:
+    """Bind registration and reconstruction to one original validated type."""
+    trusted_plan_type = EvaluationPlan
+
+    def register(
+        self: TrialLedger,
+        *,
+        candidate_family: str,
+        model_identity: str,
+        feature_specification_identity: str,
+        evaluation_plan: EvaluationPlan,
+        underlying_event_id: str,
+        reason: str,
+        sibling_market_ids: tuple[str, ...] = (),
+        parent_trial_ids: tuple[str, ...] = (),
+    ) -> Trial:
+        for value, name in (
+            (candidate_family, "candidate_family"),
+            (model_identity, "model_identity"),
+            (feature_specification_identity, "feature_specification_identity"),
+            (underlying_event_id, "underlying_event_id"),
+            (reason, "reason"),
+        ):
+            _text(value, name)
+        if type(evaluation_plan) is not trusted_plan_type:
+            raise LedgerError("evaluation plan must be an EvaluationPlan")
+        siblings = _strings(sibling_market_ids, "sibling_market_ids")
+        parents = _strings(parent_trial_ids, "parent_trial_ids")
+        existing = self._definitions()
+        if any(parent not in existing for parent in parents):
+            raise LedgerError("parent trial is not registered")
+        created_at = self._now()
+        identity = {
+            "candidate_family": candidate_family,
+            "model_identity": model_identity,
+            "feature_specification_identity": feature_specification_identity,
+            "evaluation_plan_identity": evaluation_plan.identity,
+            "parent_trial_ids": parents,
+            "reason": reason,
+            "underlying_event_id": underlying_event_id,
+            "sibling_market_ids": siblings,
+        }
+        trial_id = "trial-" + _hash(_canonical(identity))
+        payload = {
+            "trial_id": trial_id,
+            "created_at": _timestamp(created_at),
+            **identity,
+            "evaluation_plan": evaluation_plan.value,
+            "initial_status": TrialStatus.PLANNED.value,
+            "initial_recorded_at": _timestamp(created_at),
+            "research_only": True,
+            "production_influence": 0,
+            "schema_version": SCHEMA_VERSION,
+        }
+        definition = TrialDefinition(
+            trial_id,
+            created_at,
+            candidate_family,
+            model_identity,
+            feature_specification_identity,
+            evaluation_plan,
+            parents,
+            reason,
+            underlying_event_id,
+            siblings,
+            True,
+            0,
+            SCHEMA_VERSION,
+            _hash(_canonical(payload)),
+            "",
+        )
+        return self._append_registration(definition)
+
+    def definition_from_payload(
+        payload: Mapping[str, Any], entry: Mapping[str, Any]
+    ) -> TrialDefinition:
+        plan = trusted_plan_type(payload["evaluation_plan"])
+        if (
+            plan.identity != payload["evaluation_plan_identity"]
+            or payload["research_only"] is not True
+            or payload["production_influence"] != 0
+            or payload["initial_status"] != TrialStatus.PLANNED.value
+            or payload["initial_recorded_at"] != payload["created_at"]
+        ):
+            raise LedgerError("definition safety or evaluation identity mismatch")
+        content_hash = _hash(_canonical(payload))
+        if content_hash != entry["content_hash"]:
+            raise LedgerError("definition content hash mismatch")
+        return TrialDefinition(
+            str(payload["trial_id"]),
+            _parse_timestamp(payload["created_at"]),
+            str(payload["candidate_family"]),
+            str(payload["model_identity"]),
+            str(payload["feature_specification_identity"]),
+            plan,
+            tuple(payload["parent_trial_ids"]),
+            str(payload["reason"]),
+            str(payload["underlying_event_id"]),
+            tuple(payload["sibling_market_ids"]),
+            True,
+            0,
+            SCHEMA_VERSION,
+            content_hash,
+            str(entry["issuer_mac"]),
+        )
+
+    # Preserve the public method signature while installing its closure once.
+    TrialLedger.register = register  # type: ignore[method-assign]
+    globals()["_definition_from_payload"] = definition_from_payload
+
+
+_bootstrap_evaluation_plan_operations()
+del _bootstrap_evaluation_plan_operations

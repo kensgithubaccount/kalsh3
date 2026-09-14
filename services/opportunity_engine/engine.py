@@ -53,7 +53,9 @@ def evaluate_outcome(
     slippage: Decimal,
 ) -> OutcomeEconomics:
     fee = calculate_fee(policy, executable_price, quantity).total_fee / quantity
-    break_even = executable_price + fee + slippage
+    # executable_price is the depth-walk VWAP, so its deeper-level cost is
+    # already included. Adding slippage again double-counts the same depth.
+    break_even = executable_price + fee
     return OutcomeEconomics(
         side,
         fair,

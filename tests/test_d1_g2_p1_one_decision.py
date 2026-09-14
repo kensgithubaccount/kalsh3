@@ -5,19 +5,21 @@ import json
 from collections.abc import Callable
 from datetime import UTC, datetime
 from decimal import Decimal
+from pathlib import Path
 
 import pytest
 
 import services.forecasting.gdpnow_source_acquisition as gdpnow_acquisition
 import services.production_gdp_strategy.one_decision as one_decision
 from services.forecasting.gdpnow_parsing import ParsedGDPNowVintage, parse_gdpnow_commentary
+from services.production_gdp_strategy.gdp_persistence import RESEARCH_STORAGE_ROOT_ENV
 from services.production_gdp_strategy.one_decision import (
     DecisionClass,
     DecisionError,
     _ClockSample,
     _evaluate_fixture_decision,
+    _replay_fixture_decision,
     _TransportResponse,
-    replay_decision,
     run_one_research_decision,
 )
 from services.production_gdp_strategy.outcome import (
@@ -26,6 +28,15 @@ from services.production_gdp_strategy.outcome import (
     _FixtureSettlementObservation,
     validate_outcome_receipt,
 )
+
+
+@pytest.fixture(autouse=True)
+def _isolated_gdp_research_storage(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Isolate the durable storage location `run_one_research_decision()` uses.
+
+    See the identical fixture in test_gdp_public_composition_acceptance.py.
+    """
+    monkeypatch.setenv(RESEARCH_STORAGE_ROOT_ENV, str(tmp_path / "gdp-research"))
 
 
 def _gdpnow() -> tuple[gdpnow_acquisition.GDPNowAcquisitionEvidence, ParsedGDPNowVintage]:
@@ -199,7 +210,7 @@ def test_real_shaped_passing_path_replays_and_evaluates_without_mutation() -> No
     assert decision.classification is DecisionClass.TRADE_YES
     assert decision.entry_price == Decimal("0.40")
     assert decision.all_in_debit == Decimal("0.4168")
-    assert replay_decision(decision) == decision
+    assert _replay_fixture_decision(decision) == decision
 
     settlement = _FixtureSettlementObservation(
         response=json.dumps(
@@ -230,7 +241,7 @@ def test_schedule_conflict_is_evidence_incomplete() -> None:
         source=FixtureSource(close="08:31:00"), gdpnow=evidence, vintage=vintage, clock=_clock()
     )
     assert decision.classification is DecisionClass.EVIDENCE_INCOMPLETE
-    assert replay_decision(decision) == decision
+    assert _replay_fixture_decision(decision) == decision
 
 
 def test_temporal_failure_is_evidence_incomplete() -> None:
@@ -251,7 +262,7 @@ def test_missing_fee_authority_is_recorded_as_evidence_incomplete() -> None:
         source=MissingFee(), gdpnow=evidence, vintage=vintage, clock=_clock()
     )
     assert decision.classification is DecisionClass.EVIDENCE_INCOMPLETE
-    assert replay_decision(decision) == decision
+    assert _replay_fixture_decision(decision) == decision
 
 
 def test_exact_gate_rejects_with_abstain() -> None:
@@ -318,13 +329,17 @@ def test_mutated_issued_book_fails_replay() -> None:
     assert decision.bundle is not None
     object.__setattr__(decision.bundle.book, "body", b"substituted")
     with pytest.raises(DecisionError, match=r"reconstructed|tampered"):
-        replay_decision(decision)
+        _replay_fixture_decision(decision)
 
 
 def test_caller_authored_source_cannot_become_positive_authority() -> None:
-    decision = run_one_research_decision()
-    assert decision.classification is DecisionClass.EVIDENCE_INCOMPLETE
-    assert decision.bundle is None
+    evidence, vintage = _gdpnow()
+    decision = _evaluate_fixture_decision(
+        source=FixtureSource(), gdpnow=evidence, vintage=vintage, clock=_clock()
+    )
+    assert decision.classification is DecisionClass.TRADE_YES
+    with pytest.raises(DecisionError):
+        one_decision.validate_decision_receipt(decision)
 
 
 def test_reconstructed_receipt_is_rejected() -> None:
@@ -336,7 +351,7 @@ def test_reconstructed_receipt_is_rejected() -> None:
 
     with pytest.raises((DecisionError, TypeError)):
         forged = replace(decision)
-        replay_decision(forged)
+        _replay_fixture_decision(forged)
 
 
 def test_public_entrypoint_has_no_injection_parameters() -> None:

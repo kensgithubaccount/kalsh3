@@ -23,7 +23,7 @@ from .one_decision import (
     DecisionError,
     DecisionReceipt,
     _register_issued,
-    validate_decision_receipt,
+    _validate_fixture_decision_receipt,
 )
 
 
@@ -119,7 +119,7 @@ def _build_fixture_outcome_receipt(
     decision: DecisionReceipt, settlement: _FixtureSettlementObservation
 ) -> OutcomeReceipt:
     """Build a disposable outcome receipt; this does not prove settlement provenance."""
-    validate_decision_receipt(decision)
+    _validate_fixture_decision_receipt(decision)
     if (
         type(settlement) is not _FixtureSettlementObservation
         or _ISSUED.get(id(settlement)) != settlement.evidence_id
@@ -219,7 +219,7 @@ def validate_outcome_receipt(
     if type(receipt.decision_id) is not str or type(receipt.original_decision_hash) is not str:
         raise DecisionError("outcome decision binding is invalid")
     if decision is not None:
-        validate_decision_receipt(decision)
+        _validate_fixture_decision_receipt(decision)
         if (
             receipt.decision_id != decision.decision_id
             or receipt.original_decision_hash != decision.payload_hash
