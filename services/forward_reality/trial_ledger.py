@@ -56,6 +56,11 @@ class EvaluationPlan:
         return self._value
 
 
+# Registration and replay must agree on the original validated plan type,
+# even if a caller replaces the public EvaluationPlan export before GDP imports.
+_TRUSTED_EVALUATION_PLAN_TYPE = EvaluationPlan
+
+
 @dataclass(frozen=True, slots=True)
 class TrialDefinition:
     trial_id: str
@@ -148,7 +153,7 @@ class TrialLedger:
             (reason, "reason"),
         ):
             _text(value, name)
-        if type(evaluation_plan) is not EvaluationPlan:
+        if type(evaluation_plan) is not _TRUSTED_EVALUATION_PLAN_TYPE:
             raise LedgerError("evaluation plan must be an EvaluationPlan")
         siblings = _strings(sibling_market_ids, "sibling_market_ids")
         parents = _strings(parent_trial_ids, "parent_trial_ids")
@@ -518,7 +523,7 @@ def _registration_payload(d: TrialDefinition) -> dict[str, object]:
 def _definition_from_payload(
     payload: Mapping[str, Any], entry: Mapping[str, Any]
 ) -> TrialDefinition:
-    plan = EvaluationPlan(payload["evaluation_plan"])
+    plan = _TRUSTED_EVALUATION_PLAN_TYPE(payload["evaluation_plan"])
     if (
         plan.identity != payload["evaluation_plan_identity"]
         or payload["research_only"] is not True

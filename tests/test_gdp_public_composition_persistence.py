@@ -232,7 +232,9 @@ def _render_child() -> str:
 def _run_child(
     package_root: Path, seen_log: Path, mode: str, trial_id: str = ""
 ) -> subprocess.CompletedProcess[str]:
-    env = dict(os.environ)
+    # urllib otherwise applies the host's proxy configuration to our recorded
+    # HTTPS transport. These children have no real-network path to proxy.
+    env = {key: value for key, value in os.environ.items() if not key.lower().endswith("_proxy")}
     env["KALSH3_GDP_RESEARCH_STORAGE_ROOT"] = str(package_root / "hostile-root")
     env["HOME"] = str(package_root / "hostile-home")
     env["PYTHONPATH"] = str(package_root)
@@ -260,7 +262,15 @@ _EXPECTED_ACQUISITION_HOSTS = {
 }
 
 
-def test_gdp_public_composition_persists_and_replays_in_fresh_process(tmp_path: Path) -> None:
+@pytest.mark.parametrize("hostile_proxy", [False, True])
+def test_gdp_public_composition_persists_and_replays_in_fresh_process(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, hostile_proxy: bool
+) -> None:
+    if hostile_proxy:
+        for name in ("HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY", "http_proxy", "https_proxy"):
+            monkeypatch.setenv(name, "http://proxy.invalid:9")
+        monkeypatch.setenv("NO_PROXY", "")
+        monkeypatch.setenv("no_proxy", "")
     package_root = _copy_package(tmp_path)
     first_seen = tmp_path / "first.seen.json"
     completed = _run_child(package_root, first_seen, "run")
