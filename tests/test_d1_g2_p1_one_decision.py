@@ -333,9 +333,13 @@ def test_mutated_issued_book_fails_replay() -> None:
 
 
 def test_caller_authored_source_cannot_become_positive_authority() -> None:
-    decision = run_one_research_decision()
-    assert decision.classification is DecisionClass.EVIDENCE_INCOMPLETE
-    assert decision.bundle is None
+    evidence, vintage = _gdpnow()
+    decision = _evaluate_fixture_decision(
+        source=FixtureSource(), gdpnow=evidence, vintage=vintage, clock=_clock()
+    )
+    assert decision.classification is DecisionClass.TRADE_YES
+    with pytest.raises(DecisionError):
+        one_decision.validate_decision_receipt(decision)
 
 
 def test_reconstructed_receipt_is_rejected() -> None:

@@ -13,6 +13,8 @@ does not depend on external network access.
 from __future__ import annotations
 
 import json
+import os
+import shutil
 import sqlite3
 import subprocess
 import sys
@@ -22,9 +24,9 @@ import pytest
 
 from services.forward_reality.trial_ledger import TrialLedger
 from services.production_gdp_strategy.gdp_persistence import (
-    RESEARCH_STORAGE_ROOT_ENV,
     DecisionArchive,
     GDPPersistenceError,
+    replay_gdp_decision,
 )
 from services.production_gdp_strategy.one_decision import DecisionClass
 
@@ -228,16 +230,22 @@ def _render_child() -> str:
 
 
 def _run_child(
-    storage_root: Path, seen_log: Path, mode: str, trial_id: str = ""
+    package_root: Path, seen_log: Path, mode: str, trial_id: str = ""
 ) -> subprocess.CompletedProcess[str]:
-    import os
-
     env = dict(os.environ)
-    env[RESEARCH_STORAGE_ROOT_ENV] = str(storage_root)
+    env["KALSH3_GDP_RESEARCH_STORAGE_ROOT"] = str(package_root / "hostile-root")
+    env["HOME"] = str(package_root / "hostile-home")
+    env["PYTHONPATH"] = str(package_root)
     args = [sys.executable, "-c", _render_child(), str(seen_log), mode]
     if trial_id:
         args.append(trial_id)
-    return subprocess.run(args, capture_output=True, text=True, env=env)
+    return subprocess.run(args, capture_output=True, text=True, env=env, cwd=package_root)
+
+
+def _copy_package(tmp_path: Path) -> Path:
+    package_root = tmp_path / "package"
+    shutil.copytree(Path(__file__).parents[1] / "services", package_root / "services")
+    return package_root
 
 
 def _seen_hosts(seen_log: Path) -> list[str]:
@@ -253,9 +261,9 @@ _EXPECTED_ACQUISITION_HOSTS = {
 
 
 def test_gdp_public_composition_persists_and_replays_in_fresh_process(tmp_path: Path) -> None:
-    storage_root = tmp_path / "gdp-research"
+    package_root = _copy_package(tmp_path)
     first_seen = tmp_path / "first.seen.json"
-    completed = _run_child(storage_root, first_seen, "run")
+    completed = _run_child(package_root, first_seen, "run")
     assert completed.returncode == 0, completed.stderr
     first = json.loads(completed.stdout)
     assert first["classification"] == DecisionClass.EVIDENCE_INCOMPLETE.value
@@ -268,7 +276,7 @@ def test_gdp_public_composition_persists_and_replays_in_fresh_process(tmp_path: 
     assert set(_seen_hosts(first_seen)) >= _EXPECTED_ACQUISITION_HOSTS
 
     replay_seen = tmp_path / "replay.seen.json"
-    replayed_proc = _run_child(storage_root, replay_seen, "replay", str(first["trial_id"]))
+    replayed_proc = _run_child(package_root, replay_seen, "replay", str(first["trial_id"]))
     assert replayed_proc.returncode == 0, replayed_proc.stderr
     replayed = json.loads(replayed_proc.stdout)
     expected = {
@@ -288,7 +296,7 @@ def test_gdp_public_composition_persists_and_replays_in_fresh_process(tmp_path: 
     assert _seen_hosts(replay_seen) == []
 
     duplicate_seen = tmp_path / "duplicate.seen.json"
-    duplicate = _run_child(storage_root, duplicate_seen, "run")
+    duplicate = _run_child(package_root, duplicate_seen, "run")
     assert duplicate.returncode != 0
     assert "duplicate prospective GDP attempt" in duplicate.stderr
     # The duplicate attempt must be rejected BEFORE any second acquisition.
@@ -300,9 +308,10 @@ def test_gdp_public_composition_persists_and_replays_in_fresh_process(tmp_path: 
     ["payload", "classification", "research", "influence", "trial", "event", "mac"],
 )
 def test_gdp_decision_archive_mutations_fail_closed(tmp_path: Path, mutation: str) -> None:
-    storage_root = tmp_path / "gdp-research"
+    package_root = _copy_package(tmp_path)
+    storage_root = package_root / ".kalsh3-gdp-research"
     seen_log = tmp_path / "run.seen.json"
-    completed = _run_child(storage_root, seen_log, "run")
+    completed = _run_child(package_root, seen_log, "run")
     assert completed.returncode == 0, completed.stderr
     first = json.loads(completed.stdout)
     journal = storage_root / "decisions" / "decisions.journal"
@@ -323,22 +332,31 @@ def test_gdp_decision_archive_mutations_fail_closed(tmp_path: Path, mutation: st
         record["underlying_event_id"] = "wrong-event"
     journal.write_text(json.dumps(record, sort_keys=True, separators=(",", ":")) + "\n")
     with pytest.raises(GDPPersistenceError):
-        DecisionArchive(storage_root / "decisions").load(str(first["trial_id"]))
+        replay_gdp_decision(
+            TrialLedger(storage_root / "ledger.sqlite"),
+            DecisionArchive(storage_root / "decisions"),
+            str(first["trial_id"]),
+        )
 
 
 def test_gdp_archive_truncation_and_rebuilt_sqlite_index_fail_closed(tmp_path: Path) -> None:
-    storage_root = tmp_path / "gdp-research"
+    package_root = _copy_package(tmp_path)
+    storage_root = package_root / ".kalsh3-gdp-research"
     seen_log = tmp_path / "run.seen.json"
-    completed = _run_child(storage_root, seen_log, "run")
+    completed = _run_child(package_root, seen_log, "run")
     assert completed.returncode == 0, completed.stderr
     first = json.loads(completed.stdout)
     journal = storage_root / "decisions" / "decisions.journal"
+    ledger_path = storage_root / "ledger.sqlite"
     journal.write_bytes(journal.read_bytes()[:-1])
     with pytest.raises(GDPPersistenceError):
-        DecisionArchive(storage_root / "decisions").load(str(first["trial_id"]))
+        replay_gdp_decision(
+            TrialLedger(ledger_path),
+            DecisionArchive(storage_root / "decisions"),
+            str(first["trial_id"]),
+        )
 
     # The ledger's SQLite index is a rebuildable cache, never the authority.
-    ledger_path = storage_root / "ledger.sqlite"
     with sqlite3.connect(ledger_path) as db:
         db.execute("DROP TABLE trial_index")
     restored = TrialLedger(ledger_path)
@@ -346,9 +364,10 @@ def test_gdp_archive_truncation_and_rebuilt_sqlite_index_fail_closed(tmp_path: P
 
 
 def test_incomplete_public_decision_has_no_economic_outcome(tmp_path: Path) -> None:
-    storage_root = tmp_path / "gdp-research"
+    package_root = _copy_package(tmp_path)
+    storage_root = package_root / ".kalsh3-gdp-research"
     seen_log = tmp_path / "run.seen.json"
-    completed = _run_child(storage_root, seen_log, "run")
+    completed = _run_child(package_root, seen_log, "run")
     assert completed.returncode == 0, completed.stderr
     first = json.loads(completed.stdout)
     assert first["classification"] == DecisionClass.EVIDENCE_INCOMPLETE.value
@@ -357,12 +376,41 @@ def test_incomplete_public_decision_has_no_economic_outcome(tmp_path: Path) -> N
 
 def test_archive_key_replacement_invalidates_all_prior_records(tmp_path: Path) -> None:
     """A corrupted/replaced signing key must fail closed, not silently re-authenticate."""
-    storage_root = tmp_path / "gdp-research"
+    package_root = _copy_package(tmp_path)
+    storage_root = package_root / ".kalsh3-gdp-research"
     seen_log = tmp_path / "run.seen.json"
-    completed = _run_child(storage_root, seen_log, "run")
+    completed = _run_child(package_root, seen_log, "run")
     assert completed.returncode == 0, completed.stderr
     first = json.loads(completed.stdout)
     key_path = storage_root / "decisions" / "decisions.issuer-key"
     key_path.write_bytes(b"\x01" * 32)
     with pytest.raises(GDPPersistenceError):
-        DecisionArchive(storage_root / "decisions").load(str(first["trial_id"]))
+        replay_gdp_decision(
+            TrialLedger(storage_root / "ledger.sqlite"),
+            DecisionArchive(storage_root / "decisions"),
+            str(first["trial_id"]),
+        )
+
+
+def test_independent_public_package_states_cannot_cross_pair(tmp_path: Path) -> None:
+    states: list[tuple[TrialLedger, DecisionArchive, str]] = []
+    for index in range(2):
+        package_root = _copy_package(tmp_path / f"state-{index}")
+        completed = _run_child(package_root, tmp_path / f"{index}.seen.json", "run")
+        assert completed.returncode == 0, completed.stderr
+        result = json.loads(completed.stdout)
+        storage_root = package_root / ".kalsh3-gdp-research"
+        states.append(
+            (
+                TrialLedger(storage_root / "ledger.sqlite"),
+                DecisionArchive(storage_root / "decisions"),
+                str(result["trial_id"]),
+            )
+        )
+
+    for ledger, archive, trial_id in states:
+        assert replay_gdp_decision(ledger, archive, trial_id).trial_id == trial_id
+    with pytest.raises(GDPPersistenceError):
+        replay_gdp_decision(states[0][0], states[1][1], states[0][2])
+    with pytest.raises(GDPPersistenceError):
+        replay_gdp_decision(states[1][0], states[0][1], states[1][2])

@@ -1,17 +1,18 @@
 from __future__ import annotations
 
+import json
 from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
 from test_d1_g2_p1_one_decision import FixtureSource, _clock, _gdpnow, _response
+from test_gdp_public_composition_persistence import _copy_package, _run_child
 
 from services.forward_reality.trial_ledger import TrialLedger, TrialStatus
+from services.production_gdp_strategy import gdp_persistence as persistence
 from services.production_gdp_strategy import one_decision as od
 from services.production_gdp_strategy.gdp_persistence import (
-    RESEARCH_STORAGE_ROOT_ENV,
     DecisionArchive,
-    open_default_research_storage,
     register_gdp_attempt,
 )
 
@@ -252,10 +253,14 @@ def _genuine_ledger_and_archive(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> tuple[TrialLedger, DecisionArchive, str]:
     """Produce a real public persisted attempt through the canonical zero-arg entrypoint."""
-    monkeypatch.setenv(RESEARCH_STORAGE_ROOT_ENV, str(tmp_path / "gdp-research"))
-    result = od.run_one_research_decision()
-    ledger, archive = open_default_research_storage()
-    return ledger, archive, str(result.trial_id)
+    del monkeypatch
+    package_root = _copy_package(tmp_path)
+    completed = _run_child(package_root, tmp_path / "seen.json", "run")
+    assert completed.returncode == 0, completed.stderr
+    result = json.loads(completed.stdout)
+    ledger = TrialLedger(package_root / ".kalsh3-gdp-research" / "ledger.sqlite")
+    archive = DecisionArchive(package_root / ".kalsh3-gdp-research" / "decisions")
+    return ledger, archive, str(result["trial_id"])
 
 
 def test_duck_typed_fake_ledger_matching_trial_shape_cannot_replay_genuine_archive(
@@ -331,3 +336,35 @@ def test_genuine_ledger_and_archive_replay_succeeds(
     assert result.classification is od.DecisionClass.EVIDENCE_INCOMPLETE
     assert result.research_only is True
     assert result.production_influence == od.ZERO
+
+
+def test_bootstrap_captured_archive_type_and_persistence_functions_survive_rebinding(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    ledger, archive, trial_id = _genuine_ledger_and_archive(tmp_path, monkeypatch)
+    genuine_archive_type = type(archive)
+
+    class FakeArchive:
+        pass
+
+    monkeypatch.setattr(persistence, "DecisionArchive", FakeArchive)
+    with pytest.raises(od.DecisionError):
+        od.replay_gdp_decision(ledger, FakeArchive(), trial_id)
+    assert od.replay_gdp_decision(ledger, archive, trial_id).trial_id == trial_id
+
+    monkeypatch.setattr(
+        persistence,
+        "open_default_research_storage",
+        lambda: (_ for _ in ()).throw(AssertionError("rebound opener used")),
+    )
+    monkeypatch.setattr(
+        persistence,
+        "register_gdp_attempt",
+        lambda _ledger: (_ for _ in ()).throw(AssertionError("rebound registrar used")),
+    )
+    try:
+        result = od.run_one_research_decision()
+        assert result.research_only is True
+    except persistence.GDPPersistenceError as exc:
+        assert "duplicate prospective GDP attempt" in str(exc)
+    assert type(archive) is genuine_archive_type
