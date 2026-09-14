@@ -1,5 +1,36 @@
 # GDP evaluation-plan repair and integration closure
 
+## Canonical closure record — September 14, 2026
+
+PR #157 is merged as `524d04092cb23364073db21185ffa4dc91cc35b8`.
+Its parents are prior main `636e411b155b826b1ce17723853b34766311269d`
+and independently reviewed head `5c8dacc4236338dd0ae4756b2d72f85dc9193e69`.
+The merge tree is exactly the reviewed tree:
+`d06ca6df4dcec1f859639a6544d164f2ebf77905`.
+
+The user supplied the separate reviewer's PASS on the reported alias finding.
+The reviewer confirmed fresh-fetch identity, rejection of the prior alias and
+public-name cases, unchanged durable state on rejection, and no residual issue
+from that finding. Their isolated suite reported 4,065 passed, one environmental
+skip, and no failures. This is an attributed independent report, not an
+implementer-authored approval or a GitHub review submission.
+
+[Reviewed-head CI run 34856612759](https://github.com/kensgithubaccount/kalsh3/actions/runs/34856612759)
+passed all four jobs, with 4,064 passed and four skipped in verify; all ten
+identity cases passed. Ruff/format and strict mypy across 294 source files passed.
+The environment-specific reviewer and CI counts are recorded separately.
+
+[Post-merge CI run 34866085527](https://github.com/kensgithubaccount/kalsh3/actions/runs/34866085527)
+is bound to the merge commit. Consult its final conclusion and the PR's closure
+record for the post-merge gate. Later documentation-only commits do not alter
+the accepted source/test tree. They are not a reason to reopen this finding.
+
+The next active milestone is
+[GDP evidence feasibility](GDP_EVIDENCE_FEASIBILITY_BRIEF.md).
+The sections below retain the repair history. A historical pending status
+must not restart a closed review.
+
+
 ## Scope and evidence
 
 Reviewed integration baseline: `d0fde5b6f7db4fdf06d35d0bede81d71b1757daf`
@@ -122,8 +153,8 @@ unchanged. Only isolated temporary storage is used by the new regression cases.
 This follow-up session has no local Python execution tool. The prior-head
 reproduction is attributed to the supplied independent review. New execution
 results must come from CI on the published follow-up head; the PR description
-records that head, run, and outcome. Independent acceptance of the follow-up
-remains outstanding until the separate reviewer reports it.
+records that head, run, and outcome. The independent follow-up PASS is now
+recorded in the canonical closure record above.
 
 Review scope is ordinary module-attribute replacement of these type references,
 including pre-GDP import order. This does not claim a sandbox against arbitrary
