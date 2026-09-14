@@ -14,7 +14,7 @@ The baseline has 15 integration commits after canonical main but no integration
 PR was visible when this repair began. The workflow runs on main pushes and pull
 requests, so pushing this integration branch alone does not trigger its CI.
 
-## Reproduced defects and repair
+## Initial public-name repair (superseded)
 
 1. Replacing `trial_ledger.EvaluationPlan` before GDP import lets
    `register_gdp_attempt()` append a fake evaluation identity with genuine ledger
@@ -24,12 +24,11 @@ requests, so pushing this integration branch alone does not trigger its CI.
    the replacement constructor. Pinning only the registration check would leave
    this second call site inconsistent.
 
-The repair captures `_TRUSTED_EVALUATION_PLAN_TYPE` immediately after the class
-definition and uses it for both the exact-type check and payload reconstruction.
-This follows the repair class requested by the independent reviewer. It does not
-change ledger schema, key handling, journal bytes, trial identities, or the GDP
-source/decision policy. It prevents new poisoning; it does not rewrite an already
-corrupt journal.
+The initial repair captured a module-level `_TRUSTED_EVALUATION_PLAN_TYPE`
+alias and used it for the exact-type check and reconstruction. Independent
+review of published head `a04457a0e3ab31afa2ecbcb25193359f6bc32536` correctly
+rejected this repair: the alias itself remained rebindable. The earlier claim
+that this provided permanent type capture was too strong.
 
 Three new regressions fail on the unmodified baseline and pass after repair:
 
@@ -56,7 +55,7 @@ of a duplicate before acquisition still work. The socket guard, real parsers,
 authority code, and endpoint assertions remain intact. Production proxy behavior
 and all three accepted authority implementations are unchanged.
 
-## Verification
+## Historical verification of the initial repair
 
 - Focused identity, ledger, public composition, forgery, and settlement suite:
   **124 passed**.
@@ -72,9 +71,64 @@ and all three accepted authority implementations are unchanged.
   Skips: three PostgreSQL cases without `KALSH3_TEST_POSTGRES_DSN`, and one CPI
   case without empirical P5A files. These counts supersede the supplied review's
   counts for this environment only.
-- Exact-head CI and independent delta review: **pending**. Automatic approval
-  review blocked the GitHub push because it requires explicit publication
-  authorization for `kensgithubaccount/kalsh3`. No PR was created by this repair.
+- After explicit publication authorization, draft PR #157 was created.
+  CI run 34815849182 on `a04457a0e3ab31afa2ecbcb25193359f6bc32536`
+  passed all four jobs; its verify job reported 4,057 passed and 4 skipped.
+- The subsequent user-supplied independent review reported 4,058 passed,
+  1 environmental skip, and no failures in its own environment, but returned
+  **REPAIR REQUIRED** for the mutable private alias. Test counts are
+  environment-specific and do not override that finding.
+
+## Closure repair following independent review
+
+Repair baseline: `a04457a0e3ab31afa2ecbcb25193359f6bc32536`.
+
+The reviewer demonstrated that assigning a forged constructor to
+`trial_ledger._TRUSTED_EVALUATION_PLAN_TYPE` allowed registration to append a
+noncanonical evaluation identity and replay to accept the same false identity.
+This is an in-scope ledger-integrity defect. No fabricated positive trading
+receipt was demonstrated or is claimed here.
+
+Registration and payload reconstruction now close over the same original
+`EvaluationPlan` type when `trial_ledger` finishes importing. The module alias
+is removed. The bootstrap installs both implementations once and is then deleted.
+The public method signature stays intact; its definition-time placeholder fails
+closed. There is no retained unvalidated registration implementation.
+Rebinding either old type name, or both names, cannot change the captured type.
+
+The registration and reconstruction bodies retain their existing validation and
+serialization logic. The patch moves them into the bootstrap closure; it does
+not change the ledger schema, journal format, financial policy, or source
+authorities. It prevents the reported new invalid registration; it does not
+repair an already-corrupted journal.
+
+Regression coverage now includes ten identity cases:
+- The two existing GDP public-name cases before and after GDP bootstrap.
+- Four direct-ledger cases replacing the private alias, or both names, before
+  and after GDP bootstrap. They require byte-identical durable files on rejection,
+  then genuine registration while the alias is still replaced, and a second
+  clean-process reopen of the same copied-package canonical ledger.
+- Three genuine-plan registration/reopen cases under public, private, and
+  simultaneous name replacement.
+- One reconstructed-payload case where the alias supplies the same false identity
+  as the payload. Reconstruction must reject the identity mismatch even though
+  the payload content hash has been recalculated. This is a reconstruction unit
+  test, not a claim of forged journal authentication.
+
+The seven additional cases target the reviewer's demonstrated gap. The original
+public composition tests, including transport guards and proxy cases, remain
+unchanged. Only isolated temporary storage is used by the new regression cases.
+
+This follow-up session has no local Python execution tool. The prior-head
+reproduction is attributed to the supplied independent review. New execution
+results must come from CI on the published follow-up head; the PR description
+records that head, run, and outcome. Independent acceptance of the follow-up
+remains outstanding until the separate reviewer reports it.
+
+Review scope is ordinary module-attribute replacement of these type references,
+including pre-GDP import order. This does not claim a sandbox against arbitrary
+Python code-object, class-method, or closure-cell modification. New concerns
+must be assessed against an existing requirement and a concrete failed behavior.
 
 ## What closes this engineering checkpoint
 
