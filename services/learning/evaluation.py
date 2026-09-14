@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+import hashlib
+import json
+from dataclasses import dataclass, field
 from decimal import Decimal
 
 from .domain import AblationResult, LearningError
@@ -24,6 +26,8 @@ class EventContribution:
 
 @dataclass(frozen=True, slots=True)
 class PerformanceInterval:
+    """Legacy record shape; its evidence label grants no promotion authority."""
+
     point: Decimal
     lower: Decimal
     upper: Decimal
@@ -31,28 +35,96 @@ class PerformanceInterval:
     evidence: str
 
 
+@dataclass(frozen=True, slots=True)
+class PairedEventSensitivity:
+    """Content-bound descriptive diagnostics, without an inferential claim.
+
+    Distinct IDs establish neither independent outcomes nor settlement authority.
+    No dependence or repeated-look method has been accepted for M9 promotion.
+    """
+
+    events: tuple[EventContribution, ...]
+    minimum: int = 50
+    event_ids: tuple[str, ...] = field(init=False)
+    event_count: int = field(init=False)
+    event_manifest: str = field(init=False)
+    point: Decimal = field(init=False)
+    sensitivity_lower: Decimal | None = field(init=False)
+    sensitivity_upper: Decimal | None = field(init=False)
+
+    def __post_init__(self) -> None:
+        if type(self.minimum) is not int or self.minimum < 50:
+            raise LearningError("minimum must be an integer of at least 50 distinct events")
+        if not self.events:
+            raise LearningError("no settled events")
+        seen: set[str] = set()
+        for event in self.events:
+            if not isinstance(event.event_id, str) or not event.event_id.strip():
+                raise LearningError("event identity must be nonempty")
+            if event.event_id in seen:
+                raise LearningError("duplicate event identity; aggregate event records upstream")
+            seen.add(event.event_id)
+            for score in (event.full_brier, event.ablated_brier):
+                if not isinstance(score, Decimal) or not score.is_finite() or not 0 <= score <= 1:
+                    raise LearningError("Brier scores must be finite Decimals in [0, 1]")
+            if type(event.source_published_ms) is not int or any(
+                timestamp is not None and type(timestamp) is not int
+                for timestamp in (event.kalshi_reaction_ms, event.forecast_updated_ms)
+            ):
+                raise LearningError("event timestamps must be integers or optional nulls")
+        ordered = tuple(sorted(self.events, key=lambda event: event.event_id))
+        records = [
+            (
+                event.event_id,
+                str(event.full_brier),
+                str(event.ablated_brier),
+                event.source_published_ms,
+                event.kalshi_reaction_ms,
+                event.forecast_updated_ms,
+            )
+            for event in ordered
+        ]
+        encoded = json.dumps(
+            ["m9-paired-event-records-v1", records], ensure_ascii=True, separators=(",", ":")
+        ).encode("utf-8")
+        total = sum((event.contribution for event in ordered), Decimal(0))
+        leave_one = (
+            [(total - event.contribution) / Decimal(len(ordered) - 1) for event in ordered]
+            if len(ordered) > 1
+            else []
+        )
+        object.__setattr__(self, "events", ordered)
+        object.__setattr__(self, "event_ids", tuple(event.event_id for event in ordered))
+        object.__setattr__(self, "event_count", len(ordered))
+        object.__setattr__(self, "event_manifest", hashlib.sha256(encoded).hexdigest())
+        object.__setattr__(self, "point", total / Decimal(len(ordered)))
+        object.__setattr__(self, "sensitivity_lower", min(leave_one) if leave_one else None)
+        object.__setattr__(self, "sensitivity_upper", max(leave_one) if leave_one else None)
+
+    @property
+    def evidence(self) -> str:
+        return "INCONCLUSIVE"
+
+    @property
+    def reason(self) -> str:
+        if self.event_count < self.minimum:
+            return "INSUFFICIENT_DISTINCT_EVENTS"
+        if self.point <= 0:
+            return "NONPOSITIVE_OBSERVED_CONTRIBUTION"
+        return "NO_ACCEPTED_INFERENCE_METHOD"
+
+
+def paired_event_sensitivity(
+    events: tuple[EventContribution, ...], minimum: int = 50
+) -> PairedEventSensitivity:
+    return PairedEventSensitivity(events, minimum)
+
+
 def paired_event_interval(
     events: tuple[EventContribution, ...], minimum: int = 50
-) -> PerformanceInterval:
-    if not events:
-        raise LearningError("no settled events")
-    values = sorted(event.contribution for event in events)
-    mean = sum(values, Decimal(0)) / Decimal(len(values))
-    # Conservative leave-one-event-out interval avoids contract-level pseudo-replication.
-    leave_one = (
-        [
-            sum((value for index, value in enumerate(values) if index != omitted), Decimal(0))
-            / Decimal(len(values) - 1)
-            for omitted in range(len(values))
-        ]
-        if len(values) > 1
-        else [Decimal(0)]
-    )
-    lower, upper = min(leave_one), max(leave_one)
-    evidence = (
-        "INCONCLUSIVE" if len(events) < minimum or lower <= 0 <= upper else "STRONGER_EVIDENCE"
-    )
-    return PerformanceInterval(mean, lower, upper, len(events), evidence)
+) -> PairedEventSensitivity:
+    """Compatibility entrypoint; returns sensitivity, not a confidence interval."""
+    return paired_event_sensitivity(events, minimum)
 
 
 @dataclass(frozen=True, slots=True)

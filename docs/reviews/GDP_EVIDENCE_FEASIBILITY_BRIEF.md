@@ -1,4 +1,26 @@
-# GDP evidence feasibility — active milestone
+# GDP evidence feasibility — PARKED
+
+## September 14, 2026 disposition
+
+The user-supplied canonical oversight assessment completed this documentary
+milestone as **PARKED**. It did not acquire canonical decision-time evidence.
+Its load-bearing gaps under the frozen exact-fee semantics are authoritative
+`fee_waiver_expiration_time` meaning/applicability and participant-category plus
+fill/rounding-accumulator context. These are scoped unresolved dependencies, not
+a claim that all possible fee models or public sources are unavailable.
+
+Reopening requires first-party waiver authority (or direct authority for the
+selected market's effective fee), a reviewed participant/fill treatment, and
+canonical provenance for selected event/series state, applicable fee changes and
+contemporaneous schedule. An alternative conservative fee model would require
+its own explicit scientific-method change; it is not silently substituted here.
+Only then consider the narrow fee composition and current-PDF wording adapter.
+
+GDP remains `EVIDENCE_INCOMPLETE`; PR #157's identity repair remains closed.
+The next executable engineering task is M9-E1 event promotion authority, recorded
+in `M9_E1_EVENT_PROMOTION_AUTHORITY.md`. The source leads and original bounded
+assessment instructions below are retained as history, not an active request
+for another GDP review.
 
 ## Starting state
 

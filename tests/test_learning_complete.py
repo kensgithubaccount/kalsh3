@@ -71,7 +71,8 @@ def test_event_level_ablation_interval_concentration_and_timeliness() -> None:
     assert result.unique_event_count == result.effective_sample_size == 60
     assert result.descriptive_incremental_brier == Decimal(".01")
     interval = paired_event_interval(sample)
-    assert interval.evidence == "STRONGER_EVIDENCE" and interval.lower > 0
+    assert interval.evidence == "INCONCLUSIVE"
+    assert interval.sensitivity_lower is not None and interval.sensitivity_lower > 0
     concentrated = concentration(
         (EventContribution("one", Decimal(".1"), Decimal(".2"), 0, 1, 1), *events(9, "0"))
     )
@@ -109,7 +110,7 @@ def test_small_sample_no_promotion_and_10pp_weekly_cap() -> None:
             "RESEARCH_CHAMPION",
             interval,
             7,
-            "same-events",
+            interval.event_manifest,
             "6 of 7 is insufficient",
         )
     ResearchWeightProposal("w", "NWS", Decimal(".2"), Decimal(".3"), Decimal(".10"), "e")
@@ -124,7 +125,7 @@ def test_challenger_same_event_and_nonoverlapping_promotion_windows() -> None:
         (NOW - timedelta(days=30), NOW),
     )
     strong = paired_event_interval(events(60))
-    assert compare_challenger(
+    assert not compare_challenger(
         tuple(f"e{i}" for i in range(60)),
         tuple(f"e{i}" for i in range(60)),
         Decimal(".18"),

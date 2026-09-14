@@ -8,7 +8,7 @@ from decimal import Decimal
 from enum import StrEnum
 
 from .domain import LearningError
-from .evaluation import PerformanceInterval
+from .evaluation import PairedEventSensitivity, PerformanceInterval
 
 
 class SourceState(StrEnum):
@@ -58,7 +58,7 @@ class GovernanceProposal:
     component_id: str
     current_state: str
     proposed_state: str
-    interval: PerformanceInterval | None
+    interval: PerformanceInterval | PairedEventSensitivity | None
     unique_settled_events: int
     same_event_manifest: str
     rationale: str
@@ -68,12 +68,18 @@ class GovernanceProposal:
     def __post_init__(self) -> None:
         if self.production_influence != 0 or not self.human_approval_required:
             raise LearningError("governance proposals are human-gated with zero influence")
-        if self.proposal_type == ProposalType.PROMOTION_PROPOSAL and (
-            self.unique_settled_events < 50
-            or self.interval is None
-            or self.interval.evidence != "STRONGER_EVIDENCE"
+        if isinstance(self.interval, PairedEventSensitivity) and (
+            type(self.unique_settled_events) is not int
+            or self.unique_settled_events != self.interval.event_count
+            or self.same_event_manifest != self.interval.event_manifest
         ):
-            raise LearningError("promotion evidence threshold not met")
+            raise LearningError("event count or manifest does not match diagnostic records")
+        if self.proposal_type == ProposalType.PROMOTION_PROPOSAL:
+            if not isinstance(
+                self.interval, PairedEventSensitivity
+            ) or self.interval.event_count < max(50, self.interval.minimum):
+                raise LearningError("promotion evidence threshold not met")
+            raise LearningError("promotion evidence INCONCLUSIVE: no accepted inference method")
 
 
 @dataclass(frozen=True, slots=True)
@@ -100,8 +106,17 @@ def compare_challenger(
     challenger_events: tuple[str, ...],
     champion_score: Decimal,
     challenger_score: Decimal,
-    promotion_interval: PerformanceInterval,
+    promotion_interval: PerformanceInterval | PairedEventSensitivity,
 ) -> bool:
     if champion_events != challenger_events:
         raise LearningError("champion and challenger evaluated on different events")
-    return challenger_score < champion_score and promotion_interval.evidence == "STRONGER_EVIDENCE"
+    if not champion_events or any(not event.strip() for event in champion_events):
+        raise LearningError("event identity must be nonempty")
+    if len(set(champion_events)) != len(champion_events):
+        raise LearningError("duplicate event identity")
+    if isinstance(promotion_interval, PairedEventSensitivity) and (
+        tuple(sorted(champion_events)) != promotion_interval.event_ids
+    ):
+        raise LearningError("comparison events do not match diagnostic records")
+    # Better descriptive scores or legacy evidence labels cannot authorize promotion.
+    return False

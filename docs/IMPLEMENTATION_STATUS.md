@@ -25,8 +25,8 @@
 | CPI-E1-P6 Initial-Release Value Evidence | Implemented; focused parser/authority tests added; empirical artifact replay requires saved P5A files | Narrow dual-representation CPI-U SA MoM parser binds exact P4/P5A acquisition identity/mode, artifact hash, P1/P2 evidence, reference month, and Decimal one-decimal value. Research-only with production influence 0; no settlement or G3 claim. See `reviews/CPI_E1_P6_INITIAL_RELEASE_VALUE_EVIDENCE.md`. |
 | CPI-E1-P7 Settlement Reconciliation | Implemented; three exact public historical KXCPI markets empirically MATCHED; transitive authority repair applied | Capability-gated reviewed Kalshi HTTPS GET, durable exact frozen response bytes, deterministic market/event/series semantic reconstruction, explicit historical `status=finalized` plus settlement timestamp, Decimal-only comparator evaluation, and adversarial provenance tests. Historical API exposes no separate rules-version field, so full content-addressed market-rules identity is repository-derived and remains an independent-review limitation. Research-only with production influence 0. See `reviews/CPI_E1_P7_SETTLEMENT_RECONCILIATION.md`. |
 | GDP Authority Integration Preflight | MERGED in PR #157; independent closure PASS | Reviewed head `5c8dacc4236338dd0ae4756b2d72f85dc9193e69`; merge `524d04092cb23364073db21185ffa4dc91cc35b8` has the identical tree. Reviewed-head CI passed; post-merge CI is recorded in [run 34866085527](https://github.com/kensgithubaccount/kalsh3/actions/runs/34866085527). Carry closed findings forward unless a concrete regression contradicts them. See `reviews/GDP_EVALUATION_PLAN_REPAIR.md`. |
-| GDP Evidence Feasibility | ACTIVE — source assessment, no COMPLETE enablement | Examine first-party event fee overrides, series history, market waivers, member balance precision, and exact contract semantics. Finish with a bounded implementation proposal or PARKED disposition and reopening conditions. See `reviews/GDP_EVIDENCE_FEASIBILITY_BRIEF.md`. |
-| M9 Source + Model Learning | Complete (offline verified) | Event-level ablation/uncertainty, redundancy/timeliness, multiple-testing control, champion/challenger, bounded proposals, quarantine, rollback/configurations, tournament/budget, replay, 20k fixture and UI pass |
+| GDP Evidence Feasibility | Documentary assessment complete — PARKED | September 14 oversight assessment records unresolved exact waiver and participant/fill fee authority under the frozen GDP semantics. Decision remains EVIDENCE_INCOMPLETE. Reopen only on the named source and applicability evidence in `reviews/GDP_EVIDENCE_FEASIBILITY_BRIEF.md`; the identity repair stays closed. |
+| M9 Source + Model Learning | Offline components implemented; M9-E1 semantic repair | Event diagnostics now bind distinct paired records and remain INCONCLUSIVE. Promotion is unavailable pending an accepted inferential method; leave-one-out extrema are descriptive sensitivity only. Legacy frozen records are unchanged. See `reviews/M9_E1_EVENT_PROMOTION_AUTHORITY.md` for validation and closure. |
 | M10 Opportunity Engine | Complete (offline verified) | Exact YES/NO books, fractional depth, fee fail-closed/versioning, conservative EV, maker/taker uncertainty, liquidity/decay/correlation, cross-venue research, ranking, replay, 50k fixture and UI pass |
 | M11 Event Backtests + Fill Simulation | Complete (offline verified) | Arrival-time taker books, aggregate-queue maker assumptions, partial/cancel races, gaps, markouts, three scenarios, advancement gate, cross-venue legs, 100k fixture and UI pass |
 | MM-A1 Passive Market-Making Research | Implemented; independent review pending | Content-addressed monotone sibling fair-value curves; exact M27A market/rules/book/fee binding; conservative one-contract shadow quotes; inventory skew; explicit abstentions; M11 maker-fill/markout/settlement receipts. Research only, profitability not established, no order/network/risk authority, production influence 0. See `reviews/MM_A1_AUTONOMOUS_MARKET_MAKING_RESEARCH.md`. |
@@ -328,10 +328,16 @@
 
 ## M9 acceptance
 
-- Source/model/group ablation, redundancy, timeliness, effective samples, statistical uncertainty,
-  multiple-comparison control, champion/challenger, human-gated promotion, 10pp cap, quarantine,
-  rollback, family tournament, exploration budget, replay gates, 20,000-row/2,000-event test and UI:
-  OFFLINE VERIFIED.
+- Source/model/group descriptive ablation, redundancy, timeliness, 10pp cap, quarantine,
+  rollback, family tournament, exploration budget, replay gates, grouped fixture and UI have
+  offline coverage. Historical claims that M9 established statistical uncertainty or valid
+  promotion authority are superseded by M9-E1. Distinct event IDs and legacy effective-sample
+  fields do not establish independence. The standalone multiple-comparison utility and
+  nonoverlapping-window check do not establish an end-to-end inferential method.
+- M9-E1 binds descriptive sensitivity to exact event records and enforces a minimum floor of
+  50 distinct IDs. That floor is necessary only; all current promotion paths fail closed.
+  Statistical promotion eligibility remains INCONCLUSIVE pending a prespecified accepted method
+  for dependence, selection, repeated looks, and the required market-relative evidence.
 - Real settled learning evidence: INSUFFICIENT REAL EVIDENCE. Production influence: NONE.
   Human acceptance: PENDING.
 
