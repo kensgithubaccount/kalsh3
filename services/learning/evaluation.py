@@ -7,6 +7,26 @@ from decimal import Decimal
 
 from .domain import AblationResult, LearningError
 
+# Evidence states.  ``STRONGER_EVIDENCE`` names the state a *prespecified and
+# valid* inferential method would have to produce before governance may promote.
+# No such method exists yet for this estimator, so nothing in M9 can currently
+# emit it and every promotion path stays fail-closed on ``INCONCLUSIVE``.
+INCONCLUSIVE = "INCONCLUSIVE"
+STRONGER_EVIDENCE = "STRONGER_EVIDENCE"
+
+# Leave-one-event-out extrema describe only how far the point estimate moves
+# when a single event is dropped.  They are a stability/influence diagnostic:
+# they carry no coverage guarantee, they do not model dependence between events,
+# and they do not correct for repeated looks.  They must never be read as a
+# confidence interval.  27 events at +0.1 and 23 at -0.1 yield extrema that
+# exclude zero purely because the denominator is large, not because a real
+# effect was demonstrated.
+LEAVE_ONE_EVENT_OUT_SENSITIVITY = "LEAVE_ONE_EVENT_OUT_SENSITIVITY"
+
+# Floor on distinct authoritative settled events.  It may be raised by a caller
+# but never lowered.
+MINIMUM_UNIQUE_SETTLED_EVENTS = 50
+
 
 @dataclass(frozen=True, slots=True)
 class EventContribution:
@@ -24,21 +44,85 @@ class EventContribution:
 
 @dataclass(frozen=True, slots=True)
 class PerformanceInterval:
+    """Descriptive point estimate plus a leave-one-event-out sensitivity range.
+
+    ``sensitivity_low``/``sensitivity_high`` are deliberately *not* named
+    ``lower``/``upper``: they are not interval bounds and carry no inferential
+    meaning.
+
+    ``evidence`` cannot currently leave ``INCONCLUSIVE``.  No prespecified,
+    accepted inferential method exists at this checkpoint, so there is no
+    allow-list to validate a caller-supplied ``inferential_method`` name
+    against -- a caller simply *naming* one must never be treated as
+    authority.  The constructor therefore rejects any ``evidence`` value other
+    than ``INCONCLUSIVE`` outright, and rejects any non-``None``
+    ``inferential_method``, regardless of what either claims.
+    ``STRONGER_EVIDENCE`` remains defined only as the symbolic state a future
+    prespecified method would have to produce; nothing can instantiate a
+    ``PerformanceInterval`` carrying it today.
+    """
+
     point: Decimal
-    lower: Decimal
-    upper: Decimal
+    sensitivity_low: Decimal
+    sensitivity_high: Decimal
     event_count: int
     evidence: str
+    meets_event_floor: bool = False
+    method: str = LEAVE_ONE_EVENT_OUT_SENSITIVITY
+    inferential_method: str | None = None
+
+    def __post_init__(self) -> None:
+        if self.sensitivity_low > self.sensitivity_high:
+            raise LearningError("sensitivity range is inverted")
+        if self.event_count < 0:
+            raise LearningError("event count cannot be negative")
+        if self.evidence != INCONCLUSIVE:
+            # No accepted inferential method exists at this checkpoint, so
+            # there is nothing to validate a caller-supplied
+            # ``inferential_method`` name against.  A caller naming one is
+            # not authority: reject unconditionally, regardless of the name.
+            raise LearningError(
+                "no prespecified inferential method exists at this checkpoint; "
+                "evidence stronger than INCONCLUSIVE cannot currently be constructed"
+            )
+        if self.inferential_method is not None:
+            raise LearningError(
+                "inferential_method must remain unset until an accepted method is prespecified"
+            )
+
+    @property
+    def positive_direction(self) -> bool:
+        """Descriptive direction check: improvement that no single event flips.
+
+        This is a direction diagnostic, not evidence of significance.  It is a
+        necessary condition for promotion, never a sufficient one.
+        """
+        return self.point > 0 and self.sensitivity_low > 0
 
 
 def paired_event_interval(
-    events: tuple[EventContribution, ...], minimum: int = 50
+    events: tuple[EventContribution, ...], minimum: int = MINIMUM_UNIQUE_SETTLED_EVENTS
 ) -> PerformanceInterval:
+    """Summarise per-event contributions over *distinct* authoritative events.
+
+    Returns a descriptive point estimate and a leave-one-event-out sensitivity
+    range.  The evidence state is always ``INCONCLUSIVE``: leave-one-out extrema
+    are a stability diagnostic, and no prespecified inferential method that
+    handles event dependence and repeated looks has been established for this
+    estimator.  Promotion therefore cannot be justified from this result alone.
+    """
     if not events:
         raise LearningError("no settled events")
+    if minimum < MINIMUM_UNIQUE_SETTLED_EVENTS:
+        raise LearningError("unique settled event floor cannot be lowered below 50")
+    identifiers = [event.event_id for event in events]
+    if len(set(identifiers)) != len(identifiers):
+        # Duplicate ids are contract-level pseudo-replication: they must never
+        # enlarge the denominator, and silently collapsing them would hide an
+        # unreconciled input, so this fails closed.
+        raise LearningError("duplicate event ids cannot increase the settled-event denominator")
     values = sorted(event.contribution for event in events)
     mean = sum(values, Decimal(0)) / Decimal(len(values))
-    # Conservative leave-one-event-out interval avoids contract-level pseudo-replication.
     leave_one = (
         [
             sum((value for index, value in enumerate(values) if index != omitted), Decimal(0))
@@ -48,11 +132,14 @@ def paired_event_interval(
         if len(values) > 1
         else [Decimal(0)]
     )
-    lower, upper = min(leave_one), max(leave_one)
-    evidence = (
-        "INCONCLUSIVE" if len(events) < minimum or lower <= 0 <= upper else "STRONGER_EVIDENCE"
+    return PerformanceInterval(
+        mean,
+        min(leave_one),
+        max(leave_one),
+        len(identifiers),
+        INCONCLUSIVE,
+        meets_event_floor=len(identifiers) >= minimum,
     )
-    return PerformanceInterval(mean, lower, upper, len(events), evidence)
 
 
 @dataclass(frozen=True, slots=True)
