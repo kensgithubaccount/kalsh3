@@ -8,7 +8,11 @@ from decimal import Decimal
 from enum import StrEnum
 
 from .domain import LearningError
-from .evaluation import PerformanceInterval
+from .evaluation import (
+    MINIMUM_UNIQUE_SETTLED_EVENTS,
+    STRONGER_EVIDENCE,
+    PerformanceInterval,
+)
 
 
 class SourceState(StrEnum):
@@ -53,6 +57,15 @@ class EvaluationWindow:
 
 @dataclass(frozen=True, slots=True)
 class GovernanceProposal:
+    """Human-gated, zero-influence proposal.
+
+    A promotion proposal may not carry a bare ``unique_settled_events`` count:
+    the count is bound to ``event_manifest``, the exact tuple of authoritative
+    distinct event ids the evidence was computed over, and any mismatch between
+    the two fails closed.  ``incremental_effect`` is the independently supplied
+    after-cost / market-relative effect and must be strictly positive.
+    """
+
     proposal_id: str
     proposal_type: ProposalType
     component_id: str
@@ -62,17 +75,32 @@ class GovernanceProposal:
     unique_settled_events: int
     same_event_manifest: str
     rationale: str
+    event_manifest: tuple[str, ...] = ()
+    incremental_effect: Decimal = Decimal("0")
     human_approval_required: bool = True
     production_influence: Decimal = Decimal("0")
 
     def __post_init__(self) -> None:
         if self.production_influence != 0 or not self.human_approval_required:
             raise LearningError("governance proposals are human-gated with zero influence")
-        if self.proposal_type == ProposalType.PROMOTION_PROPOSAL and (
-            self.unique_settled_events < 50
-            or self.interval is None
-            or self.interval.evidence != "STRONGER_EVIDENCE"
-        ):
+        if self.proposal_type != ProposalType.PROMOTION_PROPOSAL:
+            return
+        if len(set(self.event_manifest)) != len(self.event_manifest):
+            raise LearningError("event manifest contains duplicate event ids")
+        if len(self.event_manifest) != self.unique_settled_events:
+            raise LearningError("proposal event count does not match the event manifest")
+        if self.unique_settled_events < MINIMUM_UNIQUE_SETTLED_EVENTS:
+            raise LearningError("promotion evidence threshold not met")
+        if self.interval is None or self.interval.event_count != self.unique_settled_events:
+            raise LearningError("promotion interval does not match the event manifest")
+        # Direction is required independently of the evidence state so negative
+        # or flat results can never promote even if a future inferential method
+        # reports confidence.
+        if self.incremental_effect <= 0 or not self.interval.positive_direction:
+            raise LearningError("promotion requires positive incremental effect")
+        if not self.interval.meets_event_floor:
+            raise LearningError("promotion evidence threshold not met")
+        if self.interval.evidence != STRONGER_EVIDENCE:
             raise LearningError("promotion evidence threshold not met")
 
 
@@ -102,6 +130,23 @@ def compare_challenger(
     challenger_score: Decimal,
     promotion_interval: PerformanceInterval,
 ) -> bool:
+    """Same-event challenger comparison.
+
+    Fails closed on duplicate ids, differing event sets, or an interval computed
+    over a different number of events.  Returns ``True`` only for a strictly
+    better challenger on a floor-satisfying, positively directed result whose
+    evidence state came from a prespecified inferential method -- which no
+    current method produces, so this is presently always ``False``.
+    """
+    if len(set(champion_events)) != len(champion_events):
+        raise LearningError("duplicate event ids cannot increase the settled-event denominator")
     if champion_events != challenger_events:
         raise LearningError("champion and challenger evaluated on different events")
-    return challenger_score < champion_score and promotion_interval.evidence == "STRONGER_EVIDENCE"
+    if promotion_interval.event_count != len(champion_events):
+        raise LearningError("promotion interval does not match the compared event manifest")
+    return (
+        challenger_score < champion_score
+        and promotion_interval.meets_event_floor
+        and promotion_interval.positive_direction
+        and promotion_interval.evidence == STRONGER_EVIDENCE
+    )

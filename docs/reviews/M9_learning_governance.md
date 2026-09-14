@@ -1,5 +1,14 @@
 # M9 Source + Model Learning Governance Review
 
+> **Superseded in part by M9-E1.** The findings below are preserved as the original
+> record and are not rewritten. The Quant finding's reference to "intervals" and the
+> ML finding's reference to inconclusive low samples were implemented by
+> `paired_event_interval()` in a way that treated leave-one-event-out extrema as an
+> inferential interval. M9-E1 corrects that: the extrema are a sensitivity diagnostic,
+> promotion evidence is INCONCLUSIVE by construction, and promotion additionally
+> requires a duplicate-free event manifest bound to the proposal count plus a positive
+> incremental effect. See `M9E1_LEARNING_GOVERNANCE_SEMANTIC_REPAIR.md`.
+
 ## Acceptance
 
 - Ablation, redundancy/timeliness, event-level uncertainty, multiple comparisons, champion/challenger, proposals, quarantine/drift, rollback/configurations, tournament/budgets, replay gates, 20k/2k grouped fixture and UI: **OFFLINE VERIFIED**.

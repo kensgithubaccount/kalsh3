@@ -71,7 +71,13 @@ def test_event_level_ablation_interval_concentration_and_timeliness() -> None:
     assert result.unique_event_count == result.effective_sample_size == 60
     assert result.descriptive_incremental_brier == Decimal(".01")
     interval = paired_event_interval(sample)
-    assert interval.evidence == "STRONGER_EVIDENCE" and interval.lower > 0
+    # Leave-one-out extrema are a sensitivity diagnostic, never an inferential
+    # interval, so a uniformly positive sample is still INCONCLUSIVE.
+    assert interval.evidence == "INCONCLUSIVE"
+    assert interval.method == "LEAVE_ONE_EVENT_OUT_SENSITIVITY"
+    assert interval.inferential_method is None
+    assert interval.sensitivity_low > 0 and interval.positive_direction
+    assert interval.meets_event_floor and interval.event_count == 60
     concentrated = concentration(
         (EventContribution("one", Decimal(".1"), Decimal(".2"), 0, 1, 1), *events(9, "0"))
     )
@@ -99,7 +105,7 @@ def test_redundant_late_source_gets_little_incremental_credit() -> None:
 
 def test_small_sample_no_promotion_and_10pp_weekly_cap() -> None:
     interval = paired_event_interval(events(7))
-    assert interval.evidence == "INCONCLUSIVE"
+    assert interval.evidence == "INCONCLUSIVE" and not interval.meets_event_floor
     with pytest.raises(LearningError, match="promotion evidence"):
         GovernanceProposal(
             "p",
@@ -111,6 +117,8 @@ def test_small_sample_no_promotion_and_10pp_weekly_cap() -> None:
             7,
             "same-events",
             "6 of 7 is insufficient",
+            event_manifest=tuple(f"e{index}" for index in range(7)),
+            incremental_effect=Decimal(".01"),
         )
     ResearchWeightProposal("w", "NWS", Decimal(".2"), Decimal(".3"), Decimal(".10"), "e")
     with pytest.raises(LearningError):
@@ -123,16 +131,25 @@ def test_challenger_same_event_and_nonoverlapping_promotion_windows() -> None:
         (NOW - timedelta(days=60), NOW - timedelta(days=30)),
         (NOW - timedelta(days=30), NOW),
     )
-    strong = paired_event_interval(events(60))
-    assert compare_challenger(
+    observed = paired_event_interval(events(60))
+    # Same events, better challenger, positive direction and the 50-event floor
+    # met -- yet no prespecified inferential method exists, so this fails closed.
+    assert observed.positive_direction and observed.meets_event_floor
+    assert not compare_challenger(
         tuple(f"e{i}" for i in range(60)),
         tuple(f"e{i}" for i in range(60)),
         Decimal(".18"),
         Decimal(".17"),
-        strong,
+        observed,
     )
     with pytest.raises(LearningError, match="different events"):
-        compare_challenger(("a",), ("b",), Decimal(".2"), Decimal(".1"), strong)
+        compare_challenger(
+            tuple(f"a{i}" for i in range(60)),
+            tuple(f"b{i}" for i in range(60)),
+            Decimal(".2"),
+            Decimal(".1"),
+            observed,
+        )
 
 
 def test_multiple_testing_drift_quarantine_and_source_quality_cost() -> None:
