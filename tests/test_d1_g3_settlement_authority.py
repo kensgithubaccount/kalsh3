@@ -1,3 +1,5 @@
+"""Settlement tests explicitly separate fixture semantics from canonical authority."""
+
 from __future__ import annotations
 
 import inspect
@@ -10,10 +12,13 @@ from test_d1_g2_p1_one_decision import FixtureSource, _clock, _gdpnow
 
 import services.production_gdp_strategy.settlement_authority as authority
 from services.production_gdp_strategy.one_decision import (
+    DecisionError,
     DecisionReceipt,
     _evaluate_fixture_decision,
+    _replay_fixture_decision,
     _TransportResponse,
-    replay_decision,
+    _validate_fixture_decision_receipt,
+    validate_decision_receipt,
 )
 
 TICKER = "KXGDP-26SEP03-T4.5"
@@ -108,7 +113,7 @@ def _decision() -> DecisionReceipt:
     decision = _evaluate_fixture_decision(
         source=BoundedFixtureSource(), gdpnow=evidence, vintage=vintage, clock=_clock()
     )
-    replay_decision(decision)
+    _replay_fixture_decision(decision)
     return decision
 
 
@@ -116,9 +121,21 @@ def _run(
     monkeypatch: pytest.MonkeyPatch, market: authority._Evidence, bea: authority._Evidence
 ) -> authority.SettlementAuthority:
     decision = _decision()
+    monkeypatch.setattr(authority, "validate_decision_receipt", _validate_fixture_decision_receipt)
     monkeypatch.setattr(authority, "_acquire_market", lambda _ticker: market)
     monkeypatch.setattr(authority, "_acquire_bea", lambda _quarter: bea)
     return authority.acquire_settlement_authority(decision)
+
+
+def test_public_settlement_authority_rejects_fixture_decision_without_patch() -> None:
+    fixture_decision = _decision()
+    with pytest.raises(
+        authority.SettlementAuthorityError,
+        match="original decision is not issuer-issued",
+    ):
+        authority.acquire_settlement_authority(fixture_decision)
+    with pytest.raises(DecisionError):
+        validate_decision_receipt(fixture_decision)
 
 
 @pytest.mark.parametrize("result,value", [("yes", "4.7"), ("no", "4.2")])
