@@ -60,10 +60,20 @@ class GovernanceProposal:
     """Human-gated, zero-influence proposal.
 
     A promotion proposal may not carry a bare ``unique_settled_events`` count:
-    the count is bound to ``event_manifest``, the exact tuple of authoritative
-    distinct event ids the evidence was computed over, and any mismatch between
-    the two fails closed.  ``incremental_effect`` is the independently supplied
+    the count is bound to ``event_manifest``, and any mismatch between the two
+    fails closed.  ``incremental_effect`` is the independently supplied
     after-cost / market-relative effect and must be strictly positive.
+
+    ``event_manifest`` is a *descriptive* record of the distinct event ids the
+    caller claims the evidence was computed over -- it is checked only for
+    internal self-consistency (no duplicates, length matches the supplied
+    count and the interval's ``event_count``).  There is no authoritative
+    evaluation-cohort issuer at this checkpoint, so a caller-authored manifest,
+    however large or internally consistent, confers no promotion authority by
+    itself.  ``same_event_manifest`` is likewise descriptive only.  Promotion
+    is gated on ``interval.evidence == STRONGER_EVIDENCE``, which no current
+    ``PerformanceInterval`` can carry (see ``evaluation.py``), so
+    ``PROMOTION_PROPOSAL`` fails closed regardless of manifest contents.
     """
 
     proposal_id: str
@@ -101,6 +111,10 @@ class GovernanceProposal:
         if not self.interval.meets_event_floor:
             raise LearningError("promotion evidence threshold not met")
         if self.interval.evidence != STRONGER_EVIDENCE:
+            # Authoritative promotion evidence does not exist at this
+            # checkpoint: no PerformanceInterval can carry STRONGER_EVIDENCE
+            # (see evaluation.py), so this is the fail-closed floor for every
+            # promotion proposal, independent of manifest size or contents.
             raise LearningError("promotion evidence threshold not met")
 
 
@@ -135,8 +149,11 @@ def compare_challenger(
     Fails closed on duplicate ids, differing event sets, or an interval computed
     over a different number of events.  Returns ``True`` only for a strictly
     better challenger on a floor-satisfying, positively directed result whose
-    evidence state came from a prespecified inferential method -- which no
-    current method produces, so this is presently always ``False``.
+    evidence state is ``STRONGER_EVIDENCE``.  No ``PerformanceInterval`` can
+    carry that state at this checkpoint (see ``evaluation.py``), so this
+    always returns ``False`` regardless of what a caller supplies as
+    ``champion_events``/``challenger_events`` -- those identifiers are
+    descriptive comparison inputs, not a source of promotion authority.
     """
     if len(set(champion_events)) != len(champion_events):
         raise LearningError("duplicate event ids cannot increase the settled-event denominator")

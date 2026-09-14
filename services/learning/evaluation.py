@@ -48,9 +48,18 @@ class PerformanceInterval:
 
     ``sensitivity_low``/``sensitivity_high`` are deliberately *not* named
     ``lower``/``upper``: they are not interval bounds and carry no inferential
-    meaning.  ``evidence`` may only leave ``INCONCLUSIVE`` once
-    ``inferential_method`` names a prespecified method that handles event
-    dependence and repeated looks.
+    meaning.
+
+    ``evidence`` cannot currently leave ``INCONCLUSIVE``.  No prespecified,
+    accepted inferential method exists at this checkpoint, so there is no
+    allow-list to validate a caller-supplied ``inferential_method`` name
+    against -- a caller simply *naming* one must never be treated as
+    authority.  The constructor therefore rejects any ``evidence`` value other
+    than ``INCONCLUSIVE`` outright, and rejects any non-``None``
+    ``inferential_method``, regardless of what either claims.
+    ``STRONGER_EVIDENCE`` remains defined only as the symbolic state a future
+    prespecified method would have to produce; nothing can instantiate a
+    ``PerformanceInterval`` carrying it today.
     """
 
     point: Decimal
@@ -67,9 +76,18 @@ class PerformanceInterval:
             raise LearningError("sensitivity range is inverted")
         if self.event_count < 0:
             raise LearningError("event count cannot be negative")
-        if self.evidence != INCONCLUSIVE and self.inferential_method is None:
+        if self.evidence != INCONCLUSIVE:
+            # No accepted inferential method exists at this checkpoint, so
+            # there is nothing to validate a caller-supplied
+            # ``inferential_method`` name against.  A caller naming one is
+            # not authority: reject unconditionally, regardless of the name.
             raise LearningError(
-                "evidence stronger than INCONCLUSIVE requires a prespecified inferential method"
+                "no prespecified inferential method exists at this checkpoint; "
+                "evidence stronger than INCONCLUSIVE cannot currently be constructed"
+            )
+        if self.inferential_method is not None:
+            raise LearningError(
+                "inferential_method must remain unset until an accepted method is prespecified"
             )
 
     @property

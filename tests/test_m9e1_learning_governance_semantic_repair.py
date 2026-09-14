@@ -147,21 +147,101 @@ def test_negative_interval_or_proposal_cannot_promote() -> None:
         promotion(unstable, 50, tuple(event.event_id for event in flipping), effect=".01")
 
 
-def test_evidence_stronger_than_inconclusive_requires_a_prespecified_method() -> None:
-    with pytest.raises(LearningError, match="prespecified inferential method"):
+def test_evidence_stronger_than_inconclusive_is_unconstructible() -> None:
+    """No accepted inferential method exists at this checkpoint: STRONGER_EVIDENCE
+    is not reachable from any current caller, named method or not."""
+    with pytest.raises(LearningError, match="no prespecified inferential method"):
         PerformanceInterval(Decimal(".01"), Decimal(".01"), Decimal(".01"), 50, "STRONGER_EVIDENCE")
-    # A named method is the only door, and it is not yet open in production code.
-    sealed = PerformanceInterval(
-        Decimal(".01"),
-        Decimal(".01"),
-        Decimal(".01"),
-        50,
-        "STRONGER_EVIDENCE",
-        meets_event_floor=True,
-        inferential_method="hypothetical-prespecified-v0",
-    )
-    assert sealed.evidence == "STRONGER_EVIDENCE"
     assert paired_event_interval(sample(50, ".1")).inferential_method is None
+
+
+def test_caller_naming_an_inferential_method_confers_no_authority() -> None:
+    """Exact independent-review counterexample: a caller cannot manufacture
+    promotion authority merely by naming an inferential_method string."""
+    with pytest.raises(LearningError, match="no prespecified inferential method"):
+        PerformanceInterval(
+            point=Decimal(".01"),
+            sensitivity_low=Decimal(".01"),
+            sensitivity_high=Decimal(".01"),
+            event_count=50,
+            evidence="STRONGER_EVIDENCE",
+            meets_event_floor=True,
+            inferential_method="arbitrary-caller-name",
+        )
+
+
+@pytest.mark.parametrize(
+    "inferential_method",
+    [None, "arbitrary-caller-name", "hypothetical-prespecified-v0", ""],
+)
+def test_no_inferential_method_name_unlocks_stronger_evidence(
+    inferential_method: str | None,
+) -> None:
+    """No caller-supplied inferential_method value -- absent, plausible-looking,
+    or empty -- can produce a valid STRONGER_EVIDENCE PerformanceInterval."""
+    with pytest.raises(LearningError, match="no prespecified inferential method"):
+        PerformanceInterval(
+            Decimal(".01"),
+            Decimal(".01"),
+            Decimal(".01"),
+            50,
+            "STRONGER_EVIDENCE",
+            meets_event_floor=True,
+            inferential_method=inferential_method,
+        )
+
+
+def test_inconclusive_interval_rejects_any_inferential_method_name() -> None:
+    """inferential_method must stay None even when evidence is legitimately
+    INCONCLUSIVE: naming one is never harmless, since it is meaningless."""
+    with pytest.raises(LearningError, match="inferential_method must remain unset"):
+        PerformanceInterval(
+            Decimal(".01"),
+            Decimal(".01"),
+            Decimal(".01"),
+            50,
+            "INCONCLUSIVE",
+            meets_event_floor=True,
+            inferential_method="arbitrary-caller-name",
+        )
+
+
+def test_fifty_id_caller_authored_manifest_cannot_produce_a_promotion_proposal() -> None:
+    """A caller-authored 50-id event_manifest, on its own, cannot manufacture
+    promotion evidence authority -- the manifest is descriptive only."""
+    manifest = tuple(f"caller-invented-{i}" for i in range(50))
+    interval = paired_event_interval(sample(50, ".1"))
+    assert interval.event_count == 50
+    with pytest.raises(LearningError, match="promotion evidence threshold not met"):
+        promotion(interval, 50, manifest)
+
+
+def test_compare_challenger_cannot_return_true_from_fabricated_stronger_evidence() -> None:
+    """compare_challenger must reject fabricated stronger evidence rather than
+    trust it, and can never return True under current M9 evidence."""
+    events = sample(50, ".1")
+    manifest = tuple(event.event_id for event in events)
+    interval = paired_event_interval(events)
+    assert interval.positive_direction and interval.meets_event_floor
+    # Even a strictly better challenger score cannot promote: evidence is
+    # INCONCLUSIVE, and no interval carrying STRONGER_EVIDENCE is constructible.
+    assert not compare_challenger(manifest, manifest, Decimal(".18"), Decimal(".01"), interval)
+
+
+def test_fifty_uniformly_positive_events_stay_inconclusive_with_no_promotion_authority() -> None:
+    """Legitimate, uniformly positive evidence still yields no promotion
+    authority: INCONCLUSIVE by construction, not by any defect in the inputs."""
+    events = sample(50, ".1")
+    interval = paired_event_interval(events)
+
+    assert interval.positive_direction
+    assert interval.meets_event_floor
+    assert interval.evidence == "INCONCLUSIVE"
+
+    manifest = tuple(event.event_id for event in events)
+    with pytest.raises(LearningError, match="promotion evidence threshold not met"):
+        promotion(interval, 50, manifest)
+    assert not compare_challenger(manifest, manifest, Decimal(".18"), Decimal(".01"), interval)
 
 
 def test_fifty_unique_settled_event_floor_is_preserved_and_cannot_be_lowered() -> None:

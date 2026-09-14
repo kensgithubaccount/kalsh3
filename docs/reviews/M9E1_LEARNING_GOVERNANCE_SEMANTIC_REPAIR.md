@@ -96,11 +96,63 @@ a uniformly positive 60-event sample is now `INCONCLUSIVE`, and
 `compare_challenger()` on a strictly better same-event challenger now returns
 `False`. Both changes record fail-closed behaviour, not a loss of coverage.
 
+## Bounded authority-bypass repair (independent review, 2026-09-14)
+
+Independent review reproduced two object-construction bypasses of the fail-closed
+design above and returned **REPAIR REQUIRED**. Both are now closed.
+
+**Blocker 1 -- caller-created `STRONGER_EVIDENCE`.** The prior `__post_init__`
+checked only `inferential_method is not None`, i.e. it gated *presence*, not
+*validity*, of the name. A caller could construct
+`PerformanceInterval(evidence="STRONGER_EVIDENCE", inferential_method="arbitrary-caller-name",
+...)` directly and have it accepted -- the "the constructor itself is the gate"
+claim in the original repair section above was true of `paired_event_interval()`
+but false of direct construction. Fixed: `__post_init__` now rejects *any*
+`evidence` value other than `INCONCLUSIVE` unconditionally, and separately
+rejects any non-`None` `inferential_method`. There is no accepted method to
+validate a name against at this checkpoint, so no name -- however plausible --
+can unlock `STRONGER_EVIDENCE`.
+
+**Blocker 2 -- caller-authored `event_manifest`.** `event_manifest` was checked
+only for internal self-consistency (no duplicates, length matches count and
+interval), never bound to an authoritative evaluation cohort. Because Blocker 1
+made `STRONGER_EVIDENCE` unconstructible, `GovernanceProposal`'s existing
+`interval.evidence == STRONGER_EVIDENCE` gate already made a caller-authored
+manifest insufficient to promote on its own; this repair makes that explicit in
+the docstrings (`event_manifest`/`same_event_manifest` are descriptive record-
+keeping fields, not an authority source) and adds regressions proving a 50-id
+caller-authored manifest cannot produce a `PROMOTION_PROPOSAL`.
+
+No new statistical method, capability framework, or future-authority stand-in
+was added. `PROMOTION_PROPOSAL` and `compare_challenger()` remain exactly as
+fail-closed as before this repair; what changed is that the *only* prior path
+to bypass that closure -- direct object construction -- is now closed too.
+Demotion and quarantine proposals are unaffected.
+
+A future milestone must introduce, before promotion can exist: (a) a
+prespecified, statistically valid inferential method that handles event
+dependence and repeated looks, and (b) an authoritative evaluation-cohort/
+manifest issuance boundary independent of caller input. Neither is implemented
+here.
+
+New regressions in `tests/test_m9e1_learning_governance_semantic_repair.py`:
+the exact reviewer counterexample; a parametrized sweep of caller-supplied
+`inferential_method` names (absent, plausible, empty) all failing closed on
+`STRONGER_EVIDENCE`; `inferential_method` rejected even alongside a legitimate
+`INCONCLUSIVE` evidence value; a 50-id caller-authored manifest failing to
+produce a promotion proposal; `compare_challenger()` failing to return `True`
+under fabricated stronger evidence; and 50 uniformly positive legitimate events
+still yielding `INCONCLUSIVE` with no promotion authority.
+
 ## Status
 
 - Semantic repair: **VERIFIED** by focused regressions and full-suite run.
+- Authority-bypass repair: **VERIFIED** -- both independent-review
+  counterexamples now fail closed; no constructible promotion-authority path
+  exists in `services/learning/{evaluation,governance}.py`.
 - Promotion evidence: **INCONCLUSIVE BY CONSTRUCTION** pending a prespecified
-  inferential method for dependence and repeated looks. No such method is proposed
-  here; establishing one is separate work.
+  inferential method for dependence and repeated looks, and an authoritative
+  evaluation-cohort issuer. Neither is proposed here; establishing them is
+  separate, unstarted work.
 - Real settled learning evidence: **INSUFFICIENT REAL EVIDENCE** (unchanged).
 - Production influence: **NONE**. Human acceptance: **PENDING**.
