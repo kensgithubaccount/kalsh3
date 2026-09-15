@@ -23,8 +23,16 @@ Before any latency claim, paired page hash changes are compared using collection
 change within 120 seconds is `SYNCHRONIZED`; no paired change is `INDETERMINATE`; only a state
 change materially preceding a national change is `STATE_BEFORE_NATIONAL`. Synchronized or
 indeterminate results are explicitly reclassified as a next-day forecasting test. Each market
-must also have parseable close and settlement timestamps; the collector records whether close is
-strictly before the target AAA date and permits no latency interpretation when it is not.
+must also have parseable close and settlement timestamps. Close comparison uses
+`America/New_York`, not the UTC calendar date. `latency_eligible` means only that the publication-
+latency mechanism is not ruled out by the close schedule; it does not indicate an edge.
+
+## Strategic status
+
+**KXAAAGASD OFFICIAL-SOURCE LATENCY THESIS: KILLED BY TRADING-CLOSE TIMING.** The daily market
+closes before the target local date whose AAA value settles the contract. Prior-day state or
+regional observations may support a separate `NEXT_DAY_FORECASTING` hypothesis. No gas forecast
+model is authorized by GAS-A1.
 
 The pre-registered diagnostics are source update time, national/state changes, threshold distance,
 book repricing, displayed spread/depth, and fee-inclusive cost once the event fee metadata is

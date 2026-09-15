@@ -56,7 +56,7 @@ def test_market_requires_exact_aaa_authority() -> None:
     }
     parsed = parse_active_market(raw, raw_sha256="a" * 64, observed_at=NOW)
     assert parsed.strike == Decimal("3.20")
-    assert parsed.latency_eligible is True
+    assert parsed.latency_eligible is False
     with pytest.raises(GasA1Error):
         parse_active_market(
             {**raw, "rules_primary": "EIA fuel prices"}, raw_sha256="a" * 64, observed_at=NOW
@@ -89,7 +89,26 @@ def test_live_market_rule_shape_binds_aaa_and_text_date() -> None:
     }
     parsed = parse_active_market(raw, raw_sha256="b" * 64, observed_at=NOW)
     assert parsed.target_date.isoformat() == "2026-09-16"
+    assert parsed.close_target_relation == "CLOSE_BEFORE_TARGET_LOCAL_DATE"
     assert parsed.latency_eligible is False
+
+
+def test_close_on_target_local_date_does_not_rule_out_schedule_latency() -> None:
+    raw = {
+        "ticker": "KXAAAGASD-26SEP16-4.4000",
+        "event_ticker": "KXAAAGASD-26SEP16",
+        "status": "active",
+        "rules_primary": "AAA regular gas average above $4.4000 on 2026-09-16 according to AAA.",
+        "rules_secondary": "",
+        "title": "Will average gas prices be above $4.4000?",
+        "fee_type": "quadratic",
+        "fee_multiplier": "1",
+        "close_time": "2026-09-16T16:00:00Z",
+        "settlement_ts": "2026-09-17T12:00:00Z",
+    }
+    parsed = parse_active_market(raw, raw_sha256="c" * 64, observed_at=NOW)
+    assert parsed.close_target_relation == "CLOSE_ON_OR_AFTER_TARGET_LOCAL_DATE"
+    assert parsed.latency_eligible is True
 
 
 def test_taker_debits_use_opposite_side_asks_and_fees() -> None:

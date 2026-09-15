@@ -19,6 +19,7 @@ from decimal import Decimal, InvalidOperation
 from pathlib import Path
 from typing import Any, Protocol
 from urllib.parse import urlencode, urlsplit
+from zoneinfo import ZoneInfo
 
 from services.market_universe.orderbook_snapshot import acquire_orderbook_snapshot
 from services.market_universe.public_read import get, get_market_with_body
@@ -30,6 +31,7 @@ SERIES = "KXAAAGASD"
 ZERO = Decimal(0)
 MAX_AAA_BYTES = 2_000_000
 PREDICTOR_VERSION = "gas-a1-predictors-v1"
+CONTRACT_TIMEZONE = ZoneInfo("America/New_York")
 
 
 class GasA1Error(RuntimeError):
@@ -279,7 +281,9 @@ def parse_active_market(
     if close_at >= settlement_at:
         raise GasA1Error("market close is not before settlement")
     relation = (
-        "CLOSE_BEFORE_TARGET_DATE" if close_at.date() < target else "CLOSE_ON_OR_AFTER_TARGET_DATE"
+        "CLOSE_BEFORE_TARGET_LOCAL_DATE"
+        if close_at.astimezone(CONTRACT_TIMEZONE).date() < target
+        else "CLOSE_ON_OR_AFTER_TARGET_LOCAL_DATE"
     )
     return MarketAuthority(
         ticker,
@@ -299,7 +303,7 @@ def parse_active_market(
         raw_sha256,
         observed_at.isoformat(),
         relation,
-        relation == "CLOSE_BEFORE_TARGET_DATE",
+        relation == "CLOSE_ON_OR_AFTER_TARGET_LOCAL_DATE",
     )
 
 
