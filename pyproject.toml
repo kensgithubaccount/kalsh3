@@ -12,6 +12,17 @@ dependencies = [
     "websockets==16.1.1",
 ]
 
+[project.optional-dependencies]
+# WN-A1 real WeatherNext GCS Zarr reader only (services.forecasting.wn_a1_weathernext_
+# evidence.gcs_zarr_reader). Not required to run WN-A1's tests, which inject a fake
+# in-memory reader. Not exercised in this development environment (no Google Cloud
+# credentials or gcloud/gsutil were available) -- see the WN-A1 review doc.
+weathernext = [
+    "gcsfs==2026.8.1",
+    "zarr==3.3.0",
+    "google-cloud-storage==3.14.1",
+]
+
 [dependency-groups]
 dev = [
     "bandit==1.9.4",
