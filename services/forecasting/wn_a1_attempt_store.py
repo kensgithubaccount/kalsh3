@@ -41,6 +41,7 @@ from .wn_a1_current_daily_high_authority import (
     WindowStatus,
 )
 from .wn_a1_domain import PRODUCTION_INFLUENCE, RESEARCH_ONLY, WnA1Error
+from .wn_a1_market_economics import is_fresh_at
 from .wn_a1_probability import (
     BoundaryRiskDiagnostic,
     MemberDailyHigh,
@@ -57,6 +58,7 @@ from .wn_a1_weathernext_evidence import (
 )
 
 SCHEMA_VERSION = "wn-a1-attempt-store-v1"
+RUN_SCHEMA_VERSION = "wn-a1-run-attempt-v1"
 
 # Canonical location derived from this installed module -- never caller-controlled.
 _DEFAULT_ROOT = Path(__file__).resolve().parents[2] / ".kalsh3-wn-a1-research"
@@ -96,6 +98,11 @@ class WnA1Attempt:
     weathernext_source_content_hash: str | None
     weathernext_members: tuple[_MemberRow, ...]
     kalshi_snapshot_identity: str | None
+    # The exact market-freshness input used by the original decision (Item A): replay must
+    # recompute freshness from this persisted timestamp using the same reviewed
+    # ``is_fresh_at`` function, never hardcode ``market_fresh=True``. ``None`` when no market
+    # snapshot was acquired at all -- that unavailable state is preserved on replay too.
+    kalshi_orderbook_observed_at: datetime | None
     alert_policy_version: str
     decision_state: str
     decision_gate_failures: tuple[str, ...]
@@ -120,6 +127,40 @@ class WnA1Attempt:
     def __post_init__(self) -> None:
         if self.research_only is not True or self.production_influence != 0:
             raise AttemptStoreError("WN-A1 attempt must remain research-only, zero influence")
+
+
+_RouteOutcome = tuple[str, str, str | None]  # (market_ticker, route_state, reason)
+
+
+@dataclass(frozen=True, slots=True)
+class WnA1RunAttempt:
+    """Item D's durable, append-only run-level invocation record.
+
+    Every ``run_canonical``/``_run_evaluation`` invocation persists exactly one of these,
+    regardless of how many (if any) per-market ``WnA1Attempt`` rows it also produces --
+    including a Kalshi event-discovery failure, zero supported markets, every route
+    abstaining, or a WeatherNext acquisition failure. This is denominator/preservation
+    evidence only, never a trading authority: it never fabricates a market-level contract
+    for a route that was never supported.
+    """
+
+    run_id: str
+    target_local_date: str
+    event_ticker: str
+    evaluated_at: datetime
+    discovery_state: str  # "OK" | "DISCOVERY_FAILED"
+    discovery_reason: str | None
+    weathernext_state: str  # "COMPLETE" | "INCOMPLETE" | "ACQUISITION_FAILED"
+    weathernext_reason: str | None
+    route_outcomes: tuple[_RouteOutcome, ...]
+    attempt_ids: tuple[str, ...]
+    alert_policy_version: str
+    research_only: bool = RESEARCH_ONLY
+    production_influence: Decimal = PRODUCTION_INFLUENCE
+
+    def __post_init__(self) -> None:
+        if self.research_only is not True or self.production_influence != 0:
+            raise AttemptStoreError("WN-A1 run attempt must remain research-only, zero influence")
 
 
 def weathernext_member_rows(evidence: WeatherNextEnsembleEvidence) -> tuple[_MemberRow, ...]:
@@ -163,6 +204,21 @@ class WnA1AttemptStore:
                 BEFORE UPDATE ON wn_a1_attempts BEGIN SELECT RAISE(ABORT, 'append only'); END;
                 CREATE TRIGGER IF NOT EXISTS wn_a1_attempts_no_delete
                 BEFORE DELETE ON wn_a1_attempts BEGIN SELECT RAISE(ABORT, 'append only'); END;
+                CREATE TABLE IF NOT EXISTS wn_a1_runs (
+                    run_id TEXT PRIMARY KEY,
+                    target_local_date TEXT NOT NULL,
+                    event_ticker TEXT NOT NULL,
+                    evaluated_at TEXT NOT NULL,
+                    schema_version TEXT NOT NULL,
+                    payload TEXT NOT NULL,
+                    research_only TEXT NOT NULL DEFAULT '1' CHECK(research_only = '1'),
+                    production_influence TEXT NOT NULL DEFAULT '0'
+                        CHECK(production_influence = '0')
+                );
+                CREATE TRIGGER IF NOT EXISTS wn_a1_runs_no_update
+                BEFORE UPDATE ON wn_a1_runs BEGIN SELECT RAISE(ABORT, 'append only'); END;
+                CREATE TRIGGER IF NOT EXISTS wn_a1_runs_no_delete
+                BEFORE DELETE ON wn_a1_runs BEGIN SELECT RAISE(ABORT, 'append only'); END;
                 """
             )
 
@@ -229,6 +285,51 @@ class WnA1AttemptStore:
     def count(self) -> int:
         with self._connect() as db:
             return int(db.execute("SELECT COUNT(*) FROM wn_a1_attempts").fetchone()[0])
+
+    def append_run(self, run: WnA1RunAttempt) -> None:
+        """Persist one run-level invocation record. Fails closed on any duplicate
+        ``run_id`` (the same target date/WeatherNext-run/evaluated_at/policy identity),
+        matching Item D's requirement that a duplicate exact invocation identity is
+        rejected rather than silently double-counted."""
+        if not isinstance(run, WnA1RunAttempt):
+            raise AttemptStoreError("only WnA1RunAttempt may be persisted")
+        payload = json.dumps(_encode_run(run), sort_keys=True, separators=(",", ":"))
+        try:
+            with self._connect() as db:
+                db.execute("BEGIN IMMEDIATE")
+                existing = db.execute(
+                    "SELECT 1 FROM wn_a1_runs WHERE run_id=?", (run.run_id,)
+                ).fetchone()
+                if existing is not None:
+                    raise AttemptStoreError(
+                        f"duplicate WN-A1 run persistence rejected: {run.run_id}"
+                    )
+                db.execute(
+                    "INSERT INTO wn_a1_runs VALUES (?,?,?,?,?,?,?,?)",
+                    (
+                        run.run_id,
+                        run.target_local_date,
+                        run.event_ticker,
+                        _timestamp(run.evaluated_at),
+                        RUN_SCHEMA_VERSION,
+                        payload,
+                        "1",
+                        "0",
+                    ),
+                )
+        except sqlite3.Error as exc:
+            raise AttemptStoreError("WN-A1 run persistence rejected") from exc
+
+    def get_run(self, run_id: str) -> WnA1RunAttempt:
+        with self._connect() as db:
+            row = db.execute("SELECT payload FROM wn_a1_runs WHERE run_id=?", (run_id,)).fetchone()
+        if row is None:
+            raise AttemptStoreError(f"unknown WN-A1 run: {run_id}")
+        return _decode_run(json.loads(row["payload"]))
+
+    def run_count(self) -> int:
+        with self._connect() as db:
+            return int(db.execute("SELECT COUNT(*) FROM wn_a1_runs").fetchone()[0])
 
 
 def open_default_attempt_store() -> WnA1AttemptStore:
@@ -309,8 +410,10 @@ def replay_decision(attempt: WnA1Attempt) -> AlertDecision:
     This is a genuine fresh-process replay: it reconstructs the WeatherNext evidence from
     persisted raw member rows (re-validating the evidence identity), recomputes the raw
     ensemble probability over the persisted research window, reconstructs the bound
-    contract predicate, and re-runs ``decide_alert`` with the persisted side economics --
-    it never merely recomputes a hash from an in-memory object.
+    contract predicate, recomputes market freshness from the persisted
+    ``kalshi_orderbook_observed_at``/``evaluated_at`` pair using the same reviewed
+    ``is_fresh_at`` function (never hardcoded), and re-runs ``decide_alert`` with the
+    persisted side economics -- it never merely recomputes a hash from an in-memory object.
     """
     raw: RawProbabilityResult | None = None
     members: tuple[MemberDailyHigh, ...] | None = None
@@ -370,10 +473,17 @@ def replay_decision(attempt: WnA1Attempt) -> AlertDecision:
             "replay does not have historical alert-policy thresholds for "
             f"{attempt.alert_policy_version!r}; only the current policy is replayable"
         )
+    # Never hardcode market_fresh=True: recompute it from the exact persisted freshness
+    # input the original decision used. A missing orderbook_observed_at means no market
+    # snapshot was ever acquired -- that unavailable state is not fresh, matching
+    # evaluate_candidate's own ``snapshot is not None and is_fresh(...)`` at evaluation time.
+    market_fresh = attempt.kalshi_orderbook_observed_at is not None and is_fresh_at(
+        attempt.kalshi_orderbook_observed_at, attempt.evaluated_at
+    )
     return decide_alert(
         contract_supported=True,
         ensemble_complete=raw is not None,
-        market_fresh=True,
+        market_fresh=market_fresh,
         yes_conservative_debit=attempt.yes_conservative_debit,
         no_conservative_debit=attempt.no_conservative_debit,
         raw=raw,
@@ -424,6 +534,7 @@ def _encode(attempt: WnA1Attempt) -> dict[str, object]:
         "weathernext_source_content_hash": attempt.weathernext_source_content_hash,
         "weathernext_members": [list(row) for row in attempt.weathernext_members],
         "kalshi_snapshot_identity": attempt.kalshi_snapshot_identity,
+        "kalshi_orderbook_observed_at": _opt_dt(attempt.kalshi_orderbook_observed_at),
         "alert_policy_version": attempt.alert_policy_version,
         "decision_state": attempt.decision_state,
         "decision_gate_failures": list(attempt.decision_gate_failures),
@@ -500,6 +611,7 @@ def _decode(payload: dict[str, object]) -> WnA1Attempt:
         weathernext_source_content_hash=_str_or_none(payload["weathernext_source_content_hash"]),
         weathernext_members=members,
         kalshi_snapshot_identity=_str_or_none(payload["kalshi_snapshot_identity"]),
+        kalshi_orderbook_observed_at=_dt(payload["kalshi_orderbook_observed_at"]),
         alert_policy_version=str(payload["alert_policy_version"]),
         decision_state=str(payload["decision_state"]),
         decision_gate_failures=tuple(str(v) for v in gate_failures_raw),
@@ -531,3 +643,54 @@ def _int_or_none(value: object) -> int | None:
     if isinstance(value, bool) or not isinstance(value, int):
         raise AttemptStoreError("persisted WN-A1 integer field is malformed")
     return value
+
+
+def _encode_run(run: WnA1RunAttempt) -> dict[str, object]:
+    return {
+        "run_id": run.run_id,
+        "target_local_date": run.target_local_date,
+        "event_ticker": run.event_ticker,
+        "evaluated_at": _timestamp(run.evaluated_at),
+        "discovery_state": run.discovery_state,
+        "discovery_reason": run.discovery_reason,
+        "weathernext_state": run.weathernext_state,
+        "weathernext_reason": run.weathernext_reason,
+        "route_outcomes": [list(row) for row in run.route_outcomes],
+        "attempt_ids": list(run.attempt_ids),
+        "alert_policy_version": run.alert_policy_version,
+        "research_only": True,
+        "production_influence": "0",
+    }
+
+
+def _decode_run(payload: dict[str, object]) -> WnA1RunAttempt:
+    if payload.get("research_only") is not True or payload.get("production_influence") != "0":
+        raise AttemptStoreError("persisted WN-A1 run lost its safety invariants")
+    route_outcomes_raw = payload["route_outcomes"]
+    if not isinstance(route_outcomes_raw, list):
+        raise AttemptStoreError("persisted WN-A1 run route outcomes are malformed")
+    route_outcomes: list[_RouteOutcome] = []
+    for row in route_outcomes_raw:
+        if not isinstance(row, list) or len(row) != 3:
+            raise AttemptStoreError("persisted WN-A1 run route outcome row is malformed")
+        ticker, state, reason = row
+        route_outcomes.append((str(ticker), str(state), None if reason is None else str(reason)))
+    attempt_ids_raw = payload["attempt_ids"]
+    if not isinstance(attempt_ids_raw, list):
+        raise AttemptStoreError("persisted WN-A1 run attempt ids are malformed")
+    evaluated_at = _dt(payload["evaluated_at"])
+    if evaluated_at is None:
+        raise AttemptStoreError("persisted WN-A1 run is missing its timestamp")
+    return WnA1RunAttempt(
+        run_id=str(payload["run_id"]),
+        target_local_date=str(payload["target_local_date"]),
+        event_ticker=str(payload["event_ticker"]),
+        evaluated_at=evaluated_at,
+        discovery_state=str(payload["discovery_state"]),
+        discovery_reason=_str_or_none(payload["discovery_reason"]),
+        weathernext_state=str(payload["weathernext_state"]),
+        weathernext_reason=_str_or_none(payload["weathernext_reason"]),
+        route_outcomes=tuple(route_outcomes),
+        attempt_ids=tuple(str(v) for v in attempt_ids_raw),
+        alert_policy_version=str(payload["alert_policy_version"]),
+    )

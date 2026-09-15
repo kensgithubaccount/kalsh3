@@ -23,6 +23,7 @@ from services.forecasting.wn_a1_domain import AlertSide, AlertState, WnA1Error
 from services.forecasting.wn_a1_probability import compute_member_daily_highs
 from services.forecasting.wn_a1_runner import (
     _run_evaluation,
+    _run_invocation_id,
     discover_event,
     evaluate_candidate,
     event_ticker_for,
@@ -414,8 +415,29 @@ def test_run_canonical_accepts_no_transport_override_parameters() -> None:
         "get_orderbook",
         "reader",
         "weathernext_reader",
+        "store",
+        "policy",
     }
     assert forbidden.isdisjoint(params)
+
+
+def test_run_canonical_signature_is_exactly_the_evaluation_identity_inputs() -> None:
+    """Item C's static/signature regression: ``run_canonical`` must expose ONLY the
+    target-date / WeatherNext-run identity inputs needed to identify the requested
+    evaluation -- never a store, policy, transport, or reader override of any kind. A
+    caller-selected persistence destination or policy would let a fixture masquerade as a
+    genuine canonical live run."""
+    import inspect
+
+    params = set(inspect.signature(run_canonical).parameters)
+    assert params == {
+        "target_local_date",
+        "weathernext_init_time",
+        "weathernext_source_object",
+        "weathernext_requested_latitude",
+        "weathernext_requested_longitude",
+        "evaluated_at",
+    }
 
 
 def test_canonical_composition_seam_persists_every_evaluated_attempt(tmp_path) -> None:
@@ -497,11 +519,32 @@ def test_canonical_composition_seam_persists_every_evaluated_attempt(tmp_path) -
     assert persisted.weathernext_evidence_identity is not None
     assert len(persisted.weathernext_members) == MEMBER_COUNT
     assert persisted.weathernext_selected_latitude == Decimal("41.80")
+    # Item A: no market snapshot was acquired (fake raises) -> that unavailable state is
+    # bound into the persisted attempt, never a hardcoded freshness assumption.
+    assert persisted.kalshi_orderbook_observed_at is None
 
     # Fresh-process replay: reopen the persisted row and reproduce the decision.
     replayed = replay_decision(persisted)
     assert replayed.state == outcome.decision.state
     assert replayed.side == outcome.decision.side
+
+    # Item D: exactly one durable run-level record exists for this invocation too.
+    assert store.run_count() == 1
+    run = store.get_run(
+        _run_invocation_id(
+            event_ticker="KXHIGHCHI-26SEP15",
+            target_local_date=date(2026, 9, 15),
+            weathernext_init_time=INIT_TIME,
+            weathernext_source_object=SOURCE_OBJECT,
+            weathernext_requested_latitude=Decimal("41.80"),
+            weathernext_requested_longitude=Decimal("-87.75"),
+            evaluated_at=now,
+            policy_version=DEFAULT_POLICY.version,
+        )
+    )
+    assert run.discovery_state == "OK"
+    assert run.weathernext_state == "COMPLETE"
+    assert run.attempt_ids == (outcome.record.record_id,)
 
 
 def test_canonical_composition_seam_rejects_duplicate_attempt(tmp_path) -> None:
@@ -555,3 +598,136 @@ def test_canonical_composition_seam_rejects_duplicate_attempt(tmp_path) -> None:
     _run_evaluation(**kwargs)
     with pytest.raises(AttemptStoreError, match="duplicate"):
         _run_evaluation(**kwargs)
+
+
+# --- Item D: every invocation leaves a durable run-level trace --------------------------
+
+
+def _base_run_kwargs(store, *, get_event, get_series, get_market, get_orderbook, reader):
+    return dict(
+        target_local_date=date(2026, 9, 15),
+        weathernext_init_time=INIT_TIME,
+        weathernext_source_object=SOURCE_OBJECT,
+        weathernext_requested_latitude=Decimal("41.80"),
+        weathernext_requested_longitude=Decimal("-87.75"),
+        evaluated_at=datetime(2026, 9, 14, 15, 0, tzinfo=UTC),
+        store=store,
+        policy=DEFAULT_POLICY,
+        get_event=get_event,
+        get_series=get_series,
+        get_market=get_market,
+        get_orderbook=get_orderbook,
+        weathernext_reader=reader,
+    )
+
+
+def test_discovery_failure_still_leaves_a_durable_run_record(tmp_path) -> None:
+    """If Kalshi event discovery itself fails, run_canonical must not silently return zero
+    records with no trace -- a durable run-level record must still exist."""
+
+    def failing_get_event(ticker: str):
+        raise WnA1Error("simulated Kalshi event discovery failure")
+
+    def unused_get_series(path: str):
+        raise AssertionError("should not be called")
+
+    def unused_reader(*args, **kwargs):
+        return [], "f" * 64, Decimal("41.80"), Decimal("-87.75")
+
+    store = open_isolated_attempt_store(tmp_path)
+    kwargs = _base_run_kwargs(
+        store,
+        get_event=failing_get_event,
+        get_series=unused_get_series,
+        get_market=lambda t: (_ for _ in ()).throw(WnA1Error("unused")),
+        get_orderbook=lambda t: (_ for _ in ()).throw(WnA1Error("unused")),
+        reader=unused_reader,
+    )
+    outcomes = _run_evaluation(**kwargs)
+    assert outcomes == ()
+    assert store.count() == 0  # no market was ever evaluated
+    assert store.run_count() == 1
+
+    run = store.get_run(
+        _run_invocation_id(
+            event_ticker="KXHIGHCHI-26SEP15",
+            target_local_date=date(2026, 9, 15),
+            weathernext_init_time=INIT_TIME,
+            weathernext_source_object=SOURCE_OBJECT,
+            weathernext_requested_latitude=Decimal("41.80"),
+            weathernext_requested_longitude=Decimal("-87.75"),
+            evaluated_at=datetime(2026, 9, 14, 15, 0, tzinfo=UTC),
+            policy_version=DEFAULT_POLICY.version,
+        )
+    )
+    assert run.discovery_state == "DISCOVERY_FAILED"
+    assert "simulated Kalshi event discovery failure" in (run.discovery_reason or "")
+    assert run.attempt_ids == ()
+    assert run.research_only is True
+    assert run.production_influence == Decimal(0)
+
+    # Duplicate exact invocation identity must fail closed.
+    with pytest.raises(AttemptStoreError, match="duplicate"):
+        _run_evaluation(**kwargs)
+
+
+def test_all_routes_abstained_still_leaves_a_durable_run_record(tmp_path) -> None:
+    """Every route ABSTAINing (e.g. Kalshi's rule shape changed) must still be durably
+    represented, even though zero markets were ever supported/evaluated."""
+    markets = [_market_row("KXHIGHCHI-26SEP15-T87", "greater", 87, None, "greater than 87")]
+    markets[0]["rules_primary"] = "unsupported rule shape"
+    event_payload = {
+        "event": {
+            "event_ticker": "KXHIGHCHI-26SEP15",
+            "series_ticker": "KXHIGHCHI",
+            "title": "x",
+            "settlement_sources": [
+                {"name": "The Weather Company", "url": "https://weather.com/kalshi"}
+            ],
+        },
+        "markets": markets,
+    }
+    now = datetime(2026, 9, 14, 15, 0, tzinfo=UTC)
+
+    def fake_get_event(ticker: str):
+        return _fake_response(event_payload, "x", now), b""
+
+    def fake_get_series(path: str):
+        return _fake_response({"series": series_raw()}, path, now)
+
+    def unused_reader(*args, **kwargs):
+        return [], "f" * 64, Decimal("41.80"), Decimal("-87.75")
+
+    store = open_isolated_attempt_store(tmp_path)
+    kwargs = _base_run_kwargs(
+        store,
+        get_event=fake_get_event,
+        get_series=fake_get_series,
+        get_market=lambda t: (_ for _ in ()).throw(WnA1Error("unused")),
+        get_orderbook=lambda t: (_ for _ in ()).throw(WnA1Error("unused")),
+        reader=unused_reader,
+    )
+    outcomes = _run_evaluation(**kwargs)
+    assert outcomes == ()
+    assert store.count() == 0
+    assert store.run_count() == 1
+
+    run = store.get_run(
+        _run_invocation_id(
+            event_ticker="KXHIGHCHI-26SEP15",
+            target_local_date=date(2026, 9, 15),
+            weathernext_init_time=INIT_TIME,
+            weathernext_source_object=SOURCE_OBJECT,
+            weathernext_requested_latitude=Decimal("41.80"),
+            weathernext_requested_longitude=Decimal("-87.75"),
+            evaluated_at=now,
+            policy_version=DEFAULT_POLICY.version,
+        )
+    )
+    assert run.discovery_state == "OK"
+    assert len(run.route_outcomes) == 1
+    ticker, state, reason = run.route_outcomes[0]
+    assert ticker == "KXHIGHCHI-26SEP15-T87"
+    assert state == "ABSTAIN"
+    assert reason is not None
+    assert run.attempt_ids == ()

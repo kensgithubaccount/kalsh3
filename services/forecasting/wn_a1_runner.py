@@ -17,12 +17,12 @@ from __future__ import annotations
 
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
-from datetime import date, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 from zoneinfo import ZoneInfo
 
 from services.market_universe import public_read
-from services.market_universe.domain import Event, Market, Series
+from services.market_universe.domain import Event, Market, Series, stable_hash
 from services.market_universe.m27e_public_acceptance import validate_response_evidence
 
 from .wn_a1_alert import (
@@ -35,6 +35,7 @@ from .wn_a1_alert import (
 from .wn_a1_attempt_store import (
     WnA1Attempt,
     WnA1AttemptStore,
+    WnA1RunAttempt,
     open_default_attempt_store,
     weathernext_member_rows,
 )
@@ -337,6 +338,9 @@ def _build_attempt(
         weathernext_source_content_hash=evidence.source_content_hash if evidence else None,
         weathernext_members=weathernext_member_rows(evidence) if evidence else (),
         kalshi_snapshot_identity=snapshot.snapshot_identity if snapshot is not None else None,
+        kalshi_orderbook_observed_at=(
+            snapshot.orderbook_observed_at if snapshot is not None else None
+        ),
         alert_policy_version=decision.policy_version,
         decision_state=decision.state.value,
         decision_gate_failures=tuple(f.value for f in decision.gate_failures),
@@ -368,6 +372,35 @@ def _build_attempt(
     )
 
 
+def _run_invocation_id(
+    *,
+    event_ticker: str,
+    target_local_date: date,
+    weathernext_init_time: datetime,
+    weathernext_source_object: str,
+    weathernext_requested_latitude: Decimal,
+    weathernext_requested_longitude: Decimal,
+    evaluated_at: datetime,
+    policy_version: str,
+) -> str:
+    """Content-derived run identity (Item D): the same inputs always produce the same
+    ``run_id``, so re-persisting a genuinely duplicate invocation fails closed, matching
+    ``WnA1Attempt``'s own ``attempt_id`` convention."""
+    return stable_hash(
+        (
+            "wn-a1-run-invocation-v1",
+            event_ticker,
+            target_local_date.isoformat(),
+            weathernext_init_time.astimezone(UTC).isoformat(),
+            weathernext_source_object,
+            str(weathernext_requested_latitude),
+            str(weathernext_requested_longitude),
+            evaluated_at.astimezone(UTC).isoformat(),
+            policy_version,
+        )
+    )
+
+
 def _run_evaluation(
     *,
     target_local_date: date,
@@ -386,11 +419,26 @@ def _run_evaluation(
 ) -> tuple[EvaluationOutcome, ...]:
     """The internal, fully-injectable WN-A1 composition seam. Every WN-A1 test uses this
     (directly, or via the lower-level functions it calls) -- never ``run_canonical``, which
-    accepts no transport overrides at all. See the module docstring."""
+    accepts no transport overrides at all. See the module docstring.
+
+    Item D: exactly one durable ``WnA1RunAttempt`` is persisted for every invocation of this
+    function, regardless of whether Kalshi event discovery fails, zero markets are
+    supported, every route abstains, or WeatherNext acquisition fails -- so a canonical
+    invocation can never return zero per-market records and leave no durable trace that it
+    was attempted at all.
+    """
     event_ticker = event_ticker_for(target_local_date)
-    discovery = discover_event(
-        event_ticker=event_ticker, get_event=get_event, get_series=get_series
-    )
+
+    discovery: EventDiscovery | None = None
+    discovery_state = "OK"
+    discovery_reason: str | None = None
+    try:
+        discovery = discover_event(
+            event_ticker=event_ticker, get_event=get_event, get_series=get_series
+        )
+    except WnA1Error as exc:
+        discovery_state = "DISCOVERY_FAILED"
+        discovery_reason = str(exc)
 
     window_start, window_end = research_probability_window(target_local_date)
     request = WeatherNextRequest(
@@ -399,6 +447,8 @@ def _run_evaluation(
         latitude=weathernext_requested_latitude,
         longitude=weathernext_requested_longitude,
     )
+    weathernext_state = "COMPLETE"
+    weathernext_reason: str | None = None
     try:
         ensemble_result = acquire_weathernext_evidence(
             request,
@@ -407,8 +457,18 @@ def _run_evaluation(
             acquired_at=evaluated_at,
             reader=weathernext_reader,
         )
-    except WnA1Error:
+    except WnA1Error as exc:
         ensemble_result = EnsembleAcquisitionResult(EnsembleStatus.INCOMPLETE, None, {})
+        weathernext_state = "ACQUISITION_FAILED"
+        weathernext_reason = str(exc)
+    if ensemble_result.status is not EnsembleStatus.COMPLETE and weathernext_reason is None:
+        weathernext_state = "INCOMPLETE"
+        weathernext_reason = (
+            f"missing WeatherNext members for {len(ensemble_result.missing_samples_by_hour)} "
+            "valid hour(s)"
+            if ensemble_result.missing_samples_by_hour
+            else "WeatherNext evidence unavailable"
+        )
 
     # A window-bounding failure (e.g. no member values fall inside the research window)
     # leaves the successfully-acquired evidence itself intact and persistable -- only the
@@ -420,9 +480,20 @@ def _run_evaluation(
         except WnA1Error:
             members = None
 
-    contracts_by_ticker = discovery.contracts_by_ticker
+    contracts_by_ticker = discovery.contracts_by_ticker if discovery is not None else {}
     outcomes: list[EvaluationOutcome] = []
-    for route in discovery.supported:
+    attempt_ids: list[str] = []
+    route_outcomes: list[tuple[str, str, str | None]] = []
+    for route in discovery.routes if discovery is not None else ():
+        if route.state is not CurrentDailyHighRouteState.SUPPORTED:
+            route_outcomes.append(
+                (
+                    route.market_ticker,
+                    route.state.value,
+                    route.reason.value if route.reason is not None else None,
+                )
+            )
+            continue
         contract = route.contract
         assert contract is not None  # noqa: S101 -- guaranteed by ROUTESTATE.SUPPORTED
         try:
@@ -459,6 +530,33 @@ def _run_evaluation(
         )
         store.append(attempt)
         outcomes.append(outcome)
+        attempt_ids.append(outcome.record.record_id)
+        route_outcomes.append((route.market_ticker, "EVALUATED", outcome.decision.state.value))
+
+    run_record = WnA1RunAttempt(
+        run_id=_run_invocation_id(
+            event_ticker=event_ticker,
+            target_local_date=target_local_date,
+            weathernext_init_time=weathernext_init_time,
+            weathernext_source_object=weathernext_source_object,
+            weathernext_requested_latitude=weathernext_requested_latitude,
+            weathernext_requested_longitude=weathernext_requested_longitude,
+            evaluated_at=evaluated_at,
+            policy_version=policy.version,
+        ),
+        target_local_date=target_local_date.isoformat(),
+        event_ticker=event_ticker,
+        evaluated_at=evaluated_at,
+        discovery_state=discovery_state,
+        discovery_reason=discovery_reason,
+        weathernext_state=weathernext_state,
+        weathernext_reason=weathernext_reason,
+        route_outcomes=tuple(route_outcomes),
+        attempt_ids=tuple(attempt_ids),
+        alert_policy_version=policy.version,
+    )
+    store.append_run(run_record)
+
     return tuple(outcomes)
 
 
@@ -470,20 +568,25 @@ def run_canonical(
     weathernext_requested_latitude: Decimal = CHICAGO_STATION_LATITUDE,
     weathernext_requested_longitude: Decimal = CHICAGO_STATION_LONGITUDE,
     evaluated_at: datetime,
-    store: WnA1AttemptStore | None = None,
-    policy: AlertPolicy = DEFAULT_POLICY,
 ) -> tuple[EvaluationOutcome, ...]:
     """The ONE canonical, research-only, real-live-acquisition WN-A1 entrypoint.
 
     live Kalshi event/contract acquisition -> reviewed WeatherNext GCS acquisition ->
     probability calculation -> current orderbook/taker economics -> side-aware candidate
     selection -> plain-English alert -> durable attempt persistence. Every dependency is
-    hardwired to the real, reviewed transport (``services.market_universe.public_read``,
-    ``gcs_zarr_reader``) -- this function accepts no getter/reader override parameters, so
-    no caller can substitute a fake and still call this the canonical live entrypoint.
-    Persists every evaluated attempt, including SKIP/TOO UNCERTAIN/DATA NOT READY, to the
-    fixed-location durable store (``open_default_attempt_store`` unless ``store`` is given
-    for an isolated run). Places, previews, or authorizes no order anywhere.
+    hardwired to the real, reviewed transport and configuration: ``DEFAULT_POLICY``,
+    ``open_default_attempt_store()``, ``services.market_universe.public_read``, and
+    ``gcs_zarr_reader``. This function accepts no store/policy/getter/reader override
+    parameters at all -- only the target-date and WeatherNext-run identity inputs needed to
+    identify the requested evaluation -- so no caller can substitute an isolated
+    persistence destination, a caller-selected policy, or a fake transport and still call
+    this the canonical live entrypoint. See ``test_run_canonical_accepts_no_transport_
+    override_parameters`` for the exact signature regression this guarantees. Persists
+    every evaluated attempt, including SKIP/TOO UNCERTAIN/DATA NOT READY, to the
+    fixed-location durable store, and always leaves a durable run-level record even when
+    zero markets are supported -- see ``_run_evaluation``. Places, previews, or authorizes
+    no order anywhere. Tests/tools that need injected dependencies use ``_run_evaluation``
+    directly instead.
     """
     return _run_evaluation(
         target_local_date=target_local_date,
@@ -492,8 +595,8 @@ def run_canonical(
         weathernext_requested_latitude=weathernext_requested_latitude,
         weathernext_requested_longitude=weathernext_requested_longitude,
         evaluated_at=evaluated_at,
-        store=store if store is not None else open_default_attempt_store(),
-        policy=policy,
+        store=open_default_attempt_store(),
+        policy=DEFAULT_POLICY,
         get_event=public_read.get_event_with_body,
         get_series=public_read.get,
         get_market=public_read.get_market,

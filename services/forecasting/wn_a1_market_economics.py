@@ -166,14 +166,23 @@ def conservative_taker_debit(cost: TakerCost | None, quantity: Decimal) -> Decim
     return (cost.depth.total_cost + cost.centicent_rounded_fee) / quantity
 
 
-def is_fresh(
-    snapshot: KalshiMarketSnapshot, at: datetime, *, max_age: timedelta = MAX_BOOK_AGE
-) -> bool:
+def is_fresh_at(observed_at: datetime, at: datetime, *, max_age: timedelta = MAX_BOOK_AGE) -> bool:
+    """The one reviewed freshness predicate, over raw timestamps rather than a live
+    ``KalshiMarketSnapshot`` object -- so a fresh-process replay that only has the
+    persisted ``orderbook_observed_at``/``evaluated_at`` pair can recompute the identical
+    freshness gate ``is_fresh`` used at evaluation time, instead of hardcoding an assumption.
+    """
     at_utc = at.astimezone(UTC)
-    observed_utc = snapshot.orderbook_observed_at.astimezone(UTC)
+    observed_utc = observed_at.astimezone(UTC)
     if observed_utc > at_utc:
         return False
     return at_utc - observed_utc <= max_age
+
+
+def is_fresh(
+    snapshot: KalshiMarketSnapshot, at: datetime, *, max_age: timedelta = MAX_BOOK_AGE
+) -> bool:
+    return is_fresh_at(snapshot.orderbook_observed_at, at, max_age=max_age)
 
 
 def _parse_book(

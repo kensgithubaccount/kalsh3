@@ -144,8 +144,10 @@ def build_ensemble_evidence(
     """Validate and bind one exact WeatherNext ensemble slice; never smooths or subsets.
 
     Hard rejects (``WnA1Error``): wrong model/version, wrong variable, wrong/mismatched
-    init_time, invalid unit, out-of-range sample id, duplicate sample within one valid
-    hour, or a lead_time/lead_subtime/valid_time reconstruction mismatch. Missing members
+    init_time, an ``init_time`` after ``acquired_at`` (a forecast cannot exist before it is
+    acquired -- see the chronology check below), invalid unit, out-of-range sample id,
+    duplicate sample within one valid hour, or a lead_time/lead_subtime/valid_time
+    reconstruction mismatch. Missing members
     for one or more retained hours are NOT an error -- they are reported as
     ``EnsembleStatus.INCOMPLETE`` so the caller can alert ``DATA NOT READY`` rather than
     silently dropping a sample.
@@ -160,6 +162,14 @@ def build_ensemble_evidence(
     _aware(init_time)
     _aware(acquired_at)
     init_utc = init_time.astimezone(UTC)
+    acquired_utc = acquired_at.astimezone(UTC)
+    if init_utc > acquired_utc:
+        raise WnA1Error(
+            "WeatherNext forecast initialization time is after its acquisition/evaluation "
+            f"time (init_time={init_utc.isoformat()}, acquired_at={acquired_utc.isoformat()}); "
+            "a forecast cannot be acquired before it is initialized -- retrospective data "
+            "must never be relabeled as prospective"
+        )
     if not isinstance(source_content_hash, str) or len(source_content_hash) != 64:
         raise WnA1Error("WeatherNext source content hash missing or malformed")
     requested_lon_0_360 = to_0_360(requested_longitude)

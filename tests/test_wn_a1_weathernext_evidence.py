@@ -138,6 +138,33 @@ def test_naive_valid_time_rejected() -> None:
         build(raw_rows=rows)
 
 
+def test_init_time_after_acquired_at_rejected() -> None:
+    """Item B's exact counterexample: init_time=12:00 UTC, acquired_at=11:59 UTC -> reject.
+    A forecast initialization cannot exist by acquisition time if it is timestamped after
+    it -- this must fail closed rather than silently accepting a chronologically-impossible
+    (and therefore potentially retrospective-relabeled-as-prospective) evidence bundle."""
+    init_time = datetime(2026, 9, 14, 12, 0, tzinfo=UTC)
+    acquired_at = datetime(2026, 9, 14, 11, 59, tzinfo=UTC)
+    source_object = (
+        "gs://weathernext3_spatial/weathernext_3_0_0/zarr/2026_to_present/"
+        "20260914_12hr_XX_preds/predictions.zarr/"
+    )
+    with pytest.raises(WnA1Error, match="acquisition"):
+        build(
+            init_time=init_time,
+            acquired_at=acquired_at,
+            source_object=source_object,
+            raw_rows=[],
+        )
+
+
+def test_init_time_equal_to_acquired_at_is_accepted() -> None:
+    """The boundary case (init_time == acquired_at) must NOT be rejected -- only a strictly
+    later init_time is chronologically impossible."""
+    result = build(init_time=INIT_TIME, acquired_at=INIT_TIME)
+    assert result.status is EnsembleStatus.COMPLETE
+
+
 def test_source_object_mismatched_init_time_rejected() -> None:
     with pytest.raises(WnA1Error, match="source object"):
         build(init_time=datetime(2026, 9, 15, 0, 0, tzinfo=UTC))

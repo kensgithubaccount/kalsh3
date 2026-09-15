@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 import sqlite3
-from datetime import UTC, datetime
+from dataclasses import replace
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 
 import pytest
 
+from services.forecasting.wn_a1_alert import GateFailure
 from services.forecasting.wn_a1_attempt_store import (
     AttemptStoreError,
     WnA1Attempt,
@@ -57,6 +59,9 @@ def _evidence(kelvin_by_sample: dict[int, Decimal]):
     return result.evidence
 
 
+_UNSET_OBSERVED_AT = object()
+
+
 def _attempt(
     *,
     evaluated_at: datetime,
@@ -64,12 +69,32 @@ def _attempt(
     decision_state: str,
     side: str | None,
     window_status: str = WindowStatus.NOT_ESTABLISHED.value,
+    kalshi_orderbook_observed_at: datetime | object | None = _UNSET_OBSERVED_AT,
+    decision_gate_failures: tuple[str, ...] = (),
 ) -> WnA1Attempt:
     from services.forecasting.wn_a1_alert import DEFAULT_POLICY
     from services.market_universe.domain import stable_hash
 
+    # Default to a fresh snapshot (observed exactly at evaluation time) so every existing
+    # caller that doesn't care about Item A's freshness mechanics keeps getting a
+    # market_fresh=True replay, matching this module's pre-existing fixtures. Callers that
+    # want to test staleness or a missing snapshot pass an explicit value (including None).
+    if kalshi_orderbook_observed_at is _UNSET_OBSERVED_AT:
+        kalshi_orderbook_observed_at = evaluated_at
+    assert kalshi_orderbook_observed_at is None or isinstance(
+        kalshi_orderbook_observed_at, datetime
+    )
+    observed_at_iso = (
+        "" if kalshi_orderbook_observed_at is None else kalshi_orderbook_observed_at.isoformat()
+    )
     attempt_id = stable_hash(
-        ("test-attempt", evidence.evidence_identity, decision_state, evaluated_at.isoformat())
+        (
+            "test-attempt",
+            evidence.evidence_identity,
+            decision_state,
+            evaluated_at.isoformat(),
+            observed_at_iso,
+        )
     )
     return WnA1Attempt(
         attempt_id=attempt_id,
@@ -97,9 +122,10 @@ def _attempt(
         weathernext_source_content_hash=evidence.source_content_hash,
         weathernext_members=weathernext_member_rows(evidence),
         kalshi_snapshot_identity="kalshi-snapshot-hash",
+        kalshi_orderbook_observed_at=kalshi_orderbook_observed_at,
         alert_policy_version=DEFAULT_POLICY.version,
         decision_state=decision_state,
-        decision_gate_failures=(),
+        decision_gate_failures=decision_gate_failures,
         side=side,
         model_probability_yes=Decimal("0.65625"),
         yes_conservative_debit=Decimal("0.27"),
@@ -301,6 +327,64 @@ def test_replay_decision_reproduces_data_not_ready_without_evidence(tmp_path) ->
     reopened = store.get(no_evidence_attempt.attempt_id)
     replayed = replay_decision(reopened)
     assert replayed.state is AlertState.DATA_NOT_READY
+
+
+def test_replay_decision_reproduces_market_stale_state(tmp_path) -> None:
+    """Item A's exact required counterexample: the original orderbook snapshot was more
+    than 5 minutes old, so the original decision was DATA NOT READY / MARKET_STALE. A
+    fresh-process replay must recompute freshness from the persisted
+    ``kalshi_orderbook_observed_at``/``evaluated_at`` pair and reproduce exactly the same
+    state and gate failure -- never hardcode ``market_fresh=True``."""
+    evidence = _hot_evidence()
+    evaluated_at = datetime(2026, 9, 15, 15, 0, tzinfo=UTC)
+    stale_observed_at = evaluated_at - timedelta(minutes=6)
+    attempt = _attempt(
+        evaluated_at=evaluated_at,
+        evidence=evidence,
+        decision_state="DATA NOT READY",
+        side=None,
+        window_status=WindowStatus.ESTABLISHED_CIVIL_LOCAL_DAY.value,
+        kalshi_orderbook_observed_at=stale_observed_at,
+        decision_gate_failures=(GateFailure.MARKET_STALE.value,),
+    )
+    store = open_isolated_attempt_store(tmp_path)
+    store.append(attempt)
+
+    fresh_store = open_isolated_attempt_store(tmp_path)
+    reopened = fresh_store.get(attempt.attempt_id)
+    assert reopened.kalshi_orderbook_observed_at == stale_observed_at
+    replayed = replay_decision(reopened)
+    assert replayed.state is AlertState.DATA_NOT_READY
+    assert GateFailure.MARKET_STALE in replayed.gate_failures
+
+
+def test_replay_decision_preserves_missing_market_snapshot_state(tmp_path) -> None:
+    """If the original run never acquired a market snapshot at all (as opposed to
+    acquiring a stale one), that unavailable state must be preserved on replay too --
+    never silently treated as fresh."""
+    evidence = _hot_evidence()
+    evaluated_at = datetime(2026, 9, 15, 15, 0, tzinfo=UTC)
+    attempt = _attempt(
+        evaluated_at=evaluated_at,
+        evidence=evidence,
+        decision_state="DATA NOT READY",
+        side=None,
+        window_status=WindowStatus.ESTABLISHED_CIVIL_LOCAL_DAY.value,
+        kalshi_orderbook_observed_at=None,
+        decision_gate_failures=(
+            GateFailure.MARKET_STALE.value,
+            GateFailure.NO_EXECUTABLE_MARKET_PRICE.value,
+        ),
+    )
+    attempt = replace(attempt, yes_conservative_debit=None, no_conservative_debit=None)
+    store = open_isolated_attempt_store(tmp_path)
+    store.append(attempt)
+
+    reopened = open_isolated_attempt_store(tmp_path).get(attempt.attempt_id)
+    assert reopened.kalshi_orderbook_observed_at is None
+    replayed = replay_decision(reopened)
+    assert replayed.state is AlertState.DATA_NOT_READY
+    assert GateFailure.MARKET_STALE in replayed.gate_failures
 
 
 def test_tampered_member_rows_fail_replay_closed(tmp_path) -> None:
