@@ -10,6 +10,8 @@ Reviewed AAA surfaces:
 - `https://gasprices.aaa.com/` — national regular current, yesterday, week-ago, and month-ago rows;
 - `https://gasprices.aaa.com/state-gas-price-averages/` — first-party current state regular rows.
 
+Kalshi discovery is series-scoped at `/trade-api/v2/markets?series_ticker=KXAAAGASD&status=open&limit=1000`, followed only by API-returned cursor pages. The collector never scans a generic first page and filters locally. An empty completed series query is `NO_MARKET`; transport/HTTP failure is `DISCOVERY_FAILED`; malformed response is `UNSUPPORTED_RESPONSE`; and an invalid or exhausted cursor is `PAGINATION_INCOMPLETE`.
+
 Cadence for a future 10–15-date run is 2 minutes for Kalshi books and 5 minutes for AAA pages
 during the bounded expected update window, with 15-minute outside-window polling. This initial
 implementation exposes a single-cycle command; a scheduler must register each cycle before it

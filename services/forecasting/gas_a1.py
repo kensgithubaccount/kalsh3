@@ -18,7 +18,7 @@ from datetime import UTC, date, datetime
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
 from typing import Any, Protocol
-from urllib.parse import urlsplit
+from urllib.parse import urlencode, urlsplit
 
 from services.market_universe.orderbook_snapshot import acquire_orderbook_snapshot
 from services.market_universe.public_read import get, get_market_with_body
@@ -34,6 +34,14 @@ PREDICTOR_VERSION = "gas-a1-predictors-v1"
 
 class GasA1Error(RuntimeError):
     """A required authority, source, schema, or persistence invariant failed."""
+
+
+class DiscoveryError(GasA1Error):
+    """A series-scoped market discovery attempt did not complete safely."""
+
+    def __init__(self, classification: str, detail: str) -> None:
+        super().__init__(detail)
+        self.classification = classification
 
 
 class AaaTransport(Protocol):
@@ -426,30 +434,68 @@ def _market_rows(payload: dict[str, Any]) -> tuple[dict[str, Any], ...]:
     rows = payload.get("markets")
     if not isinstance(rows, list) or any(not isinstance(row, dict) for row in rows):
         raise GasA1Error("Kalshi market response shape is unsupported")
-    return tuple(
-        row
-        for row in rows
-        if isinstance(row, dict) and str(row.get("ticker", "")).startswith(SERIES)
-    )
+    if any(not str(row.get("ticker", "")).startswith(SERIES + "-") for row in rows):
+        raise DiscoveryError(
+            "UNSUPPORTED_RESPONSE", "series-scoped response contained a foreign ticker"
+        )
+    return tuple(row for row in rows if isinstance(row, dict))
+
+
+def discover_series_markets(
+    fetch: Any = get, *, max_pages: int = 250
+) -> tuple[dict[str, Any], ...]:
+    """Discover only KXAAAGASD markets, consuming every deterministic cursor page."""
+    if max_pages <= 0:
+        raise DiscoveryError("PAGINATION_INCOMPLETE", "max_pages must be positive")
+    cursor: str | None = None
+    seen_cursors: set[str] = set()
+    discovered: list[dict[str, Any]] = []
+    for _page in range(max_pages):
+        parameters = {"series_ticker": SERIES, "status": "open", "limit": "1000"}
+        if cursor is not None:
+            parameters["cursor"] = cursor
+        path = "/trade-api/v2/markets?" + urlencode(parameters)
+        try:
+            evidence = fetch(path)
+        except Exception as exc:
+            raise DiscoveryError("DISCOVERY_FAILED", str(exc)) from exc
+        if not isinstance(evidence, dict) or evidence.get("classification") != "SUCCESS":
+            raise DiscoveryError("DISCOVERY_FAILED", "series-scoped public response failed")
+        payload = evidence.get("payload")
+        if not isinstance(payload, dict):
+            raise DiscoveryError("UNSUPPORTED_RESPONSE", "series-scoped payload is not an object")
+        try:
+            discovered.extend(_market_rows(payload))
+        except DiscoveryError:
+            raise
+        next_cursor = payload.get("cursor")
+        if next_cursor in (None, ""):
+            return tuple(discovered)
+        if not isinstance(next_cursor, str) or next_cursor in seen_cursors:
+            raise DiscoveryError("PAGINATION_INCOMPLETE", "cursor was malformed or repeated")
+        seen_cursors.add(next_cursor)
+        cursor = next_cursor
+    raise DiscoveryError("PAGINATION_INCOMPLETE", "series-scoped pagination exceeded max_pages")
 
 
 def collect_once(
-    store: GasA1Store, *, run_id: str | None = None, aaa: AaaTransport | None = None
+    store: GasA1Store,
+    *,
+    run_id: str | None = None,
+    aaa: AaaTransport | None = None,
+    discovery_fetch: Any = get,
 ) -> str:
     now = datetime.now(UTC)
     run_id = run_id or hashlib.sha256(f"gas-a1:{now.isoformat()}".encode()).hexdigest()
     store.register_run(run_id, now)
     aaa_transport = aaa or AaaHttpTransport()
     try:
-        market_evidence = get("/trade-api/v2/markets?status=open&limit=1000")
-        payload = market_evidence.get("payload")
-        rows = (
-            _market_rows(payload)
-            if market_evidence.get("classification") == "SUCCESS" and isinstance(payload, dict)
-            else ()
-        )
+        rows = discover_series_markets(discovery_fetch)
+    except DiscoveryError as exc:
+        store.failure(run_id, exc.classification, str(exc), datetime.now(UTC))
+        return run_id
     except Exception as exc:
-        store.failure(run_id, "NO_MARKET", str(exc), datetime.now(UTC))
+        store.failure(run_id, "DISCOVERY_FAILED", str(exc), datetime.now(UTC))
         return run_id
     if not rows:
         store.failure(

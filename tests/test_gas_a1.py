@@ -1,3 +1,4 @@
+import sqlite3
 from datetime import UTC, datetime
 from decimal import Decimal
 from pathlib import Path
@@ -5,9 +6,12 @@ from pathlib import Path
 import pytest
 
 from services.forecasting.gas_a1 import (
+    DiscoveryError,
     GasA1Error,
     GasA1Store,
+    collect_once,
     conservative_taker_debits,
+    discover_series_markets,
     measure_update_ordering,
     parse_aaa_html,
     parse_active_market,
@@ -85,8 +89,77 @@ def test_store_reopens_and_registers_before_rows(tmp_path: Path) -> None:
     store.register_run("r1", NOW)
     store.source("r1", {"raw_sha256": "x"})
     reopened = GasA1Store(path)
-    import sqlite3
-
     with sqlite3.connect(reopened.path) as db:
         assert db.execute("select count(*) from runs").fetchone()[0] == 1
         assert db.execute("select count(*) from source_observations").fetchone()[0] == 1
+
+
+def _market_evidence(
+    markets: list[dict[str, object]], cursor: str | None = None
+) -> dict[str, object]:
+    payload: dict[str, object] = {"markets": markets}
+    if cursor is not None:
+        payload["cursor"] = cursor
+    return {"classification": "SUCCESS", "payload": payload}
+
+
+def test_series_discovery_does_not_scan_or_filter_generic_first_page() -> None:
+    requested: list[str] = []
+    generic_page: list[dict[str, object]] = [
+        {"ticker": f"KXOTHER-{index}"} for index in range(1000)
+    ]
+    gas_market: dict[str, object] = {"ticker": "KXAAAGASD-26SEP15-3.20"}
+    assert len(generic_page) == 1000
+
+    def fetch(path: str) -> dict[str, object]:
+        requested.append(path)
+        assert "series_ticker=KXAAAGASD" in path
+        assert "status=open" in path
+        return _market_evidence([gas_market])
+
+    result = discover_series_markets(fetch)
+    assert result == (gas_market,)
+    assert len(requested) == 1
+    assert all("series_ticker=KXAAAGASD" in path for path in requested)
+
+
+def test_series_discovery_paginates_and_rejects_incomplete_cursor() -> None:
+    requested: list[str] = []
+
+    def fetch(path: str) -> dict[str, object]:
+        requested.append(path)
+        if len(requested) == 1:
+            return _market_evidence([], "next")
+        return _market_evidence([{"ticker": "KXAAAGASD-26SEP16-3.30"}])
+
+    assert len(discover_series_markets(fetch)) == 1
+    assert "cursor=next" in requested[1]
+
+    def incomplete(_path: str) -> dict[str, object]:
+        return _market_evidence([], "same")
+
+    with pytest.raises(DiscoveryError, match="cursor"):
+        discover_series_markets(incomplete, max_pages=2)
+
+
+def test_empty_series_query_is_durable_no_market(tmp_path: Path) -> None:
+    store = GasA1Store(tmp_path / "gas.sqlite3")
+    run_id = "empty"
+    collect_once(store, run_id=run_id, discovery_fetch=lambda _path: _market_evidence([]))
+    with sqlite3.connect(store.path) as db:
+        assert db.execute("select kind from failures where run_id=?", (run_id,)).fetchone() == (
+            "NO_MARKET",
+        )
+
+
+def test_series_query_failure_is_not_no_market(tmp_path: Path) -> None:
+    store = GasA1Store(tmp_path / "gas.sqlite3")
+
+    def failed(_path: str) -> dict[str, object]:
+        return {"classification": "HTTP_OR_NETWORK_FAILURE"}
+
+    collect_once(store, run_id="failed", discovery_fetch=failed)
+    with sqlite3.connect(store.path) as db:
+        assert db.execute("select kind from failures where run_id=?", ("failed",)).fetchone() == (
+            "DISCOVERY_FAILED",
+        )
