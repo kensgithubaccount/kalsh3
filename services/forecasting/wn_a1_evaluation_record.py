@@ -1,9 +1,12 @@
 """WN-A1 evaluation-record preservation and fresh-process replay.
 
 Every evaluated opportunity -- not only the ones a human acted on -- must be retained to
-prevent selection bias. ``EvaluationRecord`` binds only immutable evidence identities
-(it never re-fetches anything), so replaying it in a fresh process must reproduce the
-identical ``record_id`` from the same bound identities: see ``replay_record_id``.
+prevent selection bias. ``EvaluationRecord`` binds only immutable evidence identities and
+side-aware economics (it never re-fetches anything), so replaying it in a fresh process
+must reproduce the identical ``record_id`` from the same bound identities: see
+``replay_record_id``. Durable, on-disk, fresh-process-reopenable persistence of the full
+evidence (not just this identity binding) is ``wn_a1_attempt_store.WnA1AttemptStore``,
+keyed by this same ``record_id``.
 """
 
 from __future__ import annotations
@@ -18,7 +21,7 @@ from .wn_a1_alert import AlertDecision
 from .wn_a1_current_daily_high_authority import POLICY_VERSION as CONTRACT_POLICY_VERSION
 from .wn_a1_domain import PRODUCTION_INFLUENCE, RESEARCH_ONLY, WnA1Error
 
-RECORD_SCHEMA_VERSION = "wn-a1-evaluation-record-v1"
+RECORD_SCHEMA_VERSION = "wn-a1-evaluation-record-v2-side-aware"
 
 
 @dataclass(frozen=True, slots=True)
@@ -33,10 +36,14 @@ class EvaluationRecord:
     alert_policy_version: str
     decision_state: str
     decision_gate_failures: tuple[str, ...]
-    raw_probability: Decimal | None
-    market_yes_probability: Decimal | None
-    gap_pp: Decimal | None
-    buffered_gap_pp: Decimal | None
+    side: str | None
+    model_probability_yes: Decimal | None
+    yes_conservative_debit: Decimal | None
+    no_conservative_debit: Decimal | None
+    yes_gap_pp: Decimal | None
+    yes_buffered_gap_pp: Decimal | None
+    no_gap_pp: Decimal | None
+    no_buffered_gap_pp: Decimal | None
     evaluated_at: datetime
     research_only: bool = RESEARCH_ONLY
     production_influence: Decimal = PRODUCTION_INFLUENCE
@@ -66,8 +73,14 @@ class EvaluationRecord:
             alert_policy_version=decision.policy_version,
             decision_state=decision.state.value,
             decision_gate_failures=tuple(f.value for f in decision.gate_failures),
-            raw_probability=_dec(decision.raw_probability),
-            market_yes_probability=_dec(decision.market_yes_probability),
+            side=decision.side.value if decision.side is not None else None,
+            model_probability_yes=_dec(decision.model_probability_yes),
+            yes_conservative_debit=_dec(decision.yes_conservative_debit),
+            no_conservative_debit=_dec(decision.no_conservative_debit),
+            yes_gap_pp=_dec(decision.yes_gap_pp),
+            yes_buffered_gap_pp=_dec(decision.yes_buffered_gap_pp),
+            no_gap_pp=_dec(decision.no_gap_pp),
+            no_buffered_gap_pp=_dec(decision.no_buffered_gap_pp),
             evaluated_at_iso=evaluated_at_utc.isoformat(),
         )
         return cls(
@@ -81,10 +94,14 @@ class EvaluationRecord:
             alert_policy_version=decision.policy_version,
             decision_state=decision.state.value,
             decision_gate_failures=tuple(f.value for f in decision.gate_failures),
-            raw_probability=decision.raw_probability,
-            market_yes_probability=decision.market_yes_probability,
-            gap_pp=decision.gap_pp,
-            buffered_gap_pp=decision.buffered_gap_pp,
+            side=decision.side.value if decision.side is not None else None,
+            model_probability_yes=decision.model_probability_yes,
+            yes_conservative_debit=decision.yes_conservative_debit,
+            no_conservative_debit=decision.no_conservative_debit,
+            yes_gap_pp=decision.yes_gap_pp,
+            yes_buffered_gap_pp=decision.yes_buffered_gap_pp,
+            no_gap_pp=decision.no_gap_pp,
+            no_buffered_gap_pp=decision.no_buffered_gap_pp,
             evaluated_at=evaluated_at_utc,
         )
 
@@ -94,7 +111,8 @@ def replay_record_id(record: EvaluationRecord) -> str:
 
     A fresh process must produce the same value from the same persisted record; a caller
     that wants a true end-to-end replay should instead re-run evaluation from the original
-    bound WeatherNext/Kalshi evidence and compare the resulting record to this one.
+    bound WeatherNext/Kalshi evidence and compare the resulting record to this one, or use
+    ``wn_a1_attempt_store.replay_decision`` for a genuine fresh-process decision replay.
     """
     return _record_material(
         market_ticker=record.market_ticker,
@@ -106,8 +124,14 @@ def replay_record_id(record: EvaluationRecord) -> str:
         alert_policy_version=record.alert_policy_version,
         decision_state=record.decision_state,
         decision_gate_failures=record.decision_gate_failures,
-        raw_probability=_dec(record.raw_probability),
-        market_yes_probability=_dec(record.market_yes_probability),
+        side=record.side,
+        model_probability_yes=_dec(record.model_probability_yes),
+        yes_conservative_debit=_dec(record.yes_conservative_debit),
+        no_conservative_debit=_dec(record.no_conservative_debit),
+        yes_gap_pp=_dec(record.yes_gap_pp),
+        yes_buffered_gap_pp=_dec(record.yes_buffered_gap_pp),
+        no_gap_pp=_dec(record.no_gap_pp),
+        no_buffered_gap_pp=_dec(record.no_buffered_gap_pp),
         evaluated_at_iso=record.evaluated_at.isoformat(),
     )
 
@@ -127,8 +151,14 @@ def _record_material(
     alert_policy_version: str,
     decision_state: str,
     decision_gate_failures: tuple[str, ...],
-    raw_probability: str | None,
-    market_yes_probability: str | None,
+    side: str | None,
+    model_probability_yes: str | None,
+    yes_conservative_debit: str | None,
+    no_conservative_debit: str | None,
+    yes_gap_pp: str | None,
+    yes_buffered_gap_pp: str | None,
+    no_gap_pp: str | None,
+    no_buffered_gap_pp: str | None,
     evaluated_at_iso: str,
 ) -> str:
     return stable_hash(
@@ -143,8 +173,14 @@ def _record_material(
             alert_policy_version,
             decision_state,
             decision_gate_failures,
-            raw_probability,
-            market_yes_probability,
+            side,
+            model_probability_yes,
+            yes_conservative_debit,
+            no_conservative_debit,
+            yes_gap_pp,
+            yes_buffered_gap_pp,
+            no_gap_pp,
+            no_buffered_gap_pp,
             evaluated_at_iso,
         )
     )

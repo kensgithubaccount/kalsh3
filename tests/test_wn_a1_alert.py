@@ -7,12 +7,13 @@ import pytest
 
 from services.forecasting.wn_a1_alert import (
     DEFAULT_POLICY,
+    AlertPolicy,
     GateFailure,
     decide_alert,
     render_primary_alert,
 )
 from services.forecasting.wn_a1_current_daily_high_authority import WindowStatus
-from services.forecasting.wn_a1_domain import BANNED_ALERT_WORDS, AlertState, WnA1Error
+from services.forecasting.wn_a1_domain import BANNED_ALERT_WORDS, AlertSide, AlertState, WnA1Error
 from services.forecasting.wn_a1_probability import BoundaryRiskDiagnostic, RawProbabilityResult
 
 
@@ -48,40 +49,84 @@ def reversing_boundary() -> BoundaryRiskDiagnostic:
     )
 
 
-def test_take_a_look_when_every_gate_passes() -> None:
+def test_take_a_look_when_yes_side_clears_every_gate() -> None:
+    # model YES=42%, YES all-in debit=27% -> 15pp raw gap, 10pp buffered gap.
     decision = decide_alert(
         contract_supported=True,
         ensemble_complete=True,
         market_fresh=True,
-        market_yes_probability=Decimal("0.27"),
+        yes_conservative_debit=Decimal("0.27"),
+        no_conservative_debit=Decimal("0.90"),
         raw=raw(Decimal("0.42")),
         window_status=WindowStatus.ESTABLISHED_CIVIL_LOCAL_DAY,
         boundary=stable_boundary(),
     )
     assert decision.state is AlertState.TAKE_A_LOOK
     assert decision.gate_failures == ()
-    assert decision.gap_pp == Decimal("15")
+    assert decision.side is AlertSide.YES
+    assert decision.yes_gap_pp == Decimal("15.00")
+    assert decision.selected_gap_pp == Decimal("15.00")
 
 
-def test_skip_when_raw_gap_below_threshold() -> None:
+def test_take_a_look_when_no_side_clears_every_gate() -> None:
+    # model YES=20% -> model NO=80%. NO all-in debit is cheap (0.60) -> 20pp NO-side gap;
+    # the YES side is nowhere close (debit 0.50 against a 20% model probability).
     decision = decide_alert(
         contract_supported=True,
         ensemble_complete=True,
         market_fresh=True,
-        market_yes_probability=Decimal("0.30"),
+        yes_conservative_debit=Decimal("0.50"),
+        no_conservative_debit=Decimal("0.60"),
+        raw=raw(Decimal("0.20")),
+        window_status=WindowStatus.ESTABLISHED_CIVIL_LOCAL_DAY,
+        boundary=stable_boundary(),
+    )
+    assert decision.state is AlertState.TAKE_A_LOOK
+    assert decision.side is AlertSide.NO
+    assert decision.no_gap_pp == Decimal("20.00")
+
+
+def test_absolute_gap_without_executable_side_is_skipped() -> None:
+    """Item 4's required counterexample: a large ABSOLUTE model/YES-ask gap must never be
+    trade direction. model YES=10%, YES ask~40% (30pp absolute gap -- the old buggy logic
+    would flag this), but the NO all-in debit is 95%: neither side actually clears the
+    buffered threshold once fees/spread are accounted for, so this must SKIP."""
+    decision = decide_alert(
+        contract_supported=True,
+        ensemble_complete=True,
+        market_fresh=True,
+        yes_conservative_debit=Decimal("0.40"),
+        no_conservative_debit=Decimal("0.95"),
+        raw=raw(Decimal("0.10")),
+        window_status=WindowStatus.ESTABLISHED_CIVIL_LOCAL_DAY,
+        boundary=stable_boundary(),
+    )
+    assert decision.state is AlertState.SKIP
+    assert decision.side is None
+    assert decision.gate_failures == (GateFailure.NO_SIDE_CLEARS_RAW_THRESHOLD,)
+    # The old |model - yes_ask| logic would have computed a 30pp gap here.
+    old_buggy_absolute_gap = abs(Decimal("0.10") - Decimal("0.40")) * 100
+    assert old_buggy_absolute_gap == Decimal("30.00")
+
+
+def test_skip_when_no_side_clears_raw_threshold() -> None:
+    decision = decide_alert(
+        contract_supported=True,
+        ensemble_complete=True,
+        market_fresh=True,
+        yes_conservative_debit=Decimal("0.35"),
+        no_conservative_debit=Decimal("0.68"),
         raw=raw(Decimal("0.35")),
         window_status=WindowStatus.ESTABLISHED_CIVIL_LOCAL_DAY,
         boundary=stable_boundary(),
     )
     assert decision.state is AlertState.SKIP
-    assert decision.gate_failures == (GateFailure.GAP_BELOW_RAW_THRESHOLD,)
+    assert decision.gate_failures == (GateFailure.NO_SIDE_CLEARS_RAW_THRESHOLD,)
 
 
 def test_skip_when_gap_survives_raw_but_not_buffer() -> None:
     # Use a wider conservative buffer (9pp) so a 12pp raw gap clears the 10pp raw
     # threshold but the buffered gap (12 - 9 = 3pp) falls below the 5pp buffered floor.
-    from services.forecasting.wn_a1_alert import AlertPolicy
-
     policy = AlertPolicy(
         raw_gap_threshold_pp=Decimal(10),
         buffered_gap_threshold_pp=Decimal(5),
@@ -91,14 +136,15 @@ def test_skip_when_gap_survives_raw_but_not_buffer() -> None:
         contract_supported=True,
         ensemble_complete=True,
         market_fresh=True,
-        market_yes_probability=Decimal("0.30"),
-        raw=raw(Decimal("0.42")),  # 12pp raw gap
+        yes_conservative_debit=Decimal("0.30"),
+        no_conservative_debit=Decimal("0.90"),
+        raw=raw(Decimal("0.42")),  # 12pp raw gap on YES
         window_status=WindowStatus.ESTABLISHED_CIVIL_LOCAL_DAY,
         boundary=stable_boundary(),
         policy=policy,
     )
     assert decision.state is AlertState.SKIP
-    assert decision.gate_failures == (GateFailure.GAP_BELOW_BUFFERED_THRESHOLD,)
+    assert decision.gate_failures == (GateFailure.NO_SIDE_CLEARS_BUFFERED_THRESHOLD,)
 
 
 def test_too_uncertain_when_window_not_established() -> None:
@@ -106,12 +152,14 @@ def test_too_uncertain_when_window_not_established() -> None:
         contract_supported=True,
         ensemble_complete=True,
         market_fresh=True,
-        market_yes_probability=Decimal("0.27"),
+        yes_conservative_debit=Decimal("0.27"),
+        no_conservative_debit=Decimal("0.90"),
         raw=raw(Decimal("0.42")),
         window_status=WindowStatus.NOT_ESTABLISHED,
         boundary=stable_boundary(),
     )
     assert decision.state is AlertState.TOO_UNCERTAIN
+    assert decision.side is AlertSide.YES
     assert GateFailure.WINDOW_NOT_ESTABLISHED in decision.gate_failures
 
 
@@ -120,7 +168,8 @@ def test_too_uncertain_when_boundary_stress_reverses_candidate() -> None:
         contract_supported=True,
         ensemble_complete=True,
         market_fresh=True,
-        market_yes_probability=Decimal("0.27"),
+        yes_conservative_debit=Decimal("0.27"),
+        no_conservative_debit=Decimal("0.90"),
         raw=raw(Decimal("0.42")),
         window_status=WindowStatus.ESTABLISHED_CIVIL_LOCAL_DAY,
         boundary=reversing_boundary(),
@@ -134,13 +183,15 @@ def test_data_not_ready_when_contract_not_supported() -> None:
         contract_supported=False,
         ensemble_complete=True,
         market_fresh=True,
-        market_yes_probability=Decimal("0.27"),
+        yes_conservative_debit=Decimal("0.27"),
+        no_conservative_debit=Decimal("0.90"),
         raw=raw(Decimal("0.42")),
         window_status=None,
         boundary=None,
     )
     assert decision.state is AlertState.DATA_NOT_READY
     assert GateFailure.CONTRACT_NOT_SUPPORTED in decision.gate_failures
+    assert decision.side is None
 
 
 def test_data_not_ready_when_ensemble_incomplete() -> None:
@@ -148,7 +199,8 @@ def test_data_not_ready_when_ensemble_incomplete() -> None:
         contract_supported=True,
         ensemble_complete=False,
         market_fresh=True,
-        market_yes_probability=Decimal("0.27"),
+        yes_conservative_debit=Decimal("0.27"),
+        no_conservative_debit=Decimal("0.90"),
         raw=None,
         window_status=WindowStatus.ESTABLISHED_CIVIL_LOCAL_DAY,
         boundary=None,
@@ -162,7 +214,8 @@ def test_data_not_ready_when_market_stale() -> None:
         contract_supported=True,
         ensemble_complete=True,
         market_fresh=False,
-        market_yes_probability=Decimal("0.27"),
+        yes_conservative_debit=Decimal("0.27"),
+        no_conservative_debit=Decimal("0.90"),
         raw=raw(Decimal("0.42")),
         window_status=WindowStatus.ESTABLISHED_CIVIL_LOCAL_DAY,
         boundary=stable_boundary(),
@@ -171,18 +224,37 @@ def test_data_not_ready_when_market_stale() -> None:
     assert GateFailure.MARKET_STALE in decision.gate_failures
 
 
-def test_data_not_ready_when_no_executable_price() -> None:
+def test_data_not_ready_when_no_executable_price_on_either_side() -> None:
     decision = decide_alert(
         contract_supported=True,
         ensemble_complete=True,
         market_fresh=True,
-        market_yes_probability=None,
+        yes_conservative_debit=None,
+        no_conservative_debit=None,
         raw=raw(Decimal("0.42")),
         window_status=WindowStatus.ESTABLISHED_CIVIL_LOCAL_DAY,
         boundary=stable_boundary(),
     )
     assert decision.state is AlertState.DATA_NOT_READY
     assert GateFailure.NO_EXECUTABLE_MARKET_PRICE in decision.gate_failures
+
+
+def test_one_sided_book_still_evaluates_the_available_side() -> None:
+    """Only the YES side has a displayed, executable price; NO is illiquid. YES alone must
+    still be evaluatable -- this is not NO_EXECUTABLE_MARKET_PRICE."""
+    decision = decide_alert(
+        contract_supported=True,
+        ensemble_complete=True,
+        market_fresh=True,
+        yes_conservative_debit=Decimal("0.27"),
+        no_conservative_debit=None,
+        raw=raw(Decimal("0.42")),
+        window_status=WindowStatus.ESTABLISHED_CIVIL_LOCAL_DAY,
+        boundary=stable_boundary(),
+    )
+    assert decision.state is AlertState.TAKE_A_LOOK
+    assert decision.side is AlertSide.YES
+    assert decision.no_gap_pp is None
 
 
 @pytest.mark.parametrize(
@@ -192,7 +264,8 @@ def test_data_not_ready_when_no_executable_price() -> None:
             contract_supported=True,
             ensemble_complete=True,
             market_fresh=True,
-            market_yes_probability=Decimal("0.27"),
+            yes_conservative_debit=Decimal("0.27"),
+            no_conservative_debit=Decimal("0.90"),
             raw=raw(Decimal("0.42")),
             window_status=WindowStatus.ESTABLISHED_CIVIL_LOCAL_DAY,
             boundary=stable_boundary(),
@@ -201,8 +274,9 @@ def test_data_not_ready_when_no_executable_price() -> None:
             contract_supported=True,
             ensemble_complete=True,
             market_fresh=True,
-            market_yes_probability=Decimal("0.30"),
-            raw=raw(Decimal("0.31")),
+            yes_conservative_debit=Decimal("0.35"),
+            no_conservative_debit=Decimal("0.68"),
+            raw=raw(Decimal("0.35")),
             window_status=WindowStatus.ESTABLISHED_CIVIL_LOCAL_DAY,
             boundary=stable_boundary(),
         ),
@@ -210,7 +284,8 @@ def test_data_not_ready_when_no_executable_price() -> None:
             contract_supported=True,
             ensemble_complete=True,
             market_fresh=True,
-            market_yes_probability=Decimal("0.27"),
+            yes_conservative_debit=Decimal("0.27"),
+            no_conservative_debit=Decimal("0.90"),
             raw=raw(Decimal("0.42")),
             window_status=WindowStatus.NOT_ESTABLISHED,
             boundary=stable_boundary(),
@@ -219,7 +294,8 @@ def test_data_not_ready_when_no_executable_price() -> None:
             contract_supported=False,
             ensemble_complete=True,
             market_fresh=True,
-            market_yes_probability=Decimal("0.27"),
+            yes_conservative_debit=Decimal("0.27"),
+            no_conservative_debit=Decimal("0.90"),
             raw=raw(Decimal("0.42")),
             window_status=None,
             boundary=None,
@@ -237,12 +313,13 @@ def test_primary_alert_text_never_contains_banned_claims(state_factory) -> None:
     assert "nothing has been bought" in lowered
 
 
-def test_render_primary_alert_uses_only_the_four_headline_states() -> None:
+def test_render_primary_alert_names_the_side_plainly_for_yes() -> None:
     decision = decide_alert(
         contract_supported=True,
         ensemble_complete=True,
         market_fresh=True,
-        market_yes_probability=Decimal("0.27"),
+        yes_conservative_debit=Decimal("0.27"),
+        no_conservative_debit=Decimal("0.90"),
         raw=raw(Decimal("0.42")),
         window_status=WindowStatus.ESTABLISHED_CIVIL_LOCAL_DAY,
         boundary=stable_boundary(),
@@ -251,8 +328,27 @@ def test_render_primary_alert_uses_only_the_four_headline_states() -> None:
         decision=decision, location="Chicago", target_date=date(2026, 9, 15)
     )
     assert "TAKE A LOOK" in text
+    assert "YES is worth checking" in text
     for other in (AlertState.SKIP, AlertState.TOO_UNCERTAIN, AlertState.DATA_NOT_READY):
         assert other.value not in text
+
+
+def test_render_primary_alert_names_the_side_plainly_for_no() -> None:
+    decision = decide_alert(
+        contract_supported=True,
+        ensemble_complete=True,
+        market_fresh=True,
+        yes_conservative_debit=Decimal("0.50"),
+        no_conservative_debit=Decimal("0.60"),
+        raw=raw(Decimal("0.20")),
+        window_status=WindowStatus.ESTABLISHED_CIVIL_LOCAL_DAY,
+        boundary=stable_boundary(),
+    )
+    text = render_primary_alert(
+        decision=decision, location="Chicago", target_date=date(2026, 9, 15)
+    )
+    assert "TAKE A LOOK" in text
+    assert "NO is worth checking" in text
 
 
 def test_assert_no_banned_claims_raises_on_injected_banned_word() -> None:
@@ -267,7 +363,8 @@ def test_alert_decision_has_zero_production_influence() -> None:
         contract_supported=True,
         ensemble_complete=True,
         market_fresh=True,
-        market_yes_probability=Decimal("0.27"),
+        yes_conservative_debit=Decimal("0.27"),
+        no_conservative_debit=Decimal("0.90"),
         raw=raw(Decimal("0.42")),
         window_status=WindowStatus.ESTABLISHED_CIVIL_LOCAL_DAY,
         boundary=stable_boundary(),
@@ -277,6 +374,6 @@ def test_alert_decision_has_zero_production_influence() -> None:
 
 
 def test_policy_is_versioned_and_frozen_for_this_milestone() -> None:
-    assert DEFAULT_POLICY.version == "wn-a1-alert-policy-v1"
+    assert DEFAULT_POLICY.version == "wn-a1-alert-policy-v2-side-aware"
     assert DEFAULT_POLICY.raw_gap_threshold_pp == Decimal(10)
     assert DEFAULT_POLICY.buffered_gap_threshold_pp == Decimal(5)

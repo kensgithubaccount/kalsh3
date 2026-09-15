@@ -150,6 +150,22 @@ def acquire_market_snapshot(
     )
 
 
+def conservative_taker_debit(cost: TakerCost | None, quantity: Decimal) -> Decimal | None:
+    """The conservative, per-contract, all-in cost to take this side right now: displayed
+    book cost plus the ceiling-rounded deterministic fee, divided by quantity so the result
+    is directly comparable to a 0..1 probability -- never the raw best-ask price alone,
+    which omits fees entirely.
+
+    Returns ``None`` when ``cost`` is ``None`` (no executable price / insufficient depth for
+    the requested quantity), matching ``KalshiMarketSnapshot.yes_taker_cost``/``no_taker_cost``.
+    """
+    if cost is None:
+        return None
+    if quantity <= 0 or not quantity.is_finite():
+        raise WnA1Error("requested quantity must be a positive finite Decimal")
+    return (cost.depth.total_cost + cost.centicent_rounded_fee) / quantity
+
+
 def is_fresh(
     snapshot: KalshiMarketSnapshot, at: datetime, *, max_age: timedelta = MAX_BOOK_AGE
 ) -> bool:

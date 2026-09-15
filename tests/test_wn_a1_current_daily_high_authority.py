@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import date, datetime, timedelta
+from datetime import date, datetime
 from decimal import Decimal
 from pathlib import Path
 from typing import Any
@@ -9,6 +9,7 @@ import pytest
 
 from services.forecasting import daily_temperature as m27c
 from services.forecasting.wn_a1_current_daily_high_authority import (
+    MISSING_SETTLEMENT_WINDOW_EVIDENCE,
     POLICY_IDENTITY,
     POLICY_VERSION,
     SERIES_TICKER,
@@ -111,7 +112,8 @@ def test_supported_from_real_live_rule_shape() -> None:
     assert contract.upper is None
     assert contract.settlement_source == "The Weather Company"
     assert contract.local_date == date(2026, 9, 15)
-    assert contract.window_status is WindowStatus.ESTABLISHED_CIVIL_LOCAL_DAY
+    # Item 3: trading-close evidence alone must never establish the settlement window.
+    assert contract.window_status is WindowStatus.NOT_ESTABLISHED
     assert route.research_only is True
     assert route.production_influence == Decimal(0)
 
@@ -292,15 +294,20 @@ def test_strike_malformed_abstain() -> None:
     assert route.reason is CurrentDailyHighReason.STRIKE_MALFORMED
 
 
-def test_window_established_from_real_early_close_condition() -> None:
+def test_trading_close_never_establishes_the_settlement_window() -> None:
+    """Item 3: Last Trading Time and the TWC measurement window are different facts. The
+    real live early_close_condition text must be retained as trading-cutoff evidence only,
+    and must NEVER cause WindowStatus.ESTABLISHED_CIVIL_LOCAL_DAY."""
     market, event, series = triple()
     route = route_current_daily_high(market, event, series)
     contract = route.contract
     assert contract is not None
-    assert contract.window_status is WindowStatus.ESTABLISHED_CIVIL_LOCAL_DAY
-    assert contract.window_start_local == datetime.fromisoformat("2026-09-15T00:00:00-05:00")
-    assert contract.window_end_local == datetime.fromisoformat("2026-09-16T00:00:00-05:00")
-    assert contract.window_evidence_text == EARLY_CLOSE
+    assert contract.window_status is WindowStatus.NOT_ESTABLISHED
+    assert contract.window_start_local is None
+    assert contract.window_end_local is None
+    # But the trading-cutoff fact itself is still captured, separately and honestly.
+    assert contract.trading_cutoff_evidence_text == EARLY_CLOSE
+    assert contract.trading_cutoff_local == datetime.fromisoformat("2026-09-15T23:59:00-05:00")
 
 
 def test_window_not_established_when_early_close_missing() -> None:
@@ -309,6 +316,7 @@ def test_window_not_established_when_early_close_missing() -> None:
     assert route.contract is not None
     assert route.contract.window_status is WindowStatus.NOT_ESTABLISHED
     assert route.contract.window_start_local is None
+    assert route.contract.trading_cutoff_local is None
 
 
 def test_window_not_established_when_early_close_date_mismatches_rule_date() -> None:
@@ -317,19 +325,27 @@ def test_window_not_established_when_early_close_date_mismatches_rule_date() -> 
     route = route_current_daily_high(market, event, series)
     assert route.contract is not None
     assert route.contract.window_status is WindowStatus.NOT_ESTABLISHED
+    assert route.contract.trading_cutoff_local is None  # date mismatch also voids the cutoff
+
+
+def test_missing_settlement_window_evidence_is_documented() -> None:
+    assert "trading cutoff" in MISSING_SETTLEMENT_WINDOW_EVIDENCE
+    assert "aggregation window" in MISSING_SETTLEMENT_WINDOW_EVIDENCE
 
 
 @pytest.mark.parametrize(
-    ("target_date", "expected_start_offset", "expected_end_offset"),
+    ("target_date", "expected_offset"),
     [
-        (date(2026, 9, 15), "-05:00", "-05:00"),  # CDT on both sides, ordinary 24h day
-        (date(2026, 11, 1), "-05:00", "-06:00"),  # US DST ends 2026-11-01: 25-hour local day
-        (date(2027, 3, 14), "-06:00", "-05:00"),  # US DST begins 2027-03-14: 23-hour local day
+        (date(2026, 9, 15), "-05:00"),  # CDT, ordinary day
+        (date(2026, 11, 1), "-06:00"),  # US DST ends 2:00 AM this day -> already CST by 11:59 PM
+        (date(2027, 3, 14), "-05:00"),  # US DST begins 2:00 AM this day -> already CDT by 11:59 PM
     ],
 )
-def test_window_civil_local_day_correct_across_dst_transitions(
-    target_date: date, expected_start_offset: str, expected_end_offset: str
+def test_trading_cutoff_correct_across_dst_transitions(
+    target_date: date, expected_offset: str
 ) -> None:
+    """The trading cutoff (11:59 PM local) is still correctly DST-aware -- this is real
+    Kalshi trading-cutoff evidence, never repurposed as the settlement window."""
     month_name = target_date.strftime("%B")
     close_text = (
         f"The Last Trading Time will be 11:59 PM local time on {month_name} "
@@ -353,18 +369,13 @@ def test_window_civil_local_day_correct_across_dst_transitions(
     route = route_current_daily_high(market, event, series)
     contract = route.contract
     assert contract is not None
-    assert contract.window_status is WindowStatus.ESTABLISHED_CIVIL_LOCAL_DAY
-    assert contract.window_start_local is not None and contract.window_end_local is not None
-    start_offset = contract.window_start_local.utcoffset()
-    end_offset = contract.window_end_local.utcoffset()
-    assert start_offset is not None and end_offset is not None
-    assert start_offset.total_seconds() == _offset_seconds(expected_start_offset)
-    assert end_offset.total_seconds() == _offset_seconds(expected_end_offset)
-    assert (
-        timedelta(hours=23)
-        <= contract.window_end_local - contract.window_start_local
-        <= timedelta(hours=25)
-    )
+    assert contract.window_status is WindowStatus.NOT_ESTABLISHED
+    assert contract.trading_cutoff_local is not None
+    offset = contract.trading_cutoff_local.utcoffset()
+    assert offset is not None
+    assert offset.total_seconds() == _offset_seconds(expected_offset)
+    assert contract.trading_cutoff_local.hour == 23
+    assert contract.trading_cutoff_local.minute == 59
 
 
 def _offset_seconds(offset: str) -> float:

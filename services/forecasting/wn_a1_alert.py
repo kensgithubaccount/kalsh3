@@ -4,6 +4,16 @@ This is a RESEARCH alerting heuristic for data collection, versioned and frozen 
 milestone -- NOT a production promotion threshold and NOT profitability evidence. The
 primary alert text may only ever show one of the four ``AlertState`` headline words and
 must never claim anything the evidence does not support (see ``_assert_no_banned_claims``).
+
+Side-aware executable economics: a candidate is never selected off the absolute distance
+between the raw WeatherNext probability and a market price. Each side is compared
+independently against its own conservative, fee-inclusive taker debit --
+``model_probability_yes`` vs. the YES side's debit, and ``1 - model_probability_yes`` vs.
+the NO side's debit -- and a side is only ever selected when its own buffered gap clears
+the frozen research thresholds. A large absolute YES-price/model gap is worthless evidence
+if the NO side is what is actually cheap to take (or vice versa); see
+``test_absolute_gap_without_executable_side_is_skipped`` for the concrete counterexample
+this guards against.
 """
 
 from __future__ import annotations
@@ -18,12 +28,13 @@ from .wn_a1_domain import (
     BANNED_ALERT_WORDS,
     PRODUCTION_INFLUENCE,
     RESEARCH_ONLY,
+    AlertSide,
     AlertState,
     WnA1Error,
 )
 from .wn_a1_probability import BoundaryRiskDiagnostic, RawProbabilityResult
 
-ALERT_POLICY_VERSION = "wn-a1-alert-policy-v1"
+ALERT_POLICY_VERSION = "wn-a1-alert-policy-v2-side-aware"
 
 
 @dataclass(frozen=True, slots=True)
@@ -43,8 +54,8 @@ class GateFailure(StrEnum):
     MARKET_STALE = "MARKET_STALE"
     NO_EXECUTABLE_MARKET_PRICE = "NO_EXECUTABLE_MARKET_PRICE"
     WINDOW_NOT_ESTABLISHED = "WINDOW_NOT_ESTABLISHED"
-    GAP_BELOW_RAW_THRESHOLD = "GAP_BELOW_RAW_THRESHOLD"
-    GAP_BELOW_BUFFERED_THRESHOLD = "GAP_BELOW_BUFFERED_THRESHOLD"
+    NO_SIDE_CLEARS_RAW_THRESHOLD = "NO_SIDE_CLEARS_RAW_THRESHOLD"
+    NO_SIDE_CLEARS_BUFFERED_THRESHOLD = "NO_SIDE_CLEARS_BUFFERED_THRESHOLD"
     BOUNDARY_REVERSAL = "BOUNDARY_REVERSAL"
 
 
@@ -52,10 +63,16 @@ class GateFailure(StrEnum):
 class AlertDecision:
     state: AlertState
     gate_failures: tuple[GateFailure, ...]
-    raw_probability: Decimal | None
-    market_yes_probability: Decimal | None
-    gap_pp: Decimal | None
-    buffered_gap_pp: Decimal | None
+    side: AlertSide | None
+    model_probability_yes: Decimal | None
+    yes_conservative_debit: Decimal | None
+    no_conservative_debit: Decimal | None
+    yes_gap_pp: Decimal | None
+    yes_buffered_gap_pp: Decimal | None
+    no_gap_pp: Decimal | None
+    no_buffered_gap_pp: Decimal | None
+    selected_gap_pp: Decimal | None
+    selected_buffered_gap_pp: Decimal | None
     policy_version: str
     research_only: bool = RESEARCH_ONLY
     production_influence: Decimal = PRODUCTION_INFLUENCE
@@ -66,13 +83,20 @@ def decide_alert(
     contract_supported: bool,
     ensemble_complete: bool,
     market_fresh: bool,
-    market_yes_probability: Decimal | None,
+    yes_conservative_debit: Decimal | None,
+    no_conservative_debit: Decimal | None,
     raw: RawProbabilityResult | None,
     window_status: WindowStatus | None,
     boundary: BoundaryRiskDiagnostic | None,
     policy: AlertPolicy = DEFAULT_POLICY,
 ) -> AlertDecision:
-    """Apply every required WN-A1 gate; never returns TAKE A LOOK unless all pass."""
+    """Apply every required WN-A1 gate; never returns TAKE A LOOK unless all pass.
+
+    Each side is evaluated independently: YES's model probability against the YES taker
+    debit, NO's complement probability against the NO taker debit. A side is only ever
+    selected when its own raw AND buffered gap clear the frozen thresholds -- absolute
+    disagreement between the model and a single side's price is never trade direction.
+    """
     failures: list[GateFailure] = []
     if not contract_supported:
         failures.append(GateFailure.CONTRACT_NOT_SUPPORTED)
@@ -80,22 +104,94 @@ def decide_alert(
         failures.append(GateFailure.ENSEMBLE_INCOMPLETE)
     if not market_fresh:
         failures.append(GateFailure.MARKET_STALE)
-    if market_yes_probability is None:
+    if yes_conservative_debit is None and no_conservative_debit is None:
         failures.append(GateFailure.NO_EXECUTABLE_MARKET_PRICE)
 
-    if failures or raw is None or market_yes_probability is None:
+    model_probability_yes = raw.probability if raw is not None else None
+
+    if failures or raw is None or model_probability_yes is None:
         return AlertDecision(
             state=AlertState.DATA_NOT_READY,
             gate_failures=tuple(failures),
-            raw_probability=raw.probability if raw is not None else None,
-            market_yes_probability=market_yes_probability,
-            gap_pp=None,
-            buffered_gap_pp=None,
+            side=None,
+            model_probability_yes=model_probability_yes,
+            yes_conservative_debit=yes_conservative_debit,
+            no_conservative_debit=no_conservative_debit,
+            yes_gap_pp=None,
+            yes_buffered_gap_pp=None,
+            no_gap_pp=None,
+            no_buffered_gap_pp=None,
+            selected_gap_pp=None,
+            selected_buffered_gap_pp=None,
             policy_version=policy.version,
         )
 
-    gap_pp = abs(raw.probability - market_yes_probability) * 100
-    buffered_gap_pp = gap_pp - policy.conservative_buffer_pp
+    model_probability_no = Decimal(1) - model_probability_yes
+    yes_gap_pp, yes_buffered_gap_pp = _side_gap(
+        model_probability_yes, yes_conservative_debit, policy.conservative_buffer_pp
+    )
+    no_gap_pp, no_buffered_gap_pp = _side_gap(
+        model_probability_no, no_conservative_debit, policy.conservative_buffer_pp
+    )
+    yes_qualifies = _qualifies(yes_gap_pp, yes_buffered_gap_pp, policy)
+    no_qualifies = _qualifies(no_gap_pp, no_buffered_gap_pp, policy)
+
+    def _base(
+        state: AlertState,
+        gate_failures: tuple[GateFailure, ...],
+        side: AlertSide | None,
+        selected_gap_pp: Decimal | None,
+        selected_buffered_gap_pp: Decimal | None,
+    ) -> AlertDecision:
+        return AlertDecision(
+            state=state,
+            gate_failures=gate_failures,
+            side=side,
+            model_probability_yes=model_probability_yes,
+            yes_conservative_debit=yes_conservative_debit,
+            no_conservative_debit=no_conservative_debit,
+            yes_gap_pp=yes_gap_pp,
+            yes_buffered_gap_pp=yes_buffered_gap_pp,
+            no_gap_pp=no_gap_pp,
+            no_buffered_gap_pp=no_buffered_gap_pp,
+            selected_gap_pp=selected_gap_pp,
+            selected_buffered_gap_pp=selected_buffered_gap_pp,
+            policy_version=policy.version,
+        )
+
+    if not yes_qualifies and not no_qualifies:
+        any_side_clears_raw = (
+            yes_gap_pp is not None and yes_gap_pp >= policy.raw_gap_threshold_pp
+        ) or (no_gap_pp is not None and no_gap_pp >= policy.raw_gap_threshold_pp)
+        reason = (
+            GateFailure.NO_SIDE_CLEARS_BUFFERED_THRESHOLD
+            if any_side_clears_raw
+            else GateFailure.NO_SIDE_CLEARS_RAW_THRESHOLD
+        )
+        return _base(AlertState.SKIP, (reason,), None, None, None)
+
+    if yes_qualifies and no_qualifies:
+        assert (  # noqa: S101 -- proven non-None by _qualifies() above
+            yes_gap_pp is not None
+            and yes_buffered_gap_pp is not None
+            and no_gap_pp is not None
+            and no_buffered_gap_pp is not None
+        )
+        side, gap, buffered = (
+            (AlertSide.YES, yes_gap_pp, yes_buffered_gap_pp)
+            if yes_buffered_gap_pp >= no_buffered_gap_pp
+            else (AlertSide.NO, no_gap_pp, no_buffered_gap_pp)
+        )
+    elif yes_qualifies:
+        assert (  # noqa: S101 -- proven non-None by _qualifies() above
+            yes_gap_pp is not None and yes_buffered_gap_pp is not None
+        )
+        side, gap, buffered = AlertSide.YES, yes_gap_pp, yes_buffered_gap_pp
+    else:
+        assert (  # noqa: S101 -- proven non-None by _qualifies() above
+            no_gap_pp is not None and no_buffered_gap_pp is not None
+        )
+        side, gap, buffered = AlertSide.NO, no_gap_pp, no_buffered_gap_pp
 
     ceiling_reasons: list[GateFailure] = []
     if window_status is not WindowStatus.ESTABLISHED_CIVIL_LOCAL_DAY:
@@ -103,44 +199,28 @@ def decide_alert(
     if boundary is not None and boundary.reverses:
         ceiling_reasons.append(GateFailure.BOUNDARY_REVERSAL)
 
-    if gap_pp < policy.raw_gap_threshold_pp:
-        return AlertDecision(
-            state=AlertState.SKIP,
-            gate_failures=(GateFailure.GAP_BELOW_RAW_THRESHOLD,),
-            raw_probability=raw.probability,
-            market_yes_probability=market_yes_probability,
-            gap_pp=gap_pp,
-            buffered_gap_pp=buffered_gap_pp,
-            policy_version=policy.version,
-        )
-    if buffered_gap_pp < policy.buffered_gap_threshold_pp:
-        return AlertDecision(
-            state=AlertState.SKIP,
-            gate_failures=(GateFailure.GAP_BELOW_BUFFERED_THRESHOLD,),
-            raw_probability=raw.probability,
-            market_yes_probability=market_yes_probability,
-            gap_pp=gap_pp,
-            buffered_gap_pp=buffered_gap_pp,
-            policy_version=policy.version,
-        )
     if ceiling_reasons:
-        return AlertDecision(
-            state=AlertState.TOO_UNCERTAIN,
-            gate_failures=tuple(ceiling_reasons),
-            raw_probability=raw.probability,
-            market_yes_probability=market_yes_probability,
-            gap_pp=gap_pp,
-            buffered_gap_pp=buffered_gap_pp,
-            policy_version=policy.version,
-        )
-    return AlertDecision(
-        state=AlertState.TAKE_A_LOOK,
-        gate_failures=(),
-        raw_probability=raw.probability,
-        market_yes_probability=market_yes_probability,
-        gap_pp=gap_pp,
-        buffered_gap_pp=buffered_gap_pp,
-        policy_version=policy.version,
+        return _base(AlertState.TOO_UNCERTAIN, tuple(ceiling_reasons), side, gap, buffered)
+    return _base(AlertState.TAKE_A_LOOK, (), side, gap, buffered)
+
+
+def _side_gap(
+    model_probability: Decimal, debit: Decimal | None, buffer_pp: Decimal
+) -> tuple[Decimal | None, Decimal | None]:
+    if debit is None:
+        return None, None
+    gap_pp = (model_probability - debit) * 100
+    return gap_pp, gap_pp - buffer_pp
+
+
+def _qualifies(
+    gap_pp: Decimal | None, buffered_gap_pp: Decimal | None, policy: AlertPolicy
+) -> bool:
+    return (
+        gap_pp is not None
+        and buffered_gap_pp is not None
+        and gap_pp >= policy.raw_gap_threshold_pp
+        and buffered_gap_pp >= policy.buffered_gap_threshold_pp
     )
 
 
@@ -149,7 +229,6 @@ def render_primary_alert(
     decision: AlertDecision,
     location: str,
     target_date: date,
-    hotter_or_colder: str | None = None,
 ) -> str:
     """Render the plain-English primary alert. No quant jargon, no unsupported claims."""
     header = f"{location} high {target_date.strftime('%b %d')} — {decision.state.value}"
@@ -159,35 +238,33 @@ def render_primary_alert(
             "Not enough verified data is available yet to compare Google's forecast to",
             "Kalshi's price for this contract.",
         ]
-    else:
+    elif decision.state is AlertState.SKIP:
         lines += [
-            f"Kalshi says: about {_pct(decision.market_yes_probability)}",
-            f"WeatherNext says: about {_pct(decision.raw_probability)}",
-            "",
+            "Why:",
+            "After Kalshi's trading fees, neither the YES side nor the NO side is priced",
+            "far enough from Google's forecast to be worth a manual look today.",
         ]
-        if decision.state is AlertState.SKIP:
+    else:
+        side_phrase = (
+            "YES is worth checking" if decision.side is AlertSide.YES else "NO is worth checking"
+        )
+        lines += [side_phrase, ""]
+        if decision.state is AlertState.TOO_UNCERTAIN:
             lines += [
                 "Why:",
-                "Kalshi's price and Google's forecast are close enough that this isn't worth",
-                "a manual look today.",
-            ]
-        elif decision.state is AlertState.TOO_UNCERTAIN:
-            hint = hotter_or_colder or "different"
-            lines += [
-                "Why:",
-                f"Google's forecast members look meaningfully {hint} than what the market",
-                "is pricing, but the exact settlement details or a tight range boundary",
-                "make this too uncertain to call.",
+                "After Kalshi's trading fees, that side looks meaningfully cheaper than what",
+                "Google's forecast members suggest, but the exact settlement details or a",
+                "tight range boundary make this too uncertain to call.",
                 "",
                 "Main risk:",
                 "A small forecast miss could move the winning range, or the exact rules this",
                 "will settle against aren't fully confirmed yet.",
             ]
         else:
-            phrase = f"{hotter_or_colder} than" if hotter_or_colder else "different from"
             lines += [
                 "Why:",
-                f"Google's forecast members are meaningfully {phrase} what the market is pricing.",
+                "After Kalshi's trading fees, that side looks meaningfully cheaper than what",
+                "Google's forecast members suggest.",
                 "",
                 "Main risk:",
                 "A 1-2 degree forecast miss could move the winning range.",
@@ -199,12 +276,6 @@ def render_primary_alert(
     text = "\n".join(lines)
     _assert_no_banned_claims(text)
     return text
-
-
-def _pct(value: Decimal | None) -> str:
-    if value is None:
-        return "unknown"
-    return f"{(value * 100).quantize(Decimal('1'))}%"
 
 
 def _assert_no_banned_claims(text: str) -> None:

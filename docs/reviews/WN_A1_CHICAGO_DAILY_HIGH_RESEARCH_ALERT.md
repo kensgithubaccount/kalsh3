@@ -12,6 +12,57 @@ This is the smallest end-to-end shape, not a finished trading signal: profitabil
 never claimed, and several evidentiary gaps (below) mean today's live evaluation cannot
 reach `TAKE A LOOK` against real data yet.
 
+## 2026-09-14 repair addendum: five predictable blockers repaired together
+
+The initial implementation below (unchanged as a historical record) disclosed five
+predictable blockers rather than working around them. All five are now repaired; this
+addendum is the current source of truth where it conflicts with the text below.
+
+1. **Requester Pays GCS access.** `gcs_zarr_reader` now requires an explicit, non-secret
+   billing project (`WN_A1_WEATHERNEXT_BILLING_PROJECT` env var -- transport configuration
+   only, never forecast authority) and opens
+   `gcsfs.GCSFileSystem(project=..., requester_pays=..., token="google_default")` using
+   Application Default Credentials, failing clearly (no synthetic evidence) if either is
+   unavailable.
+2. **Coordinate selection by value.** A new pure function, `select_nearest_grid_coordinate`,
+   reads the real `lat_0p05`/`lon_0p05` coordinate arrays and picks the nearest coordinate
+   VALUE (converting the requested longitude to the starter guide's 0..360 convention
+   first) -- never `round(degrees / 0.05)` raw index arithmetic. Both the requested and
+   actually-selected coordinates are retained on `WeatherNextEnsembleEvidence` and bound
+   into evidence identity; a selection more than one grid cell away from the request is
+   rejected. `test_coordinate_selection_by_value_not_raw_index_arithmetic` proves this
+   against the old bug directly.
+3. **Trading close is not the settlement window.** `early_close_condition` is now parsed
+   only as `trading_cutoff_local`/`trading_cutoff_evidence_text` and never smuggled into
+   `WindowStatus`. `WindowStatus` is always `NOT_ESTABLISHED` today -- see
+   `MISSING_SETTLEMENT_WINDOW_EVIDENCE` for the exact missing fact. The "Day-window
+   semantics" and "Alert policy" sections below describe the *pre-repair* (incorrect)
+   behavior; today, `decide_alert`'s existing window ceiling gate hard-caps every real live
+   evaluation at `TOO UNCERTAIN` or below.
+4. **Side-aware executable economics.** `decide_alert` no longer uses
+   `abs(model_yes_probability - yes_best_ask)`. YES and NO are each compared independently
+   against their own conservative, fee-inclusive taker debit
+   (`wn_a1_market_economics.conservative_taker_debit`), and a side is selected only when its
+   own buffered gap clears the frozen thresholds. `test_absolute_gap_without_executable_
+   side_is_skipped` is the required counterexample (model YES=10%, YES ask~40%, NO debit=95%
+   -> `SKIP`, not a false 30pp flag). The primary alert now names the side plainly ("YES is
+   worth checking" / "NO is worth checking").
+5. **Canonical end-to-end entrypoint + durable persistence.** `wn_a1_runner.run_canonical`
+   is the one live, research-only entrypoint and takes no transport-override parameters at
+   all (the injectable composition seam every test uses instead is `_run_evaluation`). A new
+   fixed-location append-only SQLite journal, `wn_a1_attempt_store.py`, persists every
+   evaluated attempt -- including the full WeatherNext member rows, both grid coordinates,
+   both side economics, and `SKIP`/`TOO UNCERTAIN`/`DATA NOT READY` outcomes, not only
+   `TAKE A LOOK`. `replay_decision` reopens persisted data in a fresh process and
+   recomputes the decision from scratch (re-validating the evidence identity along the
+   way), rather than recomputing a hash from an in-memory object. Duplicate persistence of
+   the same attempt fails closed.
+
+**Live WeatherNext smoke test: not run.** No Google Cloud credentials, `gcloud`, or the
+`gcsfs`/`zarr`/`google-cloud-storage` packages were available in this repair environment --
+the same blocker as the original milestone. See `docs/IMPLEMENTATION_STATUS.md`'s WN-A1
+repair entry for full verification results.
+
 ## A load-bearing correction made mid-build
 
 The milestone brief's premise was that current Kalshi documentation states DAILY

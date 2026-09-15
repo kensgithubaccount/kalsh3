@@ -49,7 +49,8 @@ def contract(**changes) -> CurrentDailyHighContract:
         window_status=WindowStatus.ESTABLISHED_CIVIL_LOCAL_DAY,
         window_start_local=None,
         window_end_local=None,
-        window_evidence_text=None,
+        trading_cutoff_local=None,
+        trading_cutoff_evidence_text=None,
     )
     values.update(changes)
     return CurrentDailyHighContract(**values)
@@ -89,8 +90,10 @@ def _member_hour_evidence(kelvin_by_sample: dict[int, Decimal]):
         init_time=INIT_TIME,
         acquired_at=INIT_TIME,
         variable=VARIABLE,
-        latitude=Decimal("41.80"),
-        longitude=Decimal("-87.75"),
+        requested_latitude=Decimal("41.80"),
+        requested_longitude=Decimal("-87.75"),
+        selected_latitude=Decimal("41.80"),
+        selected_longitude=Decimal("-87.75"),
         unit=UNIT,
         raw_rows=rows,
         source_content_hash="b" * 64,

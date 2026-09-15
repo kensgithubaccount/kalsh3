@@ -26,13 +26,18 @@ what the live contract itself states. If a future live contract's settlement sou
 changes, this module fails closed (ABSTAIN) rather than silently continuing to assume TWC.
 
 Day-window semantics: this module does NOT assume the NWS local-standard-time convention
-described in the (contradicted) help article. Instead it treats each selected market's own
-``early_close_condition`` field -- itself live, first-party contract evidence, e.g. "The
-Last Trading Time will be 11:59 PM local time on September 15, 2026 regardless of..." -- as
-the only accepted positive evidence for a civil local-calendar-day measurement window
-(local midnight to local midnight). If that exact phrase, naming the contract's own target
-date, is not present, window derivation explicitly ABSTAINS (``WindowStatus.NOT_
-ESTABLISHED``) rather than inventing or assuming any window.
+described in the (contradicted) help article, and it does NOT infer TWC's temperature
+measurement/aggregation window from the market's trading cutoff either. ``Last Trading
+Time`` (from ``early_close_condition``) and the settlement measurement window are different
+contractual facts -- trading can close at a fixed clock time regardless of what interval
+TWC actually aggregates over. ``early_close_condition`` is parsed and retained here ONLY as
+``trading_cutoff_local``/``trading_cutoff_evidence_text``: real, first-party evidence of
+when trading stops, never smuggled into ``WindowStatus`` or the settlement window. No
+positive first-party Kalshi/TWC evidence establishing the exact daily measurement interval
+was available in this milestone (see ``MISSING_SETTLEMENT_WINDOW_EVIDENCE`` below), so
+``WindowStatus`` is always ``NOT_ESTABLISHED`` here today; ``ESTABLISHED_CIVIL_LOCAL_DAY``
+remains a real enum member, reserved for a future call once that evidence exists, but no
+code path in this module currently produces it.
 
 Reused, clearly-labeled research-only physical fact: the CLI identifier ``CLIMDW`` and the
 NWS/GHCN station identity for Chicago Midway (``KMDW`` / ``USW00014819``) are pure
@@ -47,7 +52,7 @@ from __future__ import annotations
 import math
 import re
 from dataclasses import dataclass
-from datetime import date, datetime, timedelta
+from datetime import date, datetime
 from decimal import Decimal, InvalidOperation
 from enum import StrEnum
 from zoneinfo import ZoneInfo
@@ -75,6 +80,23 @@ HELP_CENTER_CLAIM_TEXT = (
     "final NWS Daily Climate Report."
 )
 HELP_CENTER_CLAIM_STATUS = "CONTRADICTED_BY_LIVE_CONTRACT_EVIDENCE"
+
+# The exact missing fact blocking WindowStatus.ESTABLISHED_CIVIL_LOCAL_DAY, documented for
+# reopening rather than silently worked around. Neither the live market/event/series
+# payloads nor the (contradicted) help-center article state the actual clock-time
+# start/end of the interval The Weather Company aggregates over to compute KXHIGHCHI's
+# "maximum temperature" for a given local date -- e.g. whether it is calendar
+# midnight-to-midnight local time, a TWC-internal "climate day" convention, or something
+# else entirely. ``early_close_condition`` only ever states Kalshi's trading cutoff (a
+# different contractual fact) and must never be used as a substitute.
+MISSING_SETTLEMENT_WINDOW_EVIDENCE = (
+    "No first-party Kalshi or TWC evidence in this milestone states the exact clock-time "
+    "start/end of the daily measurement interval TWC uses to compute KXHIGHCHI's maximum "
+    "temperature for a target local date. early_close_condition establishes only Kalshi's "
+    "trading cutoff, not TWC's temperature aggregation window -- the two are different "
+    "contractual facts and this module never conflates them. Reopen this milestone once "
+    "Kalshi or TWC first-party documentation/support confirms the exact interval."
+)
 
 _RULE = re.compile(
     r"\AIf the maximum temperature recorded at Chicago \(CLIMDW\) for "
@@ -138,7 +160,10 @@ class CurrentDailyHighContract:
     window_status: WindowStatus
     window_start_local: datetime | None
     window_end_local: datetime | None
-    window_evidence_text: str | None
+    # Trading cutoff ONLY (from early_close_condition) -- NEVER the settlement measurement
+    # window. See MISSING_SETTLEMENT_WINDOW_EVIDENCE and the module docstring.
+    trading_cutoff_local: datetime | None
+    trading_cutoff_evidence_text: str | None
 
 
 _ROUTE_CAPABILITY = object()
@@ -259,7 +284,13 @@ def route_current_daily_high(market: Market, event: Event, series: Series) -> Cu
         return _abstain(base, CurrentDailyHighReason.STRIKE_MALFORMED)
     if lower != rule_lower or upper != rule_upper:
         return _abstain(base, CurrentDailyHighReason.RULE_METADATA_CONFLICT)
-    window_status, window_start, window_end, window_text = _derive_window(
+    # WindowStatus is always NOT_ESTABLISHED in this milestone -- see
+    # MISSING_SETTLEMENT_WINDOW_EVIDENCE. It is never derived from early_close_condition
+    # (trading cutoff), which is parsed separately below as non-authoritative context only.
+    window_status = WindowStatus.NOT_ESTABLISHED
+    window_start = None
+    window_end = None
+    trading_cutoff_local, trading_cutoff_text = _parse_trading_cutoff(
         market.raw.get("early_close_condition"), local_date
     )
     contract = CurrentDailyHighContract(
@@ -280,7 +311,8 @@ def route_current_daily_high(market: Market, event: Event, series: Series) -> Cu
         window_status=window_status,
         window_start_local=window_start,
         window_end_local=window_end,
-        window_evidence_text=window_text,
+        trading_cutoff_local=trading_cutoff_local,
+        trading_cutoff_evidence_text=trading_cutoff_text,
     )
     return CurrentDailyHighRoute(
         _capability=_ROUTE_CAPABILITY,
@@ -304,26 +336,33 @@ def _settlement_source_confirmed(event: Event, series: Series) -> bool:
     )
 
 
-def _derive_window(
+def _parse_trading_cutoff(
     early_close_condition: object, local_date: date
-) -> tuple[WindowStatus, datetime | None, datetime | None, str | None]:
+) -> tuple[datetime | None, str | None]:
+    """Parse the market's own trading-cutoff evidence ONLY -- never the settlement window.
+
+    Returns the 11:59 PM local-time Last Trading Time as a timezone-aware datetime, plus the
+    raw evidence text, when the exact reviewed phrase names this contract's own target date.
+    This is real, first-party Kalshi evidence about when TRADING stops; it is never used to
+    set ``WindowStatus`` or a settlement measurement window -- see
+    ``MISSING_SETTLEMENT_WINDOW_EVIDENCE``.
+    """
     if not isinstance(early_close_condition, str) or not early_close_condition:
-        return WindowStatus.NOT_ESTABLISHED, None, None, None
+        return None, None
     match = _EARLY_CLOSE.search(early_close_condition)
     if match is None:
-        return WindowStatus.NOT_ESTABLISHED, None, None, None
+        return None, None
     try:
         stated_date = datetime.strptime(
             f"{match.group('month')} {match.group('day')}, {match.group('year')}", "%B %d, %Y"
         ).date()
     except ValueError:
-        return WindowStatus.NOT_ESTABLISHED, None, None, None
+        return None, None
     if stated_date != local_date:
-        return WindowStatus.NOT_ESTABLISHED, None, None, None
+        return None, None
     tz = ZoneInfo(TIMEZONE)
-    start = datetime(local_date.year, local_date.month, local_date.day, 0, 0, 0, tzinfo=tz)
-    end = start + timedelta(days=1)
-    return WindowStatus.ESTABLISHED_CIVIL_LOCAL_DAY, start, end, early_close_condition
+    cutoff = datetime(local_date.year, local_date.month, local_date.day, 23, 59, 0, tzinfo=tz)
+    return cutoff, early_close_condition
 
 
 def _strike(value: object, field: str) -> Decimal:

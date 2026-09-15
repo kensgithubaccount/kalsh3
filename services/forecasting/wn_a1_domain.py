@@ -30,6 +30,13 @@ class AlertState(StrEnum):
     DATA_NOT_READY = "DATA NOT READY"
 
 
+class AlertSide(StrEnum):
+    """Which executable side (if any) the primary alert names plainly to a human."""
+
+    YES = "YES"
+    NO = "NO"
+
+
 BANNED_ALERT_WORDS = (
     "guaranteed",
     "profitable",
