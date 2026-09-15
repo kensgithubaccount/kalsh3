@@ -20,7 +20,7 @@ from services.forecasting.wn_a1_current_daily_high_authority import (
     route_current_daily_high,
 )
 from services.forecasting.wn_a1_domain import WnA1Error
-from services.market_universe.domain import Event, Market, Series
+from services.market_universe.domain import Event, Market, MarketStatus, Series
 
 # Real live payload fields captured 2026-09-14 via
 # GET https://external-api.kalshi.com/trade-api/v2/markets?series_ticker=KXHIGHCHI --
@@ -116,6 +116,25 @@ def test_supported_from_real_live_rule_shape() -> None:
     assert contract.window_status is WindowStatus.NOT_ESTABLISHED
     assert route.research_only is True
     assert route.production_influence == Decimal(0)
+
+
+@pytest.mark.parametrize(
+    "status", [status for status in MarketStatus if status is not MarketStatus.ACTIVE]
+)
+def test_non_active_market_status_abstains(status: MarketStatus) -> None:
+    market, event, series = triple(m=market_raw(status=status.value))
+    route = route_current_daily_high(market, event, series)
+    assert route.state is CurrentDailyHighRouteState.ABSTAIN
+    assert route.reason is CurrentDailyHighReason.MARKET_NOT_ACTIVE
+    assert route.contract is None
+
+
+def test_active_market_status_is_bound_into_source_identity() -> None:
+    market, event, series = triple()
+    active_route = route_current_daily_high(market, event, series)
+    inactive_market, _, _ = triple(m=market_raw(status="finalized"))
+    inactive_route = route_current_daily_high(inactive_market, event, series)
+    assert active_route.source_identity != inactive_route.source_identity
 
 
 def test_between_range_supported() -> None:

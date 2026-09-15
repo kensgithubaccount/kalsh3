@@ -57,7 +57,7 @@ from decimal import Decimal, InvalidOperation
 from enum import StrEnum
 from zoneinfo import ZoneInfo
 
-from services.market_universe.domain import Event, Market, Series, stable_hash
+from services.market_universe.domain import Event, Market, MarketStatus, Series, stable_hash
 
 from .wn_a1_domain import PRODUCTION_INFLUENCE, RESEARCH_ONLY, WnA1Error
 
@@ -124,6 +124,7 @@ class CurrentDailyHighRouteState(StrEnum):
 class CurrentDailyHighReason(StrEnum):
     WRONG_SERIES = "WRONG_SERIES"
     EVENT_MARKET_MISMATCH = "EVENT_MARKET_MISMATCH"
+    MARKET_NOT_ACTIVE = "MARKET_NOT_ACTIVE"
     MEASUREMENT_OUT_OF_SCOPE = "MEASUREMENT_OUT_OF_SCOPE"
     WRONG_STATION_OR_CITY = "WRONG_STATION_OR_CITY"
     RULE_SHAPE_UNSUPPORTED = "RULE_SHAPE_UNSUPPORTED"
@@ -205,6 +206,7 @@ def route_current_daily_high(market: Market, event: Event, series: Series) -> Cu
         {
             "market_ticker": market.ticker,
             "event_ticker": market.event_ticker,
+            "market_status": market.status.value,
             "series_ticker": event.series_ticker,
             "rules_primary": market.raw.get("rules_primary"),
             "rules_secondary": market.raw.get("rules_secondary"),
@@ -229,6 +231,8 @@ def route_current_daily_high(market: Market, event: Event, series: Series) -> Cu
         return _abstain(base, CurrentDailyHighReason.WRONG_SERIES)
     if market.event_ticker != event.ticker:
         return _abstain(base, CurrentDailyHighReason.EVENT_MARKET_MISMATCH)
+    if market.status is not MarketStatus.ACTIVE:
+        return _abstain(base, CurrentDailyHighReason.MARKET_NOT_ACTIVE)
     rule = market.raw.get("rules_primary")
     if not isinstance(rule, str) or not rule:
         return _abstain(base, CurrentDailyHighReason.RULE_SHAPE_UNSUPPORTED)
