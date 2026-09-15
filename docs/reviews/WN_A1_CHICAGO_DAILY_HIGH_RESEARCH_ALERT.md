@@ -58,10 +58,14 @@ addendum is the current source of truth where it conflicts with the text below.
    way), rather than recomputing a hash from an in-memory object. Duplicate persistence of
    the same attempt fails closed.
 
-**Live WeatherNext smoke test: not run.** No Google Cloud credentials, `gcloud`, or the
-`gcsfs`/`zarr`/`google-cloud-storage` packages were available in this repair environment --
-the same blocker as the original milestone. See `docs/IMPLEMENTATION_STATUS.md`'s WN-A1
-repair entry for full verification results.
+**Live WeatherNext smoke test: not run.** ADC/Requester-Pays quota-project configuration for
+`pghfilmcritic@gmail.com` (quota project `total-market-138523`) succeeded, but the live read
+failed closed with **HTTP 403**: the account does not have `storage.objects.get` access to
+`gs://weathernext3_spatial/weathernext_3_0_0/zarr/2026_to_present/`. That is a dataset-level
+Google Cloud grant the account does not hold, not a bug in `gcs_zarr_reader`'s Requester Pays
+wiring; the reader was not weakened or bypassed and no synthetic evidence was substituted.
+`LIVE WEATHERNEXT READ NOT RUN -- GOOGLE DATASET PERMISSION DENIED.` See
+`docs/IMPLEMENTATION_STATUS.md`'s WN-A1 repair entry for full verification results.
 
 ## A load-bearing correction made mid-build
 

@@ -825,9 +825,18 @@
   closed on tampered rows), recomputes the raw probability, and re-runs `decide_alert` --
   never merely recomputing a hash from an in-memory dataclass. `append` fails closed on any
   duplicate `attempt_id`.
-- **Live WeatherNext smoke test**: not run. No Google Cloud credentials, `gcloud`, or the
-  `gcsfs`/`zarr`/`google-cloud-storage` packages were available in this repair environment
-  (same blocker as the original milestone). `LIVE WEATHERNEXT READ NOT RUN`.
+- **Live WeatherNext smoke test**: not run. Application Default Credentials were
+  subsequently configured for `pghfilmcritic@gmail.com` with Requester Pays quota project
+  `total-market-138523` (ADC/quota-project configuration itself **SUCCEEDED**), but the live
+  GCS read failed closed with **HTTP 403**: `pghfilmcritic@gmail.com does not have
+  storage.objects.get access to
+  gs://weathernext3_spatial/weathernext_3_0_0/zarr/2026_to_present/`. This is a
+  dataset-level Google Cloud IAM/ACL grant the account does not hold -- distinct from and
+  downstream of Requester Pays billing configuration, which is correct. Per explicit
+  instruction, the reader was not weakened or bypassed and no synthetic evidence was
+  substituted for the blocked live read. `LIVE WEATHERNEXT READ NOT RUN -- GOOGLE DATASET
+  PERMISSION DENIED.` Reopen once the account (or a differently-authorized account) is
+  granted `storage.objects.get` on the `weathernext3_spatial` bucket.
 - Verification: focused WN-A1 tests 131/131 PASS (was 93; new coverage for all five
   repairs plus the attempt store); M27A regression 29 passed (1 pre-existing unrelated
   psycopg skip); M27C regression 201 passed (same skip); full suite 4,213 passed / 2
