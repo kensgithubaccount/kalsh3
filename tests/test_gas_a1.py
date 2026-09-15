@@ -71,6 +71,27 @@ def test_synchronized_page_changes_are_not_a_latency_edge() -> None:
     assert result["latency_claim_allowed"] is False
 
 
+def test_live_market_rule_shape_binds_aaa_and_text_date() -> None:
+    raw = {
+        "ticker": "KXAAAGASD-26SEP16-4.4000",
+        "event_ticker": "KXAAAGASD-26SEP16",
+        "status": "active",
+        "rules_primary": (
+            "If average regular gas prices for United States are strictly greater than $4.4000 "
+            "on Sep 16, 2026 according to AAA, then the market resolves to Yes."
+        ),
+        "rules_secondary": "",
+        "title": "Will average gas prices be above $4.4000?",
+        "fee_type": "quadratic",
+        "fee_multiplier": "1",
+        "close_time": "2026-09-16T03:59:00Z",
+        "expiration_time": "2026-09-23T14:00:00Z",
+    }
+    parsed = parse_active_market(raw, raw_sha256="b" * 64, observed_at=NOW)
+    assert parsed.target_date.isoformat() == "2026-09-16"
+    assert parsed.latency_eligible is False
+
+
 def test_taker_debits_use_opposite_side_asks_and_fees() -> None:
     result = conservative_taker_debits(
         yes_bids=[["0.40", "2"]],

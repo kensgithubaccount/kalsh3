@@ -166,6 +166,32 @@ def parse_aaa_html(
 
 
 _DATE_RE = re.compile(r"\b(20\d{2})[-/](\d{1,2})[-/](\d{1,2})\b")
+_TEXT_DATE_RE = re.compile(
+    r"\b([A-Za-z]{3,9})"
+    r"\s+(\d{1,2}),\s+(20\d{2})\b",
+    re.I,
+)
+_MONTHS = {
+    name: index
+    for index, name in enumerate(
+        (
+            "January",
+            "February",
+            "March",
+            "April",
+            "May",
+            "June",
+            "July",
+            "August",
+            "September",
+            "October",
+            "November",
+            "December",
+        ),
+        1,
+    )
+}
+_MONTHS.update({name[:3]: value for name, value in _MONTHS.items()})
 _STRIKE_RE = re.compile(r"(?:\$|USD\s*)(\d+(?:\.\d+)?)", re.I)
 _COMPARE_RE = re.compile(r"\b(above|below|greater than|less than|at least|under|over)\b", re.I)
 
@@ -193,7 +219,12 @@ class MarketAuthority:
 
 
 def parse_active_market(
-    raw: dict[str, Any], *, raw_sha256: str, observed_at: datetime
+    raw: dict[str, Any],
+    *,
+    raw_sha256: str,
+    observed_at: datetime,
+    series_fee_type: str | None = None,
+    series_fee_multiplier: Decimal | None = None,
 ) -> MarketAuthority:
     if raw.get("status") != "active":
         raise GasA1Error("market is not ACTIVE")
@@ -206,8 +237,7 @@ def parse_active_market(
     if (
         not isinstance(primary, str)
         or not isinstance(secondary, str)
-        or "AAA" not in primary.upper()
-        or "GASPRICES.AAA.COM" not in (primary + secondary).upper()
+        or "AAA" not in (primary + secondary).upper()
     ):
         raise GasA1Error("exact AAA settlement authority is absent")
     text = " ".join(
@@ -216,19 +246,27 @@ def parse_active_market(
     match = _STRIKE_RE.search(text)
     comparator = _COMPARE_RE.search(text)
     dates = _DATE_RE.findall(text)
-    if not match or not comparator or len(dates) != 1:
+    text_dates = _TEXT_DATE_RE.findall(text)
+    if not match or not comparator or len(dates) + len(text_dates) != 1:
         raise GasA1Error("unsupported rule shape or malformed strike/date")
     try:
-        target = date(int(dates[0][0]), int(dates[0][1]), int(dates[0][2]))
+        if dates:
+            target = date(int(dates[0][0]), int(dates[0][1]), int(dates[0][2]))
+        else:
+            target = date(
+                int(text_dates[0][2]),
+                _MONTHS[text_dates[0][0].capitalize()],
+                int(text_dates[0][1]),
+            )
         strike = Decimal(match.group(1))
-        multiplier = Decimal(str(raw.get("fee_multiplier")))
-    except (ValueError, InvalidOperation) as exc:
+        multiplier = series_fee_multiplier or Decimal(str(raw.get("fee_multiplier")))
+    except (KeyError, ValueError, InvalidOperation) as exc:
         raise GasA1Error("malformed market date, strike, or fee multiplier") from exc
     if strike <= 0 or multiplier < 0:
         raise GasA1Error("malformed strike or fee multiplier")
     source_url = "https://gasprices.aaa.com/"
     close_time = raw.get("close_time")
-    settlement_time = raw.get("settlement_ts")
+    settlement_time = raw.get("settlement_ts", raw.get("expiration_time"))
     if not isinstance(close_time, str) or not isinstance(settlement_time, str):
         raise GasA1Error("close or settlement timing is missing")
     try:
@@ -256,7 +294,7 @@ def parse_active_market(
         source_url,
         close_time,
         settlement_time,
-        str(raw.get("fee_type")),
+        series_fee_type or str(raw.get("fee_type")),
         multiplier,
         raw_sha256,
         observed_at.isoformat(),
@@ -376,6 +414,12 @@ CREATE TABLE IF NOT EXISTS diagnostics(
 """
 
 
+def _json_value(value: Any) -> Any:
+    if isinstance(value, (Decimal, date, datetime)):
+        return str(value)
+    return value
+
+
 class GasA1Store:
     def __init__(self, path: Path) -> None:
         self.path = path
@@ -478,6 +522,23 @@ def discover_series_markets(
     raise DiscoveryError("PAGINATION_INCOMPLETE", "series-scoped pagination exceeded max_pages")
 
 
+def parse_series_metadata(payload: dict[str, Any]) -> tuple[str, Decimal]:
+    series = payload.get("series")
+    if not isinstance(series, dict) or series.get("ticker") != SERIES:
+        raise DiscoveryError("UNSUPPORTED_RESPONSE", "series metadata identity is invalid")
+    sources = series.get("settlement_sources")
+    if not isinstance(sources, list) or len(sources) != 1 or not isinstance(sources[0], dict):
+        raise DiscoveryError("UNSUPPORTED_RESPONSE", "series settlement source is ambiguous")
+    if sources[0].get("name") != "AAA" or sources[0].get("url") != AAA_URLS[0]:
+        raise DiscoveryError("UNSUPPORTED_RESPONSE", "series settlement source is not exact AAA")
+    try:
+        fee_type = FeeType(str(series["fee_type"]))
+        multiplier = Decimal(str(series["fee_multiplier"]))
+    except (KeyError, ValueError, InvalidOperation) as exc:
+        raise DiscoveryError("UNSUPPORTED_RESPONSE", "series fee metadata is malformed") from exc
+    return str(fee_type), multiplier
+
+
 def collect_once(
     store: GasA1Store,
     *,
@@ -494,16 +555,27 @@ def collect_once(
     except DiscoveryError as exc:
         store.failure(run_id, exc.classification, str(exc), datetime.now(UTC))
         return run_id
-    except Exception as exc:
-        store.failure(run_id, "DISCOVERY_FAILED", str(exc), datetime.now(UTC))
-        return run_id
     if not rows:
         store.failure(
             run_id,
             "NO_MARKET",
-            "no KXAAAGASD candidates in public open universe",
+            "no KXAAAGASD candidates in completed series-scoped query",
             datetime.now(UTC),
         )
+        return run_id
+    try:
+        series_evidence = get("/trade-api/v2/series/" + SERIES)
+        series_payload = series_evidence.get("payload")
+        if series_evidence.get("classification") != "SUCCESS" or not isinstance(
+            series_payload, dict
+        ):
+            raise DiscoveryError("DISCOVERY_FAILED", "series metadata request failed")
+        fee_type, fee_multiplier = parse_series_metadata(series_payload)
+    except DiscoveryError as exc:
+        store.failure(run_id, exc.classification, str(exc), datetime.now(UTC))
+        return run_id
+    except Exception as exc:
+        store.failure(run_id, "DISCOVERY_FAILED", str(exc), datetime.now(UTC))
         return run_id
     markets: list[MarketAuthority] = []
     for candidate in rows:
@@ -518,14 +590,20 @@ def collect_once(
             if not isinstance(payload, dict) or not isinstance(payload.get("market"), dict):
                 raise GasA1Error("single-market payload shape is unsupported")
             market = parse_active_market(
-                payload["market"], raw_sha256=str(evidence["body_sha256"]), observed_at=now
+                payload["market"],
+                raw_sha256=str(evidence["body_sha256"]),
+                observed_at=now,
+                series_fee_type=fee_type,
+                series_fee_multiplier=fee_multiplier,
             )
             markets.append(market)
             store.market(
                 run_id,
-                market.__dict__
-                if hasattr(market, "__dict__")
-                else {field: getattr(market, field) for field in market.__dataclass_fields__},
+                {
+                    field: _json_value(value)
+                    for field in market.__dataclass_fields__
+                    for value in (getattr(market, field),)
+                },
             )
         except Exception as exc:
             store.failure(run_id, "MARKET_REJECTED", str(exc), datetime.now(UTC))
@@ -560,12 +638,15 @@ def collect_once(
                 "fee_multiplier": str(market.fee_multiplier),
             }
             if snapshot.succeeded:
-                economics["conservative_taker_debits"] = conservative_taker_debits(
-                    yes_bids=payload["yes_levels"],
-                    no_bids=payload["no_levels"],
-                    fee_type=market.fee_type,
-                    fee_multiplier=market.fee_multiplier,
-                )
+                try:
+                    economics["conservative_taker_debits"] = conservative_taker_debits(
+                        yes_bids=payload["yes_levels"],
+                        no_bids=payload["no_levels"],
+                        fee_type=market.fee_type,
+                        fee_multiplier=market.fee_multiplier,
+                    )
+                except GasA1Error as exc:
+                    store.failure(run_id, "COST_DIAGNOSTIC_FAILURE", f"{market.ticker}: {exc}", at)
             store.diagnostic(
                 run_id,
                 market.ticker,
