@@ -826,11 +826,11 @@
   never merely recomputing a hash from an in-memory dataclass. `append` fails closed on any
   duplicate `attempt_id`.
 - **Live WeatherNext smoke test**: not run. Application Default Credentials were
-  subsequently configured for `pghfilmcritic@gmail.com` with Requester Pays quota project
-  `total-market-138523` (ADC/quota-project configuration itself **SUCCEEDED**), but the live
-  GCS read failed closed with **HTTP 403**: `pghfilmcritic@gmail.com does not have
+  subsequently configured for the approved Google account with the configured Requester
+  Pays quota project (ADC/quota-project configuration itself **SUCCEEDED**), but the live
+  GCS read failed closed with **HTTP 403**: the approved Google account does not have
   storage.objects.get access to
-  gs://weathernext3_spatial/weathernext_3_0_0/zarr/2026_to_present/`. This is a
+  gs://weathernext3_spatial/weathernext_3_0_0/zarr/2026_to_present/. This is a
   dataset-level Google Cloud IAM/ACL grant the account does not hold -- distinct from and
   downstream of Requester Pays billing configuration, which is correct. Per explicit
   instruction, the reader was not weakened or bypassed and no synthetic evidence was

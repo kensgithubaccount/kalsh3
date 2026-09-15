@@ -11,6 +11,8 @@ from services.forecasting.wn_a1_alert import GateFailure
 from services.forecasting.wn_a1_attempt_store import (
     AttemptStoreError,
     WnA1Attempt,
+    WnA1RunStart,
+    WnA1RunTerminal,
     open_isolated_attempt_store,
     replay_decision,
     replay_weathernext_evidence,
@@ -98,6 +100,7 @@ def _attempt(
     )
     return WnA1Attempt(
         attempt_id=attempt_id,
+        run_id="test-run-" + attempt_id[:16],
         target_local_date="2026-09-15",
         market_ticker="KXHIGHCHI-26SEP15-T87",
         event_ticker="KXHIGHCHI-26SEP15",
@@ -434,3 +437,150 @@ def test_attempts_for_date_lists_every_persisted_attempt(tmp_path) -> None:
     rows = store.attempts_for_date(evidence.init_time.date())
     assert {r.decision_state for r in rows} == {"TAKE A LOOK", "SKIP"}
     assert store.count() == 2
+
+
+# --- Item F: the two-phase (START -> terminal) durable run journal -----------------------
+
+
+def _run_start(run_id: str, *, pipeline_started_at: datetime) -> WnA1RunStart:
+    return WnA1RunStart(
+        run_id=run_id,
+        target_local_date="2026-09-15",
+        event_ticker="KXHIGHCHI-26SEP15",
+        weathernext_source_object=SOURCE_OBJECT,
+        weathernext_init_time=INIT_TIME,
+        weathernext_requested_latitude=Decimal("41.80"),
+        weathernext_requested_longitude=Decimal("-87.75"),
+        alert_policy_version="wn-a1-alert-policy-v2-side-aware",
+        pipeline_started_at=pipeline_started_at,
+    )
+
+
+def _run_terminal(
+    run_id: str, *, status: str, pipeline_started_at: datetime, terminal_at: datetime
+) -> WnA1RunTerminal:
+    return WnA1RunTerminal(
+        run_id=run_id,
+        status=status,
+        pipeline_started_at=pipeline_started_at,
+        terminal_at=terminal_at,
+        target_local_date="2026-09-15",
+        event_ticker="KXHIGHCHI-26SEP15",
+        weathernext_source_object=SOURCE_OBJECT,
+        weathernext_init_time=INIT_TIME,
+        weathernext_requested_latitude=Decimal("41.80"),
+        weathernext_requested_longitude=Decimal("-87.75"),
+        discovery_state="OK",
+        discovery_reason=None,
+        weathernext_state="COMPLETE",
+        weathernext_reason=None,
+        weathernext_acquired_at=INIT_TIME,
+        route_outcomes=(("KXHIGHCHI-26SEP15-T87", "EVALUATED", "DATA NOT READY"),),
+        attempt_ids=(),
+        alert_policy_version="wn-a1-alert-policy-v2-side-aware",
+        failure_reason=None,
+    )
+
+
+def test_run_start_and_terminal_round_trip(tmp_path) -> None:
+    store = open_isolated_attempt_store(tmp_path)
+    started_at = datetime(2026, 9, 14, 14, 59, tzinfo=UTC)
+    start = _run_start("run-1", pipeline_started_at=started_at)
+    store.register_run_start(start)
+    reopened_start = store.get_run_start("run-1")
+    assert reopened_start.pipeline_started_at == started_at
+    assert reopened_start.research_only is True
+    assert reopened_start.production_influence == Decimal(0)
+
+    terminal = _run_terminal(
+        "run-1",
+        status="COMPLETED",
+        pipeline_started_at=started_at,
+        terminal_at=started_at + timedelta(minutes=1),
+    )
+    store.append_run_terminal(terminal)
+    reopened_terminal = store.get_run_terminal("run-1")
+    assert reopened_terminal.status == "COMPLETED"
+    assert reopened_terminal.route_outcomes == terminal.route_outcomes
+    assert reopened_terminal.research_only is True
+    assert reopened_terminal.production_influence == Decimal(0)
+
+
+def test_duplicate_run_start_fails_closed(tmp_path) -> None:
+    store = open_isolated_attempt_store(tmp_path)
+    started_at = datetime(2026, 9, 14, 14, 59, tzinfo=UTC)
+    start = _run_start("run-dup", pipeline_started_at=started_at)
+    store.register_run_start(start)
+    with pytest.raises(AttemptStoreError, match="duplicate"):
+        store.register_run_start(start)
+
+
+def test_duplicate_run_terminal_fails_closed(tmp_path) -> None:
+    store = open_isolated_attempt_store(tmp_path)
+    started_at = datetime(2026, 9, 14, 14, 59, tzinfo=UTC)
+    store.register_run_start(_run_start("run-dup-terminal", pipeline_started_at=started_at))
+    terminal = _run_terminal(
+        "run-dup-terminal",
+        status="COMPLETED",
+        pipeline_started_at=started_at,
+        terminal_at=started_at + timedelta(minutes=1),
+    )
+    store.append_run_terminal(terminal)
+    with pytest.raises(AttemptStoreError, match="duplicate"):
+        store.append_run_terminal(terminal)
+
+
+def test_run_status_is_started_before_any_terminal_exists(tmp_path) -> None:
+    store = open_isolated_attempt_store(tmp_path)
+    started_at = datetime(2026, 9, 14, 14, 59, tzinfo=UTC)
+    store.register_run_start(_run_start("run-pending", pipeline_started_at=started_at))
+    assert store.run_status("run-pending") == "STARTED"
+    with pytest.raises(AttemptStoreError, match="no terminal record"):
+        store.get_run_terminal("run-pending")
+
+
+def test_run_status_raises_for_a_completely_unknown_run(tmp_path) -> None:
+    store = open_isolated_attempt_store(tmp_path)
+    with pytest.raises(AttemptStoreError, match="unknown"):
+        store.run_status("never-registered")
+
+
+def test_interrupted_run_is_durably_visible_after_fresh_process_reopen(tmp_path) -> None:
+    """Item F5's required interruption test: persist START (and one linked market attempt,
+    simulating an attempt that completed before the crash), inject a failure BEFORE the
+    terminal record is ever written (simulating the process dying), then reopen the SQLite
+    file from a brand-new store instance and prove the run is durably visible as
+    STARTED/interrupted, with its already-linked attempt row still attributable to it --
+    never silently disappeared."""
+    started_at = datetime(2026, 9, 14, 14, 59, tzinfo=UTC)
+    run_id = "run-interrupted"
+    store = open_isolated_attempt_store(tmp_path)
+    store.register_run_start(_run_start(run_id, pipeline_started_at=started_at))
+
+    evidence = _hot_evidence()
+    linked_attempt = _attempt(
+        evaluated_at=datetime(2026, 9, 14, 15, 0, tzinfo=UTC),
+        evidence=evidence,
+        decision_state="DATA NOT READY",
+        side=None,
+    )
+    linked_attempt = replace(linked_attempt, run_id=run_id)
+    store.append(linked_attempt)
+
+    # Simulate the process dying here -- no terminal record is ever appended.
+
+    # A genuinely fresh process reopens a brand-new store instance pointed at the same file.
+    fresh_store = open_isolated_attempt_store(tmp_path)
+    assert fresh_store.run_status(run_id) == "STARTED"
+    with pytest.raises(AttemptStoreError, match="no terminal record"):
+        fresh_store.get_run_terminal(run_id)
+
+    # The linked market attempt is still durably visible and attributable to this run.
+    linked = fresh_store.attempts_for_run(run_id)
+    assert len(linked) == 1
+    assert linked[0].attempt_id == linked_attempt.attempt_id
+    assert linked[0].run_id == run_id
+
+    # The run's own registration record is intact, unaffected by the interruption.
+    start = fresh_store.get_run_start(run_id)
+    assert start.pipeline_started_at == started_at

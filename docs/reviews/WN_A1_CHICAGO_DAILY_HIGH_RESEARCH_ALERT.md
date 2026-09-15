@@ -59,8 +59,8 @@ addendum is the current source of truth where it conflicts with the text below.
    the same attempt fails closed.
 
 **Live WeatherNext smoke test: not run.** ADC/Requester-Pays quota-project configuration for
-`pghfilmcritic@gmail.com` (quota project `total-market-138523`) succeeded, but the live read
-failed closed with **HTTP 403**: the account does not have `storage.objects.get` access to
+the approved Google account (configured Requester Pays quota project) succeeded, but the
+live read failed closed with **HTTP 403**: the account does not have `storage.objects.get` access to
 `gs://weathernext3_spatial/weathernext_3_0_0/zarr/2026_to_present/`. That is a dataset-level
 Google Cloud grant the account does not hold, not a bug in `gcs_zarr_reader`'s Requester Pays
 wiring; the reader was not weakened or bypassed and no synthetic evidence was substituted.

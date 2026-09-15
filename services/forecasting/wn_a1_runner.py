@@ -5,12 +5,16 @@ event/contract acquisition -> reviewed WeatherNext GCS acquisition -> probabilit
 calculation -> current orderbook/taker economics -> side-aware candidate selection ->
 plain-English alert -> durable attempt persistence. It takes no transport-override
 parameters at all, so no test fixture or injected fake reader can ever produce a record
-indistinguishable from a genuine canonical live run. ``_run_evaluation`` is the deliberately
-separate, explicitly internal/fixture-only composition seam every WN-A1 test uses instead;
-``discover_event``/``acquire_market_snapshot``/``acquire_weathernext_evidence``/
-``evaluate_candidate`` remain independently injectable and independently testable, as
-before. Nothing here places, previews, or authorizes an order; no execution or
-credential-signing module is imported anywhere in this package.
+indistinguishable from a genuine canonical live run. It also takes no caller-supplied clock
+or timestamp: ``pipeline_started_at``, the WeatherNext acquisition timestamp, and each
+market's ``decision_at`` are all captured internally from the real UTC clock -- see
+``_run_evaluation``'s docstring for the exact chronology this enforces. ``_run_evaluation``
+is the deliberately separate, explicitly internal/fixture-only composition seam every WN-A1
+test uses instead (it may accept an injected deterministic ``clock``, but ``run_canonical``
+itself hardwires the real one); ``discover_event``/``acquire_market_snapshot``/
+``acquire_weathernext_evidence``/``evaluate_candidate`` remain independently injectable and
+independently testable, as before. Nothing here places, previews, or authorizes an order; no
+execution or credential-signing module is imported anywhere in this package.
 """
 
 from __future__ import annotations
@@ -35,7 +39,8 @@ from .wn_a1_alert import (
 from .wn_a1_attempt_store import (
     WnA1Attempt,
     WnA1AttemptStore,
-    WnA1RunAttempt,
+    WnA1RunStart,
+    WnA1RunTerminal,
     open_default_attempt_store,
     weathernext_member_rows,
 )
@@ -53,6 +58,7 @@ from .wn_a1_current_daily_high_authority import (
 from .wn_a1_domain import WnA1Error
 from .wn_a1_evaluation_record import EvaluationRecord
 from .wn_a1_market_economics import (
+    Clock,
     KalshiMarketSnapshot,
     acquire_market_snapshot,
     conservative_taker_debit,
@@ -83,6 +89,13 @@ EventGetter = Callable[[str], tuple[dict[str, object], bytes]]
 SeriesGetter = Callable[[str], dict[str, object]]
 MarketGetter = Callable[[str], dict[str, object]]
 OrderbookGetter = Callable[[str], tuple[dict[str, object], bytes]]
+
+
+def _real_clock() -> datetime:
+    """The one hardwired real clock ``run_canonical`` uses -- never caller-overridable
+    there. ``_run_evaluation`` accepts ``clock`` as an injectable seam so tests/tools can
+    supply a deterministic one instead."""
+    return datetime.now(UTC)
 
 
 @dataclass(frozen=True, slots=True)
@@ -163,9 +176,15 @@ def acquire_weathernext_evidence(
     *,
     window_start: datetime,
     window_end: datetime,
-    acquired_at: datetime,
+    clock: Clock,
     reader: ZarrReader = gcs_zarr_reader,
 ) -> EnsembleAcquisitionResult:
+    """Item E3: the WeatherNext acquisition boundary captures its own ``acquired_at``
+    internally, immediately AFTER the real read succeeds -- never as a caller-supplied
+    parameter. By the time ``clock()`` is called here the evidence is positively known to
+    have been acquired; ``build_ensemble_evidence`` then fails closed (Item B) if that
+    timestamp somehow precedes ``request.init_time``.
+    """
     raw_rows, content_hash, selected_latitude, selected_longitude = reader(
         request.source_object,
         request.init_time,
@@ -174,6 +193,7 @@ def acquire_weathernext_evidence(
         window_start,
         window_end,
     )
+    acquired_at = clock()
     return build_ensemble_evidence(
         model=MODEL,
         source_object=request.source_object,
@@ -302,6 +322,7 @@ def select_candidate(
 
 def _build_attempt(
     *,
+    run_id: str,
     outcome: EvaluationOutcome,
     contract: CurrentDailyHighContract,
     ensemble_result: EnsembleAcquisitionResult,
@@ -314,6 +335,7 @@ def _build_attempt(
     boundary = outcome.boundary
     return WnA1Attempt(
         attempt_id=outcome.record.record_id,
+        run_id=run_id,
         target_local_date=contract.local_date.isoformat(),
         market_ticker=contract.market_ticker,
         event_ticker=contract.event_ticker,
@@ -380,22 +402,24 @@ def _run_invocation_id(
     weathernext_source_object: str,
     weathernext_requested_latitude: Decimal,
     weathernext_requested_longitude: Decimal,
-    evaluated_at: datetime,
     policy_version: str,
 ) -> str:
-    """Content-derived run identity (Item D): the same inputs always produce the same
-    ``run_id``, so re-persisting a genuinely duplicate invocation fails closed, matching
-    ``WnA1Attempt``'s own ``attempt_id`` convention."""
+    """Content-derived run identity (Items D/F): the same LOGICAL inputs always produce the
+    same ``run_id`` -- deliberately excluding any wall-clock/caller-supplied timestamp, so
+    "duplicate exact run identity" means "the same requested evaluation", not "the same
+    evaluation attempted at the same instant". This lets ``register_run_start`` reject a
+    genuinely duplicate run before any external getter/reader is ever called (Item F2),
+    matching ``WnA1Attempt``'s own content-derived ``attempt_id`` convention.
+    """
     return stable_hash(
         (
-            "wn-a1-run-invocation-v1",
+            "wn-a1-run-invocation-v2-no-wall-clock",
             event_ticker,
             target_local_date.isoformat(),
             weathernext_init_time.astimezone(UTC).isoformat(),
             weathernext_source_object,
             str(weathernext_requested_latitude),
             str(weathernext_requested_longitude),
-            evaluated_at.astimezone(UTC).isoformat(),
             policy_version,
         )
     )
@@ -408,7 +432,7 @@ def _run_evaluation(
     weathernext_source_object: str,
     weathernext_requested_latitude: Decimal,
     weathernext_requested_longitude: Decimal,
-    evaluated_at: datetime,
+    clock: Clock,
     store: WnA1AttemptStore,
     policy: AlertPolicy,
     get_event: EventGetter,
@@ -419,143 +443,227 @@ def _run_evaluation(
 ) -> tuple[EvaluationOutcome, ...]:
     """The internal, fully-injectable WN-A1 composition seam. Every WN-A1 test uses this
     (directly, or via the lower-level functions it calls) -- never ``run_canonical``, which
-    accepts no transport overrides at all. See the module docstring.
+    accepts no transport or clock overrides at all. See the module docstring.
 
-    Item D: exactly one durable ``WnA1RunAttempt`` is persisted for every invocation of this
-    function, regardless of whether Kalshi event discovery fails, zero markets are
-    supported, every route abstains, or WeatherNext acquisition fails -- so a canonical
-    invocation can never return zero per-market records and leave no durable trace that it
-    was attempted at all.
+    Item E: no timestamp is a caller parameter here. ``clock`` is called to capture, and
+    distinguish, three separate instants -- ``pipeline_started_at`` (this function's own
+    entry), the WeatherNext acquisition timestamp (captured by ``acquire_weathernext_
+    evidence`` immediately after its real read succeeds), and each market's own
+    ``decision_at`` (captured only after that market's Kalshi orderbook acquisition has been
+    attempted). Every per-market decision fails closed if that market's ``decision_at``
+    would precede the WeatherNext acquisition or Kalshi response evidence it is based on
+    (see the chronology check below) -- market freshness (Item A) is evaluated against this
+    same ``decision_at``, never a caller-supplied instant.
+
+    Item F: exactly one immutable ``WnA1RunStart`` is registered BEFORE any Kalshi
+    discovery, WeatherNext acquisition, or market/orderbook acquisition is attempted --
+    ``register_run_start`` fails closed on a duplicate exact run identity before this
+    function ever calls an external getter/reader. Exactly one ``WnA1RunTerminal``
+    (``COMPLETED`` or ``FAILED``) is appended once this invocation actually finishes,
+    regardless of whether Kalshi event discovery fails, zero markets are supported, every
+    route abstains, or WeatherNext acquisition fails -- so a canonical invocation can never
+    return zero per-market records and leave no durable trace that it was attempted at all.
+    A run whose process dies between registration and its terminal record is durably
+    visible as STARTED/interrupted (``WnA1AttemptStore.run_status``), never silently
+    disappeared.
     """
     event_ticker = event_ticker_for(target_local_date)
+    run_id = _run_invocation_id(
+        event_ticker=event_ticker,
+        target_local_date=target_local_date,
+        weathernext_init_time=weathernext_init_time,
+        weathernext_source_object=weathernext_source_object,
+        weathernext_requested_latitude=weathernext_requested_latitude,
+        weathernext_requested_longitude=weathernext_requested_longitude,
+        policy_version=policy.version,
+    )
+    pipeline_started_at = clock()
+
+    # Item F1/F2: registered BEFORE any external getter/reader is ever called. A genuinely
+    # duplicate run identity is rejected right here.
+    store.register_run_start(
+        WnA1RunStart(
+            run_id=run_id,
+            target_local_date=target_local_date.isoformat(),
+            event_ticker=event_ticker,
+            weathernext_source_object=weathernext_source_object,
+            weathernext_init_time=weathernext_init_time,
+            weathernext_requested_latitude=weathernext_requested_latitude,
+            weathernext_requested_longitude=weathernext_requested_longitude,
+            alert_policy_version=policy.version,
+            pipeline_started_at=pipeline_started_at,
+        )
+    )
 
     discovery: EventDiscovery | None = None
     discovery_state = "OK"
     discovery_reason: str | None = None
-    try:
-        discovery = discover_event(
-            event_ticker=event_ticker, get_event=get_event, get_series=get_series
-        )
-    except WnA1Error as exc:
-        discovery_state = "DISCOVERY_FAILED"
-        discovery_reason = str(exc)
-
-    window_start, window_end = research_probability_window(target_local_date)
-    request = WeatherNextRequest(
-        source_object=weathernext_source_object,
-        init_time=weathernext_init_time,
-        latitude=weathernext_requested_latitude,
-        longitude=weathernext_requested_longitude,
-    )
     weathernext_state = "COMPLETE"
     weathernext_reason: str | None = None
-    try:
-        ensemble_result = acquire_weathernext_evidence(
-            request,
-            window_start=window_start,
-            window_end=window_end,
-            acquired_at=evaluated_at,
-            reader=weathernext_reader,
-        )
-    except WnA1Error as exc:
-        ensemble_result = EnsembleAcquisitionResult(EnsembleStatus.INCOMPLETE, None, {})
-        weathernext_state = "ACQUISITION_FAILED"
-        weathernext_reason = str(exc)
-    if ensemble_result.status is not EnsembleStatus.COMPLETE and weathernext_reason is None:
-        weathernext_state = "INCOMPLETE"
-        weathernext_reason = (
-            f"missing WeatherNext members for {len(ensemble_result.missing_samples_by_hour)} "
-            "valid hour(s)"
-            if ensemble_result.missing_samples_by_hour
-            else "WeatherNext evidence unavailable"
-        )
-
-    # A window-bounding failure (e.g. no member values fall inside the research window)
-    # leaves the successfully-acquired evidence itself intact and persistable -- only the
-    # decision's ensemble_complete gate degrades to DATA NOT READY.
-    members: tuple[MemberDailyHigh, ...] | None = None
-    if ensemble_result.status is EnsembleStatus.COMPLETE and ensemble_result.evidence is not None:
-        try:
-            members = compute_member_daily_highs(ensemble_result.evidence, window_start, window_end)
-        except WnA1Error:
-            members = None
-
-    contracts_by_ticker = discovery.contracts_by_ticker if discovery is not None else {}
-    outcomes: list[EvaluationOutcome] = []
-    attempt_ids: list[str] = []
+    weathernext_acquired_at: datetime | None = None
     route_outcomes: list[tuple[str, str, str | None]] = []
-    for route in discovery.routes if discovery is not None else ():
-        if route.state is not CurrentDailyHighRouteState.SUPPORTED:
-            route_outcomes.append(
-                (
-                    route.market_ticker,
-                    route.state.value,
-                    route.reason.value if route.reason is not None else None,
-                )
-            )
-            continue
-        contract = route.contract
-        assert contract is not None  # noqa: S101 -- guaranteed by ROUTESTATE.SUPPORTED
+    attempt_ids: list[str] = []
+    outcomes: list[EvaluationOutcome] = []
+    status = "FAILED"
+    failure_reason: str | None = None
+    try:
         try:
-            snapshot: KalshiMarketSnapshot | None = acquire_market_snapshot(
-                market_ticker=route.market_ticker,
-                get_market=get_market,
-                get_event=get_event,
-                get_series=get_series,
-                get_orderbook=get_orderbook,
+            discovery = discover_event(
+                event_ticker=event_ticker, get_event=get_event, get_series=get_series
             )
-        except WnA1Error:
-            snapshot = None
-        outcome = evaluate_candidate(
-            candidate_ticker=route.market_ticker,
-            sibling_contracts=contracts_by_ticker,
-            members=members,
-            weathernext_evidence_identity=(
-                ensemble_result.evidence.evidence_identity
-                if ensemble_result.evidence is not None
-                else None
-            ),
-            ensemble_status=ensemble_result.status,
-            snapshot=snapshot,
-            evaluated_at=evaluated_at,
-            policy=policy,
-        )
-        attempt = _build_attempt(
-            outcome=outcome,
-            contract=contract,
-            ensemble_result=ensemble_result,
-            snapshot=snapshot,
-            window_start=window_start,
-            window_end=window_end,
-        )
-        store.append(attempt)
-        outcomes.append(outcome)
-        attempt_ids.append(outcome.record.record_id)
-        route_outcomes.append((route.market_ticker, "EVALUATED", outcome.decision.state.value))
+        except WnA1Error as exc:
+            discovery_state = "DISCOVERY_FAILED"
+            discovery_reason = str(exc)
 
-    run_record = WnA1RunAttempt(
-        run_id=_run_invocation_id(
-            event_ticker=event_ticker,
-            target_local_date=target_local_date,
-            weathernext_init_time=weathernext_init_time,
-            weathernext_source_object=weathernext_source_object,
-            weathernext_requested_latitude=weathernext_requested_latitude,
-            weathernext_requested_longitude=weathernext_requested_longitude,
-            evaluated_at=evaluated_at,
-            policy_version=policy.version,
-        ),
-        target_local_date=target_local_date.isoformat(),
-        event_ticker=event_ticker,
-        evaluated_at=evaluated_at,
-        discovery_state=discovery_state,
-        discovery_reason=discovery_reason,
-        weathernext_state=weathernext_state,
-        weathernext_reason=weathernext_reason,
-        route_outcomes=tuple(route_outcomes),
-        attempt_ids=tuple(attempt_ids),
-        alert_policy_version=policy.version,
-    )
-    store.append_run(run_record)
+        window_start, window_end = research_probability_window(target_local_date)
+        request = WeatherNextRequest(
+            source_object=weathernext_source_object,
+            init_time=weathernext_init_time,
+            latitude=weathernext_requested_latitude,
+            longitude=weathernext_requested_longitude,
+        )
+        try:
+            ensemble_result = acquire_weathernext_evidence(
+                request,
+                window_start=window_start,
+                window_end=window_end,
+                clock=clock,
+                reader=weathernext_reader,
+            )
+        except WnA1Error as exc:
+            ensemble_result = EnsembleAcquisitionResult(EnsembleStatus.INCOMPLETE, None, {})
+            weathernext_state = "ACQUISITION_FAILED"
+            weathernext_reason = str(exc)
+        if ensemble_result.evidence is not None:
+            weathernext_acquired_at = ensemble_result.evidence.acquired_at
+        if ensemble_result.status is not EnsembleStatus.COMPLETE and weathernext_reason is None:
+            weathernext_state = "INCOMPLETE"
+            weathernext_reason = (
+                f"missing WeatherNext members for {len(ensemble_result.missing_samples_by_hour)} "
+                "valid hour(s)"
+                if ensemble_result.missing_samples_by_hour
+                else "WeatherNext evidence unavailable"
+            )
+
+        # A window-bounding failure (e.g. no member values fall inside the research window)
+        # leaves the successfully-acquired evidence itself intact and persistable -- only
+        # the decision's ensemble_complete gate degrades to DATA NOT READY.
+        members: tuple[MemberDailyHigh, ...] | None = None
+        if (
+            ensemble_result.status is EnsembleStatus.COMPLETE
+            and ensemble_result.evidence is not None
+        ):
+            try:
+                members = compute_member_daily_highs(
+                    ensemble_result.evidence, window_start, window_end
+                )
+            except WnA1Error:
+                members = None
+
+        contracts_by_ticker = discovery.contracts_by_ticker if discovery is not None else {}
+        for route in discovery.routes if discovery is not None else ():
+            if route.state is not CurrentDailyHighRouteState.SUPPORTED:
+                route_outcomes.append(
+                    (
+                        route.market_ticker,
+                        route.state.value,
+                        route.reason.value if route.reason is not None else None,
+                    )
+                )
+                continue
+            contract = route.contract
+            assert contract is not None  # noqa: S101 -- guaranteed by ROUTESTATE.SUPPORTED
+            try:
+                snapshot: KalshiMarketSnapshot | None = acquire_market_snapshot(
+                    market_ticker=route.market_ticker,
+                    get_market=get_market,
+                    get_event=get_event,
+                    get_series=get_series,
+                    get_orderbook=get_orderbook,
+                )
+            except WnA1Error:
+                snapshot = None
+
+            # Item E4: decision_at is captured only AFTER all evidence required for this
+            # market's decision exists, including the Kalshi orderbook acquisition attempt.
+            decision_at = clock()
+
+            # Item E5: require chronology -- fail closed (abort the run) rather than
+            # silently persisting a decision that claims to postdate evidence it could not
+            # actually have seen yet.
+            if (
+                ensemble_result.evidence is not None
+                and ensemble_result.evidence.acquired_at > decision_at
+            ):
+                raise WnA1Error(
+                    "WN-A1 chronology violated: WeatherNext acquired_at is after this "
+                    "market's decision_at"
+                )
+            if snapshot is not None and (
+                snapshot.market_observed_at > decision_at
+                or snapshot.orderbook_observed_at > decision_at
+            ):
+                raise WnA1Error(
+                    "WN-A1 chronology violated: a Kalshi response observed_at is after "
+                    "this market's decision_at"
+                )
+
+            outcome = evaluate_candidate(
+                candidate_ticker=route.market_ticker,
+                sibling_contracts=contracts_by_ticker,
+                members=members,
+                weathernext_evidence_identity=(
+                    ensemble_result.evidence.evidence_identity
+                    if ensemble_result.evidence is not None
+                    else None
+                ),
+                ensemble_status=ensemble_result.status,
+                snapshot=snapshot,
+                evaluated_at=decision_at,
+                policy=policy,
+            )
+            attempt = _build_attempt(
+                run_id=run_id,
+                outcome=outcome,
+                contract=contract,
+                ensemble_result=ensemble_result,
+                snapshot=snapshot,
+                window_start=window_start,
+                window_end=window_end,
+            )
+            store.append(attempt)
+            outcomes.append(outcome)
+            attempt_ids.append(outcome.record.record_id)
+            route_outcomes.append((route.market_ticker, "EVALUATED", outcome.decision.state.value))
+
+        status = "COMPLETED"
+    except Exception as exc:
+        failure_reason = str(exc)
+        raise
+    finally:
+        store.append_run_terminal(
+            WnA1RunTerminal(
+                run_id=run_id,
+                status=status,
+                pipeline_started_at=pipeline_started_at,
+                terminal_at=clock(),
+                target_local_date=target_local_date.isoformat(),
+                event_ticker=event_ticker,
+                weathernext_source_object=weathernext_source_object,
+                weathernext_init_time=weathernext_init_time,
+                weathernext_requested_latitude=weathernext_requested_latitude,
+                weathernext_requested_longitude=weathernext_requested_longitude,
+                discovery_state=discovery_state,
+                discovery_reason=discovery_reason,
+                weathernext_state=weathernext_state,
+                weathernext_reason=weathernext_reason,
+                weathernext_acquired_at=weathernext_acquired_at,
+                route_outcomes=tuple(route_outcomes),
+                attempt_ids=tuple(attempt_ids),
+                alert_policy_version=policy.version,
+                failure_reason=failure_reason,
+            )
+        )
 
     return tuple(outcomes)
 
@@ -567,7 +675,6 @@ def run_canonical(
     weathernext_source_object: str,
     weathernext_requested_latitude: Decimal = CHICAGO_STATION_LATITUDE,
     weathernext_requested_longitude: Decimal = CHICAGO_STATION_LONGITUDE,
-    evaluated_at: datetime,
 ) -> tuple[EvaluationOutcome, ...]:
     """The ONE canonical, research-only, real-live-acquisition WN-A1 entrypoint.
 
@@ -575,18 +682,21 @@ def run_canonical(
     probability calculation -> current orderbook/taker economics -> side-aware candidate
     selection -> plain-English alert -> durable attempt persistence. Every dependency is
     hardwired to the real, reviewed transport and configuration: ``DEFAULT_POLICY``,
-    ``open_default_attempt_store()``, ``services.market_universe.public_read``, and
-    ``gcs_zarr_reader``. This function accepts no store/policy/getter/reader override
-    parameters at all -- only the target-date and WeatherNext-run identity inputs needed to
-    identify the requested evaluation -- so no caller can substitute an isolated
-    persistence destination, a caller-selected policy, or a fake transport and still call
-    this the canonical live entrypoint. See ``test_run_canonical_accepts_no_transport_
-    override_parameters`` for the exact signature regression this guarantees. Persists
-    every evaluated attempt, including SKIP/TOO UNCERTAIN/DATA NOT READY, to the
-    fixed-location durable store, and always leaves a durable run-level record even when
+    ``open_default_attempt_store()``, ``services.market_universe.public_read``,
+    ``gcs_zarr_reader``, and the real UTC clock (``_real_clock``). This function accepts no
+    store/policy/getter/reader/clock override parameters at all -- only the target-date and
+    WeatherNext-run identity inputs needed to identify the requested evaluation -- so no
+    caller can substitute an isolated persistence destination, a caller-selected policy, a
+    fake transport, or a backdated/forward-dated clock and still call this the canonical
+    live entrypoint. ``pipeline_started_at``, the WeatherNext acquisition timestamp, and
+    each market's ``decision_at`` are all captured internally, never accepted as parameters
+    -- see ``test_run_canonical_signature_is_exactly_the_evaluation_identity_inputs`` for
+    the exact signature regression this guarantees. Persists every evaluated attempt,
+    including SKIP/TOO UNCERTAIN/DATA NOT READY, to the fixed-location durable store, bound
+    to a pre-registered run, and always leaves a durable run-level terminal record even when
     zero markets are supported -- see ``_run_evaluation``. Places, previews, or authorizes
-    no order anywhere. Tests/tools that need injected dependencies use ``_run_evaluation``
-    directly instead.
+    no order anywhere. Tests/tools that need injected dependencies or a deterministic clock
+    use ``_run_evaluation`` directly instead.
     """
     return _run_evaluation(
         target_local_date=target_local_date,
@@ -594,7 +704,7 @@ def run_canonical(
         weathernext_source_object=weathernext_source_object,
         weathernext_requested_latitude=weathernext_requested_latitude,
         weathernext_requested_longitude=weathernext_requested_longitude,
-        evaluated_at=evaluated_at,
+        clock=_real_clock,
         store=open_default_attempt_store(),
         policy=DEFAULT_POLICY,
         get_event=public_read.get_event_with_body,

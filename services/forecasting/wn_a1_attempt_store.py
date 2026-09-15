@@ -18,6 +18,15 @@ live ``wn_a1_runner.run_canonical`` entrypoint never accepts a caller-selected r
 Duplicate persistence of the same exact attempt (same ``attempt_id``, WN-A1's
 content-derived identity -- see ``EvaluationRecord.record_id``) fails closed: ``append``
 always raises rather than silently allowing a second write, matching or not.
+
+Every ``WnA1Attempt`` binds to its parent ``run_id``. Each canonical invocation is itself
+durably journaled in two append-only phases (``register_run_start`` / ``append_run_terminal``):
+a ``WnA1RunStart`` is persisted BEFORE any Kalshi discovery, WeatherNext acquisition, or
+market/orderbook acquisition -- so a genuinely duplicate run identity is rejected before any
+external getter/reader is ever called, and so a process that dies mid-run still leaves this
+row durably visible. The matching ``WnA1RunTerminal`` (``COMPLETED``/``FAILED``) is persisted
+once the invocation actually finishes; a run with a start but no terminal is visibly
+STARTED/interrupted -- see ``WnA1AttemptStore.run_status``.
 """
 
 from __future__ import annotations
@@ -57,8 +66,8 @@ from .wn_a1_weathernext_evidence import (
     build_ensemble_evidence,
 )
 
-SCHEMA_VERSION = "wn-a1-attempt-store-v1"
-RUN_SCHEMA_VERSION = "wn-a1-run-attempt-v1"
+SCHEMA_VERSION = "wn-a1-attempt-store-v2-run-bound"
+RUN_SCHEMA_VERSION = "wn-a1-run-journal-v2-two-phase"
 
 # Canonical location derived from this installed module -- never caller-controlled.
 _DEFAULT_ROOT = Path(__file__).resolve().parents[2] / ".kalsh3-wn-a1-research"
@@ -74,6 +83,9 @@ class AttemptStoreError(WnA1Error):
 @dataclass(frozen=True, slots=True)
 class WnA1Attempt:
     attempt_id: str
+    # Item F3: every market-level attempt binds to the pre-registered run that produced it
+    # (see ``WnA1RunStart``/``WnA1RunTerminal``) -- never an orphaned market row.
+    run_id: str
     target_local_date: str
     market_ticker: str
     event_ticker: str
@@ -133,34 +145,73 @@ _RouteOutcome = tuple[str, str, str | None]  # (market_ticker, route_state, reas
 
 
 @dataclass(frozen=True, slots=True)
-class WnA1RunAttempt:
-    """Item D's durable, append-only run-level invocation record.
+class WnA1RunStart:
+    """Item F1's immutable run registration record.
 
-    Every ``run_canonical``/``_run_evaluation`` invocation persists exactly one of these,
-    regardless of how many (if any) per-market ``WnA1Attempt`` rows it also produces --
-    including a Kalshi event-discovery failure, zero supported markets, every route
-    abstaining, or a WeatherNext acquisition failure. This is denominator/preservation
-    evidence only, never a trading authority: it never fabricates a market-level contract
-    for a route that was never supported.
+    Persisted BEFORE Kalshi discovery, WeatherNext acquisition, or any market/orderbook
+    acquisition -- so duplicate-exact-run-identity rejection (``register_run_start``)
+    happens before any external getter/reader is ever called, and so a process that dies
+    mid-run still leaves this row durably visible (see ``WnA1RunTerminal`` and
+    ``WnA1AttemptStore.run_status``).
     """
 
     run_id: str
     target_local_date: str
     event_ticker: str
-    evaluated_at: datetime
-    discovery_state: str  # "OK" | "DISCOVERY_FAILED"
-    discovery_reason: str | None
-    weathernext_state: str  # "COMPLETE" | "INCOMPLETE" | "ACQUISITION_FAILED"
-    weathernext_reason: str | None
-    route_outcomes: tuple[_RouteOutcome, ...]
-    attempt_ids: tuple[str, ...]
+    weathernext_source_object: str
+    weathernext_init_time: datetime
+    weathernext_requested_latitude: Decimal
+    weathernext_requested_longitude: Decimal
     alert_policy_version: str
+    pipeline_started_at: datetime
     research_only: bool = RESEARCH_ONLY
     production_influence: Decimal = PRODUCTION_INFLUENCE
 
     def __post_init__(self) -> None:
         if self.research_only is not True or self.production_influence != 0:
-            raise AttemptStoreError("WN-A1 run attempt must remain research-only, zero influence")
+            raise AttemptStoreError("WN-A1 run start must remain research-only, zero influence")
+
+
+@dataclass(frozen=True, slots=True)
+class WnA1RunTerminal:
+    """Item F4's immutable terminal record: the second half of the append-only two-phase
+    run journal (START -> zero or more linked ``WnA1Attempt`` rows -> this terminal record).
+
+    A run whose ``run_id`` has a ``WnA1RunStart`` but no matching ``WnA1RunTerminal`` is
+    durably visible as STARTED/interrupted -- see ``WnA1AttemptStore.run_status``. This
+    terminal record is self-describing (it repeats the WeatherNext run identity and start
+    timestamp rather than requiring a join) and is denominator/preservation evidence only,
+    never a trading authority: it never fabricates a market-level contract for a route that
+    was never supported.
+    """
+
+    run_id: str
+    status: str  # "COMPLETED" | "FAILED"
+    pipeline_started_at: datetime
+    terminal_at: datetime
+    target_local_date: str
+    event_ticker: str
+    weathernext_source_object: str
+    weathernext_init_time: datetime
+    weathernext_requested_latitude: Decimal
+    weathernext_requested_longitude: Decimal
+    discovery_state: str  # "OK" | "DISCOVERY_FAILED"
+    discovery_reason: str | None
+    weathernext_state: str  # "COMPLETE" | "INCOMPLETE" | "ACQUISITION_FAILED"
+    weathernext_reason: str | None
+    weathernext_acquired_at: datetime | None
+    route_outcomes: tuple[_RouteOutcome, ...]
+    attempt_ids: tuple[str, ...]
+    alert_policy_version: str
+    failure_reason: str | None
+    research_only: bool = RESEARCH_ONLY
+    production_influence: Decimal = PRODUCTION_INFLUENCE
+
+    def __post_init__(self) -> None:
+        if self.research_only is not True or self.production_influence != 0:
+            raise AttemptStoreError("WN-A1 run terminal must remain research-only, zero influence")
+        if self.status not in ("COMPLETED", "FAILED"):
+            raise AttemptStoreError(f"unrecognized WN-A1 run terminal status: {self.status!r}")
 
 
 def weathernext_member_rows(evidence: WeatherNextEnsembleEvidence) -> tuple[_MemberRow, ...]:
@@ -190,6 +241,7 @@ class WnA1AttemptStore:
                 """
                 CREATE TABLE IF NOT EXISTS wn_a1_attempts (
                     attempt_id TEXT PRIMARY KEY,
+                    run_id TEXT NOT NULL,
                     market_ticker TEXT NOT NULL,
                     target_local_date TEXT NOT NULL,
                     decision_state TEXT NOT NULL,
@@ -200,25 +252,40 @@ class WnA1AttemptStore:
                     production_influence TEXT NOT NULL DEFAULT '0'
                         CHECK(production_influence = '0')
                 );
+                CREATE INDEX IF NOT EXISTS wn_a1_attempts_run_id ON wn_a1_attempts(run_id);
                 CREATE TRIGGER IF NOT EXISTS wn_a1_attempts_no_update
                 BEFORE UPDATE ON wn_a1_attempts BEGIN SELECT RAISE(ABORT, 'append only'); END;
                 CREATE TRIGGER IF NOT EXISTS wn_a1_attempts_no_delete
                 BEFORE DELETE ON wn_a1_attempts BEGIN SELECT RAISE(ABORT, 'append only'); END;
-                CREATE TABLE IF NOT EXISTS wn_a1_runs (
+                CREATE TABLE IF NOT EXISTS wn_a1_run_starts (
                     run_id TEXT PRIMARY KEY,
                     target_local_date TEXT NOT NULL,
                     event_ticker TEXT NOT NULL,
-                    evaluated_at TEXT NOT NULL,
+                    pipeline_started_at TEXT NOT NULL,
                     schema_version TEXT NOT NULL,
                     payload TEXT NOT NULL,
                     research_only TEXT NOT NULL DEFAULT '1' CHECK(research_only = '1'),
                     production_influence TEXT NOT NULL DEFAULT '0'
                         CHECK(production_influence = '0')
                 );
-                CREATE TRIGGER IF NOT EXISTS wn_a1_runs_no_update
-                BEFORE UPDATE ON wn_a1_runs BEGIN SELECT RAISE(ABORT, 'append only'); END;
-                CREATE TRIGGER IF NOT EXISTS wn_a1_runs_no_delete
-                BEFORE DELETE ON wn_a1_runs BEGIN SELECT RAISE(ABORT, 'append only'); END;
+                CREATE TRIGGER IF NOT EXISTS wn_a1_run_starts_no_update
+                BEFORE UPDATE ON wn_a1_run_starts BEGIN SELECT RAISE(ABORT, 'append only'); END;
+                CREATE TRIGGER IF NOT EXISTS wn_a1_run_starts_no_delete
+                BEFORE DELETE ON wn_a1_run_starts BEGIN SELECT RAISE(ABORT, 'append only'); END;
+                CREATE TABLE IF NOT EXISTS wn_a1_run_terminals (
+                    run_id TEXT PRIMARY KEY,
+                    status TEXT NOT NULL,
+                    terminal_at TEXT NOT NULL,
+                    schema_version TEXT NOT NULL,
+                    payload TEXT NOT NULL,
+                    research_only TEXT NOT NULL DEFAULT '1' CHECK(research_only = '1'),
+                    production_influence TEXT NOT NULL DEFAULT '0'
+                        CHECK(production_influence = '0')
+                );
+                CREATE TRIGGER IF NOT EXISTS wn_a1_run_terminals_no_update
+                BEFORE UPDATE ON wn_a1_run_terminals BEGIN SELECT RAISE(ABORT, 'append only'); END;
+                CREATE TRIGGER IF NOT EXISTS wn_a1_run_terminals_no_delete
+                BEFORE DELETE ON wn_a1_run_terminals BEGIN SELECT RAISE(ABORT, 'append only'); END;
                 """
             )
 
@@ -248,9 +315,10 @@ class WnA1AttemptStore:
                         f"duplicate WN-A1 attempt persistence rejected: {attempt.attempt_id}"
                     )
                 db.execute(
-                    "INSERT INTO wn_a1_attempts VALUES (?,?,?,?,?,?,?,?,?)",
+                    "INSERT INTO wn_a1_attempts VALUES (?,?,?,?,?,?,?,?,?,?)",
                     (
                         attempt.attempt_id,
+                        attempt.run_id,
                         attempt.market_ticker,
                         attempt.target_local_date,
                         attempt.decision_state,
@@ -282,35 +350,47 @@ class WnA1AttemptStore:
             ).fetchall()
         return tuple(_decode(json.loads(row["payload"])) for row in rows)
 
+    def attempts_for_run(self, run_id: str) -> tuple[WnA1Attempt, ...]:
+        """Every market-level attempt bound to one run (Item F3), even one whose run is
+        still STARTED/interrupted (no terminal record yet) -- see ``run_status``."""
+        with self._connect() as db:
+            rows = db.execute(
+                "SELECT payload FROM wn_a1_attempts WHERE run_id=? "
+                "ORDER BY evaluated_at, market_ticker",
+                (run_id,),
+            ).fetchall()
+        return tuple(_decode(json.loads(row["payload"])) for row in rows)
+
     def count(self) -> int:
         with self._connect() as db:
             return int(db.execute("SELECT COUNT(*) FROM wn_a1_attempts").fetchone()[0])
 
-    def append_run(self, run: WnA1RunAttempt) -> None:
-        """Persist one run-level invocation record. Fails closed on any duplicate
-        ``run_id`` (the same target date/WeatherNext-run/evaluated_at/policy identity),
-        matching Item D's requirement that a duplicate exact invocation identity is
-        rejected rather than silently double-counted."""
-        if not isinstance(run, WnA1RunAttempt):
-            raise AttemptStoreError("only WnA1RunAttempt may be persisted")
-        payload = json.dumps(_encode_run(run), sort_keys=True, separators=(",", ":"))
+    def register_run_start(self, start: WnA1RunStart) -> None:
+        """Item F1/F2: persist the immutable run-registration record. Callers MUST call
+        this before any Kalshi discovery, WeatherNext acquisition, or market/orderbook
+        acquisition -- fails closed on any duplicate exact ``run_id`` (the same target
+        date/WeatherNext-run/policy identity), and does so without this store ever having
+        touched an external getter/reader itself."""
+        if not isinstance(start, WnA1RunStart):
+            raise AttemptStoreError("only WnA1RunStart may be registered")
+        payload = json.dumps(_encode_run_start(start), sort_keys=True, separators=(",", ":"))
         try:
             with self._connect() as db:
                 db.execute("BEGIN IMMEDIATE")
                 existing = db.execute(
-                    "SELECT 1 FROM wn_a1_runs WHERE run_id=?", (run.run_id,)
+                    "SELECT 1 FROM wn_a1_run_starts WHERE run_id=?", (start.run_id,)
                 ).fetchone()
                 if existing is not None:
                     raise AttemptStoreError(
-                        f"duplicate WN-A1 run persistence rejected: {run.run_id}"
+                        f"duplicate WN-A1 run registration rejected: {start.run_id}"
                     )
                 db.execute(
-                    "INSERT INTO wn_a1_runs VALUES (?,?,?,?,?,?,?,?)",
+                    "INSERT INTO wn_a1_run_starts VALUES (?,?,?,?,?,?,?,?)",
                     (
-                        run.run_id,
-                        run.target_local_date,
-                        run.event_ticker,
-                        _timestamp(run.evaluated_at),
+                        start.run_id,
+                        start.target_local_date,
+                        start.event_ticker,
+                        _timestamp(start.pipeline_started_at),
                         RUN_SCHEMA_VERSION,
                         payload,
                         "1",
@@ -318,18 +398,82 @@ class WnA1AttemptStore:
                     ),
                 )
         except sqlite3.Error as exc:
-            raise AttemptStoreError("WN-A1 run persistence rejected") from exc
+            raise AttemptStoreError("WN-A1 run registration rejected") from exc
 
-    def get_run(self, run_id: str) -> WnA1RunAttempt:
+    def get_run_start(self, run_id: str) -> WnA1RunStart:
         with self._connect() as db:
-            row = db.execute("SELECT payload FROM wn_a1_runs WHERE run_id=?", (run_id,)).fetchone()
+            row = db.execute(
+                "SELECT payload FROM wn_a1_run_starts WHERE run_id=?", (run_id,)
+            ).fetchone()
         if row is None:
             raise AttemptStoreError(f"unknown WN-A1 run: {run_id}")
-        return _decode_run(json.loads(row["payload"]))
+        return _decode_run_start(json.loads(row["payload"]))
 
-    def run_count(self) -> int:
+    def run_start_count(self) -> int:
         with self._connect() as db:
-            return int(db.execute("SELECT COUNT(*) FROM wn_a1_runs").fetchone()[0])
+            return int(db.execute("SELECT COUNT(*) FROM wn_a1_run_starts").fetchone()[0])
+
+    def append_run_terminal(self, terminal: WnA1RunTerminal) -> None:
+        """Item F4's second append-only phase. Fails closed on any duplicate ``run_id``
+        (a run may reach its terminal state exactly once)."""
+        if not isinstance(terminal, WnA1RunTerminal):
+            raise AttemptStoreError("only WnA1RunTerminal may be persisted")
+        payload = json.dumps(_encode_run_terminal(terminal), sort_keys=True, separators=(",", ":"))
+        try:
+            with self._connect() as db:
+                db.execute("BEGIN IMMEDIATE")
+                existing = db.execute(
+                    "SELECT 1 FROM wn_a1_run_terminals WHERE run_id=?", (terminal.run_id,)
+                ).fetchone()
+                if existing is not None:
+                    raise AttemptStoreError(
+                        f"duplicate WN-A1 run terminal persistence rejected: {terminal.run_id}"
+                    )
+                db.execute(
+                    "INSERT INTO wn_a1_run_terminals VALUES (?,?,?,?,?,?,?)",
+                    (
+                        terminal.run_id,
+                        terminal.status,
+                        _timestamp(terminal.terminal_at),
+                        RUN_SCHEMA_VERSION,
+                        payload,
+                        "1",
+                        "0",
+                    ),
+                )
+        except sqlite3.Error as exc:
+            raise AttemptStoreError("WN-A1 run terminal persistence rejected") from exc
+
+    def get_run_terminal(self, run_id: str) -> WnA1RunTerminal:
+        with self._connect() as db:
+            row = db.execute(
+                "SELECT payload FROM wn_a1_run_terminals WHERE run_id=?", (run_id,)
+            ).fetchone()
+        if row is None:
+            raise AttemptStoreError(f"WN-A1 run has no terminal record (yet): {run_id}")
+        return _decode_run_terminal(json.loads(row["payload"]))
+
+    def run_terminal_count(self) -> int:
+        with self._connect() as db:
+            return int(db.execute("SELECT COUNT(*) FROM wn_a1_run_terminals").fetchone()[0])
+
+    def run_status(self, run_id: str) -> str:
+        """ "STARTED" (registered but no terminal yet -- durable evidence of an
+        interrupted/incomplete invocation, e.g. the process died mid-run; Item F5), or the
+        terminal record's own "COMPLETED"/"FAILED" status. Raises if ``run_id`` was never
+        even registered."""
+        with self._connect() as db:
+            start_row = db.execute(
+                "SELECT 1 FROM wn_a1_run_starts WHERE run_id=?", (run_id,)
+            ).fetchone()
+            if start_row is None:
+                raise AttemptStoreError(f"unknown WN-A1 run: {run_id}")
+            terminal_row = db.execute(
+                "SELECT status FROM wn_a1_run_terminals WHERE run_id=?", (run_id,)
+            ).fetchone()
+        if terminal_row is None:
+            return "STARTED"
+        return str(terminal_row["status"])
 
 
 def open_default_attempt_store() -> WnA1AttemptStore:
@@ -510,6 +654,7 @@ def _opt_dt(value: datetime | None) -> str | None:
 def _encode(attempt: WnA1Attempt) -> dict[str, object]:
     return {
         "attempt_id": attempt.attempt_id,
+        "run_id": attempt.run_id,
         "target_local_date": attempt.target_local_date,
         "market_ticker": attempt.market_ticker,
         "event_ticker": attempt.event_ticker,
@@ -587,6 +732,7 @@ def _decode(payload: dict[str, object]) -> WnA1Attempt:
         raise AttemptStoreError("persisted WN-A1 attempt is missing its timestamp")
     return WnA1Attempt(
         attempt_id=str(payload["attempt_id"]),
+        run_id=str(payload["run_id"]),
         target_local_date=str(payload["target_local_date"]),
         market_ticker=str(payload["market_ticker"]),
         event_ticker=str(payload["event_ticker"]),
@@ -645,27 +791,43 @@ def _int_or_none(value: object) -> int | None:
     return value
 
 
-def _encode_run(run: WnA1RunAttempt) -> dict[str, object]:
+def _encode_run_start(start: WnA1RunStart) -> dict[str, object]:
     return {
-        "run_id": run.run_id,
-        "target_local_date": run.target_local_date,
-        "event_ticker": run.event_ticker,
-        "evaluated_at": _timestamp(run.evaluated_at),
-        "discovery_state": run.discovery_state,
-        "discovery_reason": run.discovery_reason,
-        "weathernext_state": run.weathernext_state,
-        "weathernext_reason": run.weathernext_reason,
-        "route_outcomes": [list(row) for row in run.route_outcomes],
-        "attempt_ids": list(run.attempt_ids),
-        "alert_policy_version": run.alert_policy_version,
+        "run_id": start.run_id,
+        "target_local_date": start.target_local_date,
+        "event_ticker": start.event_ticker,
+        "weathernext_source_object": start.weathernext_source_object,
+        "weathernext_init_time": _timestamp(start.weathernext_init_time),
+        "weathernext_requested_latitude": str(start.weathernext_requested_latitude),
+        "weathernext_requested_longitude": str(start.weathernext_requested_longitude),
+        "alert_policy_version": start.alert_policy_version,
+        "pipeline_started_at": _timestamp(start.pipeline_started_at),
         "research_only": True,
         "production_influence": "0",
     }
 
 
-def _decode_run(payload: dict[str, object]) -> WnA1RunAttempt:
+def _decode_run_start(payload: dict[str, object]) -> WnA1RunStart:
     if payload.get("research_only") is not True or payload.get("production_influence") != "0":
-        raise AttemptStoreError("persisted WN-A1 run lost its safety invariants")
+        raise AttemptStoreError("persisted WN-A1 run start lost its safety invariants")
+    pipeline_started_at = _dt(payload["pipeline_started_at"])
+    weathernext_init_time = _dt(payload["weathernext_init_time"])
+    if pipeline_started_at is None or weathernext_init_time is None:
+        raise AttemptStoreError("persisted WN-A1 run start is missing a required timestamp")
+    return WnA1RunStart(
+        run_id=str(payload["run_id"]),
+        target_local_date=str(payload["target_local_date"]),
+        event_ticker=str(payload["event_ticker"]),
+        weathernext_source_object=str(payload["weathernext_source_object"]),
+        weathernext_init_time=weathernext_init_time,
+        weathernext_requested_latitude=Decimal(str(payload["weathernext_requested_latitude"])),
+        weathernext_requested_longitude=Decimal(str(payload["weathernext_requested_longitude"])),
+        alert_policy_version=str(payload["alert_policy_version"]),
+        pipeline_started_at=pipeline_started_at,
+    )
+
+
+def _route_outcomes_from_payload(payload: dict[str, object]) -> tuple[_RouteOutcome, ...]:
     route_outcomes_raw = payload["route_outcomes"]
     if not isinstance(route_outcomes_raw, list):
         raise AttemptStoreError("persisted WN-A1 run route outcomes are malformed")
@@ -675,22 +837,64 @@ def _decode_run(payload: dict[str, object]) -> WnA1RunAttempt:
             raise AttemptStoreError("persisted WN-A1 run route outcome row is malformed")
         ticker, state, reason = row
         route_outcomes.append((str(ticker), str(state), None if reason is None else str(reason)))
+    return tuple(route_outcomes)
+
+
+def _encode_run_terminal(terminal: WnA1RunTerminal) -> dict[str, object]:
+    return {
+        "run_id": terminal.run_id,
+        "status": terminal.status,
+        "pipeline_started_at": _timestamp(terminal.pipeline_started_at),
+        "terminal_at": _timestamp(terminal.terminal_at),
+        "target_local_date": terminal.target_local_date,
+        "event_ticker": terminal.event_ticker,
+        "weathernext_source_object": terminal.weathernext_source_object,
+        "weathernext_init_time": _timestamp(terminal.weathernext_init_time),
+        "weathernext_requested_latitude": str(terminal.weathernext_requested_latitude),
+        "weathernext_requested_longitude": str(terminal.weathernext_requested_longitude),
+        "discovery_state": terminal.discovery_state,
+        "discovery_reason": terminal.discovery_reason,
+        "weathernext_state": terminal.weathernext_state,
+        "weathernext_reason": terminal.weathernext_reason,
+        "weathernext_acquired_at": _opt_dt(terminal.weathernext_acquired_at),
+        "route_outcomes": [list(row) for row in terminal.route_outcomes],
+        "attempt_ids": list(terminal.attempt_ids),
+        "alert_policy_version": terminal.alert_policy_version,
+        "failure_reason": terminal.failure_reason,
+        "research_only": True,
+        "production_influence": "0",
+    }
+
+
+def _decode_run_terminal(payload: dict[str, object]) -> WnA1RunTerminal:
+    if payload.get("research_only") is not True or payload.get("production_influence") != "0":
+        raise AttemptStoreError("persisted WN-A1 run terminal lost its safety invariants")
     attempt_ids_raw = payload["attempt_ids"]
     if not isinstance(attempt_ids_raw, list):
-        raise AttemptStoreError("persisted WN-A1 run attempt ids are malformed")
-    evaluated_at = _dt(payload["evaluated_at"])
-    if evaluated_at is None:
-        raise AttemptStoreError("persisted WN-A1 run is missing its timestamp")
-    return WnA1RunAttempt(
+        raise AttemptStoreError("persisted WN-A1 run terminal attempt ids are malformed")
+    pipeline_started_at = _dt(payload["pipeline_started_at"])
+    terminal_at = _dt(payload["terminal_at"])
+    weathernext_init_time = _dt(payload["weathernext_init_time"])
+    if pipeline_started_at is None or terminal_at is None or weathernext_init_time is None:
+        raise AttemptStoreError("persisted WN-A1 run terminal is missing a required timestamp")
+    return WnA1RunTerminal(
         run_id=str(payload["run_id"]),
+        status=str(payload["status"]),
+        pipeline_started_at=pipeline_started_at,
+        terminal_at=terminal_at,
         target_local_date=str(payload["target_local_date"]),
         event_ticker=str(payload["event_ticker"]),
-        evaluated_at=evaluated_at,
+        weathernext_source_object=str(payload["weathernext_source_object"]),
+        weathernext_init_time=weathernext_init_time,
+        weathernext_requested_latitude=Decimal(str(payload["weathernext_requested_latitude"])),
+        weathernext_requested_longitude=Decimal(str(payload["weathernext_requested_longitude"])),
         discovery_state=str(payload["discovery_state"]),
         discovery_reason=_str_or_none(payload["discovery_reason"]),
         weathernext_state=str(payload["weathernext_state"]),
         weathernext_reason=_str_or_none(payload["weathernext_reason"]),
-        route_outcomes=tuple(route_outcomes),
+        weathernext_acquired_at=_dt(payload["weathernext_acquired_at"]),
+        route_outcomes=_route_outcomes_from_payload(payload),
         attempt_ids=tuple(str(v) for v in attempt_ids_raw),
         alert_policy_version=str(payload["alert_policy_version"]),
+        failure_reason=_str_or_none(payload["failure_reason"]),
     )

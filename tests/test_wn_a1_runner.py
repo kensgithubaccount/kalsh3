@@ -48,6 +48,26 @@ INIT_TIME = datetime(2026, 9, 14, 12, 0, tzinfo=UTC)
 SOURCE_OBJECT = "gs://weathernext3_spatial/weathernext_3_0_0/zarr/2026_to_present/20260914_12hr_XX_preds/predictions.zarr/"
 
 
+def _fixed_clock(value: datetime):
+    """A deterministic injected clock (Item E) that always returns the same instant.
+
+    Since every chronology requirement in Item E is a non-strict ``<=``, a single fixed
+    instant for every ``clock()`` call within one ``_run_evaluation`` invocation is a valid
+    (if degenerate) chronology and keeps most fixtures simple; tests that specifically need
+    to prove ordering use ``_advancing_clock`` instead.
+    """
+    return lambda: value
+
+
+def _advancing_clock(*values: datetime):
+    """An injected clock (Item E) that returns each of ``values`` in order, one per call --
+    for tests that need to prove ``pipeline_started_at < weathernext_acquired_at <
+    decision_at`` are genuinely distinct, ordered instants rather than one fixed timestamp.
+    """
+    iterator = iter(values)
+    return lambda: next(iterator)
+
+
 def _fake_response(payload: dict, path: str, observed_at: datetime) -> dict:
     body = json.dumps(payload).encode()
     return {
@@ -404,7 +424,8 @@ def test_select_candidate_returns_none_when_nothing_qualifies() -> None:
 
 def test_run_canonical_accepts_no_transport_override_parameters() -> None:
     """The one canonical entrypoint must be structurally incapable of taking a fake
-    reader/getter -- a fixture cannot masquerade as a genuine live acquisition."""
+    reader/getter/clock -- a fixture cannot masquerade as a genuine live acquisition, and no
+    caller can backdate a canonical decision (Item E)."""
     import inspect
 
     params = inspect.signature(run_canonical).parameters
@@ -417,16 +438,18 @@ def test_run_canonical_accepts_no_transport_override_parameters() -> None:
         "weathernext_reader",
         "store",
         "policy",
+        "evaluated_at",
+        "clock",
     }
     assert forbidden.isdisjoint(params)
 
 
 def test_run_canonical_signature_is_exactly_the_evaluation_identity_inputs() -> None:
-    """Item C's static/signature regression: ``run_canonical`` must expose ONLY the
+    """Item C/E's static/signature regression: ``run_canonical`` must expose ONLY the
     target-date / WeatherNext-run identity inputs needed to identify the requested
-    evaluation -- never a store, policy, transport, or reader override of any kind. A
-    caller-selected persistence destination or policy would let a fixture masquerade as a
-    genuine canonical live run."""
+    evaluation -- never a store, policy, transport, reader, or clock override of any kind.
+    A caller-selected persistence destination, policy, or timestamp would let a fixture
+    masquerade as a genuine canonical live run, or let a caller backdate a decision."""
     import inspect
 
     params = set(inspect.signature(run_canonical).parameters)
@@ -436,8 +459,29 @@ def test_run_canonical_signature_is_exactly_the_evaluation_identity_inputs() -> 
         "weathernext_source_object",
         "weathernext_requested_latitude",
         "weathernext_requested_longitude",
-        "evaluated_at",
     }
+
+
+def test_run_invocation_id_has_no_wall_clock_input() -> None:
+    """Item E/F static proof: the run-identity function itself has no wall-clock/evaluation-
+    timestamp parameter -- duplicate-run detection is purely a function of the requested
+    evaluation's logical identity (event/date/WeatherNext-run/policy), never of when it
+    happened to be attempted. ``weathernext_init_time`` is the requested forecast run
+    identity, not a wall clock, so it is expected and excluded from this check."""
+    import inspect
+
+    params = set(inspect.signature(_run_invocation_id).parameters)
+    assert params == {
+        "event_ticker",
+        "target_local_date",
+        "weathernext_init_time",
+        "weathernext_source_object",
+        "weathernext_requested_latitude",
+        "weathernext_requested_longitude",
+        "policy_version",
+    }
+    assert "evaluated_at" not in params
+    assert "clock" not in params
 
 
 def test_canonical_composition_seam_persists_every_evaluated_attempt(tmp_path) -> None:
@@ -496,7 +540,7 @@ def test_canonical_composition_seam_persists_every_evaluated_attempt(tmp_path) -
         weathernext_source_object=SOURCE_OBJECT,
         weathernext_requested_latitude=Decimal("41.80"),
         weathernext_requested_longitude=Decimal("-87.75"),
-        evaluated_at=now,
+        clock=_fixed_clock(now),
         store=store,
         policy=DEFAULT_POLICY,
         get_event=fake_get_event,
@@ -528,23 +572,30 @@ def test_canonical_composition_seam_persists_every_evaluated_attempt(tmp_path) -
     assert replayed.state == outcome.decision.state
     assert replayed.side == outcome.decision.side
 
-    # Item D: exactly one durable run-level record exists for this invocation too.
-    assert store.run_count() == 1
-    run = store.get_run(
-        _run_invocation_id(
-            event_ticker="KXHIGHCHI-26SEP15",
-            target_local_date=date(2026, 9, 15),
-            weathernext_init_time=INIT_TIME,
-            weathernext_source_object=SOURCE_OBJECT,
-            weathernext_requested_latitude=Decimal("41.80"),
-            weathernext_requested_longitude=Decimal("-87.75"),
-            evaluated_at=now,
-            policy_version=DEFAULT_POLICY.version,
-        )
+    # Item F3: the attempt binds to its parent run.
+    run_id = _run_invocation_id(
+        event_ticker="KXHIGHCHI-26SEP15",
+        target_local_date=date(2026, 9, 15),
+        weathernext_init_time=INIT_TIME,
+        weathernext_source_object=SOURCE_OBJECT,
+        weathernext_requested_latitude=Decimal("41.80"),
+        weathernext_requested_longitude=Decimal("-87.75"),
+        policy_version=DEFAULT_POLICY.version,
     )
-    assert run.discovery_state == "OK"
-    assert run.weathernext_state == "COMPLETE"
-    assert run.attempt_ids == (outcome.record.record_id,)
+    assert persisted.run_id == run_id
+    assert store.attempts_for_run(run_id) == (persisted,)
+
+    # Item F: exactly one START and one COMPLETED terminal record exist for this invocation.
+    assert store.run_start_count() == 1
+    assert store.run_terminal_count() == 1
+    assert store.run_status(run_id) == "COMPLETED"
+    terminal = store.get_run_terminal(run_id)
+    assert terminal.discovery_state == "OK"
+    assert terminal.weathernext_state == "COMPLETE"
+    assert terminal.attempt_ids == (outcome.record.record_id,)
+    assert terminal.status == "COMPLETED"
+    assert terminal.research_only is True
+    assert terminal.production_influence == Decimal(0)
 
 
 def test_canonical_composition_seam_rejects_duplicate_attempt(tmp_path) -> None:
@@ -586,7 +637,7 @@ def test_canonical_composition_seam_rejects_duplicate_attempt(tmp_path) -> None:
         weathernext_source_object=SOURCE_OBJECT,
         weathernext_requested_latitude=Decimal("41.80"),
         weathernext_requested_longitude=Decimal("-87.75"),
-        evaluated_at=now,
+        clock=_fixed_clock(now),
         store=store,
         policy=DEFAULT_POLICY,
         get_event=fake_get_event,
@@ -600,7 +651,113 @@ def test_canonical_composition_seam_rejects_duplicate_attempt(tmp_path) -> None:
         _run_evaluation(**kwargs)
 
 
-# --- Item D: every invocation leaves a durable run-level trace --------------------------
+def test_duplicate_run_identity_rejected_before_any_external_acquisition(tmp_path) -> None:
+    """Item F's required attack test: register/run one invocation, then attempt the EXACT
+    same run identity again with getters/readers that would return CHANGED market evidence
+    and would raise loudly if called at all -- duplicate rejection must occur BEFORE any
+    getter/reader is ever invoked, and no additional market-attempt rows may be created."""
+    markets = [_market_row("KXHIGHCHI-26SEP15-T87", "greater", 87, None, "greater than 87")]
+    event_payload = {
+        "event": {
+            "event_ticker": "KXHIGHCHI-26SEP15",
+            "series_ticker": "KXHIGHCHI",
+            "title": "x",
+            "settlement_sources": [
+                {"name": "The Weather Company", "url": "https://weather.com/kalshi"}
+            ],
+        },
+        "markets": markets,
+    }
+    now = datetime(2026, 9, 14, 15, 0, tzinfo=UTC)
+
+    def fake_get_event(ticker: str):
+        return _fake_response(event_payload, "x", now), b""
+
+    def fake_get_series(path: str):
+        return _fake_response({"series": series_raw()}, path, now)
+
+    def fake_get_market(ticker: str) -> dict[str, object]:
+        raise WnA1Error("simulated Kalshi market acquisition failure")
+
+    def fake_get_orderbook(ticker: str):
+        raise WnA1Error("simulated Kalshi orderbook acquisition failure")
+
+    def fake_weathernext_reader(
+        source_object, init_time, latitude, longitude, window_start, window_end
+    ):
+        rows = [
+            {
+                "sample": s,
+                "lead_time_hours": 0,
+                "lead_subtime_minutes": 0,
+                "valid_time": init_time,
+                "value_kelvin": Decimal("305.0") if s < 42 else Decimal("299.0"),
+            }
+            for s in range(MEMBER_COUNT)
+        ]
+        return rows, "d" * 64, Decimal("41.80"), Decimal("-87.75")
+
+    store = open_isolated_attempt_store(tmp_path)
+    first_kwargs = dict(
+        target_local_date=date(2026, 9, 15),
+        weathernext_init_time=INIT_TIME,
+        weathernext_source_object=SOURCE_OBJECT,
+        weathernext_requested_latitude=Decimal("41.80"),
+        weathernext_requested_longitude=Decimal("-87.75"),
+        clock=_fixed_clock(now),
+        store=store,
+        policy=DEFAULT_POLICY,
+        get_event=fake_get_event,
+        get_series=fake_get_series,
+        get_market=fake_get_market,
+        get_orderbook=fake_get_orderbook,
+        weathernext_reader=fake_weathernext_reader,
+    )
+    _run_evaluation(**first_kwargs)
+    assert store.count() == 1
+    assert store.run_terminal_count() == 1
+
+    def poisoned_get_event(ticker: str):
+        raise AssertionError("duplicate run must be rejected before any getter is called")
+
+    def poisoned_get_series(path: str):
+        raise AssertionError("duplicate run must be rejected before any getter is called")
+
+    def poisoned_get_market(ticker: str) -> dict[str, object]:
+        raise AssertionError("duplicate run must be rejected before any getter is called")
+
+    def poisoned_get_orderbook(ticker: str):
+        raise AssertionError("duplicate run must be rejected before any getter is called")
+
+    def poisoned_weathernext_reader(*args, **kwargs):
+        raise AssertionError("duplicate run must be rejected before any reader is called")
+
+    # Same exact logical run identity (same date/WeatherNext-run/policy), a different
+    # wall-clock instant, and getters that would return entirely different (and here,
+    # loudly-failing) evidence if ever invoked.
+    with pytest.raises(AttemptStoreError, match="duplicate"):
+        _run_evaluation(
+            target_local_date=date(2026, 9, 15),
+            weathernext_init_time=INIT_TIME,
+            weathernext_source_object=SOURCE_OBJECT,
+            weathernext_requested_latitude=Decimal("41.80"),
+            weathernext_requested_longitude=Decimal("-87.75"),
+            clock=_fixed_clock(now + timedelta(hours=1)),
+            store=store,
+            policy=DEFAULT_POLICY,
+            get_event=poisoned_get_event,
+            get_series=poisoned_get_series,
+            get_market=poisoned_get_market,
+            get_orderbook=poisoned_get_orderbook,
+            weathernext_reader=poisoned_weathernext_reader,
+        )
+    # No poisoned getter/reader was ever called (none raised its AssertionError instead of
+    # the expected AttemptStoreError), and no additional market-attempt row was created.
+    assert store.count() == 1
+    assert store.run_terminal_count() == 1
+
+
+# --- Item D/F: every invocation leaves a durable, pre-registered run-level trace --------
 
 
 def _base_run_kwargs(store, *, get_event, get_series, get_market, get_orderbook, reader):
@@ -610,7 +767,7 @@ def _base_run_kwargs(store, *, get_event, get_series, get_market, get_orderbook,
         weathernext_source_object=SOURCE_OBJECT,
         weathernext_requested_latitude=Decimal("41.80"),
         weathernext_requested_longitude=Decimal("-87.75"),
-        evaluated_at=datetime(2026, 9, 14, 15, 0, tzinfo=UTC),
+        clock=_fixed_clock(datetime(2026, 9, 14, 15, 0, tzinfo=UTC)),
         store=store,
         policy=DEFAULT_POLICY,
         get_event=get_event,
@@ -618,6 +775,18 @@ def _base_run_kwargs(store, *, get_event, get_series, get_market, get_orderbook,
         get_market=get_market,
         get_orderbook=get_orderbook,
         weathernext_reader=reader,
+    )
+
+
+def _base_run_id() -> str:
+    return _run_invocation_id(
+        event_ticker="KXHIGHCHI-26SEP15",
+        target_local_date=date(2026, 9, 15),
+        weathernext_init_time=INIT_TIME,
+        weathernext_source_object=SOURCE_OBJECT,
+        weathernext_requested_latitude=Decimal("41.80"),
+        weathernext_requested_longitude=Decimal("-87.75"),
+        policy_version=DEFAULT_POLICY.version,
     )
 
 
@@ -646,25 +815,18 @@ def test_discovery_failure_still_leaves_a_durable_run_record(tmp_path) -> None:
     outcomes = _run_evaluation(**kwargs)
     assert outcomes == ()
     assert store.count() == 0  # no market was ever evaluated
-    assert store.run_count() == 1
+    assert store.run_start_count() == 1
+    assert store.run_terminal_count() == 1
 
-    run = store.get_run(
-        _run_invocation_id(
-            event_ticker="KXHIGHCHI-26SEP15",
-            target_local_date=date(2026, 9, 15),
-            weathernext_init_time=INIT_TIME,
-            weathernext_source_object=SOURCE_OBJECT,
-            weathernext_requested_latitude=Decimal("41.80"),
-            weathernext_requested_longitude=Decimal("-87.75"),
-            evaluated_at=datetime(2026, 9, 14, 15, 0, tzinfo=UTC),
-            policy_version=DEFAULT_POLICY.version,
-        )
-    )
-    assert run.discovery_state == "DISCOVERY_FAILED"
-    assert "simulated Kalshi event discovery failure" in (run.discovery_reason or "")
-    assert run.attempt_ids == ()
-    assert run.research_only is True
-    assert run.production_influence == Decimal(0)
+    run_id = _base_run_id()
+    assert store.run_status(run_id) == "COMPLETED"
+    terminal = store.get_run_terminal(run_id)
+    assert terminal.discovery_state == "DISCOVERY_FAILED"
+    assert "simulated Kalshi event discovery failure" in (terminal.discovery_reason or "")
+    assert terminal.attempt_ids == ()
+    assert terminal.status == "COMPLETED"
+    assert terminal.research_only is True
+    assert terminal.production_influence == Decimal(0)
 
     # Duplicate exact invocation identity must fail closed.
     with pytest.raises(AttemptStoreError, match="duplicate"):
@@ -710,24 +872,403 @@ def test_all_routes_abstained_still_leaves_a_durable_run_record(tmp_path) -> Non
     outcomes = _run_evaluation(**kwargs)
     assert outcomes == ()
     assert store.count() == 0
-    assert store.run_count() == 1
+    assert store.run_start_count() == 1
+    assert store.run_terminal_count() == 1
 
-    run = store.get_run(
-        _run_invocation_id(
-            event_ticker="KXHIGHCHI-26SEP15",
+    terminal = store.get_run_terminal(_base_run_id())
+    assert terminal.discovery_state == "OK"
+    assert len(terminal.route_outcomes) == 1
+    ticker, state, reason = terminal.route_outcomes[0]
+    assert ticker == "KXHIGHCHI-26SEP15-T87"
+    assert state == "ABSTAIN"
+    assert reason is not None
+    assert terminal.attempt_ids == ()
+    assert terminal.status == "COMPLETED"
+
+
+def test_run_start_registered_before_discovery_or_acquisition(tmp_path) -> None:
+    """Item F1: the START record must exist even if EVERY subsequent step fails -- proving
+    it really is written first, not merely "early". Discovery and WeatherNext acquisition
+    are independent phases (one failing does not skip the other), so only ``get_market``/
+    ``get_orderbook`` are structurally unreachable here (discovery fails -> zero routes ->
+    the per-market loop never runs) -- those two fixtures assert they are never called."""
+
+    def failing_get_event(ticker: str):
+        raise WnA1Error("simulated Kalshi event discovery failure")
+
+    def failing_get_series(path: str):
+        raise WnA1Error("unused")
+
+    def failing_reader(*args, **kwargs):
+        raise WnA1Error("simulated WeatherNext acquisition failure")
+
+    store = open_isolated_attempt_store(tmp_path)
+    kwargs = _base_run_kwargs(
+        store,
+        get_event=failing_get_event,
+        get_series=failing_get_series,
+        get_market=lambda t: (_ for _ in ()).throw(AssertionError("unreachable: no routes")),
+        get_orderbook=lambda t: (_ for _ in ()).throw(AssertionError("unreachable: no routes")),
+        reader=failing_reader,
+    )
+    _run_evaluation(**kwargs)
+    run_id = _base_run_id()
+    start = store.get_run_start(run_id)
+    assert start.run_id == run_id
+    assert start.research_only is True
+    assert start.production_influence == Decimal(0)
+    terminal = store.get_run_terminal(run_id)
+    assert terminal.discovery_state == "DISCOVERY_FAILED"
+    assert terminal.weathernext_state == "ACQUISITION_FAILED"
+
+
+# --- Item E: internally-captured, distinguished, and ordered timestamps -----------------
+
+
+def _successful_snapshot_fixtures(market_row: dict, event_payload: dict, observed_at: datetime):
+    """A genuine successful ``acquire_market_snapshot`` path (unlike this file's other
+    fixtures, which only ever exercise the "Kalshi acquisition failed" -> snapshot=None
+    branch) -- needed to prove Item E's chronology over a real orderbook_observed_at."""
+
+    def fake_get_market(ticker: str) -> dict[str, object]:
+        return _fake_response({"market": market_row}, "x", observed_at)
+
+    def fake_get_event(ticker: str):
+        return _fake_response(event_payload, "x", observed_at), b""
+
+    def fake_get_series(path: str):
+        return _fake_response({"series": series_raw()}, path, observed_at)
+
+    def fake_get_orderbook(ticker: str):
+        payload = {
+            "orderbooks": [
+                {
+                    "orderbook_fp": {
+                        "yes_dollars": [["0.30", "10"]],
+                        "no_dollars": [["0.65", "10"]],
+                    }
+                }
+            ]
+        }
+        return _fake_response(payload, "x", observed_at), b""
+
+    return fake_get_market, fake_get_event, fake_get_series, fake_get_orderbook
+
+
+def test_decision_at_is_captured_after_and_ordered_past_required_evidence(tmp_path) -> None:
+    """Items E2/E4/E5: ``pipeline_started_at`` < WeatherNext ``acquired_at`` <=
+    ``decision_at``, and the Kalshi response ``observed_at`` values the decision actually
+    used are <= ``decision_at`` -- proven end-to-end through a genuine successful market
+    snapshot (not just the market-acquisition-failure fixtures used elsewhere), with three
+    distinct internally-captured instants (never one collapsed field, never a caller
+    parameter)."""
+    markets = [_market_row("KXHIGHCHI-26SEP15-T87", "greater", 87, None, "greater than 87")]
+    event_payload = {
+        "event": {
+            "event_ticker": "KXHIGHCHI-26SEP15",
+            "series_ticker": "KXHIGHCHI",
+            "title": "x",
+            "settlement_sources": [
+                {"name": "The Weather Company", "url": "https://weather.com/kalshi"}
+            ],
+        },
+        "markets": markets,
+    }
+    kalshi_observed_at = datetime(2026, 9, 14, 14, 58, 0, tzinfo=UTC)
+    fake_get_market, fake_get_event, fake_get_series, fake_get_orderbook = (
+        _successful_snapshot_fixtures(markets[0], event_payload, kalshi_observed_at)
+    )
+
+    def fake_weathernext_reader(
+        source_object, init_time, latitude, longitude, window_start, window_end
+    ):
+        rows = [
+            {
+                "sample": s,
+                "lead_time_hours": 0,
+                "lead_subtime_minutes": 0,
+                "valid_time": init_time,
+                "value_kelvin": Decimal("305.0") if s < 42 else Decimal("299.0"),
+            }
+            for s in range(MEMBER_COUNT)
+        ]
+        return rows, "d" * 64, Decimal("41.80"), Decimal("-87.75")
+
+    pipeline_started_at = datetime(2026, 9, 14, 14, 59, 0, tzinfo=UTC)
+    weathernext_acquired_at = datetime(2026, 9, 14, 14, 59, 30, tzinfo=UTC)
+    decision_at = datetime(2026, 9, 14, 15, 0, 0, tzinfo=UTC)
+    terminal_at = datetime(2026, 9, 14, 15, 0, 1, tzinfo=UTC)
+    clock = _advancing_clock(pipeline_started_at, weathernext_acquired_at, decision_at, terminal_at)
+
+    store = open_isolated_attempt_store(tmp_path)
+    outcomes = _run_evaluation(
+        target_local_date=date(2026, 9, 15),
+        weathernext_init_time=INIT_TIME,
+        weathernext_source_object=SOURCE_OBJECT,
+        weathernext_requested_latitude=Decimal("41.80"),
+        weathernext_requested_longitude=Decimal("-87.75"),
+        clock=clock,
+        store=store,
+        policy=DEFAULT_POLICY,
+        get_event=fake_get_event,
+        get_series=fake_get_series,
+        get_market=fake_get_market,
+        get_orderbook=fake_get_orderbook,
+        weathernext_reader=fake_weathernext_reader,
+    )
+    assert len(outcomes) == 1
+    persisted = store.get(outcomes[0].record.record_id)
+
+    # Three genuinely distinct, correctly-ordered instants -- never collapsed into one.
+    assert persisted.weathernext_acquired_at == weathernext_acquired_at
+    assert persisted.evaluated_at == decision_at  # the per-market decision_at
+    assert persisted.kalshi_orderbook_observed_at == kalshi_observed_at
+    assert pipeline_started_at < weathernext_acquired_at < decision_at
+    assert kalshi_observed_at <= decision_at
+
+    run_id = _run_invocation_id(
+        event_ticker="KXHIGHCHI-26SEP15",
+        target_local_date=date(2026, 9, 15),
+        weathernext_init_time=INIT_TIME,
+        weathernext_source_object=SOURCE_OBJECT,
+        weathernext_requested_latitude=Decimal("41.80"),
+        weathernext_requested_longitude=Decimal("-87.75"),
+        policy_version=DEFAULT_POLICY.version,
+    )
+    start = store.get_run_start(run_id)
+    assert start.pipeline_started_at == pipeline_started_at
+    terminal = store.get_run_terminal(run_id)
+    assert terminal.weathernext_acquired_at == weathernext_acquired_at
+    assert terminal.terminal_at == terminal_at
+    assert terminal.pipeline_started_at < terminal.weathernext_acquired_at < terminal_at
+
+
+def test_weathernext_acquisition_rejects_when_captured_timestamp_precedes_init_time(
+    tmp_path,
+) -> None:
+    """Items B/E3: if the internally-captured WeatherNext acquisition timestamp somehow
+    precedes ``weathernext_init_time`` (e.g. severe clock skew), the existing chronology
+    check in ``build_ensemble_evidence`` fails closed and the run records
+    ACQUISITION_FAILED -- never silently accepting a forecast as available before it could
+    exist. This is the exact init-after-acquisition rejection, exercised through the real
+    internal-clock acquisition boundary rather than a caller-supplied ``acquired_at``."""
+    markets = [_market_row("KXHIGHCHI-26SEP15-T87", "greater", 87, None, "greater than 87")]
+    event_payload = {
+        "event": {
+            "event_ticker": "KXHIGHCHI-26SEP15",
+            "series_ticker": "KXHIGHCHI",
+            "title": "x",
+            "settlement_sources": [
+                {"name": "The Weather Company", "url": "https://weather.com/kalshi"}
+            ],
+        },
+        "markets": markets,
+    }
+    kalshi_observed_at = datetime(2026, 9, 14, 11, 0, 0, tzinfo=UTC)
+    fake_get_market, fake_get_event, fake_get_series, fake_get_orderbook = (
+        _successful_snapshot_fixtures(markets[0], event_payload, kalshi_observed_at)
+    )
+
+    def fake_weathernext_reader(
+        source_object, init_time, latitude, longitude, window_start, window_end
+    ):
+        return [], "d" * 64, Decimal("41.80"), Decimal("-87.75")
+
+    pipeline_started_at = INIT_TIME - timedelta(hours=1)
+    # The clock returned for the WeatherNext acquisition boundary is BEFORE
+    # weathernext_init_time -- chronologically impossible, must reject.
+    bad_acquired_at = INIT_TIME - timedelta(minutes=1)
+    decision_at = INIT_TIME + timedelta(hours=2)
+    terminal_at = decision_at + timedelta(seconds=1)
+    clock = _advancing_clock(pipeline_started_at, bad_acquired_at, decision_at, terminal_at)
+
+    store = open_isolated_attempt_store(tmp_path)
+    outcomes = _run_evaluation(
+        target_local_date=date(2026, 9, 15),
+        weathernext_init_time=INIT_TIME,
+        weathernext_source_object=SOURCE_OBJECT,
+        weathernext_requested_latitude=Decimal("41.80"),
+        weathernext_requested_longitude=Decimal("-87.75"),
+        clock=clock,
+        store=store,
+        policy=DEFAULT_POLICY,
+        get_event=fake_get_event,
+        get_series=fake_get_series,
+        get_market=fake_get_market,
+        get_orderbook=fake_get_orderbook,
+        weathernext_reader=fake_weathernext_reader,
+    )
+    assert len(outcomes) == 1
+    assert outcomes[0].decision.state is AlertState.DATA_NOT_READY
+
+    run_id = _run_invocation_id(
+        event_ticker="KXHIGHCHI-26SEP15",
+        target_local_date=date(2026, 9, 15),
+        weathernext_init_time=INIT_TIME,
+        weathernext_source_object=SOURCE_OBJECT,
+        weathernext_requested_latitude=Decimal("41.80"),
+        weathernext_requested_longitude=Decimal("-87.75"),
+        policy_version=DEFAULT_POLICY.version,
+    )
+    terminal = store.get_run_terminal(run_id)
+    assert terminal.weathernext_state == "ACQUISITION_FAILED"
+    assert "acquisition" in (terminal.weathernext_reason or "").lower()
+    assert terminal.weathernext_acquired_at is None
+
+
+def test_chronology_violation_fails_closed_and_is_recorded_as_a_failed_run(tmp_path) -> None:
+    """Item E5: if a market's ``decision_at`` would precede the Kalshi evidence it is based
+    on (here, an orderbook response timestamped in the future relative to the injected
+    clock -- an internal-consistency violation that must never be silently accepted), the
+    run fails closed. The terminal record still exists (Item F: no invocation ever
+    disappears without a trace) and is marked FAILED with the linked attempt IDs
+    accumulated before the failure."""
+    markets = [_market_row("KXHIGHCHI-26SEP15-T87", "greater", 87, None, "greater than 87")]
+    event_payload = {
+        "event": {
+            "event_ticker": "KXHIGHCHI-26SEP15",
+            "series_ticker": "KXHIGHCHI",
+            "title": "x",
+            "settlement_sources": [
+                {"name": "The Weather Company", "url": "https://weather.com/kalshi"}
+            ],
+        },
+        "markets": markets,
+    }
+    # The Kalshi orderbook response claims to have been observed AFTER the decision_at the
+    # clock will produce -- chronologically impossible.
+    future_observed_at = datetime(2026, 9, 14, 16, 0, 0, tzinfo=UTC)
+    fake_get_market, fake_get_event, fake_get_series, fake_get_orderbook = (
+        _successful_snapshot_fixtures(markets[0], event_payload, future_observed_at)
+    )
+
+    def fake_weathernext_reader(
+        source_object, init_time, latitude, longitude, window_start, window_end
+    ):
+        rows = [
+            {
+                "sample": s,
+                "lead_time_hours": 0,
+                "lead_subtime_minutes": 0,
+                "valid_time": init_time,
+                "value_kelvin": Decimal("305.0") if s < 42 else Decimal("299.0"),
+            }
+            for s in range(MEMBER_COUNT)
+        ]
+        return rows, "d" * 64, Decimal("41.80"), Decimal("-87.75")
+
+    pipeline_started_at = datetime(2026, 9, 14, 14, 59, 0, tzinfo=UTC)
+    weathernext_acquired_at = datetime(2026, 9, 14, 14, 59, 30, tzinfo=UTC)
+    decision_at = datetime(2026, 9, 14, 15, 0, 0, tzinfo=UTC)  # BEFORE future_observed_at
+    terminal_at = datetime(2026, 9, 14, 15, 0, 1, tzinfo=UTC)
+    clock = _advancing_clock(pipeline_started_at, weathernext_acquired_at, decision_at, terminal_at)
+
+    store = open_isolated_attempt_store(tmp_path)
+    with pytest.raises(WnA1Error, match="chronology"):
+        _run_evaluation(
             target_local_date=date(2026, 9, 15),
             weathernext_init_time=INIT_TIME,
             weathernext_source_object=SOURCE_OBJECT,
             weathernext_requested_latitude=Decimal("41.80"),
             weathernext_requested_longitude=Decimal("-87.75"),
-            evaluated_at=now,
-            policy_version=DEFAULT_POLICY.version,
+            clock=clock,
+            store=store,
+            policy=DEFAULT_POLICY,
+            get_event=fake_get_event,
+            get_series=fake_get_series,
+            get_market=fake_get_market,
+            get_orderbook=fake_get_orderbook,
+            weathernext_reader=fake_weathernext_reader,
         )
+    assert store.count() == 0  # no attempt was fabricated for the violating market
+
+    run_id = _run_invocation_id(
+        event_ticker="KXHIGHCHI-26SEP15",
+        target_local_date=date(2026, 9, 15),
+        weathernext_init_time=INIT_TIME,
+        weathernext_source_object=SOURCE_OBJECT,
+        weathernext_requested_latitude=Decimal("41.80"),
+        weathernext_requested_longitude=Decimal("-87.75"),
+        policy_version=DEFAULT_POLICY.version,
     )
-    assert run.discovery_state == "OK"
-    assert len(run.route_outcomes) == 1
-    ticker, state, reason = run.route_outcomes[0]
-    assert ticker == "KXHIGHCHI-26SEP15-T87"
-    assert state == "ABSTAIN"
-    assert reason is not None
-    assert run.attempt_ids == ()
+    assert store.run_status(run_id) == "FAILED"
+    terminal = store.get_run_terminal(run_id)
+    assert terminal.status == "FAILED"
+    assert terminal.failure_reason is not None
+    assert "chronology" in terminal.failure_reason.lower()
+    assert terminal.attempt_ids == ()
+
+
+def test_stale_market_replay_remains_identical_under_the_new_timestamp_model(tmp_path) -> None:
+    """Item E6/preservation: a market whose orderbook snapshot was already >5 minutes old
+    by the internally-captured ``decision_at`` must reach DATA NOT READY/MARKET_STALE
+    originally, and a fresh-process replay of the persisted row must reproduce exactly the
+    same state and gate failure -- proving Item A's stale-market replay guarantee still
+    holds now that ``decision_at`` is captured internally rather than passed in."""
+    markets = [_market_row("KXHIGHCHI-26SEP15-T87", "greater", 87, None, "greater than 87")]
+    event_payload = {
+        "event": {
+            "event_ticker": "KXHIGHCHI-26SEP15",
+            "series_ticker": "KXHIGHCHI",
+            "title": "x",
+            "settlement_sources": [
+                {"name": "The Weather Company", "url": "https://weather.com/kalshi"}
+            ],
+        },
+        "markets": markets,
+    }
+    stale_observed_at = datetime(2026, 9, 14, 14, 50, 0, tzinfo=UTC)  # will be >5min stale
+    fake_get_market, fake_get_event, fake_get_series, fake_get_orderbook = (
+        _successful_snapshot_fixtures(markets[0], event_payload, stale_observed_at)
+    )
+
+    def fake_weathernext_reader(
+        source_object, init_time, latitude, longitude, window_start, window_end
+    ):
+        rows = [
+            {
+                "sample": s,
+                "lead_time_hours": 0,
+                "lead_subtime_minutes": 0,
+                "valid_time": init_time,
+                "value_kelvin": Decimal("305.0") if s < 42 else Decimal("299.0"),
+            }
+            for s in range(MEMBER_COUNT)
+        ]
+        return rows, "d" * 64, Decimal("41.80"), Decimal("-87.75")
+
+    pipeline_started_at = datetime(2026, 9, 14, 14, 59, 0, tzinfo=UTC)
+    weathernext_acquired_at = datetime(2026, 9, 14, 14, 59, 30, tzinfo=UTC)
+    decision_at = datetime(2026, 9, 14, 15, 0, 0, tzinfo=UTC)  # 10 min after stale_observed_at
+    terminal_at = datetime(2026, 9, 14, 15, 0, 1, tzinfo=UTC)
+    clock = _advancing_clock(pipeline_started_at, weathernext_acquired_at, decision_at, terminal_at)
+
+    store = open_isolated_attempt_store(tmp_path)
+    outcomes = _run_evaluation(
+        target_local_date=date(2026, 9, 15),
+        weathernext_init_time=INIT_TIME,
+        weathernext_source_object=SOURCE_OBJECT,
+        weathernext_requested_latitude=Decimal("41.80"),
+        weathernext_requested_longitude=Decimal("-87.75"),
+        clock=clock,
+        store=store,
+        policy=DEFAULT_POLICY,
+        get_event=fake_get_event,
+        get_series=fake_get_series,
+        get_market=fake_get_market,
+        get_orderbook=fake_get_orderbook,
+        weathernext_reader=fake_weathernext_reader,
+    )
+    assert len(outcomes) == 1
+    original = outcomes[0].decision
+    assert original.state is AlertState.DATA_NOT_READY
+    from services.forecasting.wn_a1_alert import GateFailure
+
+    assert GateFailure.MARKET_STALE in original.gate_failures
+
+    # Fresh-process replay: brand-new store instance, same on-disk file.
+    fresh_store = open_isolated_attempt_store(tmp_path)
+    persisted = fresh_store.get(outcomes[0].record.record_id)
+    replayed = replay_decision(persisted)
+    assert replayed.state == original.state
+    assert replayed.gate_failures == original.gate_failures
