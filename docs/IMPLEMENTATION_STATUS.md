@@ -695,3 +695,73 @@
   authorization: **NONE**. M27O execution authorization: **NONE**. Burn: **NONE**. Mutating
   Kalshi call: **NONE**. Order sent: **NO**.
 - See `docs/reviews/M27P_CREATE_ONLY_CANARY_STATE_BOOTSTRAP.md`.
+
+## WN-A1 Chicago daily-high research alert (2026-09-14)
+
+- Added a research-only, human-alert-only lane connecting WeatherNext 3 to Kalshi's
+  **current, live** Chicago daily-high (`KXHIGHCHI`) markets:
+  `services/forecasting/wn_a1_domain.py`, `wn_a1_current_daily_high_authority.py`,
+  `wn_a1_weathernext_evidence.py`, `wn_a1_probability.py`, `wn_a1_market_economics.py`,
+  `wn_a1_alert.py`, `wn_a1_evaluation_record.py`, `wn_a1_outcome_lane.py`,
+  `wn_a1_runner.py`. Produces one of exactly four plain-English headline states (`TAKE A
+  LOOK` / `SKIP` / `TOO UNCERTAIN` / `DATA NOT READY`) for one target local date. No order
+  is placed, previewed, or authorized; `production_influence == 0` throughout.
+- **Corrected a mistaken premise mid-build, based on live evidence, not assumption.** The
+  milestone brief assumed current Kalshi documentation states DAILY markets settle from
+  the National Weather Service Daily Climate Report. Querying the live public Kalshi API
+  directly (`external-api.kalshi.com`) on 2026-09-14 showed every currently active
+  `KXHIGHCHI` (and five other checked cities') market's `rules_primary` text and
+  event/series `settlement_sources` name **The Weather Company**, not NWS -- directly
+  contradicting Kalshi's own help-center article on the subject. Per explicit product
+  direction, WN-A1 binds to the real live source through a brand-new authority module
+  (`wn_a1_current_daily_high_authority.py`, policy `wn-a1-current-live-daily-high-twc-
+  authority-v1`) that is fully independent of frozen M27C's historical TWC authority
+  (`daily_temperature.py`, policy `m27c-daily-temperature-contract-authority-v1`) --
+  neither module imports the other, verified by a static source scan test. See
+  `docs/reviews/WN_A1_CHICAGO_DAILY_HIGH_RESEARCH_ALERT.md` for the full discrepancy and
+  the day-window evidence (the live `early_close_condition` field, not the NWS
+  local-standard-time rule the contradicted help article describes) that WN-A1 relies on
+  instead.
+- WeatherNext ensemble evidence binds model, source object, init time, acquisition time,
+  variable, lat/lon/grid, all 64 member values per retained valid hour, lead time/subtime,
+  valid time, units, a content hash, and a deterministic evidence identity. Raw
+  probability is always `matching_members / 64` with no smoothing, calibration, or
+  ensemble-mean substitution; a missing member is `DATA NOT READY`, not silently dropped.
+  Alert gating additionally requires a >=10pp raw gap, a >=5pp gap after a flat 5pp
+  conservative buffer, an established settlement-day window, and no ±1°F boundary-risk
+  reversal among sibling strikes in the same event -- versioned as `wn-a1-alert-
+  policy-v1` and frozen for this milestone. The primary alert text is restricted to the
+  four headline words and scanned to reject "guaranteed," "profitable," "alpha,"
+  "arbitrage," "free money," and "expected profit" claims before it can be returned.
+  Kalshi market evidence and conservative TAKER_NOW economics reuse the existing public
+  GET-only transport and M27A/opportunity-engine fee/book-walk primitives rather than a
+  second implementation; the executable price is always the live order book's best ask,
+  never a displayed/cached percentage. Every evaluated candidate -- including `SKIP` and
+  `TOO UNCERTAIN` -- is preserved via `EvaluationRecord`, and `replay_record_id` proves
+  fresh-process determinism from persisted fields alone.
+- **Blocker, disclosed rather than worked around**: no Google Cloud credentials,
+  `gcloud`/`gsutil`, or the `gcsfs`/`zarr`/`google-cloud-storage` packages were available
+  in this development environment. The real WeatherNext GCS Zarr reader
+  (`gcs_zarr_reader`, gated behind a new optional `weathernext` dependency group in
+  `pyproject.toml`) is therefore **untested against the real bucket**; every WN-A1 test
+  injects a fake in-memory reader instead, so `build_ensemble_evidence`'s validation logic
+  is fully exercised but the real GCS I/O path is not. A bounded, credential-free
+  public-read path to Kalshi/The Weather Company's final settlement value was not
+  identified either; outcome reconciliation is deferred, undocumented as fabricated, to
+  the bounded next milestone **WN-A2: authoritative TWC/Kalshi settlement outcome
+  reconciliation**.
+- Verification: focused WN-A1 tests 93/93 PASS; M27A live-market-economics regression 29
+  passed (1 pre-existing, unrelated psycopg skip); M27C weather regression (proves frozen
+  lanes unchanged) 201 passed (same pre-existing skip); Ruff check + format clean
+  repository-wide; mypy --strict clean on all 9 new modules; Bandit (all severities) 0
+  findings; detect-secrets 0 findings on every changed file. A static source scan
+  (`tests/test_wn_a1_safety_boundaries.py`) proves no WN-A1 module imports
+  `production_execution`, `demo_execution`, `execution_simulation`,
+  `production_gdp_strategy`, `production_weather_strategy`, `risk_engine`,
+  `supervised_canary`, `bounded_autonomy`, or `kalshi_account_gateway`, and that no
+  `"POST"`/`"PUT"`/`"DELETE"` literal appears anywhere in the lane.
+- Production signer: not imported. Production-write credential: NONE. Bounded autonomy:
+  OFF. No real-money order capability was introduced. This milestone does not claim any
+  WeatherNext-to-settlement mapping is exact, does not claim profitability, and does not
+  claim WN-A2 outcome reconciliation exists.
+- See `docs/reviews/WN_A1_CHICAGO_DAILY_HIGH_RESEARCH_ALERT.md`.
