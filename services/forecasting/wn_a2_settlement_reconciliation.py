@@ -9,6 +9,7 @@ replace a Kalshi result.  Forecast evidence and this lane have no production inf
 from __future__ import annotations
 
 import base64
+import binascii
 import hashlib
 import json
 import sqlite3
@@ -46,6 +47,15 @@ class ReconciliationError(WnA1Error):
 
 class _NotFinal(ReconciliationError):
     pass
+
+
+def _loads(value: object, label: str) -> object:
+    if not isinstance(value, str):
+        raise ReconciliationError(f"malformed persisted {label}")
+    try:
+        return json.loads(value)
+    except json.JSONDecodeError as exc:
+        raise ReconciliationError(f"malformed persisted {label}") from exc
 
 
 @dataclass(frozen=True, slots=True)
@@ -160,6 +170,174 @@ class OutcomeStore:
                 )
         except sqlite3.IntegrityError as exc:
             raise ReconciliationError("duplicate reconciliation registration rejected") from exc
+
+    @staticmethod
+    def _json_object(value: object, label: str) -> dict[str, object]:
+        if not isinstance(value, dict):
+            raise ReconciliationError(f"malformed persisted {label}")
+        return value
+
+    @staticmethod
+    def _timestamp(value: object, label: str) -> datetime:
+        if not isinstance(value, str):
+            raise ReconciliationError(f"malformed persisted {label}")
+        try:
+            parsed = datetime.fromisoformat(value)
+        except ValueError as exc:
+            raise ReconciliationError(f"malformed persisted {label}") from exc
+        if parsed.tzinfo is None or parsed.utcoffset() is None:
+            raise ReconciliationError(f"persisted {label} is not timezone-aware")
+        return parsed
+
+    @staticmethod
+    def _decimal(value: object, label: str) -> Decimal:
+        if not isinstance(value, str):
+            raise ReconciliationError(f"malformed persisted {label}")
+        try:
+            parsed = Decimal(value)
+        except ArithmeticError as exc:
+            raise ReconciliationError(f"malformed persisted {label}") from exc
+        if not parsed.is_finite():
+            raise ReconciliationError(f"malformed persisted {label}")
+        return parsed
+
+    @staticmethod
+    def _string(value: object, label: str) -> str:
+        if not isinstance(value, str):
+            raise ReconciliationError(f"malformed persisted {label}")
+        return value
+
+    def load_result(
+        self, attempt_id: str
+    ) -> tuple[ReconciliationResult, KalshiSettlementEvidence | None]:
+        """Reopen and verify one persisted reconciliation in a fresh process."""
+        try:
+            with sqlite3.connect(self.path) as db:
+                db.row_factory = sqlite3.Row
+                starts = db.execute(
+                    "SELECT attempt_id, run_id, payload FROM starts WHERE attempt_id=?",
+                    (attempt_id,),
+                ).fetchall()
+                outcomes = db.execute(
+                    "SELECT result_id, attempt_id, evidence_id, payload "
+                    "FROM outcomes WHERE attempt_id=?",
+                    (attempt_id,),
+                ).fetchall()
+        except sqlite3.Error as exc:
+            raise ReconciliationError("WN-A2 persistence could not be read") from exc
+        if len(starts) != 1:
+            raise ReconciliationError("missing or ambiguous reconciliation registration")
+        if len(outcomes) != 1:
+            raise ReconciliationError("missing or ambiguous reconciliation outcome")
+
+        start = self._json_object(_loads(starts[0]["payload"], "START"), "START")
+        if (
+            start.get("attempt_id") != starts[0]["attempt_id"]
+            or start.get("run_id") != starts[0]["run_id"]
+            or start.get("policy") != POLICY_VERSION
+        ):
+            raise ReconciliationError("persisted START identity or policy is invalid")
+        result_payload = self._json_object(_loads(outcomes[0]["payload"], "outcome"), "outcome")
+        if (
+            outcomes[0]["attempt_id"] != attempt_id
+            or result_payload.get("attempt_id") != attempt_id
+            or result_payload.get("run_id") != starts[0]["run_id"]
+            or result_payload.get("policy") != POLICY_VERSION
+        ):
+            raise ReconciliationError("persisted outcome identity or policy is invalid")
+        try:
+            state = ReconciliationState(cast(str, result_payload["state"]))
+        except (KeyError, TypeError, ValueError) as exc:
+            raise ReconciliationError("persisted outcome state is invalid") from exc
+
+        evidence: KalshiSettlementEvidence | None = None
+        evidence_id = outcomes[0]["evidence_id"]
+        if evidence_id is not None:
+            if not isinstance(evidence_id, str):
+                raise ReconciliationError("persisted evidence identity is invalid")
+            try:
+                with sqlite3.connect(self.path) as db:
+                    db.row_factory = sqlite3.Row
+                    evidence_rows = db.execute(
+                        "SELECT evidence_id, attempt_id, raw_body_b64, payload "
+                        "FROM evidence WHERE evidence_id=?",
+                        (evidence_id,),
+                    ).fetchall()
+            except sqlite3.Error as exc:
+                raise ReconciliationError("WN-A2 evidence could not be read") from exc
+            if len(evidence_rows) != 1:
+                raise ReconciliationError("missing or ambiguous referenced evidence")
+            row = evidence_rows[0]
+            evidence_payload = self._json_object(_loads(row["payload"], "evidence"), "evidence")
+            if row["attempt_id"] != attempt_id or evidence_payload.get("attempt_id") != attempt_id:
+                raise ReconciliationError("cross-attempt evidence pairing rejected")
+            if evidence_payload.get("run_id") != starts[0]["run_id"]:
+                raise ReconciliationError("cross-run evidence pairing rejected")
+            if evidence_payload.get("reconciliation_policy_version") != POLICY_VERSION:
+                raise ReconciliationError("unsupported persisted evidence policy")
+            raw_body_b64 = row["raw_body_b64"]
+            if not isinstance(raw_body_b64, str):
+                raise ReconciliationError("persisted raw body is invalid")
+            try:
+                raw_body = base64.b64decode(raw_body_b64, validate=True)
+            except (ValueError, binascii.Error) as exc:
+                raise ReconciliationError("persisted raw body is invalid") from exc
+            raw_hash = evidence_payload.get("raw_body_sha256")
+            if not isinstance(raw_hash, str) or hashlib.sha256(raw_body).hexdigest() != raw_hash:
+                raise ReconciliationError("persisted raw body hash mismatch")
+            try:
+                evidence = KalshiSettlementEvidence(
+                    attempt_id,
+                    starts[0]["run_id"],
+                    self._string(evidence_payload["market_ticker"], "market_ticker"),
+                    self._string(evidence_payload["event_ticker"], "event_ticker"),
+                    self._string(evidence_payload["target_local_date"], "target_local_date"),
+                    self._string(evidence_payload["request_path"], "request_path"),
+                    self._string(evidence_payload["http_method"], "http_method"),
+                    raw_hash,
+                    self._timestamp(evidence_payload["observed_at"], "evidence observed_at"),
+                    self._string(evidence_payload["market_status"], "market_status"),
+                    self._string(evidence_payload["result"], "result"),
+                    self._decimal(evidence_payload["settlement_value_dollars"], "settlement value"),
+                    self._timestamp(evidence_payload["settlement_ts"], "settlement_ts"),
+                    self._string(
+                        evidence_payload["rules_source_identity"], "rules_source_identity"
+                    ),
+                    self._string(
+                        evidence_payload["reconciliation_policy_version"],
+                        "reconciliation_policy_version",
+                    ),
+                )
+            except (KeyError, TypeError) as exc:
+                raise ReconciliationError("malformed persisted evidence") from exc
+            if row["evidence_id"] != evidence.evidence_id:
+                raise ReconciliationError("persisted evidence identity mismatch")
+
+        try:
+            result = ReconciliationResult(
+                attempt_id,
+                self._string(result_payload["run_id"], "result run_id"),
+                state,
+                cast(str | None, result_payload["evidence_id"]),
+                cast(str | None, result_payload["result"]),
+                None
+                if result_payload["value"] is None
+                else self._decimal(result_payload["value"], "result value"),
+                None
+                if result_payload["settlement_ts"] is None
+                else self._timestamp(result_payload["settlement_ts"], "result settlement_ts"),
+                None
+                if result_payload["observed_at"] is None
+                else self._timestamp(result_payload["observed_at"], "result observed_at"),
+                self._string(result_payload["policy"], "result policy"),
+            )
+        except (KeyError, TypeError) as exc:
+            raise ReconciliationError("malformed persisted outcome") from exc
+        if result.evidence_id != (None if evidence is None else evidence.evidence_id):
+            raise ReconciliationError("persisted result/evidence relationship is invalid")
+        if outcomes[0]["result_id"] != result.result_id:
+            raise ReconciliationError("persisted result identity mismatch")
+        return result, evidence
 
     def append(
         self,
