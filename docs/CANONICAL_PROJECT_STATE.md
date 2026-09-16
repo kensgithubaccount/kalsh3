@@ -110,15 +110,18 @@ Expected contents include:
 
 Do not modify the frozen protocol mid-pilot because results look good or bad. Put improvements in `ideas_for_next_version.md`.
 
-Current RADAR-P0 status as of 2026-09-16 after Scan #2:
+Current RADAR-P0 status as of 2026-09-16 after Scan #3 (Day 1 complete):
 
 - Scan #1 initially emitted one NYC-rain `WORTH CHECKING`.
 - A contemporaneous audit, before settlement/outcome hindsight, found the call violated an existing rule because the exact settlement-window convention had not been positively verified. Original scan remains unchanged; the audit reclassifies it to `TOO UNCERTAIN` for scoring.
 - Scan #2 produced no valid `WORTH CHECKING` alerts.
 - WTI crude was skipped for unusably wide spreads.
 - NYC low temperature, RCP approval average, and OpenRouter market-share ideas were held as `TOO UNCERTAIN` or dropped when exact source/settlement evidence could not be established.
+- Scan #3 emitted one prospective `WORTH CHECKING` candidate: TSA weekly average screenings, Sep 14-20, `KXTSAW-26SEP20-A2.35`, on the NO side. The scan reported a 5-cent NO ask with about 99 contracts at that level and used already-published TSA daily counts plus recent weekday history to project the weekly average below 2.35 million.
+- That TSA candidate is a prospective research alert only. It has not yet settled, has not yet been independently audited here, and does not establish profitability.
+- Day 1 completed all three scheduled scans.
 
-The current lesson is not that these markets lack edge. It is that apparent discrepancies must survive exact rule/source verification before promotion to an alert.
+The current lesson is not that these markets lack edge. It is that apparent discrepancies must survive exact rule/source verification before promotion to an alert, and even a valid alert remains only a prospective hypothesis until delayed-price and outcome scoring are complete.
 
 ### YouTube feasibility — ACTIVE
 
@@ -240,7 +243,7 @@ Do not start another broad scanner during RADAR-P0. Do not pre-research likely n
 
 As of this checkpoint:
 
-- run the next scheduled RADAR-P0 scan at the next normal pilot time; do not add off-schedule scans for excitement
+- Day 1 of RADAR-P0 is complete; run the next scheduled scan at the normal Day 2 morning slot, not an off-schedule scan
 - keep the YouTube live watch running through its final planned publication cycle
 - keep USGS conditional rather than building a collector before a qualifying trigger
 - maintain WN-A2 as merged/closed engineering; no further weather expansion now
@@ -299,6 +302,12 @@ Decision: weather outcome infrastructure is sufficient for the present research 
 Local-time close semantics established that the tested daily AAA market closes before its target date.
 
 Decision: kill the official-source latency thesis. Any forecasting version requires a new proposal rather than silently inheriting the old lane.
+
+### 2026-09-16 — RADAR-P0 Day 1 complete
+
+All three scheduled Day 1 scans were run. Scan #1's initial NYC-rain alert was contemporaneously downgraded to `TOO UNCERTAIN` because exact settlement-window authority had not been established. Scan #2 emitted no valid alert. Scan #3 emitted a prospective TSA weekly-average NO candidate.
+
+Decision: keep the RADAR-P0 protocol frozen. Do not count the TSA candidate as a win before delayed-price and authoritative-outcome reconciliation.
 
 ## 12. Update protocol
 
