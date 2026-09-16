@@ -1,5 +1,7 @@
 # Implementation Status
 
+> Canonical oversight handoff: [`docs/CANONICAL_PROJECT_STATE.md`](CANONICAL_PROJECT_STATE.md). New sessions should read it first, then re-verify GitHub and runtime state. Repository state and experiment ledgers override stale chat summaries.
+
 | Milestone | State | Verification |
 |---|---|---|
 | M0 Repository Foundation | Complete (offline verified) | Baseline quality gates pass |
