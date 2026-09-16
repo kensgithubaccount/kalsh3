@@ -16,7 +16,7 @@ Canonical main:
 - tree: `52d43202cb46d03d8e4412cd7c3ac6a09f3af963`
 - commit: merge of PR #160, WN-A2 settlement outcome reconciliation
 - main CI run `35116576034`: completed successfully
-- open pull requests at this checkpoint: 0
+- open pull requests immediately before this documentation branch was opened: 0
 
 Recent merged engineering milestones relevant to current research:
 
@@ -62,10 +62,9 @@ Historical/manual profitable trades are useful motivation, not proof of a repeat
 These are owner-reported outcomes from project conversations. They are not RADAR-P0 prospective observations and must not be used as if they were held-out proof.
 
 - Chicago weather manual opportunity: reported correct and profitable.
-- GDP manual opportunity: reported correct and profitable.
-- Later GDP prediction/update opportunity: owner reported the prediction was correct and profitable after a subsequent GDP estimate increase.
+- GDP manual opportunity/update: owner reported the prediction was correct and profitable after a subsequent GDP estimate increase.
 
-These outcomes support continued investigation of forecasting/nowcasting and cross-market opportunity discovery. They do not establish calibration, repeatability, capacity, or autonomous profitability.
+Repeated mentions of the GDP result are not counted as separate independent wins unless a distinct trade/episode is documented. These outcomes support continued investigation of forecasting/nowcasting and cross-market opportunity discovery. They do not establish calibration, repeatability, capacity, or autonomous profitability.
 
 ## 5. Current research strategy
 
