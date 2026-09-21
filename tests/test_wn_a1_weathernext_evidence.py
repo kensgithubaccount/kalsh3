@@ -37,7 +37,7 @@ def rows_for(
                 {
                     "sample": sample,
                     "lead_time_hours": h,
-                    "lead_subtime_minutes": 0,
+                    "lead_subtime_hours": 0,
                     "valid_time": valid,
                     "value_kelvin": Decimal("293.15") + Decimal(sample) / Decimal(10),
                 }

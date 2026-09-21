@@ -839,6 +839,12 @@
   substituted for the blocked live read. `LIVE WEATHERNEXT READ NOT RUN -- GOOGLE DATASET
   PERMISSION DENIED.` Reopen once the account (or a differently-authorized account) is
   granted `storage.objects.get` on the `weathernext3_spatial` bucket.
+  **Superseded 2026-09-21:** access granted; read succeeds. `lead_subtime` is HOURS
+  (-5..0), not minutes -- `valid_time = init_time + lead_time + lead_subtime`; reader repaired
+  to verify time axes against the dataset's own coordinates and to use bounded zstd-prefix
+  reads (field renamed `lead_subtime_hours`, evidence identity v3). Per-lookup cost is
+  measured, and a full 64-member local day exceeds the 2 GiB transfer cap by design. See
+  `reviews/WN_A1_CHICAGO_DAILY_HIGH_RESEARCH_ALERT.md`, "WeatherNext decoding-boundary repair".
 - Verification: focused WN-A1 tests 131/131 PASS (was 93; new coverage for all five
   repairs plus the attempt store); M27A regression 29 passed (1 pre-existing unrelated
   psycopg skip); M27C regression 201 passed (same skip); full suite 4,213 passed / 2
