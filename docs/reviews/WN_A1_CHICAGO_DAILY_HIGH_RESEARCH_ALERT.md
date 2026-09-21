@@ -66,6 +66,8 @@ Google Cloud grant the account does not hold, not a bug in `gcs_zarr_reader`'s R
 wiring; the reader was not weakened or bypassed and no synthetic evidence was substituted.
 `LIVE WEATHERNEXT READ NOT RUN -- GOOGLE DATASET PERMISSION DENIED.` See
 `docs/IMPLEMENTATION_STATUS.md`'s WN-A1 repair entry for full verification results.
+**Superseded 2026-09-21:** access was granted and the read succeeds; see
+"WeatherNext decoding-boundary repair" below.
 
 ## A load-bearing correction made mid-build
 
@@ -171,7 +173,8 @@ credentials.
 reader (`gcs_zarr_reader`, gated behind the new optional `weathernext` dependency group in
 `pyproject.toml`) is therefore **untested against the real WeatherNext bucket**. Every WN-A1
 test injects a fake in-memory reader; `build_ensemble_evidence`'s validation logic is fully
-exercised, the GCS I/O itself is not.
+exercised, the GCS I/O itself is not. **Superseded 2026-09-21:** the reader was exercised live
+against the real bucket; see "WeatherNext decoding-boundary repair" below.
 
 ## Kalshi market evidence
 
@@ -247,6 +250,38 @@ reflection test.
 - detect-secrets on every changed file: 0 findings.
 - Full `pytest` suite: see the PR/branch report for the exact count; no regression observed
   in any targeted subset run during this milestone.
+
+## WeatherNext decoding-boundary repair (2026-09-21)
+
+Google later granted access, and the store's format was inspected live. Findings (all from
+the dataset's own array metadata/coordinates, not object names):
+
+- **Format.** Zarr v3, one store per initialization. Root `zarr.json` is a metadata index only.
+  `station_head_temperature_2m` is chunked `[1,1,6,3601,7200]` (one member, one 6-hourly lead,
+  six hourly sub-steps, the whole global 0.05-degree grid), `bytes`+`zstd`, a single zstd frame,
+  no sharding, ~0.47 GB per chunk object. Longitude is 0..359.95 (`to_0_360` was already right).
+- **Time semantics.** `lead_time` = 6, 12, ... 360 **hours**; `lead_subtime` = -5..0 **hours**
+  (the six hourly steps ending at `lead_time`); the `datetime` coordinate = `init_time +
+  lead_time`. So `valid_time = init_time + lead_time + lead_subtime`, both in hours.
+- **Defect repaired.** The reader and validator treated `lead_subtime` as *minutes* (and the
+  validator required `0 <= x < 60`), so lead 24 h / sub-step -5 became 23:55Z instead of 19:00Z.
+  The field is now `lead_subtime_hours`, validated to the reviewed axis, and there is a single
+  `valid_time_from_lead`. The evidence-identity tag moved to `...-v3-lead-subtime-hours` because
+  the same numbers now denote different instants.
+- **Reader boundary.** `gcs_zarr_reader` now verifies units, the `init_time` coordinate and the
+  `datetime` companion (`verify_time_axes`), verifies the array layout, and reads values with
+  `decode_zstd_prefix_float32`: one bounded prefix range read of the single zstd frame per
+  (member, lead) chunk with a hard `MAX_TRANSFER_BYTES` cap (2 GiB) that fails closed. The
+  content hash binds each chunk's whole-object identity (size/generation/md5/crc32c) **and** the
+  byte range read with its own SHA-256 (the range hash is not the object hash). Two further
+  defects fixed on first live contact: `select_nearest_grid_coordinate` used truthiness on numpy
+  arrays, and the chunk key omitted the variable directory (caught by the new fake-based test).
+- **Measured cost (payload bytes, sample 0 unless noted).** Cost is set by the sub-step's
+  position in the chunk, not constant: sub-step -5 h: 58,720,256 B (12.5% of the object);
+  -4 h: 142,606,336 B per member (30.3%); -3 h: 218,103,808 B (46.4%). Fetch granularity is 8 MiB.
+  Later sub-steps approach the whole object. A full 64-member Chicago local day still needs
+  hundreds of chunks (extrapolated, NOT measured: on the order of 100+ GB), so the reader
+  refuses it under the current cap. Range decoding is only cheap for early sub-steps.
 
 ## What this milestone does not claim
 

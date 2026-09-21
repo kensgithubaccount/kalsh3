@@ -156,7 +156,7 @@ def _synthetic_members(kelvin_by_sample: dict[int, Decimal]):
         {
             "sample": s,
             "lead_time_hours": 0,
-            "lead_subtime_minutes": 0,
+            "lead_subtime_hours": 0,
             "valid_time": INIT_TIME,
             "value_kelvin": k,
         }
@@ -525,7 +525,7 @@ def test_canonical_composition_seam_persists_every_evaluated_attempt(tmp_path) -
             {
                 "sample": s,
                 "lead_time_hours": 0,
-                "lead_subtime_minutes": 0,
+                "lead_subtime_hours": 0,
                 "valid_time": init_time,
                 "value_kelvin": Decimal("305.0") if s < 42 else Decimal("299.0"),
             }
@@ -689,7 +689,7 @@ def test_duplicate_run_identity_rejected_before_any_external_acquisition(tmp_pat
             {
                 "sample": s,
                 "lead_time_hours": 0,
-                "lead_subtime_minutes": 0,
+                "lead_subtime_hours": 0,
                 "valid_time": init_time,
                 "value_kelvin": Decimal("305.0") if s < 42 else Decimal("299.0"),
             }
@@ -986,7 +986,7 @@ def test_decision_at_is_captured_after_and_ordered_past_required_evidence(tmp_pa
             {
                 "sample": s,
                 "lead_time_hours": 0,
-                "lead_subtime_minutes": 0,
+                "lead_subtime_hours": 0,
                 "valid_time": init_time,
                 "value_kelvin": Decimal("305.0") if s < 42 else Decimal("299.0"),
             }
@@ -1149,7 +1149,7 @@ def test_chronology_violation_fails_closed_and_is_recorded_as_a_failed_run(tmp_p
             {
                 "sample": s,
                 "lead_time_hours": 0,
-                "lead_subtime_minutes": 0,
+                "lead_subtime_hours": 0,
                 "valid_time": init_time,
                 "value_kelvin": Decimal("305.0") if s < 42 else Decimal("299.0"),
             }
@@ -1229,7 +1229,7 @@ def test_stale_market_replay_remains_identical_under_the_new_timestamp_model(tmp
             {
                 "sample": s,
                 "lead_time_hours": 0,
-                "lead_subtime_minutes": 0,
+                "lead_subtime_hours": 0,
                 "valid_time": init_time,
                 "value_kelvin": Decimal("305.0") if s < 42 else Decimal("299.0"),
             }

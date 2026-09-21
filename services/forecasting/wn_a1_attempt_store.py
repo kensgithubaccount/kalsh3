@@ -219,7 +219,7 @@ def weathernext_member_rows(evidence: WeatherNextEnsembleEvidence) -> tuple[_Mem
         (
             m.sample,
             m.lead_time_hours,
-            m.lead_subtime_minutes,
+            m.lead_subtime_hours,
             m.valid_time.isoformat(),
             str(m.value_kelvin),
         )
@@ -519,11 +519,11 @@ def replay_weathernext_evidence(attempt: WnA1Attempt) -> WeatherNextEnsembleEvid
         {
             "sample": sample,
             "lead_time_hours": lead_hours,
-            "lead_subtime_minutes": lead_minutes,
+            "lead_subtime_hours": lead_subtime,
             "valid_time": datetime.fromisoformat(valid_time_iso),
             "value_kelvin": Decimal(kelvin),
         }
-        for sample, lead_hours, lead_minutes, valid_time_iso, kelvin in attempt.weathernext_members
+        for sample, lead_hours, lead_subtime, valid_time_iso, kelvin in attempt.weathernext_members
     ]
     result = build_ensemble_evidence(
         model=model,

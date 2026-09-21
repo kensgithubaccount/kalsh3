@@ -78,7 +78,7 @@ def _member_hour_evidence(kelvin_by_sample: dict[int, Decimal]):
         {
             "sample": sample,
             "lead_time_hours": 0,
-            "lead_subtime_minutes": 0,
+            "lead_subtime_hours": 0,
             "valid_time": INIT_TIME,
             "value_kelvin": kelvin,
         }
