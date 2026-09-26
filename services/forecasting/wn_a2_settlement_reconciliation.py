@@ -28,6 +28,12 @@ from services.market_universe.public_read import BASE, PublicReadFailure, get, g
 from .wn_a1_attempt_store import WnA1Attempt, WnA1AttemptStore, open_default_attempt_store
 from .wn_a1_current_daily_high_authority import POLICY_IDENTITY, SERIES_TICKER, SETTLEMENT_SOURCE
 from .wn_a1_domain import PRODUCTION_INFLUENCE, RESEARCH_ONLY, WnA1Error
+from .wn_a2_temperature_bucket_semantics import (
+    BUCKET_SEMANTICS_VERSION,
+    BucketSemanticsError,
+    contains_finalized_temperature,
+    validate_bound_contract,
+)
 
 POLICY_VERSION = "wn-a2-kalshi-canonical-settlement-reconciliation-v1"
 DEFAULT_DB = Path(__file__).resolve().parents[2] / ".kalsh3-wn-a2-research" / "outcomes.sqlite3"
@@ -387,16 +393,15 @@ def _payload_from_envelope(envelope: dict[str, object], body: bytes) -> dict[str
 
 
 def _predicate(attempt: WnA1Attempt, value: Decimal) -> bool:
-    if attempt.contract_comparator == "GT":
-        return value > attempt.contract_lower
-    if attempt.contract_comparator == "LT":
-        return value < attempt.contract_lower
-    if attempt.contract_comparator == "RANGE":
-        return (
-            attempt.contract_upper is not None
-            and attempt.contract_lower <= value < attempt.contract_upper
+    try:
+        return contains_finalized_temperature(
+            comparator=attempt.contract_comparator,
+            lower=attempt.contract_lower,
+            upper=attempt.contract_upper,
+            value=value,
         )
-    raise ReconciliationError("unsupported persisted contract comparator")
+    except BucketSemanticsError as exc:
+        raise ReconciliationError(str(exc)) from exc
 
 
 def _public_acquire(attempt: WnA1Attempt) -> tuple[dict[str, object], bytes, str]:
@@ -439,9 +444,21 @@ def _check_market(
         raise ReconciliationError("persisted WN-A1 policy/series is not canonical")
     if market.status is not MarketStatus.FINALIZED:
         raise _NotFinal("market is not finalized")
+    try:
+        validate_bound_contract(
+            raw=raw,
+            comparator=attempt.contract_comparator,
+            lower=attempt.contract_lower,
+            upper=attempt.contract_upper,
+            target_local_date=attempt.target_local_date,
+        )
+    except (ArithmeticError, ValueError) as exc:
+        raise ReconciliationError(f"settlement bucket authority invalid: {exc}") from exc
     result = raw.get("result")
     payout_raw = raw.get("settlement_value_dollars")
-    value_raw = raw.get("expiration_value", payout_raw)
+    # A binary payout is never an underlying temperature. Missing exact authority
+    # must fail closed, not pass a bucket predicate using $0/$1 (or a legacy fixture).
+    value_raw = raw.get("expiration_value")
     ts_raw = raw.get("settlement_ts")
     if (
         result not in {"yes", "no"}
@@ -451,8 +468,19 @@ def _check_market(
         or not isinstance(ts_raw, str)
     ):
         raise ReconciliationError("finalized market lacks required settlement fields")
-    value = Decimal(value_raw)
-    settlement_ts = datetime.fromisoformat(ts_raw.replace("Z", "+00:00")).astimezone(UTC)
+    try:
+        value = Decimal(value_raw)
+        payout = Decimal(payout_raw)
+        settlement_ts = datetime.fromisoformat(ts_raw.replace("Z", "+00:00"))
+    except (ArithmeticError, ValueError) as exc:
+        raise ReconciliationError("malformed finalized settlement fields") from exc
+    if not value.is_finite() or not payout.is_finite():
+        raise ReconciliationError("nonfinite finalized settlement fields")
+    if payout != (Decimal("1") if result == "yes" else Decimal("0")):
+        raise ReconciliationError("finalized binary payout/result mismatch")
+    if settlement_ts.tzinfo is None or settlement_ts.utcoffset() is None:
+        raise ReconciliationError("settlement timestamp is not timezone-aware")
+    settlement_ts = settlement_ts.astimezone(UTC)
     if settlement_ts < attempt.evaluated_at or settlement_ts > observed:
         raise ReconciliationError("settlement chronology is invalid")
     if (result == "yes") != _predicate(attempt, value):
@@ -476,7 +504,13 @@ def _check_market(
         result,
         value,
         settlement_ts,
-        stable_hash({"rules_hash": market.rules_hash, "settlement_source": SETTLEMENT_SOURCE}),
+        stable_hash(
+            {
+                "rules_hash": market.rules_hash,
+                "settlement_source": SETTLEMENT_SOURCE,
+                "bucket_semantics_version": BUCKET_SEMANTICS_VERSION,
+            }
+        ),
     )
 
 
