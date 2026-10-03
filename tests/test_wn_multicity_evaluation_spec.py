@@ -58,9 +58,7 @@ def test_primary_independence_is_date_cluster_not_city_day() -> None:
         (["x/packet.json", "x/failure.json"], CaptureState.CONFLICT),
     ],
 )
-def test_city_day_structural_classification(
-    objects: list[str], expected: CaptureState
-) -> None:
+def test_city_day_structural_classification(objects: list[str], expected: CaptureState) -> None:
     assert classify_city_day_objects(objects) is expected
 
 
@@ -71,8 +69,7 @@ def test_duplicate_object_path_fails_closed() -> None:
 
 def test_october_3_full_capture_is_one_complete_independence_cluster() -> None:
     paths = [
-        f"gs://bucket/root/city_days/{city}/20261003/packet.json"
-        for city in EXPECTED_CITY_IDS
+        f"gs://bucket/root/city_days/{city}/20261003/packet.json" for city in EXPECTED_CITY_IDS
     ]
     report = audit_inventory(paths, as_of=date(2026, 10, 3))
     assert report.expected_city_days == 5
@@ -84,8 +81,7 @@ def test_october_3_full_capture_is_one_complete_independence_cluster() -> None:
 
 def test_missing_one_city_breaks_cluster_completeness_without_inventing_failure() -> None:
     paths = [
-        f"gs://bucket/root/city_days/{city}/20261003/packet.json"
-        for city in EXPECTED_CITY_IDS[:-1]
+        f"gs://bucket/root/city_days/{city}/20261003/packet.json" for city in EXPECTED_CITY_IDS[:-1]
     ]
     report = audit_inventory(paths, as_of=date(2026, 10, 3))
     assert report.captured_city_days == 4
