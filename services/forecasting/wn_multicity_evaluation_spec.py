@@ -18,15 +18,11 @@ from dataclasses import dataclass
 from datetime import date, timedelta
 from enum import StrEnum
 
-FROZEN_PROTOCOL_SHA256 = (
-    "56fb3c00eec38286b64e57652dc822145a7fbcbe9d51e52693eb2f16943fd346"
-)
+FROZEN_PROTOCOL_SHA256 = "56fb3c00eec38286b64e57652dc822145a7fbcbe9d51e52693eb2f16943fd346"
 PRE_FIRST_EVENT_AMENDMENT_SHA256 = (
     "b6ce8154d3a3eb4a90e1eefb3cd57b879a818eabee22b8f8c8fe2dcd7614f000"
 )
-REVIEWED_IMAGE_DIGEST = (
-    "sha256:0ffe08df80315922d64f2313f160b053151744416ed03dacafe38fcc6e24bc08"
-)
+REVIEWED_IMAGE_DIGEST = "sha256:0ffe08df80315922d64f2313f160b053151744416ed03dacafe38fcc6e24bc08"
 
 PROSPECTIVE_START = date(2026, 10, 3)
 PROSPECTIVE_END = date(2026, 10, 14)
@@ -37,9 +33,7 @@ CITY_DAYS_INDEPENDENT = False
 RESEARCH_ONLY = True
 PRODUCTION_INFLUENCE = "0"
 
-_CITY_DAY_RE = re.compile(
-    r"(?:^|/)city_days/(?P<city>[a-z_]+)/(?P<day>\d{8})/(?P<leaf>.+)$"
-)
+_CITY_DAY_RE = re.compile(r"(?:^|/)city_days/(?P<city>[a-z_]+)/(?P<day>\d{8})/(?P<leaf>.+)$")
 
 
 class MulticityEvaluationSpecError(ValueError):
@@ -171,21 +165,14 @@ def audit_inventory(paths: Iterable[str], *, as_of: date) -> CoverageReport:
             continue
         grouped[key].append(path)
 
-    states = tuple(
-        (key, classify_city_day_objects(grouped[key]))
-        for key in expected
-    )
+    states = tuple((key, classify_city_day_objects(grouped[key])) for key in expected)
     counts = {state: 0 for state in CaptureState}
     for _key, state in states:
         counts[state] += 1
 
     complete_clusters = 0
     for target_date in expected_target_dates(through=as_of):
-        cluster = [
-            state
-            for key, state in states
-            if key.target_date == target_date
-        ]
+        cluster = [state for key, state in states if key.target_date == target_date]
         if len(cluster) == len(EXPECTED_CITY_IDS) and all(
             state is CaptureState.CAPTURED for state in cluster
         ):
