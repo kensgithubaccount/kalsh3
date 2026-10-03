@@ -13,10 +13,10 @@ cluster.
 from __future__ import annotations
 
 import re
+from collections.abc import Iterable
 from dataclasses import dataclass
 from datetime import date, timedelta
 from enum import StrEnum
-from typing import Iterable
 
 FROZEN_PROTOCOL_SHA256 = (
     "56fb3c00eec38286b64e57652dc822145a7fbcbe9d51e52693eb2f16943fd346"
