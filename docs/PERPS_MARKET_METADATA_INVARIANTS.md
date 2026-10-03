@@ -61,3 +61,39 @@ Perps metadata and routing remain separate from Predictions contract semantics, 
 These requirements improve research correctness and future integration readiness only. They authorize no credential use beyond already-reviewed read-only boundaries, no arm/burn/final acknowledgement, no order construction, no order placement/amend/cancel, no sizing for production, and no capital allocation.
 
 Any future milestone that introduces Perps execution must demonstrate, with negative tests, that stale/unknown market availability and stale/unknown leverage or margin metadata fail closed before order authorization.
+
+## September 17, 2026 API/schema integration constraints
+
+The authoritative Margin market responses from `GET /trade-api/v2/margin/markets` and
+`GET /trade-api/v2/margin/markets/{ticker}` expose the market's configured `tick_size`.
+The integration MUST treat that returned value as mutable exchange metadata. It must not
+derive a price grid from historical observations, ticker identity, or a static default.
+
+A `tick_size` change is structural for order-price validation and book interpretation.
+Metadata reconciliation must detect it, invalidate cached price-grid assumptions, and
+quarantine/abstain from any dependent simulation or future execution until the refreshed
+metadata has passed validation. Historical replay must retain and use the point-in-time
+tick size known at the decision timestamp.
+
+Margin market metadata may also contain optional
+`product_metadata.important_info.markdown`. Preserve this field, when supplied, in the
+normalized/raw metadata evidence and detect changes to it. Because its semantics may
+contain market-specific operational or risk information not represented by a dedicated
+schema field, a newly present or changed value must be surfaced for review rather than
+silently discarded or interpreted as trading authority.
+
+The reviewed Margin WebSocket AsyncAPI is itself a versioned dependency. Nullable fields,
+enums, and response-field definitions must be validated against the reviewed current
+schema rather than frozen generator assumptions. A schema refresh must not silently
+widen accepted runtime inputs; incompatible changes require explicit review.
+
+Subscription acknowledgement is not evidence completeness. Even though Kalshi corrected
+a race that could drop events arriving immediately after a `subscribed` acknowledgement,
+including on `cfbenchmarks_value_5hz`, collectors must retain sequence/freshness,
+epoch/reconnect, and gap-detection protections. No correctness invariant may depend on
+the historical bug remaining fixed.
+
+Any future Margin FIX recovery path using `EventResendRequest (35=U1)` must model resend
+support as an explicit account/session capability because that functionality may require
+account allowlisting. Absence or uncertainty of that capability must fail closed for a
+recovery design that depends on it; it must never be assumed from FIX connectivity alone.
