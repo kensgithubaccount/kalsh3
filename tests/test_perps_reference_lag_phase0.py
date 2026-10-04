@@ -284,6 +284,7 @@ def test_phase0_grid_measures_quote_repricing_without_pnl() -> None:
         book(sequence=1, bid="100.0", ask="101.0", available_offset_ms=1_000),
         book(sequence=2, bid="100.5", ask="101.5", available_offset_ms=2_000),
         book(sequence=3, bid="101.0", ask="102.0", available_offset_ms=7_000),
+        book(sequence=4, bid="101.0", ask="102.0", available_offset_ms=12_000),
     )
     rows = measure_reference_lag_grid(impulse, books)
     assert [row.status for row in rows] == [HorizonStatus.MEASURED] * 4
@@ -292,6 +293,7 @@ def test_phase0_grid_measures_quote_repricing_without_pnl() -> None:
     assert rows[2].midpoint_change == Decimal("0.5")
     assert rows[3].midpoint_change == Decimal("1.0")
     assert rows[0].bid_change == rows[0].ask_change == Decimal("0.5")
+    assert all(row.continuity_witness_evidence_id is not None for row in rows)
     assert not hasattr(rows[0], "pnl")
     assert not hasattr(rows[0], "fee")
     assert not hasattr(rows[0], "order")
@@ -366,7 +368,10 @@ def test_stale_baseline_and_horizon_are_explicit_abstentions() -> None:
     assert fresh_impulse is not None
     stale_horizon = measure_reference_lag_horizon(
         fresh_impulse,
-        [book(sequence=1, bid="100", ask="101", available_offset_ms=1_000)],
+        [
+            book(sequence=1, bid="100", ask="101", available_offset_ms=1_000),
+            book(sequence=2, bid="100", ask="101", available_offset_ms=12_000),
+        ],
         horizon_ms=10_000,
     )
     assert stale_horizon.status is HorizonStatus.MEASURED
@@ -382,6 +387,32 @@ def test_stale_baseline_and_horizon_are_explicit_abstentions() -> None:
         horizon_ms=10_000,
     )
     assert horizon_row.status is HorizonStatus.STALE_HORIZON_BOOK
+
+
+def test_missing_continuity_witness_and_sequence_gap_abstain() -> None:
+    previous = state(reference="100", source_offset_ms=100, available_offset_ms=120)
+    current = state(reference="101", source_offset_ms=1_100, available_offset_ms=1_120)
+    impulse = build_reference_impulse(previous, current)
+    assert impulse is not None
+
+    no_witness = measure_reference_lag_horizon(
+        impulse,
+        [book(sequence=1, bid="100", ask="101", available_offset_ms=1_000)],
+        horizon_ms=1_000,
+    )
+    assert no_witness.status is HorizonStatus.NO_CONTINUITY_WITNESS
+    assert no_witness.midpoint_change is None
+
+    sequence_gap = measure_reference_lag_horizon(
+        impulse,
+        [
+            book(sequence=1, bid="100", ask="101", available_offset_ms=1_000),
+            book(sequence=3, bid="100.5", ask="101.5", available_offset_ms=2_500),
+        ],
+        horizon_ms=1_000,
+    )
+    assert sequence_gap.status is HorizonStatus.SEQUENCE_GAP
+    assert sequence_gap.midpoint_change is None
 
 
 def test_book_contract_mismatch_and_unfrozen_horizon_fail_closed() -> None:
