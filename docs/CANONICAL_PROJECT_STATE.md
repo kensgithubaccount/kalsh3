@@ -1,41 +1,47 @@
 # Canonical Project State
 
-Last updated: 2026-09-16
+Last updated: 2026-10-04
 
-This file is the durable handoff record for the Kalshi project. New oversight or implementation sessions should read this file first, then verify GitHub/current runtime state before acting.
+This file is the durable handoff record for the Kalshi project. New oversight or implementation sessions should read this file first, then verify GitHub and current runtime state before acting.
 
-Repository and current GitHub state override stale chat summaries. Experiment ledgers override recollection. Chats are working context, not the canonical record.
+Repository and current runtime evidence override stale chat summaries. Experiment ledgers override recollection. Chats are working context, not the canonical record.
 
 ## 1. Verified repository checkpoint
 
 Repository: `kensgithubaccount/kalsh3`
 
-Canonical main:
+Verified canonical main immediately before this state-update PR lands:
 
-- SHA: `02ca01b7c904b2020bc28e6334ad3a0866dc2b20`
-- tree: `52d43202cb46d03d8e4412cd7c3ac6a09f3af963`
-- commit: merge of PR #160, WN-A2 settlement outcome reconciliation
-- main CI run `35116576034`: completed successfully
-- open pull requests immediately before this documentation branch was opened: 0
+- SHA: `5292e9b062a4103ec4af59a7674e36fbffe74fb1`
+- tree: `66ba32da011b121764f9184cb4af103ccd58bec3`
+- commit: merge of PR #173, refreshed Perps spec authority and reference-lag Phase 0
+- production write authority: OFF
 
-Recent merged engineering milestones relevant to current research:
+This file itself lands through PR #169 after that verified checkpoint, so a fresh
+session must still verify live `main` before acting rather than treating the SHA
+above as a permanent self-reference.
 
-- PR #157: GDP authority integration repair accepted after independent review and merged. Historical GDP repair findings remain closed unless a concrete regression against an existing requirement is reproduced.
-- PR #159: WN-A1 Chicago daily-high research alert merged.
-- PR #160: WN-A2 authoritative settlement outcome reconciliation merged after independent delta review PASS. WN-A2 adds durable settlement/outcome reconciliation and fresh-process replay without production influence.
-- M9-E1 learning-governance semantic repair was independently reviewed PASS before the current main lineage. Promotion remains fail-closed: no caller-created `STRONGER_EVIDENCE` authority is accepted until a reviewed inferential method exists.
+Recent canonical merges relevant to the active work:
+
+- PR #166: WN-A2-E1 settlement bucket semantics repair. RANGE is inclusive, LT/GT are strict, full source precision is preserved, and unsupported rounding is not invented.
+- PR #170: urllib3 2.8.0 security repair. All canonical CI jobs passed before merge.
+- PR #171: exact frozen WeatherNext multicity provenance import. The imported experiment/review bytes remain unchanged; root regression tests verify the frozen manifests.
+- PR #168: outcome-blind WeatherNext multicity evaluator boundary. It freezes continuous Fahrenheit point-error scoring and explicitly blocks retrospective probability/bucket/P&L reconstruction.
+- PR #164: current Perps API/schema authority constraints.
+- PR #165: Perps edge research and radar admission plan, with market-bound reference-price lead/lag as the first read-only checkpoint.
+- PR #173: first-party Perps spec authority refresh plus offline/read-only reference-lag Phase 0. Temporary probe PR #172 fetched the official Kalshi Perps OpenAPI/AsyncAPI bytes directly from `docs.kalshi.com` and closed without merge. PR #173 then passed all canonical CI gates before merge.
 
 No current repository state establishes a profitable autonomous strategy or authorizes real-money trading.
 
 ## 2. North Star
 
-Build an autonomous edge-compounding research and trading platform whose objective is long-run, after-cost, risk-controlled income.
+Build an autonomous edge-compounding research and trading platform whose objective is long-run, after-cost, risk-controlled, capacity-aware income.
 
 The intended progression remains:
 
 Kalshi directional alpha -> whole-exchange strategy discovery -> cross-contract relative value -> legally accessible cross-venue opportunities -> liquidity provision / market making where economically justified -> multi-strategy portfolio allocation -> broader quantitative markets only where the existing architecture provides a demonstrable advantage.
 
-The immediate objective is narrower:
+The immediate objective remains narrower:
 
 > Find the first repeatable, credible, after-cost Kalshi edge as quickly as possible without lowering scientific, provenance, or safety standards.
 
@@ -57,165 +63,197 @@ A stronger category must not be inferred from a weaker one.
 
 Historical/manual profitable trades are useful motivation, not proof of a repeatable strategy.
 
-## 4. Reported historical economic outcomes
+## 4. Active prospective lane — WeatherNext multicity development block
 
-These are owner-reported outcomes from project conversations. They are not RADAR-P0 prospective observations and must not be used as if they were held-out proof.
+The experiment `wn_multicity_prospective_v1` is running for the exact date block 2026-10-03 through 2026-10-14.
 
-- Chicago weather manual opportunity: reported correct and profitable.
-- GDP manual opportunity/update: owner reported the prediction was correct and profitable after a subsequent GDP estimate increase.
+Its governing frozen source and final collector review are now canonical via PR #171.
 
-Repeated mentions of the GDP result are not counted as separate independent wins unless a distinct trade/episode is documented. These outcomes support continued investigation of forecasting/nowcasting and cross-market opportunity discovery. They do not establish calibration, repeatability, capacity, or autonomous profitability.
+Frozen identities:
 
-## 5. Current research strategy
+- protocol SHA-256: `56fb3c00eec38286b64e57652dc822145a7fbcbe9d51e52693eb2f16943fd346`
+- pre-first-event amendment SHA-256: `b6ce8154d3a3eb4a90e1eefb3cd57b879a818eabee22b8f8c8fe2dcd7614f000`
+- independently reviewed collector image:
+  `sha256:0ffe08df80315922d64f2313f160b053151744416ed03dacafe38fcc6e24bc08`
 
-The project is intentionally in an evidence-discovery phase rather than a broad new engineering phase.
+The operator-local provenance handoff was independently verified before canonical import:
 
-Permanent workflow rule:
+- archive SHA-256: `de64c2d61dc8f05d7bb82579672036f54ce29b963e129d1fe3c669d312c995db`
+- all 20 D1 manifest entries matched;
+- all 32 final independently reviewed source hashes matched;
+- duplicated frozen D1 bytes matched;
+- secret/private-key checks were empty.
 
-> mechanism audit -> tiny live probe -> narrow prospective collection -> frozen edge test -> capacity test -> only then production automation.
+Frozen scientific constraints include:
 
-Do not return to:
+- cities: Boston, Miami, Denver, Los Angeles, Seattle;
+- observational unit: CITY_DAY;
+- city-days are explicitly not independent;
+- the same target date is the primary dependence cluster;
+- exact WeatherNext 00Z initialization;
+- exact city-specific 24-hour fixed-local-standard-time windows with no DST shift;
+- common scientific decision time 09:00:00Z with start window `[09:00:00Z,09:05:00Z)`;
+- no retry;
+- no backfill;
+- no model fitting;
+- no trade.
 
-> idea -> large collector -> hardening -> review -> discover no edge.
+### October 3 first prospective date
 
-### RADAR-P0 — ACTIVE
+Verified runtime/operator evidence established:
 
-Purpose: test whether a fixed Chat-assisted manual process can find useful after-cost Kalshi opportunities across the exchange.
+- one visible scientific Cloud Run execution;
+- exact reviewed image digest;
+- `maxRetries = 0`;
+- `taskCount = 5`;
+- `parallelism = 5`;
+- all 5/5 tasks completed;
+- scientific acquisition began only after the 09:00Z gate;
+- all five expected city/date prefixes contained sealed packet structure and an atomic claim;
+- no `failure.json` was observed.
 
-Frozen pilot:
+Disposition:
 
-- duration: 7 days
-- cadence: approximately 09:00 / 13:00 / 17:00 ET
-- fully manual trigger; no cron/cloud automation during the pilot
-- maximum 3 distinct `WORTH CHECKING` candidates per scan
-- valid outputs: `WORTH CHECKING`, `SKIP`, `TOO UNCERTAIN`
-- zero alerts is a valid result
-- all scheduled scans, skips, unavailable sources, failures, and no-alert periods remain in the ledger
-- primary human-action delay for economics: 5 minutes
-- immediate and 15-minute prices may be retained as diagnostics
-- independent event clusters, not strikes/rows, are the scientific unit
+`2026-10-03 — VALID PROSPECTIVE COLLECTION`
 
-Durable pilot ledger:
+This is a collection-validity statement only. It is not an accuracy, profitability, market-relative-edge, or promotion result.
 
-`~/kalshi-radar-p0/`
+## 5. Frozen pre-outcome evaluation boundary
 
-Expected contents include:
+PR #168 is canonical.
 
-- `PROTOCOL.md`
-- `STATUS.md`
-- `summary.md`
-- `scans/`
-- `audit_log.md`
-- `ideas_for_next_version.md`
+The October block froze a continuous, unrounded Fahrenheit p50 proxy. It did **not** freeze a WeatherNext probability model or a transformation from that continuous proxy into Kalshi sibling probabilities.
 
-Do not modify the frozen protocol mid-pilot because results look good or bad. Put improvements in `ideas_for_next_version.md`.
+Therefore this block may later score deterministic continuous point-forecast error against authoritative finalized outcomes, including:
 
-Current RADAR-P0 status as of 2026-09-16 after Scan #3 (Day 1 complete):
+- signed error;
+- absolute error;
+- squared error;
+- primary aggregation over complete five-city target-date clusters.
 
-- Scan #1 initially emitted one NYC-rain `WORTH CHECKING`.
-- A contemporaneous audit, before settlement/outcome hindsight, found the call violated an existing rule because the exact settlement-window convention had not been positively verified. Original scan remains unchanged; the audit reclassifies it to `TOO UNCERTAIN` for scoring.
-- Scan #2 produced no valid `WORTH CHECKING` alerts.
-- WTI crude was skipped for unusably wide spreads.
-- NYC low temperature, RCP approval average, and OpenRouter market-share ideas were held as `TOO UNCERTAIN` or dropped when exact source/settlement evidence could not be established.
-- Scan #3 emitted one prospective `WORTH CHECKING` candidate: TSA weekly average screenings, Sep 14-20, `KXTSAW-26SEP20-A2.35`, on the NO side. The scan reported a 5-cent NO ask with about 99 contracts at that level and used already-published TSA daily counts plus recent weekday history to project the weekly average below 2.35 million.
-- That TSA candidate is a prospective research alert only. It has not yet settled, has not yet been independently audited here, and does not establish profitability.
-- Day 1 completed all three scheduled scans.
+It may **not** retrospectively invent:
 
-The current lesson is not that these markets lack edge. It is that apparent discrepancies must survive exact rule/source verification before promotion to an alert, and even a valid alert remains only a prospective hypothesis until delayed-price and outcome scoring are complete.
+- rounding into the Kalshi integer ladder;
+- sibling probability assignments;
+- Brier/log-loss market-relative skill;
+- hypothetical YES/NO fair values;
+- after-cost P&L derived from a post-outcome transformation.
 
-### YouTube feasibility — ACTIVE
+Any later market-relative WeatherNext edge experiment must freeze its probability/economic transformation before its own prospective outcomes.
 
-Purpose: test a structural publication-latency mechanism for `KXYTVIEWSD`.
+## 6. Current WeatherNext operating rule
 
-Current reported prerequisite findings:
+Leave the October 3-14 live collector scientifically untouched while it runs.
 
-- settlement source is YouTube Charts
-- Global artist daily views are used
-- daily contract rules require observation from a New York IP
-- a finalized Taylor Swift chart value was reported to exactly match Kalshi's expiration value
-- YouTube publication appears delayed relative to the observation day
-- markets can close early when values become determinable
+Do not:
 
-A three-publication-cycle watch is running separately. Its job is only to establish whether the settlement-equivalent value becomes visible while the exact Kalshi market remains ACTIVE with positive-margin executable liquidity after fees and delayed checks.
+- inspect emerging outcomes to tune the model or evaluation rule;
+- change cities, dates, decision time, target windows, model rule, or deployment image;
+- retry/backfill a missed observation;
+- count five same-date cities as five independent experiments;
+- infer edge from one correct forecast or one profitable anecdote;
+- grant trading authority.
 
-Do not call this profitable until the predeclared promote criteria are satisfied prospectively.
+Read-only health/reconciliation checks are allowed. Failures or missing captures must be recorded as observed, not repaired.
 
-### USGS earthquake probe — KEEP WATCHING
+After the block closes:
 
-Mechanism under test:
+1. reconcile every expected invocation/city-day before outcome scoring;
+2. preserve failures, missing observations, abstentions, and incomplete diagnostics;
+3. acquire authoritative outcomes only under the frozen scorer boundary;
+4. run deterministic continuous point-forecast evaluation;
+5. decide whether the mechanism warrants a separately prespecified prospective edge experiment.
 
-reviewed qualifying USGS earthquake -> threshold condition becomes constrained -> check whether still-open Kalshi liquidity is stale after realistic delay.
+## 7. Perps read-only challenger
 
-Latest reported probe:
+Perps remains DISARMED/read-only with `production_influence = 0`.
 
-- result: `INSUFFICIENT`
-- largest reviewed current-day event: magnitude 5.1
-- lowest open threshold observed: 5.2
-- no trigger occurred; therefore no book/economic test was warranted
+PR #164 establishes the schema/authority constraints and PR #165 establishes the
+research ladder. PR #173 is now canonical and closes the first schema-refresh
+and offline mechanism-harness checkpoint.
 
-Count qualifying threshold-crossing episodes, not calendar days. No crossing is not a failed latency test.
+### Current first-party spec authority
 
-## 6. Parked / killed lanes
+Temporary probe PR #172 fetched the official specification bytes directly from
+Kalshi on 2026-10-04, then closed without merge:
 
-### GAS daily official-source latency — KILLED / PARKED
+- Perps OpenAPI URL: `https://docs.kalshi.com/perps_openapi.yaml`
+- OpenAPI SHA-256:
+  `d13cb9c5c18cbb9ab2fe60d173c74511dea627a89321d17f7b0505a88f82aeb0`
+- OpenAPI bytes: 146790
+- Perps AsyncAPI URL: `https://docs.kalshi.com/perps_asyncapi.yaml`
+- AsyncAPI SHA-256:
+  `e5cc0f026b8e306e917860b870e23c9152d0d782c33137d42698f051a9dbe824`
+- AsyncAPI bytes: 38219
 
-Canonical research branch remains unmerged.
+The reviewed read-only parser now requires/preserves current structural and
+timing authority including:
 
-The live close-clock repair established that a Sep 16 target contract closing at `2026-09-16T03:59:00Z` is Sep 15 23:59 America/New_York.
+- `market_version`;
+- `underlying_multiplier`;
+- optional `asset_class`;
+- optional `product_metadata`;
+- market-bound timestamped `reference_price`;
+- optional `sending_ts_ms`;
+- current documented orderbook update reasons.
 
-Therefore the market closes before the target local date. The tested official-source latency mechanism cannot exist.
+New book/ticker evidence binds the exact AsyncAPI SHA-256 into the append-only
+evidence identity and persistence layer. Market metadata separately retains the
+exact OpenAPI source provenance.
 
-Status:
+### Frozen offline Phase 0 mechanism diagnostic
 
-`GAS DAILY LATENCY THESIS KILLED — FORECASTING LANE NOT YET AUTHORIZED`
+The first falsifiable checkpoint remains:
 
-Do not reopen as the same strategy. Any next-day gas forecasting idea requires a new mechanism audit.
+> market-bound reference-price movement -> Kalshi executable-book repricing
 
-### Rotten Tomatoes — PARKED / BLOCKED
+The canonical Phase 0 harness is mechanism-only and uses the market's own
+timestamped Margin ticker `reference_price`. It freezes:
 
-RT-A1 research code exists on a separate branch, but the live probe did not establish the mechanism.
+- every observed nonzero market-bound reference change as an impulse;
+- source movement labels `UP` / `DOWN`, never LONG / SHORT;
+- fixed 1s, 2s, 5s, and 10s horizons;
+- exact previous/current market-state evidence IDs;
+- connection epoch, ticker SID, structural contract identity, and causal source
+  timestamps;
+- exact baseline, horizon, and post-horizon continuity-witness book evidence;
+- contiguous same-stream orderbook sequence proof;
+- explicit abstentions for missing/stale baselines, stream boundaries, missing
+  continuity witnesses, sequence gaps, and non-comparable one-sided quotes.
 
-Current blockers:
+Because the Margin ticker stream is coalesced to at most one update per market
+per second, Phase 0 makes no sub-second benchmark-observability claim.
 
-- conservative public HTML parsing exposed no reliable score/count/review records for the tested pages
-- exact settlement-source identity was not available through the event payload used by the collector
-- a permitted, reliable prospective data path for review membership/score evidence has not been established
+Phase 0 contains no probability model, fees, P&L, order construction, live
+collector, alert authority, capital allocation, or production influence. Passing
+this software/mechanism checkpoint does not establish predictive advantage or
+after-cost edge.
 
-Do not add architecture until the data/access prerequisite is solved.
+A later CF Benchmarks 5 Hz or Pyth-based checkpoint still requires separately
+reviewed exact market-to-index mapping and timestamp authority before any such
+data can enter an evaluation.
 
-### Weather expansion — PAUSED
+No Perps alert, order, capital allocation, or execution authority exists.
 
-WN-A1 and WN-A2 engineering are merged and provide a research alert/outcome path.
+## 8. Security/dependency state
 
-Further strategy expansion remains constrained by external evidence/access issues, including WeatherNext dataset permission and unresolved exact TWC measurement-window authority where applicable.
+PR #170 upgraded transitive `urllib3` from 2.7.0 to 2.8.0 after the package resolver produced the exact lock update.
 
-Do not start WN-A3 merely because WN-A2 is complete.
+All canonical GitHub CI gates passed before merge, including security/supply-chain.
 
-### CPI — PAUSED for first-edge objective
+The operator's local Python 3.13 `make verify` had a separate mypy/psycopg import-environment issue; canonical Python 3.12 CI was the acceptance environment for PR #170.
 
-CPI remains useful research infrastructure, but its feedback rate is slow and no current reason justifies prioritizing it over faster prospective mechanisms.
+## 9. Other research lanes
 
-### GDP automated activation — PARKED unless reopening evidence is satisfied
+### GDP
 
-GDP authority/integration repairs are accepted. Do not repeatedly reopen closed engineering findings.
+A manually acted-on GDP opportunity was owner-reported correct and profitable. That remains an anecdotal economic result, not proof of repeatable automated GDP alpha. Previously accepted GDP engineering/authority repairs remain closed unless a concrete regression is reproduced.
 
-A profitable manual GDP call does not by itself clear the remaining scientific/economic gates for automated activation.
+### Historical/manual radar and specialist probes
 
-## 7. Scientific rules that remain mandatory
+Older RADAR-P0, YouTube, USGS, gas, RT, and CPI work remains historical context. Do not infer that an old conversation's unfinished status is current. Recover durable artifacts where useful; otherwise mark the lane incomplete/parked rather than reconstructing missing prospective evidence from memory.
 
-- Never cherry-pick only successful alerts.
-- Preserve every attempted strategy, abstention, unavailable source, no-fill state, and no-alert scan relevant to the frozen policy.
-- Exact contract identity, settlement semantics, source, and timing must be verified before a candidate can become `WORTH CHECKING`.
-- Use actual executable prices and depth, not midpoint or cumulative historical volume, for economic claims.
-- Include applicable fees and avoid double-counting spread/depth costs.
-- Record realistic human/decision latency; a quote that disappears before plausible action is not a manual edge.
-- Count independent economic events, not sibling strikes, repeated forecasts, or repeated source observations.
-- Cluster correlated outcomes: macro thresholds from one release, multiple strikes on one event, artists in one publication batch, weather cities in one system/date, earthquake aftershock sequences, reviews from one film/release cohort.
-- Freeze rules before evaluation. Mid-pilot ideas go into a next-version log.
-- No retrospective relabeling of historical data as prospective.
-- No production influence, live order placement, signing, or capital deployment without the existing activation gates and explicit authority.
-
-## 8. Profitability ladder
+## 10. Profitability ladder
 
 Do not collapse these stages:
 
@@ -229,105 +267,54 @@ Do not collapse these stages:
 
 Software completion can support these gates but cannot substitute for them.
 
-## 9. Current priority order
+## 11. Immediate priority order
 
-1. Finish the frozen RADAR-P0 7-day prospective pilot.
-2. Finish the three-cycle YouTube feasibility watch.
-3. Keep the USGS probe lightweight until qualifying crossings occur.
-4. Score outcomes and capacity honestly after evidence exists.
-5. Automate only the procedure that survives the manual/frozen evidence test.
+1. Leave the October 3-14 WeatherNext collector scientifically untouched except
+   for read-only health/reconciliation.
+2. Keep the merged Perps Phase 0 mechanism definition frozen; do not tune
+   impulses, horizons, continuity rules, or abstention semantics on observed
+   results.
+3. Before any untouched Perps evaluation slice, freeze a bounded read-only
+   collection/evaluation protocol: exact markets, collection window, evidence
+   completeness rules, de-duplication/cooldown policy if any, dependence units,
+   missing-data treatment, and pass/kill criteria.
+4. Only then run a narrow read-only Perps collection using the canonical evidence
+   model. Preserve every attempted observation, missing interval, reconnect, and
+   abstention; no orders and no production influence.
+5. Evaluate mechanism evidence first. Do not add probabilities, fees, P&L, or
+   trade simulation unless a later checkpoint explicitly freezes those economic
+   rules before its untouched data.
+6. After October 14, reconcile the complete WeatherNext block before outcome
+   scoring.
+7. Run only the already-frozen continuous WeatherNext evaluator.
+8. Continue, redesign, or kill research lanes based on prespecified evidence; no
+   automatic production promotion.
 
-Do not start another broad scanner during RADAR-P0. Do not pre-research likely next-scan candidates outside the frozen scan process.
+## 12. Authority
 
-## 10. Immediate next actions
+Production write authority remains OFF.
 
-As of this checkpoint:
+No real-money order, autonomous order, capital allocation, or production-source promotion is authorized by the current WeatherNext collection, the Perps research work, this state update, or any owner-reported profitable anecdote.
 
-- Day 1 of RADAR-P0 is complete; run the next scheduled scan at the normal Day 2 morning slot, not an off-schedule scan
-- keep the YouTube live watch running through its final planned publication cycle
-- keep USGS conditional rather than building a collector before a qualifying trigger
-- maintain WN-A2 as merged/closed engineering; no further weather expansion now
-- keep RT, gas, CPI, and GDP activation parked unless their documented reopening conditions are met
-
-At the end of RADAR-P0, produce at minimum:
-
-- scheduled scans completed / missed
-- markets screened
-- distinct underlying events fully analyzed
-- `WORTH CHECKING` / `SKIP` / `TOO UNCERTAIN` counts
-- retrieval/rule/book failures
-- hypothetical after-cost result at analysis time
-- hypothetical result after 5-minute human delay
-- simple-baseline result
-- Chat-assisted result
-- displayed/executable capacity
-- cluster concentration
-- performance with the best event removed
-
-Then choose one disposition for each mechanism:
-
-`ACCELERATE`, `KEEP COLLECTING`, `PAUSE`, or `KILL`.
-
-## 11. Decision log
-
-### 2026-09-15 — Manual radar before software radar
-
-Independent strategy red-team recommended a frozen manual whole-exchange probe before building RADAR-A0.
-
-Reason:
-
-- candidate discovery is unproven
-- probability estimation is unproven
-- survival of economics through human delay is unproven
-- automating all three at once would make failures hard to diagnose
-
-Decision: run RADAR-P0 first. Do not build RADAR-A0 until the manual policy produces useful prospective evidence.
-
-### 2026-09-16 — Scan #1 audit discipline
-
-A NYC-rain alert was downgraded by contemporaneous audit because exact settlement-window authority was inferred rather than verified.
-
-Decision: preserve the original record, preserve the audit, and enforce the existing rule that an unresolved settlement-window/source question is `TOO UNCERTAIN`.
-
-This was not a protocol change.
-
-### 2026-09-16 — WN-A2 complete
-
-Independent delta review returned `PASS — NO BLOCKERS`. PR #160 merged. Current main CI passed.
-
-Decision: weather outcome infrastructure is sufficient for the present research stage; pause new weather feature work.
-
-### 2026-09-16 — Gas latency thesis closed
-
-Local-time close semantics established that the tested daily AAA market closes before its target date.
-
-Decision: kill the official-source latency thesis. Any forecasting version requires a new proposal rather than silently inheriting the old lane.
-
-### 2026-09-16 — RADAR-P0 Day 1 complete
-
-All three scheduled Day 1 scans were run. Scan #1's initial NYC-rain alert was contemporaneously downgraded to `TOO UNCERTAIN` because exact settlement-window authority had not been established. Scan #2 emitted no valid alert. Scan #3 emitted a prospective TSA weekly-average NO candidate.
-
-Decision: keep the RADAR-P0 protocol frozen. Do not count the TSA candidate as a win before delayed-price and authoritative-outcome reconciliation.
-
-## 12. Update protocol
+## 13. Update protocol
 
 Update this file whenever any of the following happens:
 
-- canonical main changes materially
-- a milestone/PR is merged
-- a required independent review changes acceptance status
-- a strategy is promoted, paused, killed, or reopened
-- a live experiment starts or finishes
-- a prospective profitability result is established
-- an owner-reported economic result is added
-- the active priority order changes
-- a production/scientific authority gate changes
+- canonical main changes materially;
+- a milestone/PR is merged;
+- a required independent review changes acceptance status;
+- a strategy is promoted, paused, killed, or reopened;
+- a live experiment starts or finishes;
+- a prospective profitability result is established;
+- an owner-reported economic result is added;
+- the active priority order changes;
+- a production/scientific authority gate changes.
 
 Every update should distinguish:
 
-- verified GitHub/repository facts
-- owner-reported runtime/economic facts
-- independent-review results
-- scientific/economic conclusions
+- verified GitHub/repository facts;
+- owner/runtime evidence;
+- independent-review results;
+- scientific/economic conclusions.
 
 A fresh session should not reopen accepted historical findings merely because an old chat said they were pending. Reopen only for a concrete regression or new evidence against an existing requirement.
