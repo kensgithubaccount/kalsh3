@@ -1,0 +1,48 @@
+name: perps-btc-ticker-probe
+
+on:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Probe exact public Margin market identifiers
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import hashlib
+          import json
+          import urllib.error
+          import urllib.request
+
+          base = "https://external-api.kalshi.com/trade-api/v2/margin/markets/"
+          for ticker in ("BTC-PERP", "BTCPERP"):
+              req = urllib.request.Request(base + ticker, method="GET")
+              try:
+                  with urllib.request.urlopen(req, timeout=10) as response:
+                      body = response.read()
+                      status = response.status
+              except urllib.error.HTTPError as exc:
+                  body = exc.read()
+                  status = exc.code
+              print(
+                  f"{ticker} HTTP {status} bytes={len(body)} "
+                  f"sha256={hashlib.sha256(body).hexdigest()}"
+              )
+              if status == 200:
+                  payload = json.loads(body)
+                  market = payload.get("market", {})
+                  print(json.dumps({
+                      "requested": ticker,
+                      "returned_ticker": market.get("ticker"),
+                      "status": market.get("status"),
+                      "title": market.get("title"),
+                      "market_version": market.get("market_version"),
+                  }, sort_keys=True))
+          PY
