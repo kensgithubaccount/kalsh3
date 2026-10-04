@@ -5,7 +5,7 @@ Status: **FROZEN BEFORE FIRST PROSPECTIVE SESSION / READ-ONLY / DISARMED**
 Frozen on: 2026-10-04
 
 Protocol SHA-256:
-`1a98970c0ff0b39b92b435b4d9c7f717a6c861ef20cdbcf708a781f16e6abeb0`
+`482677be45be623a443647e347f854db9693ec82371a460adfed2a6ec20fed46`
 
 This is the first untouched prospective mechanism slice after canonical PR #173.
 It tests only whether market-bound reference-price movement is followed by
@@ -40,6 +40,13 @@ be accepted up to 300 seconds late. No retry and no backfill are permitted.
 
 The production read-only boundary is not widened: each session is one bounded
 connection with no order capability and `production_influence = 0`.
+
+The protocol identity also binds metadata parser version `m25b1-v3` and
+market-version authority
+`MISSING_IS_UNKNOWN_PRESENT_POSITIVE_INT32_EXPLICIT_NULL_INVALID_V1`.
+For this read-only slice, a missing live `market_version` remains UNKNOWN;
+a present value must be an exact positive int32; explicit JSON null remains
+invalid. No version is synthesized.
 
 ## Dependence
 
