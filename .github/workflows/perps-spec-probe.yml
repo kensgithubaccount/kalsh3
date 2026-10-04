@@ -1,0 +1,36 @@
+name: perps-official-spec-probe
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/perps-spec-probe.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Fetch official Kalshi Perps specs
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl -fsSL --retry 3 --retry-delay 1 https://docs.kalshi.com/perps_openapi.yaml -o perps_openapi.yaml
+          curl -fsSL --retry 3 --retry-delay 1 https://docs.kalshi.com/perps_asyncapi.yaml -o perps_asyncapi.yaml
+
+          echo "=== SHA256 ==="
+          sha256sum perps_openapi.yaml perps_asyncapi.yaml
+          echo "=== BYTES ==="
+          wc -c perps_openapi.yaml perps_asyncapi.yaml
+          echo "=== HEADERS ==="
+          head -n 12 perps_openapi.yaml
+          head -n 12 perps_asyncapi.yaml
+
+          echo "=== OPENAPI MARGIN MARKET ==="
+          line="$(grep -n '^    MarginMarket:$' perps_openapi.yaml | head -1 | cut -d: -f1)"
+          test -n "$line"
+          sed -n "$((line-2)),$((line+135))p" perps_openapi.yaml
+
+          echo "=== ASYNCAPI TICKER / REFERENCE / SENDING TS ==="
+          grep -n -E 'reference_price:|sending_ts_ms:|lastUpdateReason:|ReduceOnlyCancel|tickerPrice:' perps_asyncapi.yaml | head -80
