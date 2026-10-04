@@ -11,11 +11,11 @@ market per second, so the frozen diagnostic horizons are whole-second multiples.
 
 from __future__ import annotations
 
+from collections.abc import Iterable
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from enum import StrEnum
-from typing import Iterable
 
 from .domain import Direction, ShadowResearchError
 from .perps_evidence import PerpsBookEvidenceObservation, PerpsMarketStateObservation
