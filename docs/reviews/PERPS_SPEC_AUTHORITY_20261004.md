@@ -101,10 +101,13 @@ An **impulse** is every observed nonzero change between two consecutive
 market-bound reference observations that:
 
 1. have identical ticker, exchange index, market version, underlying
-   multiplier, and metadata identity;
-2. have strictly increasing reference source timestamps;
-3. have monotonic evidence availability;
-4. have a source timestamp no later than local availability.
+   multiplier, metadata identity, connection epoch, and ticker subscription;
+2. bind the exact previous/current market-state evidence IDs into the impulse
+   identity;
+3. have strictly increasing reference source timestamps;
+4. have monotonic evidence availability;
+5. have both source timestamps no later than their respective local
+   availability times.
 
 There is no post-hoc minimum-move threshold in Phase 0.
 
@@ -116,13 +119,15 @@ per second, the frozen diagnostic horizon grid is:
 At each horizon, the evaluator uses the latest already-valid book evidence
 available no later than the relevant cutoff. Book freshness is frozen at a
 30-second maximum age, matching the existing sequenced-book runtime stale
-ceiling. If no baseline book exists, the row is an explicit
+ceiling. Only orderbook evidence from the impulse's connection epoch is eligible for
+the baseline. If no such baseline book exists, the row is an explicit
 `NO_BASELINE_BOOK` abstention. An old baseline becomes
 `STALE_BASELINE_BOOK`; a baseline that was still current at impulse time but
 has aged past the ceiling by the horizon cutoff becomes
-`STALE_HORIZON_BOOK`. If a reconnect boundary appears between baseline and
-the horizon state, the row is an explicit `RECONNECT_WITHIN_HORIZON`
-abstention.
+`STALE_HORIZON_BOOK`. If either a connection-epoch change or an orderbook
+subscription/SID change appears after the impulse and before the horizon cutoff,
+the row is an explicit `STREAM_BOUNDARY_WITHIN_HORIZON` abstention. Within
+one surviving stream, a sequence regression fails closed.
 
 The measured quantities are quote repricing only:
 
