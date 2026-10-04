@@ -174,6 +174,84 @@ def test_reference_impulse_fails_closed_across_contract_or_time_boundary() -> No
         build_reference_impulse(previous, nonmonotonic)
 
 
+def test_reference_impulse_cannot_span_reconnect_or_subscription_change() -> None:
+    previous = state(reference="100", source_offset_ms=100, available_offset_ms=120)
+    current = state(reference="101", source_offset_ms=1_100, available_offset_ms=1_120)
+
+    reconnected = PerpsMarketStateObservation.create(
+        PerpsTickerEvent.parse(
+            {
+                "type": "ticker",
+                "sid": 8,
+                "msg": {
+                    "market_ticker": "BTC-PERP",
+                    "price": "100.5",
+                    "bid": "100",
+                    "ask": "101",
+                    "bid_size_fp": "2",
+                    "ask_size_fp": "3",
+                    "last_trade_size_fp": "1",
+                    "volume": "10",
+                    "volume_notional_value_dollars": "1000",
+                    "volume_24h": "5",
+                    "volume_24h_notional_value_dollars": "500",
+                    "open_interest": "7",
+                    "open_interest_notional_value_dollars": "700",
+                    "ts_ms": NOW_MS + 1_118,
+                    "reference_price": {
+                        "price": "101",
+                        "ts_ms": NOW_MS + 1_100,
+                    },
+                },
+            },
+            market(),
+        ),
+        market(),
+        OTHER_EPOCH,
+        NOW + timedelta(milliseconds=1_119),
+        NOW + timedelta(milliseconds=1_120),
+    )
+    with pytest.raises(ShadowResearchError, match="connection/subscription"):
+        build_reference_impulse(previous, reconnected)
+
+    current_with_other_sid = PerpsMarketStateObservation(
+        evidence_id=current.evidence_id,
+        ticker=current.ticker,
+        exchange_index=current.exchange_index,
+        market_version=current.market_version,
+        underlying_multiplier=current.underlying_multiplier,
+        asset_class=current.asset_class,
+        connection_epoch=current.connection_epoch,
+        sid=9,
+        source_fingerprint=current.source_fingerprint,
+        ticker_ts_ms=current.ticker_ts_ms,
+        sending_ts_ms=current.sending_ts_ms,
+        received_at=current.received_at,
+        available_at=current.available_at,
+        price=current.price,
+        bid=current.bid,
+        ask=current.ask,
+        bid_size=current.bid_size,
+        ask_size=current.ask_size,
+        last_trade_size=current.last_trade_size,
+        volume=current.volume,
+        volume_notional_value_dollars=current.volume_notional_value_dollars,
+        volume_24h=current.volume_24h,
+        volume_24h_notional_value_dollars=current.volume_24h_notional_value_dollars,
+        open_interest=current.open_interest,
+        open_interest_notional_value_dollars=current.open_interest_notional_value_dollars,
+        reference_price=current.reference_price,
+        settlement_mark_price=current.settlement_mark_price,
+        liquidation_mark_price=current.liquidation_mark_price,
+        funding_rate=current.funding_rate,
+        funding_observed_ts_ms=current.funding_observed_ts_ms,
+        next_funding_time_ms=current.next_funding_time_ms,
+        market_metadata_hash=current.market_metadata_hash,
+    )
+    with pytest.raises(ShadowResearchError, match="evidence_id"):
+        current_with_other_sid
+
+
 def test_phase0_grid_measures_quote_repricing_without_pnl() -> None:
     previous = state(reference="100", source_offset_ms=100, available_offset_ms=120)
     current = state(reference="101", source_offset_ms=1_100, available_offset_ms=1_120)
