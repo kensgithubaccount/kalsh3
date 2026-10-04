@@ -130,8 +130,15 @@ the baseline. If no such baseline book exists, the row is an explicit
 has aged past the ceiling by the horizon cutoff becomes
 `STALE_HORIZON_BOOK`. If either a connection-epoch change or an orderbook
 subscription/SID change appears after the impulse and before the horizon cutoff,
-the row is an explicit `STREAM_BOUNDARY_WITHIN_HORIZON` abstention. Within
-one surviving stream, a sequence regression fails closed.
+the row is an explicit `STREAM_BOUNDARY_WITHIN_HORIZON` abstention.
+
+A measured horizon additionally requires an exact same-stream continuity witness
+after the horizon cutoff. The stored book sequence from baseline through that
+witness must be contiguous and availability-monotonic. Without a later witness,
+the row is `NO_CONTINUITY_WITNESS`; a missing or regressed sequence is
+`SEQUENCE_GAP`. The measurement binds baseline, horizon, and continuity-witness
+evidence IDs. This prevents an absent/gapped stream from being retrospectively
+misread as a valid zero quote move.
 
 The measured quantities are quote repricing only:
 
