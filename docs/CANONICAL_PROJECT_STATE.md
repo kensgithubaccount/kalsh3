@@ -1,6 +1,6 @@
 # Canonical Project State
 
-Last updated: 2026-10-03
+Last updated: 2026-10-04
 
 This file is the durable handoff record for the Kalshi project. New oversight or implementation sessions should read this file first, then verify GitHub and current runtime state before acting.
 
@@ -12,23 +12,19 @@ Repository: `kensgithubaccount/kalsh3`
 
 Canonical main:
 
-- SHA: `6b5af85701a4d605e70419b0f2d192a09de6bf9a`
-- tree: `0a52f01792eb775e521effa17ab08fc60828940e`
-- commit: merge of PR #170, urllib3 2.8.0 security repair
-- PR #166 reviewed/tested head: `c6d486cbd49da82ca2431d311581e7bc84fba7b1`
+- SHA: `694e5adb0104608be5c345f6512bca8356e5efac`
+- tree: `1250b140f0255e40c7e28068230e552e95fa992d`
+- commit: merge of PR #165, Perps edge research and radar admission
+- production write authority: OFF
 
-Recent weather milestones relevant to current research:
+Recent canonical merges relevant to the active work:
 
-- PR #159: WN-A1 Chicago daily-high research alert merged; research only.
-- PR #160: WN-A2 authoritative settlement reconciliation merged after independent review.
-- PR #163: WeatherNext bounded-decoding repair merged after the old global-chunk path was shown infeasible under the constrained runtime.
-- PR #166: WN-A2-E1 settlement bucket semantics repair merged. RANGE is inclusive, LT/GT are strict, full source precision is preserved, and unsupported rounding is not invented.
-
-Current open research/documentation work at this checkpoint:
-
-- PR #164: Perps API/schema integration constraints; rebased onto current main on 2026-10-03. Documentation only; no execution authority.
-- PR #165: Perps edge research and radar admission plan; rebased onto current main on 2026-10-03. Perps remains DISARMED/read-only with zero production influence.
-- PR #168: outcome-blind multicity pre-outcome evaluation boundary; under CI/review. It validates the sealed pre-outcome packet schema and freezes continuous point-error scoring only; it does not acquire outcomes, invent probabilities, score P&L, or change the live collector.\n- PR #170: urllib3 2.8.0 security lock repair. MERGED on 2026-10-04; all four canonical CI jobs passed.\n- PR #171: exact frozen multicity provenance import from operator-local source; one commit, 61 added files, no live-runtime change. Pre-commit verification passed all 20 D1 manifest entries and all 32 final independent-review source hashes.
+- PR #166: WN-A2-E1 settlement bucket semantics repair. RANGE is inclusive, LT/GT are strict, full source precision is preserved, and unsupported rounding is not invented.
+- PR #170: urllib3 2.8.0 security repair. All canonical CI jobs passed before merge.
+- PR #171: exact frozen WeatherNext multicity provenance import. The imported experiment/review bytes remain unchanged; root regression tests verify the frozen manifests.
+- PR #168: outcome-blind WeatherNext multicity evaluator boundary. It freezes continuous Fahrenheit point-error scoring and explicitly blocks retrospective probability/bucket/P&L reconstruction.
+- PR #164: current Perps API/schema authority constraints.
+- PR #165: Perps edge research and radar admission plan, with market-bound reference-price lead/lag as the first read-only checkpoint.
 
 No current repository state establishes a profitable autonomous strategy or authorizes real-money trading.
 
@@ -62,29 +58,33 @@ A stronger category must not be inferred from a weaker one.
 
 Historical/manual profitable trades are useful motivation, not proof of a repeatable strategy.
 
-## 4. Current active prospective lane — WeatherNext multicity development block
+## 4. Active prospective lane — WeatherNext multicity development block
 
-An external prospective experiment named `wn_multicity_prospective_v1` is currently running for the exact date block 2026-10-03 through 2026-10-14.
+The experiment `wn_multicity_prospective_v1` is running for the exact date block 2026-10-03 through 2026-10-14.
 
-Important repository-status distinction:
+Its governing frozen source and final collector review are now canonical via PR #171.
 
-- the governing frozen experiment source and final collector review artifacts currently exist in an operator-local checkout and deployed image, not on canonical GitHub main;
-- canonical import of those exact frozen bytes is pending;
-- this file records their verified identities and runtime state but does not recreate or modify them.
-
-Verified frozen identities supplied by the operator and matched against the local frozen bytes:
+Frozen identities:
 
 - protocol SHA-256: `56fb3c00eec38286b64e57652dc822145a7fbcbe9d51e52693eb2f16943fd346`
 - pre-first-event amendment SHA-256: `b6ce8154d3a3eb4a90e1eefb3cd57b879a818eabee22b8f8c8fe2dcd7614f000`
-- final independently reviewed deployed collector image:
+- independently reviewed collector image:
   `sha256:0ffe08df80315922d64f2313f160b053151744416ed03dacafe38fcc6e24bc08`
+
+The operator-local provenance handoff was independently verified before canonical import:
+
+- archive SHA-256: `de64c2d61dc8f05d7bb82579672036f54ce29b963e129d1fe3c669d312c995db`
+- all 20 D1 manifest entries matched;
+- all 32 final independently reviewed source hashes matched;
+- duplicated frozen D1 bytes matched;
+- secret/private-key checks were empty.
 
 Frozen scientific constraints include:
 
 - cities: Boston, Miami, Denver, Los Angeles, Seattle;
 - observational unit: CITY_DAY;
 - city-days are explicitly not independent;
-- the same target date is a dependence cluster for primary interpretation;
+- the same target date is the primary dependence cluster;
 - exact WeatherNext 00Z initialization;
 - exact city-specific 24-hour fixed-local-standard-time windows with no DST shift;
 - common scientific decision time 09:00:00Z with start window `[09:00:00Z,09:05:00Z)`;
@@ -95,70 +95,103 @@ Frozen scientific constraints include:
 
 ### October 3 first prospective date
 
-Runtime/operator evidence on 2026-10-03 established:
+Verified runtime/operator evidence established:
 
-- the scheduler triggered one visible scientific Cloud Run execution at approximately 08:50Z;
-- the live job used the exact independently reviewed image digest above;
+- one visible scientific Cloud Run execution;
+- exact reviewed image digest;
 - `maxRetries = 0`;
 - `taskCount = 5`;
 - `parallelism = 5`;
 - all 5/5 tasks completed;
-- scientific Earth Engine activity began only after the 09:00Z gate;
-- each of the five city/date prefixes contained the expected sealed packet structure and an atomic claim;
-- no `failure.json` was observed in the October 3 inventory.
+- scientific acquisition began only after the 09:00Z gate;
+- all five expected city/date prefixes contained sealed packet structure and an atomic claim;
+- no `failure.json` was observed.
 
-Current operational disposition:
+Disposition:
 
 `2026-10-03 — VALID PROSPECTIVE COLLECTION`
 
 This is a collection-validity statement only. It is not an accuracy, profitability, market-relative-edge, or promotion result.
 
-## 5. Current scientific/economic state
+## 5. Frozen pre-outcome evaluation boundary
 
-The multicity block is still accumulating untouched prospective evidence.
+PR #168 is canonical.
+
+The October block froze a continuous, unrounded Fahrenheit p50 proxy. It did **not** freeze a WeatherNext probability model or a transformation from that continuous proxy into Kalshi sibling probabilities.
+
+Therefore this block may later score deterministic continuous point-forecast error against authoritative finalized outcomes, including:
+
+- signed error;
+- absolute error;
+- squared error;
+- primary aggregation over complete five-city target-date clusters.
+
+It may **not** retrospectively invent:
+
+- rounding into the Kalshi integer ladder;
+- sibling probability assignments;
+- Brier/log-loss market-relative skill;
+- hypothetical YES/NO fair values;
+- after-cost P&L derived from a post-outcome transformation.
+
+Any later market-relative WeatherNext edge experiment must freeze its probability/economic transformation before its own prospective outcomes.
+
+## 6. Current WeatherNext operating rule
+
+Leave the October 3-14 live collector scientifically untouched while it runs.
 
 Do not:
 
 - inspect emerging outcomes to tune the model or evaluation rule;
-- change cities, dates, decision time, target windows, model rule, or deployment image during the frozen block;
+- change cities, dates, decision time, target windows, model rule, or deployment image;
 - retry/backfill a missed observation;
 - count five same-date cities as five independent experiments;
 - infer edge from one correct forecast or one profitable anecdote;
 - grant trading authority.
 
-Primary independence for the multicity block is the target-date cluster, so the complete block contains at most 12 primary date clusters, not 60 independent observations.
+Read-only health/reconciliation checks are allowed. Failures or missing captures must be recorded as observed, not repaired.
 
-The post-block evaluation must be frozen before outcome scoring and must preserve failures, abstentions, missing observations, incomplete market depth, and exact point-in-time prices rather than filtering them after the fact.
+After the block closes:
 
-## 6. Parallel work authorized while the block runs
+1. reconcile every expected invocation/city-day before outcome scoring;
+2. preserve failures, missing observations, abstentions, and incomplete diagnostics;
+3. acquire authoritative outcomes only under the frozen scorer boundary;
+4. run deterministic continuous point-forecast evaluation;
+5. decide whether the mechanism warrants a separately prespecified prospective edge experiment.
 
-Safe work that does not touch the live prospective logic may proceed:
-
-- canonicalize the already-frozen multicity source/review bytes without editing them;
-- freeze the outcome-blind post-block evaluation schema and dependence treatment;
-- build read-only operational inventory/health auditing;
-- reconcile stale research/documentation branches against current main;
-- repair repository security/dependency findings;
-- continue read-only/offline challenger research such as Perps mechanism specification and evidence plumbing;
-- improve whole-exchange research methodology, testing, and deterministic replay without granting execution authority.
-
-Any work that would change the live multicity scientific record remains blocked until the frozen block ends.
-
-## 7. Current dependency/security finding
-
-CI runs on 2026-10-03 began reporting two HIGH Trivy findings against transitive `urllib3==2.7.0` in `uv.lock`, with a fixed version of 2.8.0.
-
-Treat this as repository dependency hygiene, not as a failure of the Perps documentation changes that happened to trigger fresh CI. Repair it on a separate security branch, regenerate `uv.lock` with the package resolver, and rerun the full security/verification gates. Do not hand-edit resolver hashes.
-
-## 8. Other research lanes
-
-### Perps — read-only challenger
+## 7. Perps read-only challenger
 
 Perps remains DISARMED/read-only with `production_influence = 0`.
 
-The intended first falsifiable edge checkpoint is benchmark -> Kalshi executable-book lead/lag. Existing repository code already provides immutable Perps market metadata, sequence-aware book evidence, market-state evidence, exact timestamp provenance, and append-only research stores.
+PR #164 establishes the current schema/authority constraints, including:
 
-Do not invent benchmark mappings, impulse thresholds, or latency horizons merely to start collecting. Freeze those only after their authority and interpretation are reviewed.
+- `market_version` as structural identity;
+- `underlying_multiplier` as exact contract/reference normalization metadata;
+- optional `asset_class`;
+- market-bound timestamped `reference_price`;
+- no inference of benchmark identity from ticker/title text.
+
+PR #165 establishes the research ladder.
+
+The first falsifiable checkpoint is:
+
+> market-bound reference-price movement -> Kalshi executable-book repricing
+
+Phase 0 uses the market's own timestamped Margin ticker `reference_price` when present. Because the Margin ticker stream is coalesced to at most one update per market per second, Phase 0 must not claim sub-second benchmark observability.
+
+A later CF Benchmarks 5 Hz or Pyth-based checkpoint requires a separately reviewed exact market-to-index mapping and timestamp authority before collection/evaluation.
+
+No Perps alert, order, capital allocation, or execution authority exists.
+
+## 8. Security/dependency state
+
+PR #170 upgraded transitive `urllib3` from 2.7.0 to 2.8.0 after the package resolver produced the exact lock update.
+
+All canonical GitHub CI gates passed before merge, including security/supply-chain.
+
+The operator's local Python 3.13 `make verify` had a separate mypy/psycopg import-environment issue; canonical Python 3.12 CI was the acceptance environment for PR #170.
+
+## 9. Other research lanes
 
 ### GDP
 
@@ -166,9 +199,9 @@ A manually acted-on GDP opportunity was owner-reported correct and profitable. T
 
 ### Historical/manual radar and specialist probes
 
-Older RADAR-P0, YouTube, USGS, gas, RT, and CPI work remains useful historical context. Do not infer that an old conversation's unfinished status is current. Recover durable artifacts where useful; otherwise mark the lane incomplete/parked rather than reconstructing missing prospective evidence from memory.
+Older RADAR-P0, YouTube, USGS, gas, RT, and CPI work remains historical context. Do not infer that an old conversation's unfinished status is current. Recover durable artifacts where useful; otherwise mark the lane incomplete/parked rather than reconstructing missing prospective evidence from memory.
 
-## 9. Profitability ladder
+## 10. Profitability ladder
 
 Do not collapse these stages:
 
@@ -182,24 +215,24 @@ Do not collapse these stages:
 
 Software completion can support these gates but cannot substitute for them.
 
-## 10. Immediate priority order
+## 11. Immediate priority order
 
-1. Leave the October 3-14 multicity collector scientifically untouched while it runs.
-2. Import the exact frozen multicity protocol/amendments/final collector review into canonical repository history without changing their bytes.
-3. Freeze and review the outcome-blind evaluator before the first post-block scoring.
-4. Repair the current `urllib3` security finding and restore green CI.
-5. Review/merge or close PRs #164/#165 on their merits; they do not block WeatherNext.
-6. After the block closes, reconcile every expected date/city attempt before acquiring/scoring outcomes.
-7. Only then run the frozen settlement/forecast/market/economic evaluation.
-8. Continue or kill the mechanism based on the predeclared evidence standard; no automatic production promotion.
+1. Leave the October 3-14 WeatherNext collector untouched except for read-only health/reconciliation.
+2. Refresh and hash exact current official Margin OpenAPI/AsyncAPI authority before widening the Perps runtime parser.
+3. Update the read-only Perps parser/evidence model for reviewed `market_version`, `underlying_multiplier`, `asset_class`, and market-bound `reference_price` semantics.
+4. Build an offline/read-only Phase 0 mechanism harness for reference-price movement -> executable-book repricing.
+5. Freeze impulse definitions, timing rules, cooldown/de-duplication, and horizons before any untouched evaluation slice.
+6. After October 14, reconcile the complete WeatherNext block before outcome scoring.
+7. Run only the already-frozen continuous WeatherNext evaluator.
+8. Continue, redesign, or kill research lanes based on prespecified evidence; no automatic production promotion.
 
-## 11. Authority
+## 12. Authority
 
 Production write authority remains OFF.
 
 No real-money order, autonomous order, capital allocation, or production-source promotion is authorized by the current WeatherNext collection, the Perps research work, this state update, or any owner-reported profitable anecdote.
 
-## 12. Update protocol
+## 13. Update protocol
 
 Update this file whenever any of the following happens:
 

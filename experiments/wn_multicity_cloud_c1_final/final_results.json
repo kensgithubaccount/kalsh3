@@ -1,0 +1,359 @@
+{
+  "amendment_sha256": "b6ce8154d3a3eb4a90e1eefb3cd57b879a818eabee22b8f8c8fe2dcd7614f000",
+  "chicago_unchanged": "12/12 cloud and local snapshots byte-identical to the pre-C1 baseline",
+  "created_at_utc": "2026-10-01T17:09:16.787660Z",
+  "d1_files_modified": [],
+  "d1_sha256sums_sha256": "6d2c618e2ef0d99f87c12d50f41dfefa617f43cd7347aeef4c0a1d37c3ba3891",
+  "date_gate_cloud": {
+    "execution": "wn-multicity-c1-canary-n4wdf",
+    "pass": true,
+    "scientific_prefix_objects_after": 0,
+    "statuses": [
+      [
+        0,
+        "boston",
+        "OUTSIDE_EXACT_DATE_ALLOWLIST"
+      ],
+      [
+        1,
+        "miami",
+        "OUTSIDE_EXACT_DATE_ALLOWLIST"
+      ],
+      [
+        2,
+        "denver",
+        "OUTSIDE_EXACT_DATE_ALLOWLIST"
+      ],
+      [
+        3,
+        "los_angeles",
+        "OUTSIDE_EXACT_DATE_ALLOWLIST"
+      ],
+      [
+        4,
+        "seattle",
+        "OUTSIDE_EXACT_DATE_ALLOWLIST"
+      ]
+    ]
+  },
+  "enable_command": "gcloud scheduler jobs resume wn-multicity-20261003-20261014 --location=us-central1 --project=total-market-138523",
+  "failure_isolation": {
+    "execution": "wn-multicity-c1-canary-wfqnh",
+    "failed": 1,
+    "five_fixture_proofs": {
+      "boston_failure_does_not_block_others": true,
+      "data_not_ready_does_not_retry": true,
+      "duplicate_boston_claim_does_not_affect_others": true,
+      "late_task_cannot_acquire_while_timely_proceed": true,
+      "malformed_market_does_not_mutate_other_city": true
+    },
+    "pass": true,
+    "succeeded": 4,
+    "task0_failed_before_others_completed": true
+  },
+  "final_image_digest": "sha256:0ffe08df80315922d64f2313f160b053151744416ed03dacafe38fcc6e24bc08",
+  "gcs_immutability": {
+    "cities": {
+      "boston": {
+        "delete_result": "Forbidden",
+        "first_create_succeeded": true,
+        "generation": "1790874045320651",
+        "local_import_matches_original": true,
+        "metageneration": "1",
+        "object": "gs://wn-multicity-c1-354269857197-20261001/c1_canary/immutability/wn-multicity-c1-canary-cfzsf/probe/boston.json",
+        "original_sha256": "7ffc0008bea1143b80de46712d070d3ea0850e126e1aaa1779662bbdf086ceb3",
+        "original_unchanged_after_import": true,
+        "pass": true,
+        "readback_sha256": "7ffc0008bea1143b80de46712d070d3ea0850e126e1aaa1779662bbdf086ceb3",
+        "second_create_rejected": true,
+        "unconditional_overwrite_result": "Forbidden"
+      },
+      "denver": {
+        "delete_result": "Forbidden",
+        "first_create_succeeded": true,
+        "generation": "1790874042923580",
+        "local_import_matches_original": true,
+        "metageneration": "1",
+        "object": "gs://wn-multicity-c1-354269857197-20261001/c1_canary/immutability/wn-multicity-c1-canary-cfzsf/probe/denver.json",
+        "original_sha256": "240a9890f1d5b2409b6ac0ec5ce6792a48f6407d497d0fb763ca664bf91b11b8",
+        "original_unchanged_after_import": true,
+        "pass": true,
+        "readback_sha256": "240a9890f1d5b2409b6ac0ec5ce6792a48f6407d497d0fb763ca664bf91b11b8",
+        "second_create_rejected": true,
+        "unconditional_overwrite_result": "Forbidden"
+      },
+      "los_angeles": {
+        "delete_result": "Forbidden",
+        "first_create_succeeded": true,
+        "generation": "1790874048418359",
+        "local_import_matches_original": true,
+        "metageneration": "1",
+        "object": "gs://wn-multicity-c1-354269857197-20261001/c1_canary/immutability/wn-multicity-c1-canary-cfzsf/probe/los_angeles.json",
+        "original_sha256": "ff1754b207ccc7871c933dd389e09caf866503e3796f59f2aac05d3bcae1e750",
+        "original_unchanged_after_import": true,
+        "pass": true,
+        "readback_sha256": "ff1754b207ccc7871c933dd389e09caf866503e3796f59f2aac05d3bcae1e750",
+        "second_create_rejected": true,
+        "unconditional_overwrite_result": "Forbidden"
+      },
+      "miami": {
+        "delete_result": "Forbidden",
+        "first_create_succeeded": true,
+        "generation": "1790874045420742",
+        "local_import_matches_original": true,
+        "metageneration": "1",
+        "object": "gs://wn-multicity-c1-354269857197-20261001/c1_canary/immutability/wn-multicity-c1-canary-cfzsf/probe/miami.json",
+        "original_sha256": "d7eb563c1ec28f21bac50de26876f207a0852e132a89f4d71387fb05fcba76c9",
+        "original_unchanged_after_import": true,
+        "pass": true,
+        "readback_sha256": "d7eb563c1ec28f21bac50de26876f207a0852e132a89f4d71387fb05fcba76c9",
+        "second_create_rejected": true,
+        "unconditional_overwrite_result": "Forbidden"
+      },
+      "seattle": {
+        "delete_result": "Forbidden",
+        "first_create_succeeded": true,
+        "generation": "1790874048620910",
+        "local_import_matches_original": true,
+        "metageneration": "1",
+        "object": "gs://wn-multicity-c1-354269857197-20261001/c1_canary/immutability/wn-multicity-c1-canary-cfzsf/probe/seattle.json",
+        "original_sha256": "b078fecaaf779d830c481659a3a578912ea94296e22191f362a9db0390782bf4",
+        "original_unchanged_after_import": true,
+        "pass": true,
+        "readback_sha256": "b078fecaaf779d830c481659a3a578912ea94296e22191f362a9db0390782bf4",
+        "second_create_rejected": true,
+        "unconditional_overwrite_result": "Forbidden"
+      }
+    },
+    "execution": "wn-multicity-c1-canary-cfzsf",
+    "pass": true
+  },
+  "historical_replay": {
+    "cities": {
+      "boston": {
+        "amendment_cases": {
+          "all_books_empty": true,
+          "delayed_snapshot_missed_after_seal": true,
+          "empty_plus_five_siblings": true,
+          "empty_plus_outcome_present": true,
+          "one_sided_plus_inactive": true,
+          "one_sided_plus_wrong_cli": true,
+          "one_sided_single_sibling": true,
+          "orderbook_object_absent": true,
+          "side_key_absent": true,
+          "two_sided_baseline": true,
+          "validation_view_does_not_mutate_event": true
+        },
+        "daily_max_p50_fahrenheit": "60.5658154296875",
+        "daily_max_p50_kelvin": "289.0198974609375",
+        "granted_scopes": [
+          "https://www.googleapis.com/auth/earthengine.readonly"
+        ],
+        "live_2026_09_27_equals_d1_fixture": true,
+        "offline_equivalence_vs_d1": true,
+        "task_index": 0
+      },
+      "denver": {
+        "amendment_cases": {
+          "all_books_empty": true,
+          "delayed_snapshot_missed_after_seal": true,
+          "empty_plus_five_siblings": true,
+          "empty_plus_outcome_present": true,
+          "one_sided_plus_inactive": true,
+          "one_sided_plus_wrong_cli": true,
+          "one_sided_single_sibling": true,
+          "orderbook_object_absent": true,
+          "side_key_absent": true,
+          "two_sided_baseline": true,
+          "validation_view_does_not_mutate_event": true
+        },
+        "daily_max_p50_fahrenheit": "82.36082275390625",
+        "daily_max_p50_kelvin": "301.12823486328125",
+        "granted_scopes": [
+          "https://www.googleapis.com/auth/earthengine.readonly"
+        ],
+        "live_2026_09_27_equals_d1_fixture": true,
+        "offline_equivalence_vs_d1": true,
+        "task_index": 2
+      },
+      "los_angeles": {
+        "amendment_cases": {
+          "all_books_empty": true,
+          "delayed_snapshot_missed_after_seal": true,
+          "empty_plus_five_siblings": true,
+          "empty_plus_outcome_present": true,
+          "one_sided_plus_inactive": true,
+          "one_sided_plus_wrong_cli": true,
+          "one_sided_single_sibling": true,
+          "orderbook_object_absent": true,
+          "side_key_absent": true,
+          "two_sided_baseline": true,
+          "validation_view_does_not_mutate_event": true
+        },
+        "daily_max_p50_fahrenheit": "80.59619873046875",
+        "daily_max_p50_kelvin": "300.14788818359375",
+        "granted_scopes": [
+          "https://www.googleapis.com/auth/earthengine.readonly"
+        ],
+        "live_2026_09_27_equals_d1_fixture": true,
+        "offline_equivalence_vs_d1": true,
+        "task_index": 3
+      },
+      "miami": {
+        "amendment_cases": {
+          "all_books_empty": true,
+          "delayed_snapshot_missed_after_seal": true,
+          "empty_plus_five_siblings": true,
+          "empty_plus_outcome_present": true,
+          "one_sided_plus_inactive": true,
+          "one_sided_plus_wrong_cli": true,
+          "one_sided_single_sibling": true,
+          "orderbook_object_absent": true,
+          "side_key_absent": true,
+          "two_sided_baseline": true,
+          "validation_view_does_not_mutate_event": true
+        },
+        "daily_max_p50_fahrenheit": "88.6547802734375",
+        "daily_max_p50_kelvin": "304.6248779296875",
+        "granted_scopes": [
+          "https://www.googleapis.com/auth/earthengine.readonly"
+        ],
+        "live_2026_09_27_equals_d1_fixture": true,
+        "offline_equivalence_vs_d1": true,
+        "task_index": 1
+      },
+      "seattle": {
+        "amendment_cases": {
+          "all_books_empty": true,
+          "delayed_snapshot_missed_after_seal": true,
+          "empty_plus_five_siblings": true,
+          "empty_plus_outcome_present": true,
+          "one_sided_plus_inactive": true,
+          "one_sided_plus_wrong_cli": true,
+          "one_sided_single_sibling": true,
+          "orderbook_object_absent": true,
+          "side_key_absent": true,
+          "two_sided_baseline": true,
+          "validation_view_does_not_mutate_event": true
+        },
+        "daily_max_p50_fahrenheit": "64.61021240234375",
+        "daily_max_p50_kelvin": "291.26678466796875",
+        "granted_scopes": [
+          "https://www.googleapis.com/auth/earthengine.readonly"
+        ],
+        "live_2026_09_27_equals_d1_fixture": true,
+        "offline_equivalence_vs_d1": true,
+        "task_index": 4
+      }
+    },
+    "execution": "wn-multicity-c1-canary-bbc2v",
+    "pass": true
+  },
+  "image_files_hash_match_reviewed_source_in_all_20_canary_tasks": true,
+  "live_kalshi_cloud_canary_pass": true,
+  "offline_gate_tests": "Oct 2, Oct 15, other years/months rejected; nothing before 09:00:00Z; 09:05:00Z and later MISSED (GateTests, in the 25)",
+  "offline_tests": {
+    "c1_final": "25/25 (22 original, one expectation updated for the amendment, plus 3 amendment tests)",
+    "d1": "8/8"
+  },
+  "record_type": "WN-MULTICITY-C1-FINAL-RESULTS-v1",
+  "scheduler": {
+    "identity": "projects/total-market-138523/locations/us-central1/jobs/wn-multicity-20261003-20261014",
+    "max_retry_duration": "0s",
+    "retry_count": 0,
+    "schedule": "50 8 3-14 10 *",
+    "state": "PAUSED",
+    "target_uri": "https://run.googleapis.com/v2/projects/total-market-138523/locations/us-central1/jobs/wn-multicity-20261003-20261014-collector:run",
+    "time_zone": "UTC"
+  },
+  "scheduler_enabled": false,
+  "scientific_job": {
+    "execution_count": 0,
+    "image": "us-central1-docker.pkg.dev/total-market-138523/wn-multicity-c1/collector@sha256:0ffe08df80315922d64f2313f160b053151744416ed03dacafe38fcc6e24bc08",
+    "max_retries": 0,
+    "name": "wn-multicity-20261003-20261014-collector",
+    "parallelism": 5,
+    "tasks": 5,
+    "timeout_seconds": "1800"
+  },
+  "source_sha256": {
+    "canary.py": "5fc70f8b6b3287619119f8ec89a5535a33e98e793b5e8429f7e411deadffd8a0",
+    "checks.py": "6b7bc6bd696a7aafafd0b273642b66c1b5616a223da879b43cb2fcb1df325448",
+    "cloud_collector.py": "ab8aea8ea4ee6867e265ee116c058103cffbcd61d5c73bb575e4d36909ee1643",
+    "fixtures.py": "be92ffcf625827ab390e2dc0946eaff1b4bf49190b5ccf01b440e9870b9c29ef",
+    "frozen/wn_multicity_prospective_v1/SHA256SUMS.json": "6d2c618e2ef0d99f87c12d50f41dfefa617f43cd7347aeef4c0a1d37c3ba3891",
+    "frozen/wn_multicity_prospective_v1/SHA256SUMS.sha256": "c658026a270d56227befbf3918102a63afeff16a7e713cda63b3156ac9e9387b",
+    "frozen/wn_multicity_prospective_v1/WN-MULTICITY-D1-REPORT.md": "b81aca7ab11514aede605301f816a6e0d8d18b02abd4d2c3d0dbe09291cbd97a",
+    "frozen/wn_multicity_prospective_v1/build_historical_fixture.py": "a88052ceb23f9d5f7cde39fd4bc113d04ef0c570608832765785652288d522f4",
+    "frozen/wn_multicity_prospective_v1/city_identity_amendment.json": "30656641fafaa7c9282a739ba1f64141d4962f77688990898cb09d283bf38e1d",
+    "frozen/wn_multicity_prospective_v1/cloud_design.json": "c7d4f2606405348211537227b4675f33baaf9be7e08f5c48d3a0d50279262381",
+    "frozen/wn_multicity_prospective_v1/decision_time_amendment.json": "5063caab3e12fb69878cdd12b39dab80a671c097908fe9ea6ffbb79fbde28dc1",
+    "frozen/wn_multicity_prospective_v1/forecast_units_amendment.json": "512e587867db8ad4974b034b0f1b7da34665cf9eb8c404328b7b9eb7cf04e88e",
+    "frozen/wn_multicity_prospective_v1/freeze_manifest.json": "6f0029e98dcb0ce8501d1b715b363e6dc6e202d09683c4ecd052a3e42adeb949",
+    "frozen/wn_multicity_prospective_v1/freeze_manifest.sha256": "24e6ce0457f50c3a2d08827c8eb36bc2062be5de5d22445e08e4f4734c4e503d",
+    "frozen/wn_multicity_prospective_v1/grid_identity_amendment.json": "ed98673d06e0bf21c8f9df9e36e7394bd07c8d524f8db526d734a6f2bdd1653a",
+    "frozen/wn_multicity_prospective_v1/historical_point_fixture_20260927.json": "d50f77db81b48bf880c8ed441c242b37636f8364b134ddd7d2cb5ff05f738355",
+    "frozen/wn_multicity_prospective_v1/independent_review.json": "8498f5c3e5d5437854cd4e06812a15a4d9d8d494ced14ffd8d5b5fa6c8ac4d65",
+    "frozen/wn_multicity_prospective_v1/market_timing_preflight.json": "61edd3ab8297ee62e9aa519fdfbee1fdf1fe49deeab635152d208fc8436306d6",
+    "frozen/wn_multicity_prospective_v1/policy.py": "9ec209c032b3d5ec06db28f316d4ae397854b4530dd12c0c227b427bde44f5e3",
+    "frozen/wn_multicity_prospective_v1/pre_first_event_amendment_v1.json": "b6ce8154d3a3eb4a90e1eefb3cd57b879a818eabee22b8f8c8fe2dcd7614f000",
+    "frozen/wn_multicity_prospective_v1/pre_first_event_amendment_v1.sha256": "2a9b398ed74be520fa2ec3c428ccdf522a1b1e85ce0e623c07caaf54e6496129",
+    "frozen/wn_multicity_prospective_v1/preflight_markets.py": "c352f86c693dca7598aca9d898bb8fc406e1581a6b0cdc835c1cea5e923c5985",
+    "frozen/wn_multicity_prospective_v1/preflight_metadata.py": "ee58e20c869ee741db5627460c7efb321538b5a6068571473829cc875cdbfeb7",
+    "frozen/wn_multicity_prospective_v1/protocol.json": "56fb3c00eec38286b64e57652dc822145a7fbcbe9d51e52693eb2f16943fd346",
+    "frozen/wn_multicity_prospective_v1/protocol.sha256": "283e33d0f3363283f8fe7906ea9dde416095e2eb10eb747620ad22a1ca4c603c",
+    "frozen/wn_multicity_prospective_v1/settlement_domain_amendment.json": "ba981f0753e4bdfc1a89bc4fbd170ed03ada5ef441ebe13c4be2b10e36175261",
+    "frozen/wn_multicity_prospective_v1/test_policy.py": "b1d43bf194de22d4773ca07d1f4691e2a4ec4a73e5b820c17af1bc496405881c",
+    "frozen/wn_multicity_prospective_v1/weather_ingestion_preflight.json": "e31f7d22ad094d5dc5b91082f923d098c838f1f1111a5b6bca6323b71b245179",
+    "requirements.txt": "3b3c79d905a065c6175fb4ffc705fd0e8efc23612e13c2be67d9795fb8308f21"
+  },
+  "superseded_c1_image_digest": "sha256:05e66dd28b5be2bf4b1476b4288d17000e60b9c44836a669ca4facb0c624c744",
+  "test_source_sha256": "d1f0f9b38751d5c58d38d0dd41fa125ae1a1a21c738084d5c83ffc929ff4ef6a",
+  "time_gate_cloud": {
+    "execution": "wn-multicity-c1-timing-88b4q",
+    "pass": true,
+    "tasks": [
+      {
+        "city_id": "boston",
+        "gate_at_utc": "2026-10-01T17:08:00Z",
+        "simulated_scientific_started_at_utc": "2026-10-01T17:08:00.000165Z",
+        "start_delay_seconds": 0.000165,
+        "task_index": 0,
+        "wrapper_started_at_utc": "2026-10-01T17:06:00.853223Z"
+      },
+      {
+        "city_id": "miami",
+        "gate_at_utc": "2026-10-01T17:08:00Z",
+        "simulated_scientific_started_at_utc": "2026-10-01T17:08:00.000174Z",
+        "start_delay_seconds": 0.000174,
+        "task_index": 1,
+        "wrapper_started_at_utc": "2026-10-01T17:06:00.867242Z"
+      },
+      {
+        "city_id": "denver",
+        "gate_at_utc": "2026-10-01T17:08:00Z",
+        "simulated_scientific_started_at_utc": "2026-10-01T17:08:00.000170Z",
+        "start_delay_seconds": 0.00017,
+        "task_index": 2,
+        "wrapper_started_at_utc": "2026-10-01T17:06:02.887377Z"
+      },
+      {
+        "city_id": "los_angeles",
+        "gate_at_utc": "2026-10-01T17:08:00Z",
+        "simulated_scientific_started_at_utc": "2026-10-01T17:08:00.000183Z",
+        "start_delay_seconds": 0.000183,
+        "task_index": 3,
+        "wrapper_started_at_utc": "2026-10-01T17:06:00.926158Z"
+      },
+      {
+        "city_id": "seattle",
+        "gate_at_utc": "2026-10-01T17:08:00Z",
+        "simulated_scientific_started_at_utc": "2026-10-01T17:08:00.000141Z",
+        "start_delay_seconds": 0.000141,
+        "task_index": 4,
+        "wrapper_started_at_utc": "2026-10-01T17:06:00.825561Z"
+      }
+    ],
+    "trigger": "manual execution (the Scheduler-triggered timing canary was run in C1 on the previous digest; wait logic unchanged)"
+  }
+}

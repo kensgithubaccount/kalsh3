@@ -1,0 +1,11 @@
+{
+  "record_type": "WN-MULTICITY-D1-EFFECTIVE-POLICY-MANIFEST-v1",
+  "sha256": {
+    "protocol.json": "56fb3c00eec38286b64e57652dc822145a7fbcbe9d51e52693eb2f16943fd346",
+    "decision_time_amendment.json": "5063caab3e12fb69878cdd12b39dab80a671c097908fe9ea6ffbb79fbde28dc1",
+    "forecast_units_amendment.json": "512e587867db8ad4974b034b0f1b7da34665cf9eb8c404328b7b9eb7cf04e88e",
+    "settlement_domain_amendment.json": "ba981f0753e4bdfc1a89bc4fbd170ed03ada5ef441ebe13c4be2b10e36175261",
+    "city_identity_amendment.json": "30656641fafaa7c9282a739ba1f64141d4962f77688990898cb09d283bf38e1d",
+    "grid_identity_amendment.json": "ed98673d06e0bf21c8f9df9e36e7394bd07c8d524f8db526d734a6f2bdd1653a"
+  }
+}
