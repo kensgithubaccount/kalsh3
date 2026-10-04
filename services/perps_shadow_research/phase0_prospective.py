@@ -136,9 +136,7 @@ def protocol_payload() -> dict[str, object]:
         ),
         "minimum_eligible_sessions": MIN_ELIGIBLE_SESSIONS,
         "minimum_primary_measured_midpoint_impulses": MIN_PRIMARY_MEASURED_MIDPOINT_IMPULSES,
-        "promising_min_positive_session_fraction": str(
-            PROMISING_MIN_POSITIVE_SESSION_FRACTION
-        ),
+        "promising_min_positive_session_fraction": str(PROMISING_MIN_POSITIVE_SESSION_FRACTION),
         "book_max_age_ms": BOOK_MAX_AGE_MS,
         "no_retry": True,
         "no_backfill": True,
@@ -153,9 +151,7 @@ def protocol_payload() -> dict[str, object]:
 
 
 def protocol_sha256() -> str:
-    encoded = json.dumps(
-        protocol_payload(), sort_keys=True, separators=(",", ":")
-    ).encode()
+    encoded = json.dumps(protocol_payload(), sort_keys=True, separators=(",", ":")).encode()
     return hashlib.sha256(encoded).hexdigest()
 
 
@@ -177,10 +173,7 @@ def _signed_midpoint_bps(
     impulse: ReferenceImpulse,
     measurement: ReferenceLagMeasurement,
 ) -> Decimal | None:
-    if (
-        measurement.status is not HorizonStatus.MEASURED
-        or measurement.midpoint_change_bps is None
-    ):
+    if measurement.status is not HorizonStatus.MEASURED or measurement.midpoint_change_bps is None:
         return None
     if measurement.impulse_id != impulse.impulse_id:
         raise ProspectiveProtocolError("measurement does not bind the supplied impulse")
