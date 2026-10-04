@@ -30,10 +30,14 @@ jobs:
               body = r.read()
               status = r.status
           payload = json.loads(body)
-          market = parse_perps_market(payload["market"], observed_at=datetime.now(UTC))
+          raw_market = payload["market"]
           print("http_status:", status)
           print("body_bytes:", len(body))
           print("body_sha256:", hashlib.sha256(body).hexdigest())
+          print("market_keys:", sorted(raw_market))
+          print("market_version_present:", "market_version" in raw_market)
+          print("market_version_raw:", raw_market.get("market_version"))
+          market = parse_perps_market(raw_market, observed_at=datetime.now(UTC))
           print("ticker:", market.ticker)
           print("market_version:", market.market_version)
           print("status:", market.status)
