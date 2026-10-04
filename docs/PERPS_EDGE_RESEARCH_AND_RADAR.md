@@ -37,7 +37,11 @@ Research these families independently so a successful result is attributable and
 
 Measure executable Kalshi bid/ask response to authoritative reference-price movement. For markets with an approved fast benchmark, estimate lead/lag and edge-decay curves by direction, volatility, spread, depth, time of day, and latency.
 
-Primary first experiment: externally confirmed benchmark movement -> Kalshi executable-book repricing.
+For the first checkpoint, prefer the market-bound Margin ticker `reference_price` when present. Kalshi documents it as the underlying reference index value scaled to one contract, with its own source `ts_ms`. This binds the benchmark observation to the exact Perps market without inferring a CF Benchmarks/Pyth index from ticker text. Preserve the enclosing ticker's market ticker, market `ts_ms`, local receipt time, and the nested reference `ts_ms` independently.
+
+The Margin ticker channel is coalesced to at most one update per market per second (latest value wins). Phase 0 must therefore treat the market-bound reference stream as a coalesced source and must not claim sub-second benchmark observability or reconstruct discarded intermediate reference ticks. A later high-frequency checkpoint may use the CF Benchmarks 5 Hz or Pyth-underlying feeds only after exact market-to-index identity and timestamp semantics are separately reviewed and frozen.
+
+Primary first experiment: market-bound reference-price movement -> Kalshi executable-book repricing.
 
 ### Funding convergence
 
@@ -140,17 +144,29 @@ Radar admission still grants **no execution authority**.
 
 Implement and evaluate this first because it has a clean falsification test and does not require predicting fundamental direction.
 
-1. Select only markets with an authoritative, reviewed fast benchmark mapping.
-2. Capture benchmark and Kalshi book observations with receipt/availability provenance.
-3. Define benchmark impulses before examining subsequent Kalshi outcomes.
-4. At each impulse, snapshot the actually executable Kalshi book known at hypothetical decision/send time.
-5. Measure repricing and hypothetical PnL over predeclared horizons.
-6. Subtract taker fees, realistic slippage, adverse-selection penalty, and latency buffer.
-7. Stratify by asset, impulse magnitude, volatility, spread, depth, session, and latency without data-mining a winning subgroup.
-8. Walk forward on untouched periods.
-9. If positive, freeze the rule and run prospective shadow. If not, reject or redesign before studying another slice.
+Phase 0 benchmark authority is deliberately narrow:
 
-The deliverable is an evidence-backed PASS/BLOCK for promotion to prospective shadow, not an alert and not a trade.
+- include only markets whose Margin ticker evidence contains a valid nested `reference_price`;
+- treat `reference_price.price` as the market-bound reference value and `reference_price.ts_ms` as its source timestamp;
+- preserve the enclosing market ticker, message `ts_ms`, local receipt/availability time, and evidence fingerprint;
+- do not infer or hard-code CF Benchmarks/Pyth index IDs from market ticker/title text;
+- do not use the 5 Hz CF feed or Pyth-underlying stream until an exact market-to-index mapping is independently reviewed;
+- because Margin ticker messages are coalesced to at most one per market per second, do not claim sub-second benchmark observability from Phase 0.
+
+Evaluation sequence:
+
+1. Select only markets with valid market-bound `reference_price` evidence and reviewed contract metadata.
+2. Capture reference and Kalshi executable-book observations with independent source/receipt/availability timestamps.
+3. Freeze impulse definition, minimum move, cooldown/de-duplication, and evaluation horizons before evaluating subsequent book movement.
+4. Reject temporally impossible rows, stale/gapped books, ambiguous epochs, or reference observations unavailable by the hypothetical decision time.
+5. At each valid impulse, snapshot the actually executable Kalshi book known at hypothetical decision/send time.
+6. Measure book repricing over predeclared horizons; treat market-ticker coalescing as a known benchmark-resolution limitation.
+7. Compute hypothetical economics only when fee, executable depth, slippage, funding, and timing authority are all present; otherwise the row is mechanism-only or ABSTAIN, not zero PnL.
+8. Stratify by asset, impulse magnitude, volatility, spread, depth, session, and latency only as predeclared diagnostics; never select a winning subgroup after the fact.
+9. Walk forward on untouched periods.
+10. If the mechanism survives, freeze a separately reviewed high-frequency mapping/collector before using CF Benchmarks 5 Hz or Pyth-underlying evidence. If it fails, reject or redesign before widening the data source.
+
+The Phase 0 deliverable is a falsifiable answer to whether market-bound reference moves systematically precede executable Kalshi-book repricing at the available source resolution. It is an evidence-backed PASS/BLOCK for further research, not an alert and not a trade.
 
 ## Explicit non-authority
 
