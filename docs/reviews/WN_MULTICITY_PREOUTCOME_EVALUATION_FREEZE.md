@@ -24,11 +24,13 @@ collector, or grant production/trading authority.
 - Frozen observational unit: CITY_DAY.
 - Frozen dependence statement: city-days are not independent.
 
-The local frozen protocol/amendment bytes must be imported byte-for-byte into
-canonical repository history before a post-outcome scorer is allowed to treat
-these hashes as fully self-contained repository authority. This Phase 0
-checkpoint binds their already-observed identities but does not rewrite or
-reconstruct those source files.
+The exact handoff archive was independently re-hashed after upload on 2026-10-04:
+`de64c2d61dc8f05d7bb82579672036f54ce29b963e129d1fe3c669d312c995db`.
+Its `protocol.json`, pre-first-event amendment, D1 checksum manifest, and final
+collector exact-digest review match the identities already embedded in the live
+October 3 artifacts. Canonical GitHub import of those unchanged bytes remains a
+separate provenance-only change; this evaluator never reconstructs them from
+memory.
 
 ## Primary independence unit
 
@@ -73,24 +75,52 @@ The post-block evaluator must preserve these rules:
 9. research-only result, `production_influence = 0`;
 10. no production promotion based on this 12-cluster block alone.
 
-## Deferred until the frozen source packet is canonicalized
+## Exact sealed packet contract recovered before outcome scoring
 
-The exact post-outcome scorer is intentionally not implemented in Phase 0
-because the multicity frozen source directory and packet schemas currently
-exist outside canonical GitHub main.
+A representative already-sealed October 3 Boston packet was supplied without
+any settlement outcome. Its own `SHA256SUMS.json` matches the copied
+`packet.json`, `forecast.json`, `market.json`, `weather.json`,
+`delayed_books.json`, `structured_log.json`, and `start.json` bytes.
 
-Before scoring code is added, import and review the exact bytes for:
+The frozen receipt establishes that:
 
-- `protocol.json`;
-- `freeze_manifest.json`;
-- every frozen amendment;
-- `policy.py` and its checksum manifest;
-- final collector review/result artifacts;
-- one representative sealed city-day packet schema (without using its outcome
-  to choose metrics).
+- the scientific forecast is one continuous, unrounded Fahrenheit p50 proxy;
+- `forecast_status = PRE_OUTCOME_FROZEN`;
+- `outcome_not_consulted = true`;
+- `no_probability = true`;
+- `no_probability_or_edge_calculation = true`;
+- `no_bias_correction = true`;
+- `no_city_specific_tuning = true`;
+- component hashes bind the exact forecast, market, and weather bytes;
+- per-sibling market executability is preserved as a market/economic
+  diagnostic and does not erase a valid weather-development observation.
 
-The scorer can then be implemented against real field identities instead of
-invented schema assumptions.
+The Phase 0 code therefore validates these exact pre-outcome identities and
+component hashes, and freezes deterministic point-forecast error scoring
+against a future authoritative full-precision Fahrenheit settlement value.
+
+## Market-relative and economic inference is not available from this block
+
+This block deliberately contains **no WeatherNext probability model**. The
+frozen forecast rule also forbids rounding the continuous p50 proxy into the
+integer Kalshi ladder. Therefore there is no pre-authorized transformation
+from the WeatherNext receipt into six sibling probabilities, a categorical
+bucket call, fair YES/NO prices, or expected trade value.
+
+As a result, this block may report deterministic continuous point-forecast
+error once authoritative outcomes are available, but it may **not** claim:
+
+- Brier/log-loss improvement versus Kalshi;
+- market-relative probability skill;
+- a tradable YES/NO edge;
+- hypothetical after-cost P&L generated from a retrospectively invented
+  mapping;
+- production promotion.
+
+Creating a probability distribution, rounding rule, or market-relative model
+after seeing the October outcomes would be post-outcome model fitting and is
+explicitly prohibited. A later edge experiment must freeze that transformation
+before its own prospective outcomes.
 
 ## Planned post-block report layers
 
@@ -100,13 +130,14 @@ this order:
 1. provenance and operational completeness;
 2. authoritative settlement reconciliation;
 3. point-forecast diagnostics (signed error, absolute error, squared error)
-   with date-cluster-equal aggregation;
-4. exact sibling-bucket hit diagnostics using reviewed comparator semantics;
-5. market-relative diagnostics only under a frozen executable-price convention;
-6. after-cost economics only when point-in-time fee and executable-depth
-   authority are both available;
-7. sensitivity and city/regime breakdowns as diagnostics, never as
-   hindsight-selected promotion criteria.
+   with primary aggregation over **complete five-city target-date clusters**;
+4. partial-cluster and city/regime results as explicitly non-primary
+   diagnostics;
+5. operational market-executability and delayed-book diagnostics, without
+   converting the p50 forecast into a trade;
+6. no market-relative probability or after-cost edge statistic for this block,
+   because no such WeatherNext probability/economic transformation was frozen
+   pre-outcome.
 
 No metric may be silently added because it makes the observed block look
 better.
