@@ -240,7 +240,8 @@ def parse_perps_market(
         raise ShadowResearchError("Perps market payload must be an object")
     ticker, status, title = (_required(raw, name) for name in ("ticker", "status", "title"))
     exchange_index = _required(raw, "exchange_index")
-    market_version = _required(raw, "market_version")
+    market_version_present = "market_version" in raw
+    market_version = raw.get("market_version")
     fractional = _required(raw, "fractional_trading_enabled")
     if not all(isinstance(value, str) for value in (ticker, status, title)):
         raise ShadowResearchError("ticker, status, and title must be strings")
@@ -279,7 +280,7 @@ def parse_perps_market(
     contract = {
         "ticker": ticker,
         "exchange_index": exchange_index,
-        "market_version": market_version,
+        "market_version": market_version if market_version_present else {"$missing": True},
         "contract_size": contract_size,
         "underlying_multiplier": underlying_multiplier,
         "tick_size": tick_size,
