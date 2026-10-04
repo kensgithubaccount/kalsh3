@@ -163,18 +163,15 @@ def test_exchange_index_is_exact_and_never_inferred(value: object) -> None:
 
 
 def test_market_version_underlying_multiplier_and_optional_metadata_fail_closed() -> None:
-    for value in (True, 0, -1, "1"):
+    for value in (True, 0, -1, "1", None):
         with pytest.raises(ShadowResearchError, match="market_version"):
             market(market_version=value)
-    explicit_null = market(market_version=None)
     missing_raw = market_raw()
     del missing_raw["market_version"]
     missing_version = parse_perps_market(missing_raw, observed_at=NOW)
-    assert explicit_null.market_version is None
     assert missing_version.market_version is None
     assert "market_version" not in missing_version.normalized_snapshot
-    assert explicit_null.perps_contract_hash != missing_version.perps_contract_hash
-    assert explicit_null.perps_contract_hash != market(market_version=1).perps_contract_hash
+    assert missing_version.perps_contract_hash != market(market_version=1).perps_contract_hash
     for value in ("0", "-1", "NaN", True, None):
         with pytest.raises(ShadowResearchError, match="underlying_multiplier"):
             market(underlying_multiplier=value)
