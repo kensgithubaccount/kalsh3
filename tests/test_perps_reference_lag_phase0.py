@@ -1,0 +1,255 @@
+from __future__ import annotations
+
+from datetime import UTC, datetime, timedelta
+from decimal import Decimal
+from uuid import UUID
+
+import pytest
+
+from services.perps_shadow_research.domain import Direction, ShadowResearchError
+from services.perps_shadow_research.perps_evidence import (
+    PerpsBookEvidenceObservation,
+    PerpsMarketStateObservation,
+)
+from services.perps_shadow_research.perps_events import (
+    PerpsBookSnapshotEvent,
+    PerpsTickerEvent,
+)
+from services.perps_shadow_research.perps_metadata import parse_perps_market
+from services.perps_shadow_research.perps_orderbook import PerpsBookState, PerpsBookView
+from services.perps_shadow_research.reference_lag import (
+    PHASE0_HORIZONS_MS,
+    HorizonStatus,
+    build_reference_impulse,
+    measure_reference_lag_grid,
+    measure_reference_lag_horizon,
+)
+
+NOW = datetime(2026, 10, 4, 12, tzinfo=UTC)
+NOW_MS = int(NOW.timestamp() * 1000)
+EPOCH = UUID("12345678-1234-5678-1234-567812345678")
+OTHER_EPOCH = UUID("87654321-4321-8765-4321-876543218765")
+
+
+def market(**changes: object):
+    raw: dict[str, object] = {
+        "ticker": "BTC-PERP",
+        "status": "active",
+        "title": "Bitcoin",
+        "exchange_index": 4,
+        "market_version": 7,
+        "contract_size": "0.001000",
+        "underlying_multiplier": "1.000000",
+        "tick_size": "0.5000",
+        "fractional_trading_enabled": True,
+        "schedule": None,
+        "asset_class": "Crypto",
+    }
+    raw.update(changes)
+    return parse_perps_market(raw, observed_at=NOW)
+
+
+def state(
+    *,
+    reference: str,
+    source_offset_ms: int,
+    available_offset_ms: int,
+    market_obj=None,
+) -> PerpsMarketStateObservation:
+    market_obj = market() if market_obj is None else market_obj
+    event = PerpsTickerEvent.parse(
+        {
+            "type": "ticker",
+            "sid": 8,
+            "sending_ts_ms": NOW_MS + available_offset_ms - 1,
+            "msg": {
+                "market_ticker": "BTC-PERP",
+                "price": "100.5000",
+                "bid": "100.0000",
+                "ask": "101.0000",
+                "bid_size_fp": "2.00",
+                "ask_size_fp": "3.00",
+                "last_trade_size_fp": "1.00",
+                "volume": "10.00",
+                "volume_notional_value_dollars": "1000.00",
+                "volume_24h": "5.00",
+                "volume_24h_notional_value_dollars": "500.00",
+                "open_interest": "7.00",
+                "open_interest_notional_value_dollars": "700.00",
+                "ts_ms": NOW_MS + available_offset_ms - 2,
+                "reference_price": {
+                    "price": reference,
+                    "ts_ms": NOW_MS + source_offset_ms,
+                },
+            },
+        },
+        market_obj,
+    )
+    available = NOW + timedelta(milliseconds=available_offset_ms)
+    return PerpsMarketStateObservation.create(
+        event,
+        market_obj,
+        EPOCH,
+        available - timedelta(milliseconds=1),
+        available,
+    )
+
+
+def book(
+    *,
+    sequence: int,
+    bid: str,
+    ask: str,
+    available_offset_ms: int,
+    epoch: UUID = EPOCH,
+    market_obj=None,
+) -> PerpsBookEvidenceObservation:
+    market_obj = market() if market_obj is None else market_obj
+    event = PerpsBookSnapshotEvent(
+        sid=7,
+        sequence=sequence,
+        ticker=market_obj.ticker,
+        bids=((Decimal(bid), Decimal("2.00")),),
+        asks=((Decimal(ask), Decimal("3.00")),),
+    )
+    available = NOW + timedelta(milliseconds=available_offset_ms)
+    view = PerpsBookView(
+        ticker=market_obj.ticker,
+        sequence=sequence,
+        bids=event.bids,
+        asks=event.asks,
+        best_bid=Decimal(bid),
+        best_ask=Decimal(ask),
+        best_bid_size=Decimal("2.00"),
+        best_ask_size=Decimal("3.00"),
+        state=PerpsBookState.CURRENT,
+        observed_at=available,
+        ingested_at=available,
+        full_book_hash="1" * 64,
+    )
+    return PerpsBookEvidenceObservation.create(
+        event=event,
+        market=market_obj,
+        epoch=epoch,
+        view=view,
+        received_at=available,
+        available_at=available,
+    )
+
+
+def test_phase0_horizons_are_frozen_to_whole_second_grid() -> None:
+    assert PHASE0_HORIZONS_MS == (1_000, 2_000, 5_000, 10_000)
+
+
+def test_every_observed_nonzero_market_bound_reference_change_is_an_impulse() -> None:
+    previous = state(reference="100.0000", source_offset_ms=100, available_offset_ms=120)
+    current = state(reference="100.2500", source_offset_ms=1_100, available_offset_ms=1_120)
+    impulse = build_reference_impulse(previous, current)
+    assert impulse is not None
+    assert impulse.reference_change == Decimal("0.2500")
+    assert impulse.reference_change_bps == Decimal("25.0000")
+    assert impulse.direction is Direction.LONG
+    assert impulse.production_influence == 0
+
+    unchanged = state(reference="100.2500", source_offset_ms=2_100, available_offset_ms=2_120)
+    assert build_reference_impulse(current, unchanged) is None
+
+
+def test_reference_impulse_fails_closed_across_contract_or_time_boundary() -> None:
+    previous = state(reference="100", source_offset_ms=100, available_offset_ms=120)
+    changed_market = market(market_version=8)
+    current = state(
+        reference="101",
+        source_offset_ms=1_100,
+        available_offset_ms=1_120,
+        market_obj=changed_market,
+    )
+    with pytest.raises(ShadowResearchError, match="contract boundary"):
+        build_reference_impulse(previous, current)
+
+    nonmonotonic = state(reference="101", source_offset_ms=50, available_offset_ms=1_120)
+    with pytest.raises(ShadowResearchError, match="strictly increasing"):
+        build_reference_impulse(previous, nonmonotonic)
+
+
+def test_phase0_grid_measures_quote_repricing_without_pnl() -> None:
+    previous = state(reference="100", source_offset_ms=100, available_offset_ms=120)
+    current = state(reference="101", source_offset_ms=1_100, available_offset_ms=1_120)
+    impulse = build_reference_impulse(previous, current)
+    assert impulse is not None
+
+    books = (
+        book(sequence=1, bid="100.0", ask="101.0", available_offset_ms=1_000),
+        book(sequence=2, bid="100.5", ask="101.5", available_offset_ms=2_000),
+        book(sequence=3, bid="101.0", ask="102.0", available_offset_ms=7_000),
+    )
+    rows = measure_reference_lag_grid(impulse, books)
+    assert [row.status for row in rows] == [HorizonStatus.MEASURED] * 4
+    assert rows[0].midpoint_change == Decimal("0.5")
+    assert rows[1].midpoint_change == Decimal("0.5")
+    assert rows[2].midpoint_change == Decimal("0.5")
+    assert rows[3].midpoint_change == Decimal("1.0")
+    assert rows[0].bid_change == rows[0].ask_change == Decimal("0.5")
+    assert not hasattr(rows[0], "pnl")
+    assert not hasattr(rows[0], "fee")
+    assert not hasattr(rows[0], "order")
+
+
+def test_no_baseline_and_reconnect_are_explicit_abstentions() -> None:
+    previous = state(reference="100", source_offset_ms=100, available_offset_ms=120)
+    current = state(reference="99", source_offset_ms=1_100, available_offset_ms=1_120)
+    impulse = build_reference_impulse(previous, current)
+    assert impulse is not None
+
+    no_baseline = measure_reference_lag_horizon(
+        impulse,
+        [book(sequence=1, bid="99", ask="100", available_offset_ms=1_500)],
+        horizon_ms=1_000,
+    )
+    assert no_baseline.status is HorizonStatus.NO_BASELINE_BOOK
+    assert no_baseline.midpoint_change is None
+
+    reconnect = measure_reference_lag_horizon(
+        impulse,
+        [
+            book(sequence=1, bid="100", ask="101", available_offset_ms=1_000),
+            book(
+                sequence=1,
+                bid="99",
+                ask="100",
+                available_offset_ms=1_500,
+                epoch=OTHER_EPOCH,
+            ),
+        ],
+        horizon_ms=1_000,
+    )
+    assert reconnect.status is HorizonStatus.RECONNECT_WITHIN_HORIZON
+    assert reconnect.midpoint_change is None
+
+
+def test_book_contract_mismatch_and_unfrozen_horizon_fail_closed() -> None:
+    previous = state(reference="100", source_offset_ms=100, available_offset_ms=120)
+    current = state(reference="101", source_offset_ms=1_100, available_offset_ms=1_120)
+    impulse = build_reference_impulse(previous, current)
+    assert impulse is not None
+
+    with pytest.raises(ShadowResearchError, match="contract identity"):
+        measure_reference_lag_horizon(
+            impulse,
+            [
+                book(
+                    sequence=1,
+                    bid="100",
+                    ask="101",
+                    available_offset_ms=1_000,
+                    market_obj=market(market_version=8),
+                )
+            ],
+            horizon_ms=1_000,
+        )
+    with pytest.raises(ShadowResearchError, match="outside frozen"):
+        measure_reference_lag_horizon(
+            impulse,
+            [book(sequence=1, bid="100", ask="101", available_offset_ms=1_000)],
+            horizon_ms=3_000,
+        )
