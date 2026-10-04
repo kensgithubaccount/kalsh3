@@ -420,8 +420,7 @@ def aggregate_cluster_equal_point_scores(
         denominator = Decimal(len(members))
         complete.append(
             (
-                sum((item.signed_error_fahrenheit for item in members), Decimal("0"))
-                / denominator,
+                sum((item.signed_error_fahrenheit for item in members), Decimal("0")) / denominator,
                 sum((item.absolute_error_fahrenheit for item in members), Decimal("0"))
                 / denominator,
                 sum((item.squared_error_fahrenheit for item in members), Decimal("0"))
