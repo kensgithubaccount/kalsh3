@@ -12,9 +12,9 @@ Repository: `kensgithubaccount/kalsh3`
 
 Canonical main:
 
-- SHA: `c94783e0dfbadba2e15d63c3b7b01660cdb17513`
-- tree: `1db184627146e24f42a4e89edb97cf256b8f98b7`
-- commit: merge of PR #166, WN-A2-E1 canonical settlement bucket boundary repair
+- SHA: `6b5af85701a4d605e70419b0f2d192a09de6bf9a`
+- tree: `0a52f01792eb775e521effa17ab08fc60828940e`
+- commit: merge of PR #170, urllib3 2.8.0 security repair
 - PR #166 reviewed/tested head: `c6d486cbd49da82ca2431d311581e7bc84fba7b1`
 
 Recent weather milestones relevant to current research:
@@ -28,7 +28,7 @@ Current open research/documentation work at this checkpoint:
 
 - PR #164: Perps API/schema integration constraints; rebased onto current main on 2026-10-03. Documentation only; no execution authority.
 - PR #165: Perps edge research and radar admission plan; rebased onto current main on 2026-10-03. Perps remains DISARMED/read-only with zero production influence.
-- PR #168: outcome-blind multicity pre-outcome evaluation boundary; under CI/review. It validates the sealed pre-outcome packet schema and freezes continuous point-error scoring only; it does not acquire outcomes, invent probabilities, score P&L, or change the live collector.\n- PR #170: urllib3 2.8.0 security lock repair. All four canonical CI jobs pass; merge remains pending.\n- PR #171: exact frozen multicity provenance import from operator-local source; one commit, 61 added files, no live-runtime change. Pre-commit verification passed all 20 D1 manifest entries and all 32 final independent-review source hashes.
+- PR #168: outcome-blind multicity pre-outcome evaluation boundary; under CI/review. It validates the sealed pre-outcome packet schema and freezes continuous point-error scoring only; it does not acquire outcomes, invent probabilities, score P&L, or change the live collector.\n- PR #170: urllib3 2.8.0 security lock repair. MERGED on 2026-10-04; all four canonical CI jobs passed.\n- PR #171: exact frozen multicity provenance import from operator-local source; one commit, 61 added files, no live-runtime change. Pre-commit verification passed all 20 D1 manifest entries and all 32 final independent-review source hashes.
 
 No current repository state establishes a profitable autonomous strategy or authorizes real-money trading.
 
