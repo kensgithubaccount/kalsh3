@@ -203,9 +203,7 @@ class PerpsTickerEvent:
         ts_ms = _integer(msg.get("ts_ms"), "ts_ms", minimum=0)
         sending_raw = raw.get("sending_ts_ms")
         sending_ts_ms = (
-            None
-            if sending_raw is None
-            else _integer(sending_raw, "sending_ts_ms", minimum=0)
+            None if sending_raw is None else _integer(sending_raw, "sending_ts_ms", minimum=0)
         )
 
         def mark(name: str) -> TimestampedPrice | None:
