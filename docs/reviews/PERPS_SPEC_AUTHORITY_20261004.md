@@ -85,7 +85,9 @@ New append-only Perps evidence rows explicitly bind:
 - `market_version`;
 - `underlying_multiplier`;
 - `asset_class` where applicable;
-- optional `sending_ts_ms` for ticker state.
+- optional `sending_ts_ms` for ticker state;
+- the exact official Perps AsyncAPI SHA-256 that defined the parsed WebSocket
+  event contract.
 
 Legacy stores are not silently rewritten. If an old schema cannot accept the
 stronger evidence record, the write fails closed and a new reviewed research
