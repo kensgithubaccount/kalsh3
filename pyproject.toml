@@ -19,7 +19,7 @@ dependencies = [
 # WN-A1 review doc.
 weathernext = [
     "gcsfs==2026.8.1",
-    "zarr==3.3.0",
+    "zarr==3.4.0",
     "google-cloud-storage==3.14.1",
     # Bounded prefix decoding of the ~0.47 GB single-frame zstd chunks (streaming decode);
     # pinned to the version the 2026-09-21 live verification ran with.
