@@ -255,7 +255,8 @@ def test_current_asyncapi_update_reasons_are_preserved(
     raw: str,
     expected: LastUpdateReason,
 ) -> None:
-    assert PerpsBookDeltaEvent.parse(delta(last_update_reason=raw), market()).last_update_reason is expected
+    parsed = PerpsBookDeltaEvent.parse(delta(last_update_reason=raw), market())
+    assert parsed.last_update_reason is expected
 
 
 def ticker() -> dict[str, object]:
