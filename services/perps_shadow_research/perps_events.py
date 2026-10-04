@@ -38,8 +38,11 @@ class LastUpdateReason(StrEnum):
     MARGIN_CANCEL = "MarginCancel"
     SELF_TRADE_CANCEL = "SelfTradeCancel"
     EXPIRY_CANCEL = "ExpiryCancel"
+    CLOSE_CANCEL = "CloseCancel"
+    HALT_CANCEL = "HaltCancel"
     TRADE = "Trade"
     POST_ONLY_CROSS_CANCEL = "PostOnlyCrossCancel"
+    REDUCE_ONLY_CANCEL = "ReduceOnlyCancel"
 
 
 def _levels(
