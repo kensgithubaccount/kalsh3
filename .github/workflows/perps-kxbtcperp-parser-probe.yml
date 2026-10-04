@@ -1,0 +1,47 @@
+name: perps-kxbtcperp-parser-probe
+
+on:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+      - run: uv sync --locked --all-groups
+      - name: Parse exact live KXBTCPERP detail payload
+        shell: bash
+        run: |
+          set -euo pipefail
+          uv run python - <<'PY'
+          import hashlib
+          import json
+          import urllib.request
+          from datetime import UTC, datetime
+          from services.perps_shadow_research.perps_metadata import parse_perps_market
+
+          url = "https://external-api.kalshi.com/trade-api/v2/margin/markets/KXBTCPERP"
+          with urllib.request.urlopen(urllib.request.Request(url, method="GET"), timeout=10) as r:
+              body = r.read()
+              status = r.status
+          payload = json.loads(body)
+          market = parse_perps_market(payload["market"], observed_at=datetime.now(UTC))
+          print("http_status:", status)
+          print("body_bytes:", len(body))
+          print("body_sha256:", hashlib.sha256(body).hexdigest())
+          print("ticker:", market.ticker)
+          print("market_version:", market.market_version)
+          print("status:", market.status)
+          print("contract_hash:", market.perps_contract_hash)
+          print("metadata_hash:", market.market_metadata_hash)
+          print("open:", market.is_open())
+          assert status == 200
+          assert market.ticker == "KXBTCPERP"
+          assert market.market_version is None
+          assert market.is_open()
+          PY
