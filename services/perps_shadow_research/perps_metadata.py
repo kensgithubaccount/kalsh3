@@ -17,7 +17,7 @@ from .domain import ShadowResearchError
 
 PERPS_OPENAPI_URL = "https://docs.kalshi.com/perps_openapi.yaml"
 PERPS_ASYNCAPI_URL = "https://docs.kalshi.com/perps_asyncapi.yaml"
-PARSER_VERSION = "m25b1-v1"
+PARSER_VERSION = "m25b1-v2"
 OFFICIAL_OPENAPI_PROVENANCE: SourceContractProvenance
 
 
