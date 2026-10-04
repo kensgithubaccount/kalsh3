@@ -1,0 +1,7 @@
+{
+  "record_type": "WN-MULTICITY-D1-GRID-IDENTITY-AMENDMENT-v1",
+  "frozen_protocol_sha256": "56fb3c00eec38286b64e57652dc822145a7fbcbe9d51e52693eb2f16943fd346",
+  "allowed_coordinate_difference_degrees": 0.000001,
+  "reason": "The 2026-09-27 read-only Earth Engine point sample returned floating representation noise at Miami and Seattle, such as 25.799999999999997 for the frozen 25.8 grid latitude; the nearest 0.05-degree cell identity is unchanged.",
+  "rule": "Both sampled coordinates must be within 0.000001 degree of the frozen reviewed grid center; reject a different 0.05-degree cell or a missing point. Never reselect a grid cell at runtime."
+}

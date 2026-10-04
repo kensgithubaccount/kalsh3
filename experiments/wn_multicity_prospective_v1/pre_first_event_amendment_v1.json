@@ -1,0 +1,86 @@
+{
+  "amendment_id": "pre_first_event_amendment_v1",
+  "append_only": true,
+  "clarifications": {
+    "A_weather_development_observation_vs_market_executability": {
+      "effect": "Per-market status affects future market/economic benchmarking only. It never erases an otherwise valid weather-development forecast.",
+      "evidence": "All returned book evidence is preserved unmodified in the raw Kalshi objects and in market.json; per-market status is recorded alongside it and in the packet.",
+      "per_market_status": {
+        "ABSTAIN_INSUFFICIENT_EXECUTABLE_MARKET": "either side is absent, not a list, or empty at the decision snapshot",
+        "EXECUTABLE_MARKET_AVAILABLE": "orderbook_fp.yes_dollars and orderbook_fp.no_dollars are both non-empty lists at the decision snapshot"
+      },
+      "rule": "A city-day weather-development observation is scientifically valid when WeatherNext acquisition passes, exact city/window/grid authority passes, event/sibling authority passes, and the forecast receipt is sealed pre-outcome. Missing or one-sided sibling book depth does not invalidate the city-day.",
+      "supersedes": "Only the MARKET_DEPTH_MISSING condition of policy.validate_market (both orderbook_fp.yes_dollars and orderbook_fp.no_dollars must be non-empty lists for every sibling). Every other validate_market condition still fails the city-day unchanged: event and series identity, settlement source, exactly six unique siblings, strike shape, integer ladder and ticker bounds, per-sibling CLI rule text, active status, empty result and expiration_value, presence of quote fields and an orderbook object, open/close and retrieval-time bounds, structured bounds."
+    },
+    "B_delayed_snapshot": {
+      "no_retry": true,
+      "rule": "The decision_at + 5 minute book snapshot (accepted through +30 seconds) is diagnostic. If the initial weather and market capture and forecast sealing succeed, a later DELAYED_SNAPSHOT_MISSED (or any delayed-snapshot failure) is preserved as a separate operational/market diagnostic failure record and does not delete or invalidate the already-sealed weather-development forecast or packet."
+    }
+  },
+  "created_at_utc": "2026-10-01T16:56:03.769034Z",
+  "d1_files_modified": [],
+  "d1_freeze_manifest_sha256": "6f0029e98dcb0ce8501d1b715b363e6dc6e202d09683c4ecd052a3e42adeb949",
+  "d1_policy_py_sha256": "9ec209c032b3d5ec06db28f316d4ae397854b4530dd12c0c227b427bde44f5e3",
+  "d1_sha256sums_sha256": "6d2c618e2ef0d99f87c12d50f41dfefa617f43cd7347aeef4c0a1d37c3ba3891",
+  "dispositions": [
+    {
+      "disposition": "REQUIRES_PRE_FIRST_EVENT_AMENDMENT",
+      "item": 1,
+      "question": "Two-sided depth requirement fails the whole city-day",
+      "resolution": "Adopted as clarification A"
+    },
+    {
+      "disposition": "NO_CHANGE_NEEDED_BEFORE_FIRST_EVENT",
+      "item": 2,
+      "question": "Ingestion cutoff wording (<= 09:00:00Z in task text vs strictly before in D1)",
+      "reason": "Frozen D1 policy.validate_weather is unambiguous and governs: ingestion must be strictly before 09:00:00Z. No scientific ambiguity for the first city-day."
+    },
+    {
+      "disposition": "REQUIRES_PRE_FIRST_EVENT_AMENDMENT",
+      "item": 3,
+      "question": "Delayed snapshot rule",
+      "resolution": "Adopted as clarification B"
+    },
+    {
+      "disposition": "DEFER_TO_LATER_VERSION",
+      "item": 4,
+      "question": "decision_at has no explicit upper bound",
+      "reason": "Validity is defined by scientific_started_at in [09:00:00Z,09:05:00Z) and by every market retrieval being before 09:05:00Z, both already enforced. decision_at is a recorded timestamp and cannot change the forecast."
+    },
+    {
+      "disposition": "NO_CHANGE_NEEDED_BEFORE_FIRST_EVENT",
+      "item": 5,
+      "question": "A market authority failure after a valid weather read seals no forecast",
+      "reason": "Clarification A states the validity conditions explicitly: event/sibling authority must pass. Only depth is excluded. Raw weather remains preserved as failure evidence."
+    },
+    {
+      "disposition": "NO_CHANGE_NEEDED_BEFORE_FIRST_EVENT",
+      "item": 6,
+      "question": "Wrapper exits without waiting if started more than 15 minutes before 09:00Z",
+      "reason": "Operational guard only, stricter than D1, performs no acquisition or claim, and cannot affect a city-day triggered by the 08:50Z Scheduler."
+    }
+  ],
+  "first_possible_scientific_target_date": "2026-10-03",
+  "frozen_protocol_sha256": "56fb3c00eec38286b64e57652dc822145a7fbcbe9d51e52693eb2f16943fd346",
+  "implementation_requirement": "The cloud collector applies clarification A without modifying frozen policy.py bytes, and must be rebuilt, re-canaried, and independently reviewed at its exact final digest before enablement.",
+  "record_type": "WN-MULTICITY-D1-PRE-FIRST-EVENT-AMENDMENT-v1",
+  "scope": "wn_multicity_prospective_v1 only; not applied retroactively or prospectively to the Chicago collector",
+  "source_note": "Questions were listed in experiments/wn_multicity_cloud_c1/POSSIBLE_D1_AMENDMENTS.md",
+  "status": "FROZEN_BEFORE_FIRST_EVENT",
+  "unchanged": [
+    "five-city list",
+    "grid points",
+    "CLI identities",
+    "target windows",
+    "09:00:00Z decision time",
+    "[09:00:00Z,09:05:00Z) scientific start window",
+    "00Z initialization",
+    "daily_max_p50_proxy = max(24 hourly station_head_temperature_2m_p50)",
+    "2026-10-03..2026-10-14 date block",
+    "no retry",
+    "no backfill",
+    "ingestion strictly before 09:00:00Z",
+    "no model fitting",
+    "no trade"
+  ]
+}

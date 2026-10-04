@@ -1,0 +1,9 @@
+{
+  "record_type": "WN-MULTICITY-D1-FORECAST-UNITS-AMENDMENT-v1",
+  "frozen_protocol_sha256": "56fb3c00eec38286b64e57652dc822145a7fbcbe9d51e52693eb2f16943fd346",
+  "raw_variable_units": "kelvin",
+  "raw_rule": "daily_max_p50_proxy_kelvin = max(24 hourly station_head_temperature_2m_p50 Kelvin values)",
+  "fahrenheit_conversion": "daily_max_p50_proxy_fahrenheit = (daily_max_p50_proxy_kelvin - 273.15) * 9 / 5 + 32",
+  "rounding": "none",
+  "scope": "unit conversion only; no calibration, fitting, city-specific tuning, or probability model"
+}
