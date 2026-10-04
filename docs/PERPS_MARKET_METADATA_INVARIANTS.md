@@ -97,3 +97,42 @@ Any future Margin FIX recovery path using `EventResendRequest (35=U1)` must mode
 support as an explicit account/session capability because that functionality may require
 account allowlisting. Absence or uncertainty of that capability must fail closed for a
 recovery design that depends on it; it must never be assumed from FIX connectivity alone.
+
+
+## October 1, 2026 Margin market schema additions
+
+The current official Margin market response now marks `market_version` and
+`underlying_multiplier` as required fields and exposes optional `asset_class`.
+These are research and future-integration authority, not execution authority.
+
+`market_version` is a structural identity field. Kalshi documents that it can
+increase after a corporate action such as a stock split. Preserve it
+point-in-time, detect changes, and treat a changed version as invalidating
+dependent market assumptions. Any future order-capable milestone must bind the
+reviewed current version rather than assume that a ticker alone identifies an
+unchanged contract.
+
+`underlying_multiplier` is the number of underlying units per contract-size
+unit. Preserve it as an exact Decimal and include it in the structural contract
+identity. Missing, malformed, or changed multiplier data must fail closed for
+any reference-price normalization, notional, basis, relative-value, or future
+execution calculation that depends on it.
+
+`asset_class` is optional and may expand over time. Preserve it when present.
+It can constrain research-family applicability, but absence must remain unknown;
+do not infer an asset class from ticker spelling or title text.
+
+The current Margin `reference_price` is explicitly the underlying reference
+price scaled per contract and carries its own source `ts_ms`. The Margin
+ticker WebSocket further documents that this underlying reference is supplied by
+CF Benchmarks for crypto perps and Pyth for metals, commodities, and other
+Pyth-indexed perps. This provides a market-bound reference observation suitable
+for future read-only latency/lead-lag research without inferring a benchmark
+mapping from ticker names. It does not by itself prove that a trading edge
+exists, and it does not authorize replacing the exact market-specific source
+with a different external index.
+
+Before runtime code adopts these new required fields, refresh and hash the exact
+official Perps OpenAPI/AsyncAPI bytes and update the parser provenance. A
+documentation page or generated client alone must not silently widen the parser's
+accepted authority.
