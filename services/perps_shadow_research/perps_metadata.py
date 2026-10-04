@@ -168,8 +168,7 @@ class PerpsMarketMetadata:
         if type(self.exchange_index) is not int or self.exchange_index < 0:
             raise ShadowResearchError("exchange_index must be an exact non-negative integer")
         if self.market_version is not None and (
-            type(self.market_version) is not int
-            or not 1 <= self.market_version <= 2_147_483_647
+            type(self.market_version) is not int or not 1 <= self.market_version <= 2_147_483_647
         ):
             raise ShadowResearchError("market_version must be null or an exact positive int32")
         if self.contract_size <= 0 or self.underlying_multiplier <= 0 or self.tick_size <= 0:
