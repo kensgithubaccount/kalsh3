@@ -18,13 +18,18 @@ from decimal import Decimal
 from enum import StrEnum
 from uuid import UUID
 
-from .domain import Direction, ShadowResearchError
+from .domain import ShadowResearchError
 from .perps_evidence import PerpsBookEvidenceObservation, PerpsMarketStateObservation
 from .perps_metadata import canonical_hash
 
 PHASE0_HORIZONS_MS = (1_000, 2_000, 5_000, 10_000)
 MAX_BOOK_AGE_MS = 30_000
 PRODUCTION_INFLUENCE = Decimal("0")
+
+
+class ReferenceMove(StrEnum):
+    UP = "UP"
+    DOWN = "DOWN"
 
 
 class HorizonStatus(StrEnum):
@@ -54,7 +59,7 @@ class ReferenceImpulse:
     available_at: datetime
     reference_change: Decimal
     reference_change_bps: Decimal
-    direction: Direction
+    reference_move: ReferenceMove
     production_influence: Decimal = PRODUCTION_INFLUENCE
 
     def __post_init__(self) -> None:
@@ -91,9 +96,9 @@ class ReferenceImpulse:
         expected_bps = expected_change / self.previous_reference_price * Decimal("10000")
         if self.reference_change_bps != expected_bps:
             raise ShadowResearchError("reference change bps contradicts exact prices")
-        expected_direction = Direction.LONG if expected_change > 0 else Direction.SHORT
-        if self.direction is not expected_direction:
-            raise ShadowResearchError("reference impulse direction contradicts exact change")
+        expected_move = ReferenceMove.UP if expected_change > 0 else ReferenceMove.DOWN
+        if self.reference_move is not expected_move:
+            raise ShadowResearchError("reference impulse move contradicts exact change")
         expected_id = canonical_hash(
             {
                 "ticker": self.ticker,
@@ -112,7 +117,7 @@ class ReferenceImpulse:
                 "available_at": self.available_at,
                 "reference_change": self.reference_change,
                 "reference_change_bps": self.reference_change_bps,
-                "direction": self.direction,
+                "reference_move": self.reference_move,
                 "production_influence": self.production_influence,
             }
         )
@@ -193,7 +198,7 @@ def build_reference_impulse(
     if change == 0:
         return None
     bps = change / previous.reference_price.price * Decimal("10000")
-    direction = Direction.LONG if change > 0 else Direction.SHORT
+    reference_move = ReferenceMove.UP if change > 0 else ReferenceMove.DOWN
     identity_payload = {
         "ticker": current.ticker,
         "exchange_index": current.exchange_index,
@@ -211,7 +216,7 @@ def build_reference_impulse(
         "available_at": current.available_at,
         "reference_change": change,
         "reference_change_bps": bps,
-        "direction": direction,
+        "reference_move": reference_move,
         "production_influence": PRODUCTION_INFLUENCE,
     }
     return ReferenceImpulse(
@@ -232,7 +237,7 @@ def build_reference_impulse(
         available_at=current.available_at,
         reference_change=change,
         reference_change_bps=bps,
-        direction=direction,
+        reference_move=reference_move,
     )
 
 
