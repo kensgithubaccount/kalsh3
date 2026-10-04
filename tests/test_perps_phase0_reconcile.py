@@ -3,7 +3,7 @@ from __future__ import annotations
 import hashlib
 import json
 import sqlite3
-from datetime import timedelta
+from datetime import datetime, timedelta
 from pathlib import Path
 
 import pytest
@@ -22,7 +22,7 @@ METADATA_HASH = "a" * 64
 CONTRACT_HASH = "b" * 64
 
 
-def iso_z(value) -> str:
+def iso_z(value: datetime) -> str:
     return value.isoformat(timespec="microseconds").replace("+00:00", "Z")
 
 
