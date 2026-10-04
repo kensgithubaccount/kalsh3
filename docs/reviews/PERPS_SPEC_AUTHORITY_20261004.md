@@ -142,10 +142,13 @@ misread as a valid zero quote move.
 
 The measured quantities are quote repricing only:
 
-- best-bid change;
-- best-ask change;
-- midpoint change when both sides exist;
+- best-bid change when the bid exists at both baseline and horizon;
+- best-ask change when the ask exists at both baseline and horizon;
+- midpoint change when both sides exist at both observations;
 - midpoint change in basis points when defined.
+
+If no quote component is comparable across baseline and horizon, the row is
+`NO_COMPARABLE_QUOTE`, not `MEASURED`.
 
 ## Explicitly not measured
 
