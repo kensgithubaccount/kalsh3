@@ -111,7 +111,9 @@ market-bound reference observations that:
 5. have both source timestamps no later than their respective local
    availability times.
 
-There is no post-hoc minimum-move threshold in Phase 0.
+There is no post-hoc minimum-move threshold in Phase 0. Reference movement is
+labeled only as `UP` or `DOWN`; Phase 0 does not reuse LONG/SHORT trading
+direction semantics.
 
 Because the Margin ticker stream is coalesced to at most one update per market
 per second, the frozen diagnostic horizon grid is:
