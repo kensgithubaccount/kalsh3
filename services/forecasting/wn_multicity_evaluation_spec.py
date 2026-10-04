@@ -190,3 +190,244 @@ def audit_inventory(paths: Iterable[str], *, as_of: date) -> CoverageReport:
         unexpected_paths=tuple(sorted(unexpected)),
         states=states,
     )
+
+
+@dataclass(frozen=True, slots=True)
+class SealedForecast:
+    city_id: str
+    target_date: date
+    same_date_cluster: str
+    forecast_p50_fahrenheit: Decimal
+    decision_at_utc: str
+
+
+@dataclass(frozen=True, slots=True)
+class PointForecastScore:
+    city_id: str
+    target_date: date
+    forecast_fahrenheit: Decimal
+    finalized_fahrenheit: Decimal
+    signed_error_fahrenheit: Decimal
+    absolute_error_fahrenheit: Decimal
+    squared_error_fahrenheit: Decimal
+
+
+@dataclass(frozen=True, slots=True)
+class ClusterEqualPointSummary:
+    expected_date_clusters: int
+    complete_date_clusters: int
+    scored_city_days: int
+    cluster_equal_signed_error_fahrenheit: Decimal | None
+    cluster_equal_mae_fahrenheit: Decimal | None
+    cluster_equal_mse_fahrenheit2: Decimal | None
+
+
+def _json_object(raw: bytes, label: str) -> dict[str, object]:
+    try:
+        value = json.loads(raw)
+    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise MulticityEvaluationSpecError(f"{label} is not valid JSON") from exc
+    if not isinstance(value, dict):
+        raise MulticityEvaluationSpecError(f"{label} must be a JSON object")
+    return value
+
+
+def _exact_decimal(value: object, label: str) -> Decimal:
+    if not isinstance(value, str):
+        raise MulticityEvaluationSpecError(f"{label} must be an exact decimal string")
+    try:
+        parsed = Decimal(value)
+    except InvalidOperation as exc:
+        raise MulticityEvaluationSpecError(f"{label} is not a decimal") from exc
+    if not parsed.is_finite():
+        raise MulticityEvaluationSpecError(f"{label} must be finite")
+    return parsed
+
+
+def _expect_common_identity(
+    artifact: dict[str, object], *, label: str, city_id: str, target: date
+) -> None:
+    expected = {
+        "city_id": city_id,
+        "target_date_utc": target.isoformat(),
+        "same_date_cluster": target.isoformat(),
+        "observational_unit": OBSERVATIONAL_UNIT,
+        "city_days_independent": False,
+        "development_only": True,
+        "protocol_sha256": FROZEN_PROTOCOL_SHA256,
+        "pre_first_event_amendment_sha256": PRE_FIRST_EVENT_AMENDMENT_SHA256,
+    }
+    for field, value in expected.items():
+        if artifact.get(field) != value:
+            raise MulticityEvaluationSpecError(f"{label} has invalid {field}")
+
+
+def validate_sealed_preoutcome_packet(
+    *,
+    packet_bytes: bytes,
+    forecast_bytes: bytes,
+    market_bytes: bytes,
+    weather_bytes: bytes,
+) -> SealedForecast:
+    """Validate the immutable pre-outcome packet without reading any outcome.
+
+    This function intentionally does not map the continuous p50 proxy to a
+    Kalshi sibling and does not create a probability or edge. The frozen
+    experiment expressly forbids both rounding and a probability model.
+    """
+    packet = _json_object(packet_bytes, "packet")
+    forecast = _json_object(forecast_bytes, "forecast")
+    market = _json_object(market_bytes, "market")
+    weather = _json_object(weather_bytes, "weather")
+
+    if packet.get("record_type") != PACKET_RECORD_TYPE:
+        raise MulticityEvaluationSpecError("unexpected packet record type")
+    if forecast.get("record_type") != FORECAST_RECORD_TYPE:
+        raise MulticityEvaluationSpecError("unexpected forecast record type")
+    if market.get("record_type") != MARKET_RECORD_TYPE:
+        raise MulticityEvaluationSpecError("unexpected market record type")
+    if weather.get("record_type") != WEATHER_RECORD_TYPE:
+        raise MulticityEvaluationSpecError("unexpected weather record type")
+
+    city_id = packet.get("city_id")
+    target_text = packet.get("target_date_utc")
+    if not isinstance(city_id, str) or city_id not in EXPECTED_CITY_IDS:
+        raise MulticityEvaluationSpecError("packet city is outside frozen roster")
+    if not isinstance(target_text, str):
+        raise MulticityEvaluationSpecError("packet target date is invalid")
+    try:
+        target = date.fromisoformat(target_text)
+    except ValueError as exc:
+        raise MulticityEvaluationSpecError("packet target date is invalid") from exc
+    if target not in expected_target_dates():
+        raise MulticityEvaluationSpecError("packet target date is outside frozen roster")
+
+    for artifact, label in (
+        (packet, "packet"),
+        (forecast, "forecast"),
+        (market, "market"),
+        (weather, "weather"),
+    ):
+        _expect_common_identity(artifact, label=label, city_id=city_id, target=target)
+
+    if (
+        packet.get("no_trade") is not True
+        or packet.get("no_alert") is not True
+        or packet.get("no_probability_or_edge_calculation") is not True
+        or packet.get("weather_development_observation") != "VALID_PRE_OUTCOME_SEALED"
+    ):
+        raise MulticityEvaluationSpecError("packet violates frozen development-only authority")
+    if (
+        forecast.get("forecast_status") != "PRE_OUTCOME_FROZEN"
+        or forecast.get("outcome_not_consulted") is not True
+        or forecast.get("no_probability") is not True
+        or forecast.get("no_trade") is not True
+        or forecast.get("no_bias_correction") is not True
+        or forecast.get("no_city_specific_tuning") is not True
+        or forecast.get("frozen_rule_identity") != FROZEN_FORECAST_RULE_IDENTITY
+    ):
+        raise MulticityEvaluationSpecError("forecast violates frozen pre-outcome rule")
+
+    component = packet.get("component_sha256")
+    if not isinstance(component, dict):
+        raise MulticityEvaluationSpecError("packet component hashes are missing")
+    expected_hashes = {
+        "forecast.json": hashlib.sha256(forecast_bytes).hexdigest(),
+        "market.json": hashlib.sha256(market_bytes).hexdigest(),
+        "weather.json": hashlib.sha256(weather_bytes).hexdigest(),
+    }
+    if component != expected_hashes:
+        raise MulticityEvaluationSpecError("packet component hash mismatch")
+    if forecast.get("market_sha256") != expected_hashes["market.json"]:
+        raise MulticityEvaluationSpecError("forecast market hash mismatch")
+    if forecast.get("weather_sha256") != expected_hashes["weather.json"]:
+        raise MulticityEvaluationSpecError("forecast weather hash mismatch")
+
+    value = _exact_decimal(
+        forecast.get("forecast_p50_proxy_fahrenheit"), "forecast_p50_proxy_fahrenheit"
+    )
+    packet_value = _exact_decimal(
+        packet.get("forecast_p50_proxy_fahrenheit"), "packet forecast_p50_proxy_fahrenheit"
+    )
+    if value != packet_value:
+        raise MulticityEvaluationSpecError("packet and forecast p50 values disagree")
+
+    decision = forecast.get("decision_at_utc")
+    if not isinstance(decision, str) or decision != packet.get("decision_at_utc"):
+        raise MulticityEvaluationSpecError("packet and forecast decision time disagree")
+
+    return SealedForecast(city_id, target, target.isoformat(), value, decision)
+
+
+def score_point_forecast(
+    sealed: SealedForecast, *, finalized_fahrenheit: Decimal
+) -> PointForecastScore:
+    """Score the frozen continuous p50 against full-precision finalized truth.
+
+    No rounding, bucket mapping, probability reconstruction, or economic claim
+    is performed. A separately reviewed outcome-acquisition boundary must
+    provide the authoritative finalized Fahrenheit Decimal.
+    """
+    if not isinstance(finalized_fahrenheit, Decimal) or not finalized_fahrenheit.is_finite():
+        raise MulticityEvaluationSpecError("finalized temperature must be finite Decimal")
+    signed = sealed.forecast_p50_fahrenheit - finalized_fahrenheit
+    return PointForecastScore(
+        city_id=sealed.city_id,
+        target_date=sealed.target_date,
+        forecast_fahrenheit=sealed.forecast_p50_fahrenheit,
+        finalized_fahrenheit=finalized_fahrenheit,
+        signed_error_fahrenheit=signed,
+        absolute_error_fahrenheit=abs(signed),
+        squared_error_fahrenheit=signed * signed,
+    )
+
+
+def aggregate_cluster_equal_point_scores(
+    scores: Iterable[PointForecastScore],
+) -> ClusterEqualPointSummary:
+    """Equal-weight complete target-date clusters; preserve partial rows as diagnostics."""
+    material = tuple(scores)
+    identities = {(item.city_id, item.target_date) for item in material}
+    if len(identities) != len(material):
+        raise MulticityEvaluationSpecError("duplicate city-day score")
+    for item in material:
+        if item.city_id not in EXPECTED_CITY_IDS or item.target_date not in expected_target_dates():
+            raise MulticityEvaluationSpecError("score outside frozen roster")
+
+    complete: list[tuple[Decimal, Decimal, Decimal]] = []
+    by_date: dict[date, dict[str, PointForecastScore]] = {}
+    for item in material:
+        by_date.setdefault(item.target_date, {})[item.city_id] = item
+    for target in expected_target_dates():
+        cluster = by_date.get(target, {})
+        if set(cluster) != set(EXPECTED_CITY_IDS):
+            continue
+        members = tuple(cluster[city] for city in EXPECTED_CITY_IDS)
+        denominator = Decimal(len(members))
+        complete.append(
+            (
+                sum((item.signed_error_fahrenheit for item in members), Decimal("0"))
+                / denominator,
+                sum((item.absolute_error_fahrenheit for item in members), Decimal("0"))
+                / denominator,
+                sum((item.squared_error_fahrenheit for item in members), Decimal("0"))
+                / denominator,
+            )
+        )
+
+    if not complete:
+        signed = mae = mse = None
+    else:
+        denominator = Decimal(len(complete))
+        signed = sum((row[0] for row in complete), Decimal("0")) / denominator
+        mae = sum((row[1] for row in complete), Decimal("0")) / denominator
+        mse = sum((row[2] for row in complete), Decimal("0")) / denominator
+
+    return ClusterEqualPointSummary(
+        expected_date_clusters=len(expected_target_dates()),
+        complete_date_clusters=len(complete),
+        scored_city_days=len(material),
+        cluster_equal_signed_error_fahrenheit=signed,
+        cluster_equal_mae_fahrenheit=mae,
+        cluster_equal_mse_fahrenheit2=mse,
+    )
