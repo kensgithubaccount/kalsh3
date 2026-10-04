@@ -1,27 +1,32 @@
 """Outcome-blind freeze for WN multicity prospective-block evaluation.
 
-This module defines only the frozen cohort identity, dependence unit, and
-operational inventory classification for the 2026-10-03..2026-10-14
-multicity block. It has no network, outcome acquisition, model fitting,
-market scoring, P&L, fee, execution, or production-authority capability.
+This module defines only the frozen cohort identity, dependence unit,
+operational inventory classification, sealed-packet validation, and continuous
+point-forecast scoring for the 2026-10-03..2026-10-14 multicity block.
 
-The five city-days on one target date are correlated diagnostics, not five
-independent experiments. The primary independence unit is the target-date
-cluster.
+It has no network, outcome acquisition, model fitting, probability
+reconstruction, market scoring, P&L, fee, execution, or production-authority
+capability. The five city-days on one target date are correlated diagnostics,
+not five independent experiments. The primary independence unit is the
+target-date cluster.
 """
 
 from __future__ import annotations
 
+import hashlib
+import json
 import re
 from collections.abc import Iterable
 from dataclasses import dataclass
 from datetime import date, timedelta
+from decimal import Decimal, InvalidOperation
 from enum import StrEnum
 
 FROZEN_PROTOCOL_SHA256 = "56fb3c00eec38286b64e57652dc822145a7fbcbe9d51e52693eb2f16943fd346"
 PRE_FIRST_EVENT_AMENDMENT_SHA256 = (
     "b6ce8154d3a3eb4a90e1eefb3cd57b879a818eabee22b8f8c8fe2dcd7614f000"
 )
+D1_SHA256SUMS_SHA256 = "6d2c618e2ef0d99f87c12d50f41dfefa617f43cd7347aeef4c0a1d37c3ba3891"
 REVIEWED_IMAGE_DIGEST = "sha256:0ffe08df80315922d64f2313f160b053151744416ed03dacafe38fcc6e24bc08"
 
 PROSPECTIVE_START = date(2026, 10, 3)
@@ -33,11 +38,21 @@ CITY_DAYS_INDEPENDENT = False
 RESEARCH_ONLY = True
 PRODUCTION_INFLUENCE = "0"
 
+FROZEN_FORECAST_RULE_IDENTITY = (
+    "daily_max_p50_proxy = max(hourly station_head_temperature_2m_p50) over exactly the city's "
+    "24 authoritative CLI valid hours; no bias correction, city tuning, probability model, or "
+    "rounding"
+)
+PACKET_RECORD_TYPE = "WN-MULTICITY-C1-CLOUD-PACKET-v1"
+FORECAST_RECORD_TYPE = "WN-MULTICITY-C1-CLOUD-FORECAST-RECEIPT-v1"
+MARKET_RECORD_TYPE = "WN-MULTICITY-C1-CLOUD-MARKET-v1"
+WEATHER_RECORD_TYPE = "WN-MULTICITY-C1-CLOUD-WEATHER-v1"
+
 _CITY_DAY_RE = re.compile(r"(?:^|/)city_days/(?P<city>[a-z_]+)/(?P<day>\d{8})/(?P<leaf>.+)$")
 
 
 class MulticityEvaluationSpecError(ValueError):
-    """Raised when frozen cohort or inventory invariants are violated."""
+    """Raised when frozen cohort, packet, or scoring invariants are violated."""
 
 
 class CaptureState(StrEnum):
@@ -103,6 +118,36 @@ class CoverageReport:
         }
 
 
+@dataclass(frozen=True, slots=True)
+class SealedForecast:
+    city_id: str
+    target_date: date
+    same_date_cluster: str
+    forecast_p50_fahrenheit: Decimal
+    decision_at_utc: str
+
+
+@dataclass(frozen=True, slots=True)
+class PointForecastScore:
+    city_id: str
+    target_date: date
+    forecast_fahrenheit: Decimal
+    finalized_fahrenheit: Decimal
+    signed_error_fahrenheit: Decimal
+    absolute_error_fahrenheit: Decimal
+    squared_error_fahrenheit: Decimal
+
+
+@dataclass(frozen=True, slots=True)
+class ClusterEqualPointSummary:
+    expected_date_clusters: int
+    complete_date_clusters: int
+    scored_city_days: int
+    cluster_equal_signed_error_fahrenheit: Decimal | None
+    cluster_equal_mae_fahrenheit: Decimal | None
+    cluster_equal_mse_fahrenheit2: Decimal | None
+
+
 def expected_target_dates(*, through: date | None = None) -> tuple[date, ...]:
     """Return the frozen target-date roster, optionally truncated through a date."""
     end = PROSPECTIVE_END if through is None else min(through, PROSPECTIVE_END)
@@ -153,10 +198,9 @@ def audit_inventory(paths: Iterable[str], *, as_of: date) -> CoverageReport:
         match = _CITY_DAY_RE.search(path)
         if match is None:
             continue
+        day = match.group("day")
         try:
-            target_date = date.fromisoformat(
-                f"{match.group('day')[:4]}-{match.group('day')[4:6]}-{match.group('day')[6:]}"
-            )
+            target_date = date.fromisoformat(f"{day[:4]}-{day[4:6]}-{day[6:]}")
         except ValueError as exc:
             raise MulticityEvaluationSpecError("malformed city-day date") from exc
         key = CityDayKey(match.group("city"), target_date)
@@ -190,36 +234,6 @@ def audit_inventory(paths: Iterable[str], *, as_of: date) -> CoverageReport:
         unexpected_paths=tuple(sorted(unexpected)),
         states=states,
     )
-
-
-@dataclass(frozen=True, slots=True)
-class SealedForecast:
-    city_id: str
-    target_date: date
-    same_date_cluster: str
-    forecast_p50_fahrenheit: Decimal
-    decision_at_utc: str
-
-
-@dataclass(frozen=True, slots=True)
-class PointForecastScore:
-    city_id: str
-    target_date: date
-    forecast_fahrenheit: Decimal
-    finalized_fahrenheit: Decimal
-    signed_error_fahrenheit: Decimal
-    absolute_error_fahrenheit: Decimal
-    squared_error_fahrenheit: Decimal
-
-
-@dataclass(frozen=True, slots=True)
-class ClusterEqualPointSummary:
-    expected_date_clusters: int
-    complete_date_clusters: int
-    scored_city_days: int
-    cluster_equal_signed_error_fahrenheit: Decimal | None
-    cluster_equal_mae_fahrenheit: Decimal | None
-    cluster_equal_mse_fahrenheit2: Decimal | None
 
 
 def _json_object(raw: bytes, label: str) -> dict[str, object]:
@@ -256,6 +270,7 @@ def _expect_common_identity(
         "development_only": True,
         "protocol_sha256": FROZEN_PROTOCOL_SHA256,
         "pre_first_event_amendment_sha256": PRE_FIRST_EVENT_AMENDMENT_SHA256,
+        "d1_sha256sums_sha256": D1_SHA256SUMS_SHA256,
     }
     for field, value in expected.items():
         if artifact.get(field) != value:
@@ -269,11 +284,10 @@ def validate_sealed_preoutcome_packet(
     market_bytes: bytes,
     weather_bytes: bytes,
 ) -> SealedForecast:
-    """Validate the immutable pre-outcome packet without reading any outcome.
+    """Validate immutable pre-outcome bytes without reading an outcome.
 
-    This function intentionally does not map the continuous p50 proxy to a
-    Kalshi sibling and does not create a probability or edge. The frozen
-    experiment expressly forbids both rounding and a probability model.
+    The frozen experiment expressly forbids both rounding the continuous p50
+    proxy into the Kalshi ladder and constructing a probability model.
     """
     packet = _json_object(packet_bytes, "packet")
     forecast = _json_object(forecast_bytes, "forecast")
@@ -344,10 +358,12 @@ def validate_sealed_preoutcome_packet(
         raise MulticityEvaluationSpecError("forecast weather hash mismatch")
 
     value = _exact_decimal(
-        forecast.get("forecast_p50_proxy_fahrenheit"), "forecast_p50_proxy_fahrenheit"
+        forecast.get("forecast_p50_proxy_fahrenheit"),
+        "forecast_p50_proxy_fahrenheit",
     )
     packet_value = _exact_decimal(
-        packet.get("forecast_p50_proxy_fahrenheit"), "packet forecast_p50_proxy_fahrenheit"
+        packet.get("forecast_p50_proxy_fahrenheit"),
+        "packet forecast_p50_proxy_fahrenheit",
     )
     if value != packet_value:
         raise MulticityEvaluationSpecError("packet and forecast p50 values disagree")
@@ -360,14 +376,11 @@ def validate_sealed_preoutcome_packet(
 
 
 def score_point_forecast(
-    sealed: SealedForecast, *, finalized_fahrenheit: Decimal
+    sealed: SealedForecast,
+    *,
+    finalized_fahrenheit: Decimal,
 ) -> PointForecastScore:
-    """Score the frozen continuous p50 against full-precision finalized truth.
-
-    No rounding, bucket mapping, probability reconstruction, or economic claim
-    is performed. A separately reviewed outcome-acquisition boundary must
-    provide the authoritative finalized Fahrenheit Decimal.
-    """
+    """Score continuous p50 against authoritative full-precision Fahrenheit truth."""
     if not isinstance(finalized_fahrenheit, Decimal) or not finalized_fahrenheit.is_finite():
         raise MulticityEvaluationSpecError("finalized temperature must be finite Decimal")
     signed = sealed.forecast_p50_fahrenheit - finalized_fahrenheit
@@ -385,7 +398,7 @@ def score_point_forecast(
 def aggregate_cluster_equal_point_scores(
     scores: Iterable[PointForecastScore],
 ) -> ClusterEqualPointSummary:
-    """Equal-weight complete target-date clusters; preserve partial rows as diagnostics."""
+    """Equal-weight complete target-date clusters; retain partial rows as diagnostics."""
     material = tuple(scores)
     identities = {(item.city_id, item.target_date) for item in material}
     if len(identities) != len(material):
@@ -398,6 +411,7 @@ def aggregate_cluster_equal_point_scores(
     by_date: dict[date, dict[str, PointForecastScore]] = {}
     for item in material:
         by_date.setdefault(item.target_date, {})[item.city_id] = item
+
     for target in expected_target_dates():
         cluster = by_date.get(target, {})
         if set(cluster) != set(EXPECTED_CITY_IDS):
