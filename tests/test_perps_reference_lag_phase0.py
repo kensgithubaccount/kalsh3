@@ -7,13 +7,13 @@ from uuid import UUID
 import pytest
 
 from services.perps_shadow_research.domain import Direction, ShadowResearchError
-from services.perps_shadow_research.perps_evidence import (
-    PerpsBookEvidenceObservation,
-    PerpsMarketStateObservation,
-)
 from services.perps_shadow_research.perps_events import (
     PerpsBookSnapshotEvent,
     PerpsTickerEvent,
+)
+from services.perps_shadow_research.perps_evidence import (
+    PerpsBookEvidenceObservation,
+    PerpsMarketStateObservation,
 )
 from services.perps_shadow_research.perps_metadata import parse_perps_market
 from services.perps_shadow_research.perps_orderbook import PerpsBookState, PerpsBookView
