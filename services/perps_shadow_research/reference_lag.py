@@ -219,9 +219,7 @@ def _candidate_books(
 
 def _age_ms(earlier: datetime, later: datetime) -> int:
     delta = later - earlier
-    microseconds = (
-        (delta.days * 86_400 + delta.seconds) * 1_000_000 + delta.microseconds
-    )
+    microseconds = (delta.days * 86_400 + delta.seconds) * 1_000_000 + delta.microseconds
     if microseconds < 0:
         raise ShadowResearchError("book availability cannot be after evaluation cutoff")
     milliseconds, remainder = divmod(microseconds, 1_000)
