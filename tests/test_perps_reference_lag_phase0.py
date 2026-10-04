@@ -105,8 +105,8 @@ def state(
 def book(
     *,
     sequence: int,
-    bid: str,
-    ask: str,
+    bid: str | None,
+    ask: str | None,
     available_offset_ms: int,
     epoch: UUID = EPOCH,
     sid: int = 7,
@@ -117,8 +117,8 @@ def book(
         sid=sid,
         sequence=sequence,
         ticker=market_obj.ticker,
-        bids=((Decimal(bid), Decimal("2.00")),),
-        asks=((Decimal(ask), Decimal("3.00")),),
+        bids=() if bid is None else ((Decimal(bid), Decimal("2.00")),),
+        asks=() if ask is None else ((Decimal(ask), Decimal("3.00")),),
     )
     available = NOW + timedelta(milliseconds=available_offset_ms)
     view = PerpsBookView(
@@ -126,10 +126,10 @@ def book(
         sequence=sequence,
         bids=event.bids,
         asks=event.asks,
-        best_bid=Decimal(bid),
-        best_ask=Decimal(ask),
-        best_bid_size=Decimal("2.00"),
-        best_ask_size=Decimal("3.00"),
+        best_bid=None if bid is None else Decimal(bid),
+        best_ask=None if ask is None else Decimal(ask),
+        best_bid_size=None if bid is None else Decimal("2.00"),
+        best_ask_size=None if ask is None else Decimal("3.00"),
         state=PerpsBookState.CURRENT,
         observed_at=available,
         ingested_at=available,
@@ -413,6 +413,27 @@ def test_missing_continuity_witness_and_sequence_gap_abstain() -> None:
     )
     assert sequence_gap.status is HorizonStatus.SEQUENCE_GAP
     assert sequence_gap.midpoint_change is None
+
+
+def test_opposite_one_sided_books_are_not_called_measured() -> None:
+    previous = state(reference="100", source_offset_ms=100, available_offset_ms=120)
+    current = state(reference="101", source_offset_ms=1_100, available_offset_ms=1_120)
+    impulse = build_reference_impulse(previous, current)
+    assert impulse is not None
+
+    row = measure_reference_lag_horizon(
+        impulse,
+        [
+            book(sequence=1, bid="100", ask=None, available_offset_ms=1_000),
+            book(sequence=2, bid=None, ask="101", available_offset_ms=2_000),
+            book(sequence=3, bid=None, ask="101", available_offset_ms=2_500),
+        ],
+        horizon_ms=1_000,
+    )
+    assert row.status is HorizonStatus.NO_COMPARABLE_QUOTE
+    assert row.bid_change is None
+    assert row.ask_change is None
+    assert row.midpoint_change is None
 
 
 def test_book_contract_mismatch_and_unfrozen_horizon_fail_closed() -> None:
