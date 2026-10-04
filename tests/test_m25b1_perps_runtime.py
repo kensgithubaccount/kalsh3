@@ -160,13 +160,13 @@ def test_offline_runtime_snapshot_delta_ticker_and_separate_tables(tmp_path: Pat
 
 def test_missing_market_version_persists_in_fresh_readonly_evidence_store(tmp_path: Path) -> None:
     raw: dict[str, object] = {
-        "ticker": "KXBTCPERP",
+        "ticker": "BTC-PERP",
         "status": "active",
-        "title": "0.0001 BTC",
-        "exchange_index": 0,
-        "contract_size": "0.000100",
+        "title": "Bitcoin",
+        "exchange_index": 4,
+        "contract_size": "1.000000",
         "underlying_multiplier": "1.000000",
-        "tick_size": "0.0001",
+        "tick_size": "0.50",
         "fractional_trading_enabled": True,
         "schedule": None,
     }
