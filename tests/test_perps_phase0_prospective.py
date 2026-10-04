@@ -9,6 +9,7 @@ from services.perps_shadow_research.phase0_prospective import (
     CONFIRMATORY_HORIZON_MS,
     MIN_ELIGIBLE_SESSIONS,
     MIN_PRIMARY_MEASURED_MIDPOINT_IMPULSES,
+    MARKET_VERSION_AUTHORITY,
     NO_SUBSTITUTION,
     OPENAPI_SHA256,
     PRIMARY_HORIZON_MS,
@@ -22,6 +23,7 @@ from services.perps_shadow_research.phase0_prospective import (
     SessionMechanismSummary,
     evaluate_prospective_sessions,
     expected_session_ids,
+    protocol_payload,
     protocol_sha256,
     scheduled_at,
 )
@@ -74,7 +76,7 @@ def roster_with(
 
 def test_protocol_identity_and_schedule_are_frozen() -> None:
     assert protocol_sha256() == PROTOCOL_SHA256
-    assert PROTOCOL_SHA256 == ("1a98970c0ff0b39b92b435b4d9c7f717a6c861ef20cdbcf708a781f16e6abeb0")
+    assert PROTOCOL_SHA256 == ("482677be45be623a443647e347f854db9693ec82371a460adfed2a6ec20fed46")
     assert len(expected_session_ids()) == 8
     assert scheduled_at("P0-S01").isoformat() == "2026-10-05T12:00:00+00:00"
     assert scheduled_at("P0-S08").isoformat() == "2026-10-06T09:00:00+00:00"
@@ -86,6 +88,10 @@ def test_protocol_identity_and_schedule_are_frozen() -> None:
     assert CONFIRMATORY_HORIZON_MS == 5_000
     assert OPENAPI_SHA256.startswith("d13cb9")
     assert ASYNCAPI_SHA256.startswith("e5cc0f")
+    assert MARKET_VERSION_AUTHORITY == (
+        "MISSING_IS_UNKNOWN_PRESENT_POSITIVE_INT32_EXPLICIT_NULL_INVALID_V1"
+    )
+    assert protocol_payload()["perps_metadata_parser_version"] == "m25b1-v3"
 
 
 def test_unknown_session_fails_closed() -> None:
