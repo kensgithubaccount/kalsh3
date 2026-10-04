@@ -30,8 +30,10 @@ def market_raw(**changes: object) -> dict[str, object]:
         "ticker": "BTC-PERP",
         "status": "active",
         "title": "Bitcoin Perpetual",
+        "market_version": 3,
         "exchange_index": 4,
         "contract_size": "0.001000",
+        "underlying_multiplier": "1.000000",
         "tick_size": "0.500000",
         "fractional_trading_enabled": True,
         "schedule": None,
@@ -45,6 +47,7 @@ def market_raw(**changes: object) -> dict[str, object]:
         "settlement_mark_price": {"price": "60000.25", "ts_ms": 1},
         "liquidation_mark_price": {"price": "60000.50", "ts_ms": 2},
         "reference_price": {"price": "60000.75", "ts_ms": 3},
+        "asset_class": "Crypto",
         "volume": "123.45",
         "open_interest": "67.89",
     }
@@ -79,9 +82,12 @@ def delta(**msg_changes: object) -> dict[str, object]:
 
 def test_market_metadata_exactness_hashes_and_perps_boundary() -> None:
     item = market()
+    assert item.market_version == 3
     assert item.exchange_index == 4
     assert item.contract_size == Decimal("0.001000")
+    assert item.underlying_multiplier == Decimal("1.000000")
     assert item.tick_size == Decimal("0.500000")
+    assert item.asset_class == "Crypto"
     assert item.long_leverage_estimates != item.short_leverage_estimates
     assert item.reference_price and item.reference_price.ts_ms == 3
     assert item.schedule is None and item.is_open()
@@ -98,6 +104,10 @@ def test_market_metadata_exactness_hashes_and_perps_boundary() -> None:
     assert reordered.perps_contract_hash == item.perps_contract_hash
     assert reordered.market_metadata_hash == item.market_metadata_hash
     assert market(tick_size="1.0").perps_contract_hash != item.perps_contract_hash
+    assert market(market_version=4).perps_contract_hash != item.perps_contract_hash
+    assert market(underlying_multiplier="2").perps_contract_hash != item.perps_contract_hash
+    assert market(asset_class="Metals").perps_contract_hash == item.perps_contract_hash
+    assert market(asset_class="Metals").market_metadata_hash != item.market_metadata_hash
 
 
 @pytest.mark.parametrize("fractional", [False, True])
@@ -120,8 +130,10 @@ def test_book_quantity_uses_fixed_point_granularity_not_fractional_flag(
         "ticker",
         "status",
         "title",
+        "market_version",
         "exchange_index",
         "contract_size",
+        "underlying_multiplier",
         "tick_size",
         "fractional_trading_enabled",
         "schedule",
@@ -138,6 +150,25 @@ def test_market_required_fields(field: str) -> None:
 def test_exchange_index_is_exact_and_never_inferred(value: object) -> None:
     with pytest.raises(ShadowResearchError, match="exchange_index"):
         market(exchange_index=value)
+
+
+@pytest.mark.parametrize("value", [True, 0, -1, "1", None])
+def test_market_version_is_required_exact_and_positive(value: object) -> None:
+    with pytest.raises(ShadowResearchError, match="market_version"):
+        market(market_version=value)
+
+
+@pytest.mark.parametrize("value", ["0", "-1", 0, -1, True, None])
+def test_underlying_multiplier_is_required_exact_and_positive(value: object) -> None:
+    with pytest.raises(ShadowResearchError, match="underlying_multiplier"):
+        market(underlying_multiplier=value)
+
+
+def test_asset_class_is_optional_preserved_and_not_inferred() -> None:
+    assert market(asset_class=None).asset_class is None
+    assert market(asset_class="Crypto").asset_class == "Crypto"
+    with pytest.raises(ShadowResearchError, match="asset_class"):
+        market(asset_class=123)
 
 
 def test_schedule_absent_null_and_nested_semantics() -> None:
@@ -203,6 +234,10 @@ def test_delta_optional_fields_and_account_identifiers_are_nonsemantic() -> None
     assert PerpsBookDeltaEvent.parse(delta(), market()).exchange_at is None
     with pytest.raises(ShadowResearchError, match="side"):
         PerpsBookDeltaEvent.parse(delta(side="yes"), market())
+    for reason in ("CloseCancel", "HaltCancel", "ReduceOnlyCancel"):
+        assert PerpsBookDeltaEvent.parse(
+            delta(last_update_reason=reason), market()
+        ).last_update_reason is LastUpdateReason(reason)
     with pytest.raises(ShadowResearchError, match="last_update_reason"):
         PerpsBookDeltaEvent.parse(delta(last_update_reason="Other"), market())
 
