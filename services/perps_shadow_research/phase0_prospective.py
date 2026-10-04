@@ -19,6 +19,7 @@ from decimal import Decimal
 from enum import StrEnum
 
 from .domain import ShadowResearchError
+from .perps_metadata import PARSER_VERSION
 from .reference_lag import HorizonStatus, ReferenceImpulse, ReferenceLagMeasurement, ReferenceMove
 
 PROTOCOL_RECORD_TYPE = "PERPS-REFERENCE-LAG-P0-PROSPECTIVE-PROTOCOL-v1"
@@ -40,6 +41,7 @@ PROMISING_MIN_POSITIVE_SESSION_FRACTION = Decimal("0.60")
 BOOK_MAX_AGE_MS = 30_000
 OPENAPI_SHA256 = "d13cb9c5c18cbb9ab2fe60d173c74511dea627a89321d17f7b0505a88f82aeb0"
 ASYNCAPI_SHA256 = "e5cc0f026b8e306e917860b870e23c9152d0d782c33137d42698f051a9dbe824"
+MARKET_VERSION_AUTHORITY = "MISSING_IS_UNKNOWN_PRESENT_POSITIVE_INT32_EXPLICIT_NULL_INVALID_V1"
 PRODUCTION_INFLUENCE = Decimal("0")
 
 SESSION_SCHEDULE: tuple[tuple[str, datetime], ...] = (
@@ -147,6 +149,8 @@ def protocol_payload() -> dict[str, object]:
         "production_influence": str(PRODUCTION_INFLUENCE),
         "phase0_spec_openapi_sha256": OPENAPI_SHA256,
         "phase0_spec_asyncapi_sha256": ASYNCAPI_SHA256,
+        "perps_metadata_parser_version": PARSER_VERSION,
+        "market_version_authority": MARKET_VERSION_AUTHORITY,
     }
 
 
@@ -155,7 +159,7 @@ def protocol_sha256() -> str:
     return hashlib.sha256(encoded).hexdigest()
 
 
-PROTOCOL_SHA256 = "1a98970c0ff0b39b92b435b4d9c7f717a6c861ef20cdbcf708a781f16e6abeb0"
+PROTOCOL_SHA256 = "482677be45be623a443647e347f854db9693ec82371a460adfed2a6ec20fed46"
 
 
 def expected_session_ids() -> tuple[str, ...]:
