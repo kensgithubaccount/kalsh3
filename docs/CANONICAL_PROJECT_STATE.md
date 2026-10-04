@@ -28,7 +28,7 @@ Current open research/documentation work at this checkpoint:
 
 - PR #164: Perps API/schema integration constraints; rebased onto current main on 2026-10-03. Documentation only; no execution authority.
 - PR #165: Perps edge research and radar admission plan; rebased onto current main on 2026-10-03. Perps remains DISARMED/read-only with zero production influence.
-- PR #168: outcome-blind multicity pre-outcome evaluation boundary; under CI/review. It does not acquire outcomes, score P&L, or change the live collector.
+- PR #168: outcome-blind multicity pre-outcome evaluation boundary; under CI/review. It validates the sealed pre-outcome packet schema and freezes continuous point-error scoring only; it does not acquire outcomes, invent probabilities, score P&L, or change the live collector.\n- PR #170: urllib3 2.8.0 security lock repair. All four canonical CI jobs pass; merge remains pending.
 
 No current repository state establishes a profitable autonomous strategy or authorizes real-money trading.
 
