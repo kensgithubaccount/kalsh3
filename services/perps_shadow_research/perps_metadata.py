@@ -92,8 +92,13 @@ class SourceContractProvenance:
 
 OFFICIAL_OPENAPI_PROVENANCE = SourceContractProvenance(
     PERPS_OPENAPI_URL,
-    date(2026, 8, 13),
-    "af990c0e11353da0f06eaa017738646f70460784f3068a6c2460d51a0f21434b",
+    date(2026, 10, 4),
+    "d13cb9c5c18cbb9ab2fe60d173c74511dea627a89321d17f7b0505a88f82aeb0",
+)
+OFFICIAL_ASYNCAPI_PROVENANCE = SourceContractProvenance(
+    PERPS_ASYNCAPI_URL,
+    date(2026, 10, 4),
+    "e5cc0f026b8e306e917860b870e23c9152d0d782c33137d42698f051a9dbe824",
 )
 
 
@@ -130,7 +135,9 @@ class PerpsMarketMetadata:
     status: str
     title: str
     exchange_index: int
+    market_version: int
     contract_size: Decimal
+    underlying_multiplier: Decimal
     tick_size: Decimal
     fractional_trading_enabled: bool
     schedule: PerpsSchedule | None
@@ -146,6 +153,8 @@ class PerpsMarketMetadata:
     reference_price: TimestampedPrice | None
     volume: Decimal | None
     open_interest: Decimal | None
+    asset_class: str | None
+    product_metadata: Mapping[str, Any] | None
     normalized_snapshot: Mapping[str, Any]
     observed_at: datetime
     perps_contract_hash: str
@@ -158,8 +167,16 @@ class PerpsMarketMetadata:
         # Local fail-closed policy: exchange shards are required to be non-negative.
         if type(self.exchange_index) is not int or self.exchange_index < 0:
             raise ShadowResearchError("exchange_index must be an exact non-negative integer")
-        if self.contract_size <= 0 or self.tick_size <= 0:
-            raise ShadowResearchError("contract_size and tick_size must be positive")
+        if type(self.market_version) is not int or not 1 <= self.market_version <= 2_147_483_647:
+            raise ShadowResearchError("market_version must be an exact positive int32")
+        if self.contract_size <= 0 or self.underlying_multiplier <= 0 or self.tick_size <= 0:
+            raise ShadowResearchError(
+                "contract_size, underlying_multiplier, and tick_size must be positive"
+            )
+        if self.asset_class is not None and (
+            not isinstance(self.asset_class, str) or not self.asset_class
+        ):
+            raise ShadowResearchError("asset_class must be a non-empty string or null")
         if type(self.fractional_trading_enabled) is not bool:
             raise ShadowResearchError("fractional_trading_enabled must be boolean")
         if self.observed_at.tzinfo is None or self.observed_at.utcoffset() is None:
@@ -221,11 +238,14 @@ def parse_perps_market(
         raise ShadowResearchError("Perps market payload must be an object")
     ticker, status, title = (_required(raw, name) for name in ("ticker", "status", "title"))
     exchange_index = _required(raw, "exchange_index")
+    market_version = _required(raw, "market_version")
     fractional = _required(raw, "fractional_trading_enabled")
     if not all(isinstance(value, str) for value in (ticker, status, title)):
         raise ShadowResearchError("ticker, status, and title must be strings")
     if type(exchange_index) is not int:
         raise ShadowResearchError("exchange_index must be an exact integer")
+    if type(market_version) is not int:
+        raise ShadowResearchError("market_version must be an exact integer")
     if type(fractional) is not bool:
         raise ShadowResearchError("fractional_trading_enabled must be boolean")
     schedule_raw = _required(raw, "schedule")
@@ -239,12 +259,27 @@ def parse_perps_market(
             _required(schedule_raw, "next_close_ts"),
         )
     contract_size = decimal(_required(raw, "contract_size"), "contract_size")
+    underlying_multiplier = decimal(
+        _required(raw, "underlying_multiplier"),
+        "underlying_multiplier",
+    )
     tick_size = decimal(_required(raw, "tick_size"), "tick_size")
+    asset_class = raw.get("asset_class")
+    if asset_class is not None and not isinstance(asset_class, str):
+        raise ShadowResearchError("asset_class must be a string or null")
+    product_metadata_raw = raw.get("product_metadata")
+    if product_metadata_raw is not None and not isinstance(product_metadata_raw, Mapping):
+        raise ShadowResearchError("product_metadata must be an object or null")
+    product_metadata = None if product_metadata_raw is None else _freeze(product_metadata_raw)
+    if product_metadata is not None and not isinstance(product_metadata, Mapping):
+        raise ShadowResearchError("product_metadata must be an object or null")
     normalized = canonical_value(raw)
     contract = {
         "ticker": ticker,
         "exchange_index": exchange_index,
+        "market_version": market_version,
         "contract_size": contract_size,
+        "underlying_multiplier": underlying_multiplier,
         "tick_size": tick_size,
         "fractional_trading_enabled": fractional,
     }
@@ -253,7 +288,9 @@ def parse_perps_market(
         status=status,
         title=title,
         exchange_index=exchange_index,
+        market_version=market_version,
         contract_size=contract_size,
+        underlying_multiplier=underlying_multiplier,
         tick_size=tick_size,
         fractional_trading_enabled=fractional,
         schedule=schedule,
@@ -269,6 +306,8 @@ def parse_perps_market(
         reference_price=_timestamped(raw, "reference_price"),
         volume=_optional_decimal(raw, "volume"),
         open_interest=_optional_decimal(raw, "open_interest"),
+        asset_class=asset_class,
+        product_metadata=product_metadata,
         normalized_snapshot=_freeze(normalized),
         observed_at=observed_at,
         perps_contract_hash=canonical_hash(contract),
