@@ -1,0 +1,319 @@
+{
+  "record_type": "WN-MULTICITY-D1-MARKET-STRUCTURE-PREFLIGHT-v1",
+  "observed_at_utc": "2026-10-01T15:19:22.773606Z",
+  "sample_target_date": "2026-10-02",
+  "observational_unit": "CITY_DAY",
+  "city_days_independent": false,
+  "same_date_cluster": "2026-10-02",
+  "correlation_groups_by_city": {
+    "boston": {
+      "geographic_group": "northeast_us",
+      "weather_regime_group": "northeast_midlatitude"
+    },
+    "miami": {
+      "geographic_group": "southeast_us",
+      "weather_regime_group": "subtropical_atlantic"
+    },
+    "denver": {
+      "geographic_group": "rocky_mountain_us",
+      "weather_regime_group": "rockies_high_plains"
+    },
+    "los_angeles": {
+      "geographic_group": "southern_california",
+      "weather_regime_group": "pacific_coastal_marine"
+    },
+    "seattle": {
+      "geographic_group": "pacific_northwest",
+      "weather_regime_group": "pacific_maritime"
+    }
+  },
+  "candidate_decision_at_utc": "2026-10-02T09:00:00Z",
+  "limitation": "Public structural snapshot and posted open/close times; future 09:00 quote liquidity and active state remain runtime gates. No outcome or forecast requested.",
+  "cities": {
+    "boston": {
+      "event_ticker": "KXHIGHTBOS-26OCT02",
+      "exact_identity": true,
+      "source_identity": true,
+      "sibling_complete": true,
+      "strike_shape_valid": true,
+      "rule_cli_identity_valid": true,
+      "structured_bounds_available": true,
+      "all_sibling_bid_ask_fields_available": true,
+      "all_sibling_public_depth_endpoint_available": true,
+      "depth_level_counts": [
+        {
+          "ticker": "KXHIGHTBOS-26OCT02-T77",
+          "yes_levels": 2,
+          "no_levels": 5,
+          "present": true
+        },
+        {
+          "ticker": "KXHIGHTBOS-26OCT02-B77.5",
+          "yes_levels": 3,
+          "no_levels": 5,
+          "present": true
+        },
+        {
+          "ticker": "KXHIGHTBOS-26OCT02-B79.5",
+          "yes_levels": 5,
+          "no_levels": 5,
+          "present": true
+        },
+        {
+          "ticker": "KXHIGHTBOS-26OCT02-B81.5",
+          "yes_levels": 5,
+          "no_levels": 5,
+          "present": true
+        },
+        {
+          "ticker": "KXHIGHTBOS-26OCT02-B83.5",
+          "yes_levels": 5,
+          "no_levels": 5,
+          "present": true
+        },
+        {
+          "ticker": "KXHIGHTBOS-26OCT02-T84",
+          "yes_levels": 5,
+          "no_levels": 5,
+          "present": true
+        }
+      ],
+      "all_siblings_active_at_observation": true,
+      "candidate_0900_within_scheduled_open_close": true,
+      "open_times_utc": [
+        "2026-10-01T14:00:00Z"
+      ],
+      "close_times_utc": [
+        "2026-10-03T05:00:00Z"
+      ]
+    },
+    "miami": {
+      "event_ticker": "KXHIGHMIA-26OCT02",
+      "exact_identity": true,
+      "source_identity": true,
+      "sibling_complete": true,
+      "strike_shape_valid": true,
+      "rule_cli_identity_valid": true,
+      "structured_bounds_available": true,
+      "all_sibling_bid_ask_fields_available": true,
+      "all_sibling_public_depth_endpoint_available": true,
+      "depth_level_counts": [
+        {
+          "ticker": "KXHIGHMIA-26OCT02-T85",
+          "yes_levels": 1,
+          "no_levels": 5,
+          "present": true
+        },
+        {
+          "ticker": "KXHIGHMIA-26OCT02-B85.5",
+          "yes_levels": 5,
+          "no_levels": 5,
+          "present": true
+        },
+        {
+          "ticker": "KXHIGHMIA-26OCT02-B87.5",
+          "yes_levels": 5,
+          "no_levels": 5,
+          "present": true
+        },
+        {
+          "ticker": "KXHIGHMIA-26OCT02-B89.5",
+          "yes_levels": 5,
+          "no_levels": 5,
+          "present": true
+        },
+        {
+          "ticker": "KXHIGHMIA-26OCT02-B91.5",
+          "yes_levels": 5,
+          "no_levels": 5,
+          "present": true
+        },
+        {
+          "ticker": "KXHIGHMIA-26OCT02-T92",
+          "yes_levels": 1,
+          "no_levels": 5,
+          "present": true
+        }
+      ],
+      "all_siblings_active_at_observation": true,
+      "candidate_0900_within_scheduled_open_close": true,
+      "open_times_utc": [
+        "2026-10-01T14:00:00Z"
+      ],
+      "close_times_utc": [
+        "2026-10-03T05:00:00Z"
+      ]
+    },
+    "denver": {
+      "event_ticker": "KXHIGHDEN-26OCT02",
+      "exact_identity": true,
+      "source_identity": true,
+      "sibling_complete": true,
+      "strike_shape_valid": true,
+      "rule_cli_identity_valid": true,
+      "structured_bounds_available": true,
+      "all_sibling_bid_ask_fields_available": true,
+      "all_sibling_public_depth_endpoint_available": true,
+      "depth_level_counts": [
+        {
+          "ticker": "KXHIGHDEN-26OCT02-T77",
+          "yes_levels": 1,
+          "no_levels": 5,
+          "present": true
+        },
+        {
+          "ticker": "KXHIGHDEN-26OCT02-B77.5",
+          "yes_levels": 3,
+          "no_levels": 5,
+          "present": true
+        },
+        {
+          "ticker": "KXHIGHDEN-26OCT02-B79.5",
+          "yes_levels": 5,
+          "no_levels": 5,
+          "present": true
+        },
+        {
+          "ticker": "KXHIGHDEN-26OCT02-B81.5",
+          "yes_levels": 5,
+          "no_levels": 5,
+          "present": true
+        },
+        {
+          "ticker": "KXHIGHDEN-26OCT02-B83.5",
+          "yes_levels": 5,
+          "no_levels": 5,
+          "present": true
+        },
+        {
+          "ticker": "KXHIGHDEN-26OCT02-T84",
+          "yes_levels": 1,
+          "no_levels": 5,
+          "present": true
+        }
+      ],
+      "all_siblings_active_at_observation": true,
+      "candidate_0900_within_scheduled_open_close": true,
+      "open_times_utc": [
+        "2026-10-01T14:00:00Z"
+      ],
+      "close_times_utc": [
+        "2026-10-03T07:00:00Z"
+      ]
+    },
+    "los_angeles": {
+      "event_ticker": "KXHIGHLAX-26OCT02",
+      "exact_identity": true,
+      "source_identity": true,
+      "sibling_complete": true,
+      "strike_shape_valid": true,
+      "rule_cli_identity_valid": true,
+      "structured_bounds_available": true,
+      "all_sibling_bid_ask_fields_available": true,
+      "all_sibling_public_depth_endpoint_available": true,
+      "depth_level_counts": [
+        {
+          "ticker": "KXHIGHLAX-26OCT02-T85",
+          "yes_levels": 5,
+          "no_levels": 5,
+          "present": true
+        },
+        {
+          "ticker": "KXHIGHLAX-26OCT02-B85.5",
+          "yes_levels": 5,
+          "no_levels": 5,
+          "present": true
+        },
+        {
+          "ticker": "KXHIGHLAX-26OCT02-B87.5",
+          "yes_levels": 5,
+          "no_levels": 5,
+          "present": true
+        },
+        {
+          "ticker": "KXHIGHLAX-26OCT02-B89.5",
+          "yes_levels": 5,
+          "no_levels": 5,
+          "present": true
+        },
+        {
+          "ticker": "KXHIGHLAX-26OCT02-B91.5",
+          "yes_levels": 5,
+          "no_levels": 5,
+          "present": true
+        },
+        {
+          "ticker": "KXHIGHLAX-26OCT02-T92",
+          "yes_levels": 4,
+          "no_levels": 5,
+          "present": true
+        }
+      ],
+      "all_siblings_active_at_observation": true,
+      "candidate_0900_within_scheduled_open_close": true,
+      "open_times_utc": [
+        "2026-10-01T14:00:00Z"
+      ],
+      "close_times_utc": [
+        "2026-10-03T08:00:00Z"
+      ]
+    },
+    "seattle": {
+      "event_ticker": "KXHIGHTSEA-26OCT02",
+      "exact_identity": true,
+      "source_identity": true,
+      "sibling_complete": true,
+      "strike_shape_valid": true,
+      "rule_cli_identity_valid": true,
+      "structured_bounds_available": true,
+      "all_sibling_bid_ask_fields_available": true,
+      "all_sibling_public_depth_endpoint_available": true,
+      "depth_level_counts": [
+        {
+          "ticker": "KXHIGHTSEA-26OCT02-T68",
+          "yes_levels": 2,
+          "no_levels": 5,
+          "present": true
+        },
+        {
+          "ticker": "KXHIGHTSEA-26OCT02-B68.5",
+          "yes_levels": 5,
+          "no_levels": 5,
+          "present": true
+        },
+        {
+          "ticker": "KXHIGHTSEA-26OCT02-B70.5",
+          "yes_levels": 5,
+          "no_levels": 5,
+          "present": true
+        },
+        {
+          "ticker": "KXHIGHTSEA-26OCT02-B72.5",
+          "yes_levels": 5,
+          "no_levels": 5,
+          "present": true
+        },
+        {
+          "ticker": "KXHIGHTSEA-26OCT02-B74.5",
+          "yes_levels": 3,
+          "no_levels": 5,
+          "present": true
+        },
+        {
+          "ticker": "KXHIGHTSEA-26OCT02-T75",
+          "yes_levels": 1,
+          "no_levels": 5,
+          "present": true
+        }
+      ],
+      "all_siblings_active_at_observation": true,
+      "candidate_0900_within_scheduled_open_close": true,
+      "open_times_utc": [
+        "2026-10-01T14:00:00Z"
+      ],
+      "close_times_utc": [
+        "2026-10-03T08:00:00Z"
+      ]
+    }
+  }
+}

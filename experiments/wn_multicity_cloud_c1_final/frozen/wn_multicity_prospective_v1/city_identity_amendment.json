@@ -1,0 +1,11 @@
+{
+  "record_type": "WN-MULTICITY-D1-PER-CITY-IDENTITY-AMENDMENT-v1",
+  "frozen_protocol_sha256": "56fb3c00eec38286b64e57652dc822145a7fbcbe9d51e52693eb2f16943fd346",
+  "cities": {
+    "boston": {"settlement_source": "The Weather Company", "settlement_product": "TWC Kalshi Domestic Daily Climate relay of NWS Daily Climate Report CLIBOS at KBOS", "settlement_window_version": "NWS_CLI_FIXED_LOCAL_STANDARD_DAY_V1", "canonical_integer_fahrenheit_domain": "conditional_exact_integral_only"},
+    "miami": {"settlement_source": "The Weather Company", "settlement_product": "TWC Kalshi Domestic Daily Climate relay of NWS Daily Climate Report CLIMIA at KMIA", "settlement_window_version": "NWS_CLI_FIXED_LOCAL_STANDARD_DAY_V1", "canonical_integer_fahrenheit_domain": "conditional_exact_integral_only"},
+    "denver": {"settlement_source": "The Weather Company", "settlement_product": "TWC Kalshi Domestic Daily Climate relay of NWS Daily Climate Report CLIDEN at KDEN", "settlement_window_version": "NWS_CLI_FIXED_LOCAL_STANDARD_DAY_V1", "canonical_integer_fahrenheit_domain": "conditional_exact_integral_only"},
+    "los_angeles": {"settlement_source": "The Weather Company", "settlement_product": "TWC Kalshi Domestic Daily Climate relay of NWS Daily Climate Report CLILAX at KLAX", "settlement_window_version": "NWS_CLI_FIXED_LOCAL_STANDARD_DAY_V1", "canonical_integer_fahrenheit_domain": "conditional_exact_integral_only"},
+    "seattle": {"settlement_source": "The Weather Company", "settlement_product": "TWC Kalshi Domestic Daily Climate relay of NWS Daily Climate Report CLISEA at KSEA", "settlement_window_version": "NWS_CLI_FIXED_LOCAL_STANDARD_DAY_V1", "canonical_integer_fahrenheit_domain": "conditional_exact_integral_only"}
+  }
+}

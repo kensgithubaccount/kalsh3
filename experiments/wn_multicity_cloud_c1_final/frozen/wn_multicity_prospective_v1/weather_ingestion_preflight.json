@@ -1,0 +1,294 @@
+{
+  "record_type": "WN-MULTICITY-D1-WEATHER-METADATA-PREFLIGHT-v1",
+  "query_scope": "historical image properties only; no forecast bands, pixels, or current-date images",
+  "observational_unit": "CITY_DAY",
+  "city_days_independent": false,
+  "correlation_groups_by_city": {
+    "boston": {
+      "geographic_group": "northeast_us",
+      "weather_regime_group": "northeast_midlatitude"
+    },
+    "miami": {
+      "geographic_group": "southeast_us",
+      "weather_regime_group": "subtropical_atlantic"
+    },
+    "denver": {
+      "geographic_group": "rocky_mountain_us",
+      "weather_regime_group": "rockies_high_plains"
+    },
+    "los_angeles": {
+      "geographic_group": "southern_california",
+      "weather_regime_group": "pacific_coastal_marine"
+    },
+    "seattle": {
+      "geographic_group": "pacific_northwest",
+      "weather_regime_group": "pacific_maritime"
+    }
+  },
+  "dates": [
+    "2026-09-24",
+    "2026-09-25",
+    "2026-09-26",
+    "2026-09-27",
+    "2026-09-28",
+    "2026-09-29",
+    "2026-09-30"
+  ],
+  "cities": {
+    "boston": [
+      {
+        "date": "2026-09-24",
+        "complete": true,
+        "latest_required_ingestion_utc": "2026-09-24T07:36:51.246573Z",
+        "max_lag_minutes": 456.854,
+        "margin_to_0830_minutes": 53.146
+      },
+      {
+        "date": "2026-09-25",
+        "complete": true,
+        "latest_required_ingestion_utc": "2026-09-25T07:17:48.927798Z",
+        "max_lag_minutes": 437.815,
+        "margin_to_0830_minutes": 72.185
+      },
+      {
+        "date": "2026-09-26",
+        "complete": true,
+        "latest_required_ingestion_utc": "2026-09-26T07:24:07.077664Z",
+        "max_lag_minutes": 444.118,
+        "margin_to_0830_minutes": 65.882
+      },
+      {
+        "date": "2026-09-27",
+        "complete": true,
+        "latest_required_ingestion_utc": "2026-09-27T08:22:52.037603Z",
+        "max_lag_minutes": 502.867,
+        "margin_to_0830_minutes": 7.133
+      },
+      {
+        "date": "2026-09-28",
+        "complete": true,
+        "latest_required_ingestion_utc": "2026-09-28T07:42:41.643198Z",
+        "max_lag_minutes": 462.694,
+        "margin_to_0830_minutes": 47.306
+      },
+      {
+        "date": "2026-09-29",
+        "complete": true,
+        "latest_required_ingestion_utc": "2026-09-29T07:27:30.050335Z",
+        "max_lag_minutes": 447.501,
+        "margin_to_0830_minutes": 62.499
+      },
+      {
+        "date": "2026-09-30",
+        "complete": true,
+        "latest_required_ingestion_utc": "2026-09-30T08:00:26.399410Z",
+        "max_lag_minutes": 480.44,
+        "margin_to_0830_minutes": 29.56
+      }
+    ],
+    "miami": [
+      {
+        "date": "2026-09-24",
+        "complete": true,
+        "latest_required_ingestion_utc": "2026-09-24T07:36:51.246573Z",
+        "max_lag_minutes": 456.854,
+        "margin_to_0830_minutes": 53.146
+      },
+      {
+        "date": "2026-09-25",
+        "complete": true,
+        "latest_required_ingestion_utc": "2026-09-25T07:17:48.927798Z",
+        "max_lag_minutes": 437.815,
+        "margin_to_0830_minutes": 72.185
+      },
+      {
+        "date": "2026-09-26",
+        "complete": true,
+        "latest_required_ingestion_utc": "2026-09-26T07:24:07.077664Z",
+        "max_lag_minutes": 444.118,
+        "margin_to_0830_minutes": 65.882
+      },
+      {
+        "date": "2026-09-27",
+        "complete": true,
+        "latest_required_ingestion_utc": "2026-09-27T08:22:52.037603Z",
+        "max_lag_minutes": 502.867,
+        "margin_to_0830_minutes": 7.133
+      },
+      {
+        "date": "2026-09-28",
+        "complete": true,
+        "latest_required_ingestion_utc": "2026-09-28T07:42:41.643198Z",
+        "max_lag_minutes": 462.694,
+        "margin_to_0830_minutes": 47.306
+      },
+      {
+        "date": "2026-09-29",
+        "complete": true,
+        "latest_required_ingestion_utc": "2026-09-29T07:27:30.050335Z",
+        "max_lag_minutes": 447.501,
+        "margin_to_0830_minutes": 62.499
+      },
+      {
+        "date": "2026-09-30",
+        "complete": true,
+        "latest_required_ingestion_utc": "2026-09-30T08:00:26.399410Z",
+        "max_lag_minutes": 480.44,
+        "margin_to_0830_minutes": 29.56
+      }
+    ],
+    "denver": [
+      {
+        "date": "2026-09-24",
+        "complete": true,
+        "latest_required_ingestion_utc": "2026-09-24T07:36:51.246573Z",
+        "max_lag_minutes": 456.854,
+        "margin_to_0830_minutes": 53.146
+      },
+      {
+        "date": "2026-09-25",
+        "complete": true,
+        "latest_required_ingestion_utc": "2026-09-25T07:17:48.927798Z",
+        "max_lag_minutes": 437.815,
+        "margin_to_0830_minutes": 72.185
+      },
+      {
+        "date": "2026-09-26",
+        "complete": true,
+        "latest_required_ingestion_utc": "2026-09-26T07:24:07.077664Z",
+        "max_lag_minutes": 444.118,
+        "margin_to_0830_minutes": 65.882
+      },
+      {
+        "date": "2026-09-27",
+        "complete": true,
+        "latest_required_ingestion_utc": "2026-09-27T08:22:52.037603Z",
+        "max_lag_minutes": 502.867,
+        "margin_to_0830_minutes": 7.133
+      },
+      {
+        "date": "2026-09-28",
+        "complete": true,
+        "latest_required_ingestion_utc": "2026-09-28T07:42:41.643198Z",
+        "max_lag_minutes": 462.694,
+        "margin_to_0830_minutes": 47.306
+      },
+      {
+        "date": "2026-09-29",
+        "complete": true,
+        "latest_required_ingestion_utc": "2026-09-29T07:27:30.050335Z",
+        "max_lag_minutes": 447.501,
+        "margin_to_0830_minutes": 62.499
+      },
+      {
+        "date": "2026-09-30",
+        "complete": true,
+        "latest_required_ingestion_utc": "2026-09-30T08:00:26.399410Z",
+        "max_lag_minutes": 480.44,
+        "margin_to_0830_minutes": 29.56
+      }
+    ],
+    "los_angeles": [
+      {
+        "date": "2026-09-24",
+        "complete": true,
+        "latest_required_ingestion_utc": "2026-09-24T07:36:51.246573Z",
+        "max_lag_minutes": 456.854,
+        "margin_to_0830_minutes": 53.146
+      },
+      {
+        "date": "2026-09-25",
+        "complete": true,
+        "latest_required_ingestion_utc": "2026-09-25T07:17:48.927798Z",
+        "max_lag_minutes": 437.815,
+        "margin_to_0830_minutes": 72.185
+      },
+      {
+        "date": "2026-09-26",
+        "complete": true,
+        "latest_required_ingestion_utc": "2026-09-26T07:24:07.077664Z",
+        "max_lag_minutes": 444.118,
+        "margin_to_0830_minutes": 65.882
+      },
+      {
+        "date": "2026-09-27",
+        "complete": true,
+        "latest_required_ingestion_utc": "2026-09-27T08:22:52.037603Z",
+        "max_lag_minutes": 502.867,
+        "margin_to_0830_minutes": 7.133
+      },
+      {
+        "date": "2026-09-28",
+        "complete": true,
+        "latest_required_ingestion_utc": "2026-09-28T07:42:41.643198Z",
+        "max_lag_minutes": 462.694,
+        "margin_to_0830_minutes": 47.306
+      },
+      {
+        "date": "2026-09-29",
+        "complete": true,
+        "latest_required_ingestion_utc": "2026-09-29T07:27:30.050335Z",
+        "max_lag_minutes": 447.501,
+        "margin_to_0830_minutes": 62.499
+      },
+      {
+        "date": "2026-09-30",
+        "complete": true,
+        "latest_required_ingestion_utc": "2026-09-30T08:00:26.399410Z",
+        "max_lag_minutes": 480.44,
+        "margin_to_0830_minutes": 29.56
+      }
+    ],
+    "seattle": [
+      {
+        "date": "2026-09-24",
+        "complete": true,
+        "latest_required_ingestion_utc": "2026-09-24T07:36:51.246573Z",
+        "max_lag_minutes": 456.854,
+        "margin_to_0830_minutes": 53.146
+      },
+      {
+        "date": "2026-09-25",
+        "complete": true,
+        "latest_required_ingestion_utc": "2026-09-25T07:17:48.927798Z",
+        "max_lag_minutes": 437.815,
+        "margin_to_0830_minutes": 72.185
+      },
+      {
+        "date": "2026-09-26",
+        "complete": true,
+        "latest_required_ingestion_utc": "2026-09-26T07:24:07.077664Z",
+        "max_lag_minutes": 444.118,
+        "margin_to_0830_minutes": 65.882
+      },
+      {
+        "date": "2026-09-27",
+        "complete": true,
+        "latest_required_ingestion_utc": "2026-09-27T08:22:52.037603Z",
+        "max_lag_minutes": 502.867,
+        "margin_to_0830_minutes": 7.133
+      },
+      {
+        "date": "2026-09-28",
+        "complete": true,
+        "latest_required_ingestion_utc": "2026-09-28T07:42:41.643198Z",
+        "max_lag_minutes": 462.694,
+        "margin_to_0830_minutes": 47.306
+      },
+      {
+        "date": "2026-09-29",
+        "complete": true,
+        "latest_required_ingestion_utc": "2026-09-29T07:27:30.050335Z",
+        "max_lag_minutes": 447.501,
+        "margin_to_0830_minutes": 62.499
+      },
+      {
+        "date": "2026-09-30",
+        "complete": true,
+        "latest_required_ingestion_utc": "2026-09-30T08:00:26.399410Z",
+        "max_lag_minutes": 480.44,
+        "margin_to_0830_minutes": 29.56
+      }
+    ]
+  }
+}
