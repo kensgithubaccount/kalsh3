@@ -1,0 +1,25 @@
+{
+  "record_type": "WN-MULTICITY-D1-EVIDENCE-HASHES-v1",
+  "sha256": {
+    "WN-MULTICITY-D1-REPORT.md": "b81aca7ab11514aede605301f816a6e0d8d18b02abd4d2c3d0dbe09291cbd97a",
+    "build_historical_fixture.py": "a88052ceb23f9d5f7cde39fd4bc113d04ef0c570608832765785652288d522f4",
+    "city_identity_amendment.json": "30656641fafaa7c9282a739ba1f64141d4962f77688990898cb09d283bf38e1d",
+    "cloud_design.json": "c7d4f2606405348211537227b4675f33baaf9be7e08f5c48d3a0d50279262381",
+    "decision_time_amendment.json": "5063caab3e12fb69878cdd12b39dab80a671c097908fe9ea6ffbb79fbde28dc1",
+    "forecast_units_amendment.json": "512e587867db8ad4974b034b0f1b7da34665cf9eb8c404328b7b9eb7cf04e88e",
+    "freeze_manifest.json": "6f0029e98dcb0ce8501d1b715b363e6dc6e202d09683c4ecd052a3e42adeb949",
+    "freeze_manifest.sha256": "24e6ce0457f50c3a2d08827c8eb36bc2062be5de5d22445e08e4f4734c4e503d",
+    "grid_identity_amendment.json": "ed98673d06e0bf21c8f9df9e36e7394bd07c8d524f8db526d734a6f2bdd1653a",
+    "historical_point_fixture_20260927.json": "d50f77db81b48bf880c8ed441c242b37636f8364b134ddd7d2cb5ff05f738355",
+    "independent_review.json": "8498f5c3e5d5437854cd4e06812a15a4d9d8d494ced14ffd8d5b5fa6c8ac4d65",
+    "market_timing_preflight.json": "61edd3ab8297ee62e9aa519fdfbee1fdf1fe49deeab635152d208fc8436306d6",
+    "policy.py": "9ec209c032b3d5ec06db28f316d4ae397854b4530dd12c0c227b427bde44f5e3",
+    "preflight_markets.py": "c352f86c693dca7598aca9d898bb8fc406e1581a6b0cdc835c1cea5e923c5985",
+    "preflight_metadata.py": "ee58e20c869ee741db5627460c7efb321538b5a6068571473829cc875cdbfeb7",
+    "protocol.json": "56fb3c00eec38286b64e57652dc822145a7fbcbe9d51e52693eb2f16943fd346",
+    "protocol.sha256": "283e33d0f3363283f8fe7906ea9dde416095e2eb10eb747620ad22a1ca4c603c",
+    "settlement_domain_amendment.json": "ba981f0753e4bdfc1a89bc4fbd170ed03ada5ef441ebe13c4be2b10e36175261",
+    "test_policy.py": "b1d43bf194de22d4773ca07d1f4691e2a4ec4a73e5b820c17af1bc496405881c",
+    "weather_ingestion_preflight.json": "e31f7d22ad094d5dc5b91082f923d098c838f1f1111a5b6bca6323b71b245179"
+  }
+}
