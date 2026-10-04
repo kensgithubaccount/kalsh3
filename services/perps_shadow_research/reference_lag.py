@@ -38,6 +38,8 @@ class HorizonStatus(StrEnum):
     STALE_BASELINE_BOOK = "STALE_BASELINE_BOOK"
     STALE_HORIZON_BOOK = "STALE_HORIZON_BOOK"
     STREAM_BOUNDARY_WITHIN_HORIZON = "STREAM_BOUNDARY_WITHIN_HORIZON"
+    NO_CONTINUITY_WITNESS = "NO_CONTINUITY_WITNESS"
+    SEQUENCE_GAP = "SEQUENCE_GAP"
 
 
 @dataclass(frozen=True, slots=True)
@@ -136,6 +138,8 @@ class ReferenceLagMeasurement:
     baseline_available_at: datetime | None
     horizon_cutoff_at: datetime
     horizon_book_available_at: datetime | None
+    continuity_witness_evidence_id: str | None
+    continuity_witness_available_at: datetime | None
     bid_change: Decimal | None
     ask_change: Decimal | None
     midpoint_change: Decimal | None
@@ -153,8 +157,12 @@ class ReferenceLagMeasurement:
                 or self.horizon_book_evidence_id is None
                 or self.baseline_available_at is None
                 or self.horizon_book_available_at is None
+                or self.continuity_witness_evidence_id is None
+                or self.continuity_witness_available_at is None
             ):
-                raise ShadowResearchError("measured lag row requires both book identities")
+                raise ShadowResearchError(
+                    "measured lag row requires baseline, horizon, and continuity witness identities"
+                )
         elif any(
             value is not None
             for value in (
@@ -285,21 +293,49 @@ def _abstention(
     *,
     baseline: PerpsBookEvidenceObservation | None = None,
     horizon: PerpsBookEvidenceObservation | None = None,
+    witness: PerpsBookEvidenceObservation | None = None,
 ) -> ReferenceLagMeasurement:
     return ReferenceLagMeasurement(
-        impulse.impulse_id,
-        impulse.ticker,
-        horizon_ms,
-        status,
-        None if baseline is None else baseline.evidence_id,
-        None if horizon is None else horizon.evidence_id,
-        None if baseline is None else baseline.available_at,
-        cutoff,
-        None if horizon is None else horizon.available_at,
-        None,
-        None,
-        None,
-        None,
+        impulse_id=impulse.impulse_id,
+        ticker=impulse.ticker,
+        horizon_ms=horizon_ms,
+        status=status,
+        baseline_book_evidence_id=None if baseline is None else baseline.evidence_id,
+        horizon_book_evidence_id=None if horizon is None else horizon.evidence_id,
+        baseline_available_at=None if baseline is None else baseline.available_at,
+        horizon_cutoff_at=cutoff,
+        horizon_book_available_at=None if horizon is None else horizon.available_at,
+        continuity_witness_evidence_id=None if witness is None else witness.evidence_id,
+        continuity_witness_available_at=None if witness is None else witness.available_at,
+        bid_change=None,
+        ask_change=None,
+        midpoint_change=None,
+        midpoint_change_bps=None,
+    )
+
+
+def _has_contiguous_sequence(
+    material: tuple[PerpsBookEvidenceObservation, ...],
+    *,
+    baseline: PerpsBookEvidenceObservation,
+    witness: PerpsBookEvidenceObservation,
+) -> bool:
+    stream = sorted(
+        (
+            item
+            for item in material
+            if item.connection_epoch == baseline.connection_epoch
+            and item.sid == baseline.sid
+            and baseline.sequence <= item.sequence <= witness.sequence
+        ),
+        key=lambda item: item.sequence,
+    )
+    expected = list(range(baseline.sequence, witness.sequence + 1))
+    if [item.sequence for item in stream] != expected:
+        return False
+    return all(
+        earlier.available_at <= later.available_at
+        for earlier, later in zip(stream, stream[1:], strict=False)
     )
 
 
@@ -309,7 +345,7 @@ def measure_reference_lag_horizon(
     *,
     horizon_ms: int,
 ) -> ReferenceLagMeasurement:
-    """Measure quote repricing at one frozen horizon without constructing a trade."""
+    """Measure quote repricing only when stream continuity through the horizon is provable."""
     if horizon_ms not in PHASE0_HORIZONS_MS:
         raise ShadowResearchError("horizon is outside frozen Phase-0 grid")
     material = _candidate_books(impulse, books)
@@ -377,6 +413,51 @@ def measure_reference_lag_horizon(
     if horizon.sequence < baseline.sequence:
         raise ShadowResearchError("book sequence regressed within one stream")
 
+    later_boundaries = [
+        item
+        for item in material
+        if item.available_at > cutoff
+        and (
+            item.connection_epoch != impulse.connection_epoch
+            or (item.connection_epoch == impulse.connection_epoch and item.sid != baseline.sid)
+        )
+    ]
+    same_stream_after = [
+        item
+        for item in material
+        if item.connection_epoch == impulse.connection_epoch
+        and item.sid == baseline.sid
+        and item.available_at > cutoff
+    ]
+    witness = same_stream_after[0] if same_stream_after else None
+    first_boundary = later_boundaries[0] if later_boundaries else None
+    if witness is None or (
+        first_boundary is not None and first_boundary.available_at <= witness.available_at
+    ):
+        return _abstention(
+            impulse,
+            horizon_ms,
+            HorizonStatus.NO_CONTINUITY_WITNESS,
+            cutoff,
+            baseline=baseline,
+            horizon=horizon,
+            witness=first_boundary,
+        )
+    if witness.sequence <= horizon.sequence or not _has_contiguous_sequence(
+        material,
+        baseline=baseline,
+        witness=witness,
+    ):
+        return _abstention(
+            impulse,
+            horizon_ms,
+            HorizonStatus.SEQUENCE_GAP,
+            cutoff,
+            baseline=baseline,
+            horizon=horizon,
+            witness=witness,
+        )
+
     bid_change = (
         None
         if baseline.best_bid is None or horizon.best_bid is None
@@ -398,19 +479,21 @@ def measure_reference_lag_horizon(
         else midpoint_change / baseline_mid * Decimal("10000")
     )
     return ReferenceLagMeasurement(
-        impulse.impulse_id,
-        impulse.ticker,
-        horizon_ms,
-        HorizonStatus.MEASURED,
-        baseline.evidence_id,
-        horizon.evidence_id,
-        baseline.available_at,
-        cutoff,
-        horizon.available_at,
-        bid_change,
-        ask_change,
-        midpoint_change,
-        midpoint_change_bps,
+        impulse_id=impulse.impulse_id,
+        ticker=impulse.ticker,
+        horizon_ms=horizon_ms,
+        status=HorizonStatus.MEASURED,
+        baseline_book_evidence_id=baseline.evidence_id,
+        horizon_book_evidence_id=horizon.evidence_id,
+        baseline_available_at=baseline.available_at,
+        horizon_cutoff_at=cutoff,
+        horizon_book_available_at=horizon.available_at,
+        continuity_witness_evidence_id=witness.evidence_id,
+        continuity_witness_available_at=witness.available_at,
+        bid_change=bid_change,
+        ask_change=ask_change,
+        midpoint_change=midpoint_change,
+        midpoint_change_bps=midpoint_change_bps,
     )
 
 
