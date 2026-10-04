@@ -5,7 +5,7 @@ Status: **FROZEN BEFORE FIRST PROSPECTIVE SESSION / READ-ONLY / DISARMED**
 Frozen on: 2026-10-04
 
 Protocol SHA-256:
-`74d653afaf2e2b7b830814e99f5fd7dca12cb69b1a025987c680574c3074a1ba`
+`1a98970c0ff0b39b92b435b4d9c7f717a6c861ef20cdbcf708a781f16e6abeb0`
 
 This is the first untouched prospective mechanism slice after canonical PR #173.
 It tests only whether market-bound reference-price movement is followed by
@@ -15,9 +15,9 @@ same-direction Kalshi quote repricing. It does not test a tradable strategy.
 
 Environment: **production read-only**
 
-Ticker: **BTCPERP only**
+Ticker: **KXBTCPERP only**
 
-There is no ticker substitution. If BTCPERP is unavailable, closed, not
+There is no ticker substitution. If KXBTCPERP is unavailable, closed, not
 entitled, schema-incompatible, or lacks usable reference evidence, the affected
 session is FAILED/MISSING. Another market may not be substituted after seeing
 that result.

@@ -24,7 +24,7 @@ from .reference_lag import HorizonStatus, ReferenceImpulse, ReferenceLagMeasurem
 PROTOCOL_RECORD_TYPE = "PERPS-REFERENCE-LAG-P0-PROSPECTIVE-PROTOCOL-v1"
 PROTOCOL_STATUS = "FROZEN_BEFORE_FIRST_PROSPECTIVE_SESSION"
 ENVIRONMENT = "production"
-TICKER = "BTCPERP"
+TICKER = "KXBTCPERP"
 NO_SUBSTITUTION = True
 SESSION_DURATION_SECONDS = 60
 SESSION_START_LATE_TOLERANCE_SECONDS = 300
@@ -155,7 +155,7 @@ def protocol_sha256() -> str:
     return hashlib.sha256(encoded).hexdigest()
 
 
-PROTOCOL_SHA256 = "74d653afaf2e2b7b830814e99f5fd7dca12cb69b1a025987c680574c3074a1ba"
+PROTOCOL_SHA256 = "1a98970c0ff0b39b92b435b4d9c7f717a6c861ef20cdbcf708a781f16e6abeb0"
 
 
 def expected_session_ids() -> tuple[str, ...]:

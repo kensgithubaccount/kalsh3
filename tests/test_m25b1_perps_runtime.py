@@ -158,6 +158,29 @@ def test_offline_runtime_snapshot_delta_ticker_and_separate_tables(tmp_path: Pat
     assert state.production_influence == first.production_influence == Decimal("0")
 
 
+def test_null_market_version_persists_in_fresh_readonly_evidence_store(tmp_path: Path) -> None:
+    current_market = market(market_version=None)
+    store = PerpsEvidenceStore(tmp_path / "null-version.sqlite3")
+    assert store.append_metadata(current_market)
+    runtime = OfflinePerpsEvidenceRuntime(
+        current_market,
+        store,
+        ScriptedPerpsTransport(),
+        lambda: NOW + timedelta(milliseconds=50),
+        lambda: 500,
+        enabled=True,
+    )
+    epoch = connect(runtime)
+    book = runtime.process(frame(snapshot()), connection_epoch=epoch)
+    state = runtime.process(frame(ticker(), 2), connection_epoch=epoch)
+    assert book is not None and book.market_version is None
+    assert state is not None and state.market_version is None
+    with sqlite3.connect(store.path) as db:
+        assert db.execute("SELECT market_version FROM perps_market_metadata").fetchone() == (None,)
+        assert db.execute("SELECT market_version FROM perps_book_evidence").fetchone() == (None,)
+        assert db.execute("SELECT market_version FROM perps_market_state").fetchone() == (None,)
+
+
 def test_runtime_routes_exact_unsubscribe_ack_to_pending_cleanup(tmp_path: Path) -> None:
     runtime = app(tmp_path)
     epoch = connect(runtime)
