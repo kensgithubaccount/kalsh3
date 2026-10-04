@@ -139,6 +139,8 @@ def build_reference_impulse(
     current: PerpsMarketStateObservation,
 ) -> ReferenceImpulse | None:
     """Build one observed nonzero reference change, or None for no change."""
+    if previous.connection_epoch != current.connection_epoch or previous.sid != current.sid:
+        raise ShadowResearchError("reference observations cross a connection/subscription boundary")
     if (
         previous.ticker != current.ticker
         or previous.exchange_index != current.exchange_index
