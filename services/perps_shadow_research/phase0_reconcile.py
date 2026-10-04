@@ -5,16 +5,21 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import sqlite3
 from dataclasses import dataclass
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
 from .phase0_prospective import (
     PROTOCOL_SHA256,
+    SESSION_DURATION_SECONDS,
+    SESSION_START_LATE_TOLERANCE_SECONDS,
     TICKER,
     CollectionStatus,
     ProspectiveProtocolError,
     expected_session_ids,
+    scheduled_at,
 )
 
 
@@ -91,6 +96,102 @@ def _validate_common(payload: dict[str, Any], session_id: str) -> None:
         raise ProspectiveProtocolError("prospective artifact production influence is not zero")
 
 
+def _parse_utc(value: Any, field: str) -> datetime:
+    if not isinstance(value, str) or not value.endswith("Z"):
+        raise ProspectiveProtocolError(f"{field} must be an exact UTC timestamp")
+    try:
+        parsed = datetime.fromisoformat(value[:-1] + "+00:00")
+    except ValueError as exc:
+        raise ProspectiveProtocolError(f"{field} must be an exact UTC timestamp") from exc
+    return parsed.astimezone(UTC)
+
+
+def _validate_claim(payload: dict[str, Any], session_id: str) -> datetime:
+    _validate_common(payload, session_id)
+    if payload.get("record_type") != "PERPS-REFERENCE-LAG-P0-CLAIM-v1":
+        raise ProspectiveProtocolError("unexpected prospective claim record type")
+    if payload.get("session_duration_seconds") != SESSION_DURATION_SECONDS:
+        raise ProspectiveProtocolError("prospective claim duration mismatch")
+    if payload.get("no_retry") is not True or payload.get("no_backfill") is not True:
+        raise ProspectiveProtocolError("prospective claim retry/backfill flags are invalid")
+    scheduled = scheduled_at(session_id)
+    scheduled_value = _parse_utc(payload.get("scheduled_at_utc"), "scheduled_at_utc")
+    if scheduled_value != scheduled:
+        raise ProspectiveProtocolError("prospective claim schedule mismatch")
+    claimed = _parse_utc(payload.get("claimed_at_utc"), "claimed_at_utc")
+    if claimed < scheduled or claimed >= scheduled + timedelta(
+        seconds=SESSION_START_LATE_TOLERANCE_SECONDS
+    ):
+        raise ProspectiveProtocolError("prospective claim time is outside frozen window")
+    return claimed
+
+
+def _validate_result_receipt(
+    payload: dict[str, Any],
+    session_id: str,
+    *,
+    claimed_at: datetime,
+) -> None:
+    _validate_common(payload, session_id)
+    if payload.get("record_type") != "PERPS-REFERENCE-LAG-P0-RESULT-v1":
+        raise ProspectiveProtocolError("unexpected prospective result record type")
+    if payload.get("session_duration_seconds") != SESSION_DURATION_SECONDS:
+        raise ProspectiveProtocolError("prospective result duration mismatch")
+    if payload.get("no_trade") is not True:
+        raise ProspectiveProtocolError("prospective result must remain no-trade")
+    if _parse_utc(payload.get("scheduled_at_utc"), "scheduled_at_utc") != scheduled_at(session_id):
+        raise ProspectiveProtocolError("prospective result schedule mismatch")
+    if _parse_utc(payload.get("claimed_at_utc"), "claimed_at_utc") != claimed_at:
+        raise ProspectiveProtocolError("prospective result claim time mismatch")
+    started = _parse_utc(payload.get("collection_started_at_utc"), "collection_started_at_utc")
+    ended = _parse_utc(payload.get("collection_ended_at_utc"), "collection_ended_at_utc")
+    if started < claimed_at or ended < started:
+        raise ProspectiveProtocolError("prospective result collection timestamps are invalid")
+
+
+def _validate_sealed_db(path: Path, payload: dict[str, Any]) -> None:
+    try:
+        uri = f"file:{path.resolve()}?mode=ro"
+        with sqlite3.connect(uri, uri=True) as db:
+            metadata = db.execute(
+                "SELECT ticker, market_metadata_hash, perps_contract_hash, production_influence "
+                "FROM perps_market_metadata"
+            ).fetchall()
+            if len(metadata) != 1:
+                raise ProspectiveProtocolError(
+                    "prospective evidence DB must contain exactly one metadata row"
+                )
+            ticker, metadata_hash, contract_hash, influence = metadata[0]
+            if ticker != TICKER or influence != "0":
+                raise ProspectiveProtocolError("prospective evidence DB metadata identity mismatch")
+            if metadata_hash != payload.get("market_metadata_hash"):
+                raise ProspectiveProtocolError("prospective evidence DB metadata hash mismatch")
+            if contract_hash != payload.get("perps_contract_hash"):
+                raise ProspectiveProtocolError("prospective evidence DB contract hash mismatch")
+
+            book_count = db.execute("SELECT COUNT(*) FROM perps_book_evidence").fetchone()[0]
+            state_count = db.execute("SELECT COUNT(*) FROM perps_market_state").fetchone()[0]
+            if book_count != payload.get("book_rows") or state_count != payload.get(
+                "market_state_rows"
+            ):
+                raise ProspectiveProtocolError("prospective evidence DB row-count mismatch")
+
+            bad_book = db.execute(
+                "SELECT COUNT(*) FROM perps_book_evidence "
+                "WHERE ticker <> ? OR market_metadata_hash <> ? OR production_influence <> '0'",
+                (TICKER, metadata_hash),
+            ).fetchone()[0]
+            bad_state = db.execute(
+                "SELECT COUNT(*) FROM perps_market_state "
+                "WHERE ticker <> ? OR market_metadata_hash <> ? OR production_influence <> '0'",
+                (TICKER, metadata_hash),
+            ).fetchone()[0]
+            if bad_book or bad_state:
+                raise ProspectiveProtocolError("prospective evidence DB row identity mismatch")
+    except sqlite3.Error as exc:
+        raise ProspectiveProtocolError("prospective evidence DB structure is invalid") from exc
+
+
 def reconcile_session(root: Path, session_id: str) -> ReconciledSession:
     directory = root / session_id
     if not directory.exists():
@@ -107,21 +208,20 @@ def reconcile_session(root: Path, session_id: str) -> ReconciledSession:
         return ReconciledSession(session_id, CollectionStatus.FAILED, "CLAIM_MISSING", None)
 
     claim_payload = _json(claim)
-    _validate_common(claim_payload, session_id)
+    claimed_at = _validate_claim(claim_payload, session_id)
 
     if result.exists() and failure.exists():
         raise ProspectiveProtocolError("prospective session has both result and failure receipts")
 
     if result.is_file():
         payload = _json(result)
-        _validate_common(payload, session_id)
-        if payload.get("record_type") != "PERPS-REFERENCE-LAG-P0-RESULT-v1":
-            raise ProspectiveProtocolError("unexpected prospective result record type")
+        _validate_result_receipt(payload, session_id, claimed_at=claimed_at)
         expected_sha = payload.get("evidence_db_sha256")
         if not isinstance(expected_sha, str) or len(expected_sha) != 64:
             raise ProspectiveProtocolError("prospective result has invalid evidence DB hash")
         if not evidence.is_file() or _sha256(evidence) != expected_sha:
             raise ProspectiveProtocolError("prospective evidence DB hash mismatch")
+        _validate_sealed_db(evidence, payload)
         return ReconciledSession(
             session_id, CollectionStatus.CAPTURED, "SEALED_RESULT", expected_sha
         )
