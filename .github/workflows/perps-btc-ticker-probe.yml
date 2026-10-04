@@ -22,6 +22,34 @@ jobs:
           import urllib.request
 
           base = "https://external-api.kalshi.com/trade-api/v2/margin/markets/"
+          try:
+              with urllib.request.urlopen(
+                  urllib.request.Request(base.rstrip("/"), method="GET"), timeout=10
+              ) as response:
+                  body = response.read()
+                  print(
+                      f"LIST HTTP {response.status} bytes={len(body)} "
+                      f"sha256={hashlib.sha256(body).hexdigest()}"
+                  )
+                  if response.status == 200:
+                      payload = json.loads(body)
+                      for market in payload.get("markets", []):
+                          ticker = str(market.get("ticker", ""))
+                          title = str(market.get("title", ""))
+                          if "BTC" in ticker.upper() or "BITCOIN" in title.upper():
+                              print(json.dumps({
+                                  "list_ticker": ticker,
+                                  "status": market.get("status"),
+                                  "title": title,
+                                  "market_version": market.get("market_version"),
+                              }, sort_keys=True))
+          except urllib.error.HTTPError as exc:
+              body = exc.read()
+              print(
+                  f"LIST HTTP {exc.code} bytes={len(body)} "
+                  f"sha256={hashlib.sha256(body).hexdigest()}"
+              )
+
           for ticker in ("BTC-PERP", "BTCPERP"):
               req = urllib.request.Request(base + ticker, method="GET")
               try:
