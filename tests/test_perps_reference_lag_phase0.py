@@ -254,17 +254,17 @@ def test_stale_baseline_and_horizon_are_explicit_abstentions() -> None:
     )
     assert stale_horizon.status is HorizonStatus.MEASURED
 
-    very_late_impulse = build_reference_impulse(
-        state(reference="101", source_offset_ms=31_100, available_offset_ms=31_120),
-        state(reference="102", source_offset_ms=32_100, available_offset_ms=32_120),
+    old_but_valid_impulse = build_reference_impulse(
+        state(reference="101", source_offset_ms=30_100, available_offset_ms=30_120),
+        state(reference="102", source_offset_ms=31_100, available_offset_ms=31_120),
     )
-    assert very_late_impulse is not None
+    assert old_but_valid_impulse is not None
     horizon_row = measure_reference_lag_horizon(
-        very_late_impulse,
-        [book(sequence=1, bid="100", ask="101", available_offset_ms=2_000)],
+        old_but_valid_impulse,
+        [book(sequence=1, bid="100", ask="101", available_offset_ms=7_000)],
         horizon_ms=10_000,
     )
-    assert horizon_row.status is HorizonStatus.STALE_BASELINE_BOOK
+    assert horizon_row.status is HorizonStatus.STALE_HORIZON_BOOK
 
 
 def test_book_contract_mismatch_and_unfrozen_horizon_fail_closed() -> None:
