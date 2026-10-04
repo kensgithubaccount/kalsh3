@@ -441,7 +441,6 @@ def measure_reference_lag_horizon(
             cutoff,
             baseline=baseline,
             horizon=horizon,
-            witness=first_boundary,
         )
     if witness.sequence <= horizon.sequence or not _has_contiguous_sequence(
         material,
