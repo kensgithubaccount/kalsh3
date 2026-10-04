@@ -131,9 +131,7 @@ def _sealed_component_bytes(
         "observational_unit": "CITY_DAY",
         "city_days_independent": False,
         "development_only": True,
-        "protocol_sha256": (
-            "56fb3c00eec38286b64e57652dc822145a7fbcbe9d51e52693eb2f16943fd346"
-        ),
+        "protocol_sha256": ("56fb3c00eec38286b64e57652dc822145a7fbcbe9d51e52693eb2f16943fd346"),
         "pre_first_event_amendment_sha256": (
             "b6ce8154d3a3eb4a90e1eefb3cd57b879a818eabee22b8f8c8fe2dcd7614f000"
         ),
