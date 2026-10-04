@@ -10,12 +10,16 @@ Repository and current runtime evidence override stale chat summaries. Experimen
 
 Repository: `kensgithubaccount/kalsh3`
 
-Canonical main:
+Verified canonical main immediately before this state-update PR lands:
 
-- SHA: `694e5adb0104608be5c345f6512bca8356e5efac`
-- tree: `1250b140f0255e40c7e28068230e552e95fa992d`
-- commit: merge of PR #165, Perps edge research and radar admission
+- SHA: `5292e9b062a4103ec4af59a7674e36fbffe74fb1`
+- tree: `66ba32da011b121764f9184cb4af103ccd58bec3`
+- commit: merge of PR #173, refreshed Perps spec authority and reference-lag Phase 0
 - production write authority: OFF
+
+This file itself lands through PR #169 after that verified checkpoint, so a fresh
+session must still verify live `main` before acting rather than treating the SHA
+above as a permanent self-reference.
 
 Recent canonical merges relevant to the active work:
 
@@ -25,6 +29,7 @@ Recent canonical merges relevant to the active work:
 - PR #168: outcome-blind WeatherNext multicity evaluator boundary. It freezes continuous Fahrenheit point-error scoring and explicitly blocks retrospective probability/bucket/P&L reconstruction.
 - PR #164: current Perps API/schema authority constraints.
 - PR #165: Perps edge research and radar admission plan, with market-bound reference-price lead/lag as the first read-only checkpoint.
+- PR #173: first-party Perps spec authority refresh plus offline/read-only reference-lag Phase 0. Temporary probe PR #172 fetched the official Kalshi Perps OpenAPI/AsyncAPI bytes directly from `docs.kalshi.com` and closed without merge. PR #173 then passed all canonical CI gates before merge.
 
 No current repository state establishes a profitable autonomous strategy or authorizes real-money trading.
 
@@ -163,23 +168,70 @@ After the block closes:
 
 Perps remains DISARMED/read-only with `production_influence = 0`.
 
-PR #164 establishes the current schema/authority constraints, including:
+PR #164 establishes the schema/authority constraints and PR #165 establishes the
+research ladder. PR #173 is now canonical and closes the first schema-refresh
+and offline mechanism-harness checkpoint.
 
-- `market_version` as structural identity;
-- `underlying_multiplier` as exact contract/reference normalization metadata;
+### Current first-party spec authority
+
+Temporary probe PR #172 fetched the official specification bytes directly from
+Kalshi on 2026-10-04, then closed without merge:
+
+- Perps OpenAPI URL: `https://docs.kalshi.com/perps_openapi.yaml`
+- OpenAPI SHA-256:
+  `d13cb9c5c18cbb9ab2fe60d173c74511dea627a89321d17f7b0505a88f82aeb0`
+- OpenAPI bytes: 146790
+- Perps AsyncAPI URL: `https://docs.kalshi.com/perps_asyncapi.yaml`
+- AsyncAPI SHA-256:
+  `e5cc0f026b8e306e917860b870e23c9152d0d782c33137d42698f051a9dbe824`
+- AsyncAPI bytes: 38219
+
+The reviewed read-only parser now requires/preserves current structural and
+timing authority including:
+
+- `market_version`;
+- `underlying_multiplier`;
 - optional `asset_class`;
+- optional `product_metadata`;
 - market-bound timestamped `reference_price`;
-- no inference of benchmark identity from ticker/title text.
+- optional `sending_ts_ms`;
+- current documented orderbook update reasons.
 
-PR #165 establishes the research ladder.
+New book/ticker evidence binds the exact AsyncAPI SHA-256 into the append-only
+evidence identity and persistence layer. Market metadata separately retains the
+exact OpenAPI source provenance.
 
-The first falsifiable checkpoint is:
+### Frozen offline Phase 0 mechanism diagnostic
+
+The first falsifiable checkpoint remains:
 
 > market-bound reference-price movement -> Kalshi executable-book repricing
 
-Phase 0 uses the market's own timestamped Margin ticker `reference_price` when present. Because the Margin ticker stream is coalesced to at most one update per market per second, Phase 0 must not claim sub-second benchmark observability.
+The canonical Phase 0 harness is mechanism-only and uses the market's own
+timestamped Margin ticker `reference_price`. It freezes:
 
-A later CF Benchmarks 5 Hz or Pyth-based checkpoint requires a separately reviewed exact market-to-index mapping and timestamp authority before collection/evaluation.
+- every observed nonzero market-bound reference change as an impulse;
+- source movement labels `UP` / `DOWN`, never LONG / SHORT;
+- fixed 1s, 2s, 5s, and 10s horizons;
+- exact previous/current market-state evidence IDs;
+- connection epoch, ticker SID, structural contract identity, and causal source
+  timestamps;
+- exact baseline, horizon, and post-horizon continuity-witness book evidence;
+- contiguous same-stream orderbook sequence proof;
+- explicit abstentions for missing/stale baselines, stream boundaries, missing
+  continuity witnesses, sequence gaps, and non-comparable one-sided quotes.
+
+Because the Margin ticker stream is coalesced to at most one update per market
+per second, Phase 0 makes no sub-second benchmark-observability claim.
+
+Phase 0 contains no probability model, fees, P&L, order construction, live
+collector, alert authority, capital allocation, or production influence. Passing
+this software/mechanism checkpoint does not establish predictive advantage or
+after-cost edge.
+
+A later CF Benchmarks 5 Hz or Pyth-based checkpoint still requires separately
+reviewed exact market-to-index mapping and timestamp authority before any such
+data can enter an evaluation.
 
 No Perps alert, order, capital allocation, or execution authority exists.
 
@@ -217,14 +269,26 @@ Software completion can support these gates but cannot substitute for them.
 
 ## 11. Immediate priority order
 
-1. Leave the October 3-14 WeatherNext collector untouched except for read-only health/reconciliation.
-2. Refresh and hash exact current official Margin OpenAPI/AsyncAPI authority before widening the Perps runtime parser.
-3. Update the read-only Perps parser/evidence model for reviewed `market_version`, `underlying_multiplier`, `asset_class`, and market-bound `reference_price` semantics.
-4. Build an offline/read-only Phase 0 mechanism harness for reference-price movement -> executable-book repricing.
-5. Freeze impulse definitions, timing rules, cooldown/de-duplication, and horizons before any untouched evaluation slice.
-6. After October 14, reconcile the complete WeatherNext block before outcome scoring.
+1. Leave the October 3-14 WeatherNext collector scientifically untouched except
+   for read-only health/reconciliation.
+2. Keep the merged Perps Phase 0 mechanism definition frozen; do not tune
+   impulses, horizons, continuity rules, or abstention semantics on observed
+   results.
+3. Before any untouched Perps evaluation slice, freeze a bounded read-only
+   collection/evaluation protocol: exact markets, collection window, evidence
+   completeness rules, de-duplication/cooldown policy if any, dependence units,
+   missing-data treatment, and pass/kill criteria.
+4. Only then run a narrow read-only Perps collection using the canonical evidence
+   model. Preserve every attempted observation, missing interval, reconnect, and
+   abstention; no orders and no production influence.
+5. Evaluate mechanism evidence first. Do not add probabilities, fees, P&L, or
+   trade simulation unless a later checkpoint explicitly freezes those economic
+   rules before its untouched data.
+6. After October 14, reconcile the complete WeatherNext block before outcome
+   scoring.
 7. Run only the already-frozen continuous WeatherNext evaluator.
-8. Continue, redesign, or kill research lanes based on prespecified evidence; no automatic production promotion.
+8. Continue, redesign, or kill research lanes based on prespecified evidence; no
+   automatic production promotion.
 
 ## 12. Authority
 

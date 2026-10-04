@@ -40,6 +40,9 @@ class LastUpdateReason(StrEnum):
     EXPIRY_CANCEL = "ExpiryCancel"
     TRADE = "Trade"
     POST_ONLY_CROSS_CANCEL = "PostOnlyCrossCancel"
+    CLOSE_CANCEL = "CloseCancel"
+    HALT_CANCEL = "HaltCancel"
+    REDUCE_ONLY_CANCEL = "ReduceOnlyCancel"
 
 
 def _levels(
@@ -159,6 +162,7 @@ class PerpsTickerEvent:
     sid: int
     ticker: str
     ts_ms: int
+    sending_ts_ms: int | None
     price: Decimal
     bid: Decimal
     ask: Decimal
@@ -197,6 +201,10 @@ class PerpsTickerEvent:
         )
         values = {name: decimal(msg.get(name), name) for name in required}
         ts_ms = _integer(msg.get("ts_ms"), "ts_ms", minimum=0)
+        sending_raw = raw.get("sending_ts_ms")
+        sending_ts_ms = (
+            None if sending_raw is None else _integer(sending_raw, "sending_ts_ms", minimum=0)
+        )
 
         def mark(name: str) -> TimestampedPrice | None:
             value = msg.get(name)
@@ -225,6 +233,7 @@ class PerpsTickerEvent:
             sid,
             market.ticker,
             ts_ms,
+            sending_ts_ms,
             values["price"],
             values["bid"],
             values["ask"],
