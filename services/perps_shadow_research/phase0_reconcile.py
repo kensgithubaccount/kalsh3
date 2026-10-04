@@ -126,6 +126,15 @@ def _validate_claim(payload: dict[str, Any], session_id: str) -> datetime:
     return claimed
 
 
+def _validate_failure_receipt(payload: dict[str, Any], session_id: str) -> None:
+    _validate_common(payload, session_id)
+    if payload.get("record_type") != "PERPS-REFERENCE-LAG-P0-FAILURE-v1":
+        raise ProspectiveProtocolError("unexpected prospective failure record type")
+    if payload.get("no_retry") is not True or payload.get("no_backfill") is not True:
+        raise ProspectiveProtocolError("prospective failure retry/backfill flags are invalid")
+    _parse_utc(payload.get("failed_at_utc"), "failed_at_utc")
+
+
 def _validate_result_receipt(
     payload: dict[str, Any],
     session_id: str,
@@ -228,9 +237,7 @@ def reconcile_session(root: Path, session_id: str) -> ReconciledSession:
 
     if failure.is_file():
         payload = _json(failure)
-        _validate_common(payload, session_id)
-        if payload.get("record_type") != "PERPS-REFERENCE-LAG-P0-FAILURE-v1":
-            raise ProspectiveProtocolError("unexpected prospective failure record type")
+        _validate_failure_receipt(payload, session_id)
         expected_sha = payload.get("evidence_db_sha256")
         if expected_sha is not None:
             if not isinstance(expected_sha, str) or len(expected_sha) != 64:
