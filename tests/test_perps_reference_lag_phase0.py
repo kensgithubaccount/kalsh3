@@ -56,12 +56,14 @@ def state(
     source_offset_ms: int,
     available_offset_ms: int,
     market_obj=None,
+    epoch: UUID = EPOCH,
+    sid: int = 8,
 ) -> PerpsMarketStateObservation:
     market_obj = market() if market_obj is None else market_obj
     event = PerpsTickerEvent.parse(
         {
             "type": "ticker",
-            "sid": 8,
+            "sid": sid,
             "sending_ts_ms": NOW_MS + available_offset_ms - 1,
             "msg": {
                 "market_ticker": "BTC-PERP",
@@ -90,7 +92,7 @@ def state(
     return PerpsMarketStateObservation.create(
         event,
         market_obj,
-        EPOCH,
+        epoch,
         available - timedelta(milliseconds=1),
         available,
     )
@@ -103,11 +105,12 @@ def book(
     ask: str,
     available_offset_ms: int,
     epoch: UUID = EPOCH,
+    sid: int = 7,
     market_obj=None,
 ) -> PerpsBookEvidenceObservation:
     market_obj = market() if market_obj is None else market_obj
     event = PerpsBookSnapshotEvent(
-        sid=7,
+        sid=sid,
         sequence=sequence,
         ticker=market_obj.ticker,
         bids=((Decimal(bid), Decimal("2.00")),),
@@ -151,6 +154,11 @@ def test_every_observed_nonzero_market_bound_reference_change_is_an_impulse() ->
     assert impulse.reference_change == Decimal("0.2500")
     assert impulse.reference_change_bps == Decimal("25.0000")
     assert impulse.direction is Direction.LONG
+    assert impulse.previous_market_state_evidence_id == previous.evidence_id
+    assert impulse.current_market_state_evidence_id == current.evidence_id
+    assert impulse.connection_epoch == EPOCH
+    assert impulse.ticker_sid == 8
+    assert impulse.underlying_multiplier == Decimal("1.000000")
     assert impulse.production_influence == 0
 
     unchanged = state(reference="100.2500", source_offset_ms=2_100, available_offset_ms=2_120)
@@ -172,6 +180,14 @@ def test_reference_impulse_fails_closed_across_contract_or_time_boundary() -> No
     nonmonotonic = state(reference="101", source_offset_ms=50, available_offset_ms=1_120)
     with pytest.raises(ShadowResearchError, match="strictly increasing"):
         build_reference_impulse(previous, nonmonotonic)
+
+    impossible_previous = state(
+        reference="100",
+        source_offset_ms=200,
+        available_offset_ms=120,
+    )
+    with pytest.raises(ShadowResearchError, match="after local availability"):
+        build_reference_impulse(impossible_previous, current)
 
 
 def test_reference_impulse_cannot_span_reconnect_or_subscription_change() -> None:
@@ -274,7 +290,7 @@ def test_phase0_grid_measures_quote_repricing_without_pnl() -> None:
     assert not hasattr(rows[0], "order")
 
 
-def test_no_baseline_and_reconnect_are_explicit_abstentions() -> None:
+def test_no_baseline_and_stream_boundaries_are_explicit_abstentions() -> None:
     previous = state(reference="100", source_offset_ms=100, available_offset_ms=120)
     current = state(reference="99", source_offset_ms=1_100, available_offset_ms=1_120)
     impulse = build_reference_impulse(previous, current)
@@ -302,8 +318,25 @@ def test_no_baseline_and_reconnect_are_explicit_abstentions() -> None:
         ],
         horizon_ms=1_000,
     )
-    assert reconnect.status is HorizonStatus.RECONNECT_WITHIN_HORIZON
+    assert reconnect.status is HorizonStatus.STREAM_BOUNDARY_WITHIN_HORIZON
     assert reconnect.midpoint_change is None
+
+    resubscribed = measure_reference_lag_horizon(
+        impulse,
+        [
+            book(sequence=1, bid="100", ask="101", available_offset_ms=1_000),
+            book(
+                sequence=1,
+                bid="99",
+                ask="100",
+                available_offset_ms=1_500,
+                sid=9,
+            ),
+        ],
+        horizon_ms=1_000,
+    )
+    assert resubscribed.status is HorizonStatus.STREAM_BOUNDARY_WITHIN_HORIZON
+    assert resubscribed.midpoint_change is None
 
 
 def test_stale_baseline_and_horizon_are_explicit_abstentions() -> None:
@@ -369,4 +402,21 @@ def test_book_contract_mismatch_and_unfrozen_horizon_fail_closed() -> None:
             impulse,
             [book(sequence=1, bid="100", ask="101", available_offset_ms=1_000)],
             horizon_ms=3_000,
+        )
+
+
+def test_book_sequence_regression_within_same_stream_fails_closed() -> None:
+    previous = state(reference="100", source_offset_ms=100, available_offset_ms=120)
+    current = state(reference="101", source_offset_ms=1_100, available_offset_ms=1_120)
+    impulse = build_reference_impulse(previous, current)
+    assert impulse is not None
+
+    with pytest.raises(ShadowResearchError, match="sequence regressed"):
+        measure_reference_lag_horizon(
+            impulse,
+            [
+                book(sequence=5, bid="100", ask="101", available_offset_ms=1_000),
+                book(sequence=4, bid="100.5", ask="101.5", available_offset_ms=1_500),
+            ],
+            horizon_ms=1_000,
         )
