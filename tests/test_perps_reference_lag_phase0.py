@@ -15,7 +15,10 @@ from services.perps_shadow_research.perps_evidence import (
     PerpsBookEvidenceObservation,
     PerpsMarketStateObservation,
 )
-from services.perps_shadow_research.perps_metadata import parse_perps_market
+from services.perps_shadow_research.perps_metadata import (
+    OFFICIAL_ASYNCAPI_PROVENANCE,
+    parse_perps_market,
+)
 from services.perps_shadow_research.perps_orderbook import PerpsBookState, PerpsBookView
 from services.perps_shadow_research.reference_lag import (
     MAX_BOOK_AGE_MS,
@@ -159,6 +162,8 @@ def test_every_observed_nonzero_market_bound_reference_change_is_an_impulse() ->
     assert impulse.connection_epoch == EPOCH
     assert impulse.ticker_sid == 8
     assert impulse.underlying_multiplier == Decimal("1.000000")
+    assert previous.asyncapi_sha256 == OFFICIAL_ASYNCAPI_PROVENANCE.sha256
+    assert current.asyncapi_sha256 == OFFICIAL_ASYNCAPI_PROVENANCE.sha256
     assert impulse.production_influence == 0
 
     unchanged = state(reference="100.2500", source_offset_ms=2_100, available_offset_ms=2_120)
@@ -241,6 +246,7 @@ def test_reference_impulse_cannot_span_reconnect_or_subscription_change() -> Non
             connection_epoch=current.connection_epoch,
             sid=9,
             source_fingerprint=current.source_fingerprint,
+            asyncapi_sha256=current.asyncapi_sha256,
             ticker_ts_ms=current.ticker_ts_ms,
             sending_ts_ms=current.sending_ts_ms,
             received_at=current.received_at,
