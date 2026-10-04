@@ -12,11 +12,11 @@ from __future__ import annotations
 
 import hashlib
 import json
+from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from decimal import Decimal
 from enum import StrEnum
-from typing import Iterable, Mapping
 
 from .domain import ShadowResearchError
 from .reference_lag import HorizonStatus, ReferenceImpulse, ReferenceLagMeasurement, ReferenceMove
@@ -241,7 +241,9 @@ def evaluate_prospective_sessions(
     if len(by_id) != len(material):
         raise ProspectiveProtocolError("duplicate prospective session summary")
     if set(by_id) != set(expected_session_ids()):
-        raise ProspectiveProtocolError("evaluation must account for every frozen session exactly once")
+        raise ProspectiveProtocolError(
+            "evaluation must account for every frozen session exactly once"
+        )
 
     ordered = tuple(by_id[session_id] for session_id in expected_session_ids())
     captured = sum(item.collection_status is CollectionStatus.CAPTURED for item in ordered)
@@ -288,7 +290,10 @@ def evaluate_prospective_sessions(
     else:
         primary_cluster_mean = confirmatory_cluster_mean = positive_fraction = None
 
-    if len(eligible) < MIN_ELIGIBLE_SESSIONS or primary_count < MIN_PRIMARY_MEASURED_MIDPOINT_IMPULSES:
+    if (
+        len(eligible) < MIN_ELIGIBLE_SESSIONS
+        or primary_count < MIN_PRIMARY_MEASURED_MIDPOINT_IMPULSES
+    ):
         decision = Phase0Decision.INCONCLUSIVE_INSUFFICIENT
     elif (
         primary_cluster_mean is not None
