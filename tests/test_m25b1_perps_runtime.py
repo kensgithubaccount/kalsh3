@@ -158,8 +158,19 @@ def test_offline_runtime_snapshot_delta_ticker_and_separate_tables(tmp_path: Pat
     assert state.production_influence == first.production_influence == Decimal("0")
 
 
-def test_null_market_version_persists_in_fresh_readonly_evidence_store(tmp_path: Path) -> None:
-    current_market = market(market_version=None)
+def test_missing_market_version_persists_in_fresh_readonly_evidence_store(tmp_path: Path) -> None:
+    raw: dict[str, object] = {
+        "ticker": "KXBTCPERP",
+        "status": "active",
+        "title": "0.0001 BTC",
+        "exchange_index": 0,
+        "contract_size": "0.000100",
+        "underlying_multiplier": "1.000000",
+        "tick_size": "0.0001",
+        "fractional_trading_enabled": True,
+        "schedule": None,
+    }
+    current_market = parse_perps_market(raw, observed_at=NOW)
     store = PerpsEvidenceStore(tmp_path / "null-version.sqlite3")
     assert store.append_metadata(current_market)
     runtime = OfflinePerpsEvidenceRuntime(
