@@ -193,8 +193,7 @@ class ReferenceLagMeasurement:
             if self.continuity_witness_available_at <= self.horizon_cutoff_at:
                 raise ShadowResearchError("continuity witness must be available after cutoff")
             if all(
-                value is None
-                for value in (self.bid_change, self.ask_change, self.midpoint_change)
+                value is None for value in (self.bid_change, self.ask_change, self.midpoint_change)
             ):
                 raise ShadowResearchError("measured lag row requires a comparable quote")
         elif any(
