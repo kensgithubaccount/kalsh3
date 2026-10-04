@@ -40,6 +40,7 @@ class HorizonStatus(StrEnum):
     STREAM_BOUNDARY_WITHIN_HORIZON = "STREAM_BOUNDARY_WITHIN_HORIZON"
     NO_CONTINUITY_WITNESS = "NO_CONTINUITY_WITNESS"
     SEQUENCE_GAP = "SEQUENCE_GAP"
+    NO_COMPARABLE_QUOTE = "NO_COMPARABLE_QUOTE"
 
 
 @dataclass(frozen=True, slots=True)
@@ -151,6 +152,29 @@ class ReferenceLagMeasurement:
             raise ShadowResearchError("horizon is outside frozen Phase-0 grid")
         if self.production_influence != 0:
             raise ShadowResearchError("reference-lag measurement cannot have production influence")
+        if self.horizon_cutoff_at.tzinfo is None or self.horizon_cutoff_at.utcoffset() is None:
+            raise ShadowResearchError("horizon cutoff must be timezone-aware")
+        object.__setattr__(self, "horizon_cutoff_at", self.horizon_cutoff_at.astimezone(UTC))
+        for name in (
+            "baseline_book_evidence_id",
+            "horizon_book_evidence_id",
+            "continuity_witness_evidence_id",
+        ):
+            value = getattr(self, name)
+            if value is not None and (
+                len(value) != 64 or any(char not in "0123456789abcdef" for char in value)
+            ):
+                raise ShadowResearchError(f"{name} must be SHA-256 when present")
+        for name in (
+            "baseline_available_at",
+            "horizon_book_available_at",
+            "continuity_witness_available_at",
+        ):
+            value = getattr(self, name)
+            if value is not None:
+                if value.tzinfo is None or value.utcoffset() is None:
+                    raise ShadowResearchError(f"{name} must be timezone-aware")
+                object.__setattr__(self, name, value.astimezone(UTC))
         if self.status is HorizonStatus.MEASURED:
             if (
                 self.baseline_book_evidence_id is None
@@ -163,6 +187,15 @@ class ReferenceLagMeasurement:
                 raise ShadowResearchError(
                     "measured lag row requires baseline, horizon, and continuity witness identities"
                 )
+            if self.horizon_book_available_at > self.horizon_cutoff_at:
+                raise ShadowResearchError("measured horizon book must be available by cutoff")
+            if self.continuity_witness_available_at <= self.horizon_cutoff_at:
+                raise ShadowResearchError("continuity witness must be available after cutoff")
+            if all(
+                value is None
+                for value in (self.bid_change, self.ask_change, self.midpoint_change)
+            ):
+                raise ShadowResearchError("measured lag row requires a comparable quote")
         elif any(
             value is not None
             for value in (
@@ -477,6 +510,17 @@ def measure_reference_lag_horizon(
         if midpoint_change is None or baseline_mid is None or baseline_mid <= 0
         else midpoint_change / baseline_mid * Decimal("10000")
     )
+    if bid_change is None and ask_change is None and midpoint_change is None:
+        return _abstention(
+            impulse,
+            horizon_ms,
+            HorizonStatus.NO_COMPARABLE_QUOTE,
+            cutoff,
+            baseline=baseline,
+            horizon=horizon,
+            witness=witness,
+        )
+
     return ReferenceLagMeasurement(
         impulse_id=impulse.impulse_id,
         ticker=impulse.ticker,
