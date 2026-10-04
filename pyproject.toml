@@ -45,6 +45,12 @@ markers = ["postgres: PostgreSQL transaction-contract and integration coverage"]
 [tool.ruff]
 target-version = "py312"
 line-length = 100
+# Immutable historical/prospective provenance imports are preserved byte-for-byte.
+# Their original reviewed formatting must not be rewritten by repository tooling.
+extend-exclude = [
+    "experiments/wn_multicity_prospective_v1",
+    "experiments/wn_multicity_cloud_c1_final",
+]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B", "SIM", "S", "ASYNC", "RUF"]
