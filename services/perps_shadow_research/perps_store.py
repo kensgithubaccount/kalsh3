@@ -58,6 +58,7 @@ class PerpsEvidenceStore:
                     sequence INTEGER NOT NULL CHECK(sequence >= 1),
                     source_event_fingerprint TEXT NOT NULL
                         CHECK(length(source_event_fingerprint)=64),
+                    asyncapi_sha256 TEXT NOT NULL CHECK(length(asyncapi_sha256)=64),
                     book_state TEXT NOT NULL CHECK(book_state='CURRENT'),
                     best_bid TEXT, best_ask TEXT, best_bid_size TEXT, best_ask_size TEXT,
                     exchange_at TEXT, received_at TEXT NOT NULL, available_at TEXT NOT NULL,
@@ -80,6 +81,7 @@ class PerpsEvidenceStore:
                     asset_class TEXT,
                     connection_epoch TEXT NOT NULL, sid INTEGER NOT NULL CHECK(sid >= 1),
                     source_fingerprint TEXT NOT NULL CHECK(length(source_fingerprint)=64),
+                    asyncapi_sha256 TEXT NOT NULL CHECK(length(asyncapi_sha256)=64),
                     ticker_ts_ms INTEGER NOT NULL CHECK(ticker_ts_ms >= 0),
                     sending_ts_ms INTEGER CHECK(sending_ts_ms IS NULL OR sending_ts_ms >= 0),
                     received_at TEXT NOT NULL, available_at TEXT NOT NULL,
@@ -179,6 +181,7 @@ class PerpsEvidenceStore:
             item.sid,
             item.sequence,
             item.source_event_fingerprint,
+            item.asyncapi_sha256,
             item.book_state.value,
             self._text(item.best_bid),
             self._text(item.best_ask),
@@ -209,7 +212,7 @@ class PerpsEvidenceStore:
                     raise ShadowResearchError("Perps book source-event logical identity collision")
                 db.execute(
                     "INSERT INTO perps_book_evidence VALUES "
-                    "(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                    "(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                     values,
                 )
         except sqlite3.Error as exc:
@@ -245,6 +248,7 @@ class PerpsEvidenceStore:
             str(item.connection_epoch),
             item.sid,
             item.source_fingerprint,
+            item.asyncapi_sha256,
             item.ticker_ts_ms,
             item.sending_ts_ms,
             self._text(item.received_at),
@@ -291,7 +295,7 @@ class PerpsEvidenceStore:
                     return False
                 db.execute(
                     "INSERT INTO perps_market_state VALUES "
-                    "(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                    "(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                     values,
                 )
         except sqlite3.Error as exc:
