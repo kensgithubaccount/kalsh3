@@ -30,7 +30,9 @@ def market(**changes: object):
         "status": "active",
         "title": "Bitcoin",
         "exchange_index": 4,
+        "market_version": 1,
         "contract_size": "1.000000",
+        "underlying_multiplier": "1.000000",
         "tick_size": "0.50",
         "fractional_trading_enabled": True,
         "schedule": None,
@@ -64,6 +66,7 @@ def ticker() -> dict[str, object]:
     return {
         "type": "ticker",
         "sid": 8,
+        "sending_ts_ms": 1_786_622_400_005,
         "msg": {
             "market_ticker": "BTC-PERP",
             "price": "100.5",
@@ -140,6 +143,9 @@ def test_offline_runtime_snapshot_delta_ticker_and_separate_tables(tmp_path: Pat
     assert first and second and state
     assert first.best_bid == Decimal("100.00") and second.best_bid_size == Decimal("3.00")
     assert second.exchange_at is None and state.funding_rate == Decimal("0.0001")
+    assert state.market_version == 1
+    assert state.underlying_multiplier == Decimal("1.000000")
+    assert state.sending_ts_ms == 1_786_622_400_005
     assert runtime.store.count("perps_market_metadata") == 1
     assert runtime.store.count("perps_book_evidence") == 2
     assert runtime.store.count("perps_market_state") == 1
