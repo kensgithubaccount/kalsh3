@@ -140,18 +140,23 @@ accepted authority.
 
 ## October 4, 2026 live `market_version` divergence
 
-A no-secret production REST probe on 2026-10-04 confirmed the active Bitcoin
-Margin market is `KXBTCPERP`. Its exact market payload contains the required
-`market_version` key with JSON null, despite the reviewed OpenAPI describing
-that field as a required integer.
+No-secret production REST probes on 2026-10-04 confirmed the active Bitcoin
+Margin market is `KXBTCPERP`. A follow-up full-payload parser probe showed that
+the live detail object **omits the `market_version` key entirely**, despite the
+reviewed OpenAPI describing that field as required integer metadata.
 
-For read-only research evidence, the required-key invariant remains intact but
-the value contract is narrowed to **positive int32 or explicit null**. Explicit
-null means UNKNOWN and must be preserved literally. Missing values, booleans,
-strings, zero, negative values, and out-of-range integers remain invalid.
+For read-only research evidence, this one observed absence is represented as
+**UNKNOWN**. The parser accepts a positive int32 when the field is present and
+accepts the field being absent. Explicit JSON null, booleans, strings, zero,
+negative values, and out-of-range integers remain invalid.
 
-UNKNOWN must never be replaced with a guessed or default version. Because null
-participates in the structural contract hash and full metadata hash, a later
-transition to a concrete version is an observable contract-identity change.
-This read-only exception grants no execution authority; any future order-capable
-milestone must separately establish how a concrete exchange version is bound.
+UNKNOWN must never be replaced with a guessed or default version. The recursively
+retained raw snapshot preserves the key's absence, and the structural contract
+hash uses an explicit missing-field sentinel so missing, present-integer, and any
+future schema form cannot collapse to the same contract identity. A later
+appearance or change of a concrete version is therefore detectable.
+
+This is a read-only evidence-authority exception only. Any future order-capable
+milestone must separately establish and bind a concrete exchange version when
+the exchange requires one; UNKNOWN cannot authorize execution.
+
