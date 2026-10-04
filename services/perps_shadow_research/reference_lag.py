@@ -16,6 +16,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from enum import StrEnum
+from uuid import UUID
 
 from .domain import Direction, ShadowResearchError
 from .perps_evidence import PerpsBookEvidenceObservation, PerpsMarketStateObservation
@@ -31,7 +32,7 @@ class HorizonStatus(StrEnum):
     NO_BASELINE_BOOK = "NO_BASELINE_BOOK"
     STALE_BASELINE_BOOK = "STALE_BASELINE_BOOK"
     STALE_HORIZON_BOOK = "STALE_HORIZON_BOOK"
-    RECONNECT_WITHIN_HORIZON = "RECONNECT_WITHIN_HORIZON"
+    STREAM_BOUNDARY_WITHIN_HORIZON = "STREAM_BOUNDARY_WITHIN_HORIZON"
 
 
 @dataclass(frozen=True, slots=True)
@@ -40,7 +41,12 @@ class ReferenceImpulse:
     ticker: str
     exchange_index: int
     market_version: int
+    underlying_multiplier: Decimal
     market_metadata_hash: str
+    previous_market_state_evidence_id: str
+    current_market_state_evidence_id: str
+    connection_epoch: UUID
+    ticker_sid: int
     previous_reference_price: Decimal
     reference_price: Decimal
     previous_source_ts_ms: int
@@ -56,11 +62,29 @@ class ReferenceImpulse:
             raise ShadowResearchError("reference-lag research cannot have production influence")
         if self.reference_price <= 0 or self.previous_reference_price <= 0:
             raise ShadowResearchError("reference prices must be positive")
+        if (
+            not isinstance(self.underlying_multiplier, Decimal)
+            or not self.underlying_multiplier.is_finite()
+            or self.underlying_multiplier <= 0
+        ):
+            raise ShadowResearchError("reference impulse underlying_multiplier must be positive")
         if self.source_ts_ms <= self.previous_source_ts_ms:
             raise ShadowResearchError("reference source timestamps must increase")
         if self.available_at.tzinfo is None or self.available_at.utcoffset() is None:
             raise ShadowResearchError("impulse available_at must be timezone-aware")
         object.__setattr__(self, "available_at", self.available_at.astimezone(UTC))
+        if not isinstance(self.connection_epoch, UUID) or self.connection_epoch.int == 0:
+            raise ShadowResearchError("reference impulse requires a non-zero connection epoch")
+        if type(self.ticker_sid) is not int or self.ticker_sid < 1:
+            raise ShadowResearchError("reference impulse ticker sid must be a positive integer")
+        for evidence_id in (
+            self.previous_market_state_evidence_id,
+            self.current_market_state_evidence_id,
+        ):
+            if len(evidence_id) != 64 or any(
+                char not in "0123456789abcdef" for char in evidence_id
+            ):
+                raise ShadowResearchError("reference impulse evidence IDs must be SHA-256")
         expected_change = self.reference_price - self.previous_reference_price
         if self.reference_change != expected_change or self.reference_change == 0:
             raise ShadowResearchError("reference impulse must preserve a nonzero exact change")
@@ -75,7 +99,12 @@ class ReferenceImpulse:
                 "ticker": self.ticker,
                 "exchange_index": self.exchange_index,
                 "market_version": self.market_version,
+                "underlying_multiplier": self.underlying_multiplier,
                 "market_metadata_hash": self.market_metadata_hash,
+                "previous_market_state_evidence_id": self.previous_market_state_evidence_id,
+                "current_market_state_evidence_id": self.current_market_state_evidence_id,
+                "connection_epoch": self.connection_epoch,
+                "ticker_sid": self.ticker_sid,
                 "previous_reference_price": self.previous_reference_price,
                 "reference_price": self.reference_price,
                 "previous_source_ts_ms": self.previous_source_ts_ms,
@@ -121,17 +150,16 @@ class ReferenceLagMeasurement:
                 or self.horizon_book_available_at is None
             ):
                 raise ShadowResearchError("measured lag row requires both book identities")
-        else:
-            if any(
-                value is not None
-                for value in (
-                    self.bid_change,
-                    self.ask_change,
-                    self.midpoint_change,
-                    self.midpoint_change_bps,
-                )
-            ):
-                raise ShadowResearchError("abstained lag row cannot contain repricing values")
+        elif any(
+            value is not None
+            for value in (
+                self.bid_change,
+                self.ask_change,
+                self.midpoint_change,
+                self.midpoint_change_bps,
+            )
+        ):
+            raise ShadowResearchError("abstained lag row cannot contain repricing values")
 
 
 def build_reference_impulse(
@@ -156,8 +184,9 @@ def build_reference_impulse(
     if previous.reference_price.ts_ms >= current.reference_price.ts_ms:
         raise ShadowResearchError("reference source timestamps must be strictly increasing")
 
-    source_at = datetime.fromtimestamp(current.reference_price.ts_ms / 1000, UTC)
-    if source_at > current.available_at:
+    previous_source_at = datetime.fromtimestamp(previous.reference_price.ts_ms / 1000, UTC)
+    current_source_at = datetime.fromtimestamp(current.reference_price.ts_ms / 1000, UTC)
+    if previous_source_at > previous.available_at or current_source_at > current.available_at:
         raise ShadowResearchError("reference source timestamp is after local availability")
 
     change = current.reference_price.price - previous.reference_price.price
@@ -169,7 +198,12 @@ def build_reference_impulse(
         "ticker": current.ticker,
         "exchange_index": current.exchange_index,
         "market_version": current.market_version,
+        "underlying_multiplier": current.underlying_multiplier,
         "market_metadata_hash": current.market_metadata_hash,
+        "previous_market_state_evidence_id": previous.evidence_id,
+        "current_market_state_evidence_id": current.evidence_id,
+        "connection_epoch": current.connection_epoch,
+        "ticker_sid": current.sid,
         "previous_reference_price": previous.reference_price.price,
         "reference_price": current.reference_price.price,
         "previous_source_ts_ms": previous.reference_price.ts_ms,
@@ -185,7 +219,12 @@ def build_reference_impulse(
         ticker=current.ticker,
         exchange_index=current.exchange_index,
         market_version=current.market_version,
+        underlying_multiplier=current.underlying_multiplier,
         market_metadata_hash=current.market_metadata_hash,
+        previous_market_state_evidence_id=previous.evidence_id,
+        current_market_state_evidence_id=current.evidence_id,
+        connection_epoch=current.connection_epoch,
+        ticker_sid=current.sid,
         previous_reference_price=previous.reference_price.price,
         reference_price=current.reference_price.price,
         previous_source_ts_ms=previous.reference_price.ts_ms,
@@ -213,10 +252,13 @@ def _candidate_books(
             book.ticker != impulse.ticker
             or book.exchange_index != impulse.exchange_index
             or book.market_version != impulse.market_version
+            or book.underlying_multiplier != impulse.underlying_multiplier
             or book.market_metadata_hash != impulse.market_metadata_hash
         ):
             raise ShadowResearchError("book evidence crosses reference-impulse contract identity")
-    return tuple(sorted(material, key=lambda item: (item.available_at, item.evidence_id)))
+    return tuple(
+        sorted(material, key=lambda item: (item.available_at, item.sequence, item.evidence_id))
+    )
 
 
 def _age_ms(earlier: datetime, later: datetime) -> int:
@@ -230,6 +272,32 @@ def _age_ms(earlier: datetime, later: datetime) -> int:
     return milliseconds
 
 
+def _abstention(
+    impulse: ReferenceImpulse,
+    horizon_ms: int,
+    status: HorizonStatus,
+    cutoff: datetime,
+    *,
+    baseline: PerpsBookEvidenceObservation | None = None,
+    horizon: PerpsBookEvidenceObservation | None = None,
+) -> ReferenceLagMeasurement:
+    return ReferenceLagMeasurement(
+        impulse.impulse_id,
+        impulse.ticker,
+        horizon_ms,
+        status,
+        None if baseline is None else baseline.evidence_id,
+        None if horizon is None else horizon.evidence_id,
+        None if baseline is None else baseline.available_at,
+        cutoff,
+        None if horizon is None else horizon.available_at,
+        None,
+        None,
+        None,
+        None,
+    )
+
+
 def measure_reference_lag_horizon(
     impulse: ReferenceImpulse,
     books: Iterable[PerpsBookEvidenceObservation],
@@ -241,75 +309,71 @@ def measure_reference_lag_horizon(
         raise ShadowResearchError("horizon is outside frozen Phase-0 grid")
     material = _candidate_books(impulse, books)
     cutoff = impulse.available_at + timedelta(milliseconds=horizon_ms)
-    baseline_candidates = [item for item in material if item.available_at <= impulse.available_at]
+
+    baseline_candidates = [
+        item
+        for item in material
+        if item.connection_epoch == impulse.connection_epoch
+        and item.available_at <= impulse.available_at
+    ]
     if not baseline_candidates:
-        return ReferenceLagMeasurement(
-            impulse.impulse_id,
-            impulse.ticker,
+        return _abstention(
+            impulse,
             horizon_ms,
             HorizonStatus.NO_BASELINE_BOOK,
-            None,
-            None,
-            None,
             cutoff,
-            None,
-            None,
-            None,
-            None,
-            None,
         )
     baseline = baseline_candidates[-1]
     if _age_ms(baseline.available_at, impulse.available_at) > MAX_BOOK_AGE_MS:
-        return ReferenceLagMeasurement(
-            impulse.impulse_id,
-            impulse.ticker,
+        return _abstention(
+            impulse,
             horizon_ms,
             HorizonStatus.STALE_BASELINE_BOOK,
-            baseline.evidence_id,
-            None,
-            baseline.available_at,
             cutoff,
-            None,
-            None,
-            None,
-            None,
-            None,
+            baseline=baseline,
         )
 
-    horizon_candidates = [item for item in material if item.available_at <= cutoff]
+    boundary_books = [
+        item
+        for item in material
+        if impulse.available_at < item.available_at <= cutoff
+        and (
+            item.connection_epoch != impulse.connection_epoch
+            or (
+                item.connection_epoch == impulse.connection_epoch
+                and item.sid != baseline.sid
+            )
+        )
+    ]
+    if boundary_books:
+        return _abstention(
+            impulse,
+            horizon_ms,
+            HorizonStatus.STREAM_BOUNDARY_WITHIN_HORIZON,
+            cutoff,
+            baseline=baseline,
+            horizon=boundary_books[0],
+        )
+
+    horizon_candidates = [
+        item
+        for item in material
+        if item.connection_epoch == impulse.connection_epoch
+        and item.sid == baseline.sid
+        and item.available_at <= cutoff
+    ]
     horizon = horizon_candidates[-1]
     if _age_ms(horizon.available_at, cutoff) > MAX_BOOK_AGE_MS:
-        return ReferenceLagMeasurement(
-            impulse.impulse_id,
-            impulse.ticker,
+        return _abstention(
+            impulse,
             horizon_ms,
             HorizonStatus.STALE_HORIZON_BOOK,
-            baseline.evidence_id,
-            horizon.evidence_id,
-            baseline.available_at,
             cutoff,
-            horizon.available_at,
-            None,
-            None,
-            None,
-            None,
+            baseline=baseline,
+            horizon=horizon,
         )
-    if horizon.connection_epoch != baseline.connection_epoch:
-        return ReferenceLagMeasurement(
-            impulse.impulse_id,
-            impulse.ticker,
-            horizon_ms,
-            HorizonStatus.RECONNECT_WITHIN_HORIZON,
-            baseline.evidence_id,
-            horizon.evidence_id,
-            baseline.available_at,
-            cutoff,
-            horizon.available_at,
-            None,
-            None,
-            None,
-            None,
-        )
+    if horizon.sequence < baseline.sequence:
+        raise ShadowResearchError("book sequence regressed within one stream")
 
     bid_change = (
         None
