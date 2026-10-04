@@ -61,6 +61,8 @@ class PerpsBookEvidenceObservation:
     update_kind: PerpsUpdateKind
     ticker: str
     exchange_index: int
+    market_version: int
+    underlying_multiplier: Decimal
     connection_epoch: UUID
     sid: int
     sequence: int
@@ -85,6 +87,11 @@ class PerpsBookEvidenceObservation:
         if (
             type(self.exchange_index) is not int
             or self.exchange_index < 0
+            or type(self.market_version) is not int
+            or self.market_version < 1
+            or not isinstance(self.underlying_multiplier, Decimal)
+            or not self.underlying_multiplier.is_finite()
+            or self.underlying_multiplier <= 0
             or type(self.sid) is not int
             or self.sid < 1
             or type(self.sequence) is not int
@@ -147,6 +154,8 @@ class PerpsBookEvidenceObservation:
             else PerpsUpdateKind.DELTA,
             ticker=event.ticker,
             exchange_index=market.exchange_index,
+            market_version=market.market_version,
+            underlying_multiplier=market.underlying_multiplier,
             connection_epoch=epoch,
             sid=event.sid,
             sequence=event.sequence,
@@ -176,10 +185,14 @@ class PerpsMarketStateObservation:
     evidence_id: str
     ticker: str
     exchange_index: int
+    market_version: int
+    underlying_multiplier: Decimal
+    asset_class: str | None
     connection_epoch: UUID
     sid: int
     source_fingerprint: str
     ticker_ts_ms: int
+    sending_ts_ms: int | None
     received_at: datetime
     available_at: datetime
     price: Decimal
@@ -205,12 +218,27 @@ class PerpsMarketStateObservation:
 
     def __post_init__(self) -> None:
         if (
-            type(self.sid) is not int
+            type(self.exchange_index) is not int
+            or self.exchange_index < 0
+            or type(self.market_version) is not int
+            or self.market_version < 1
+            or not isinstance(self.underlying_multiplier, Decimal)
+            or not self.underlying_multiplier.is_finite()
+            or self.underlying_multiplier <= 0
+            or type(self.sid) is not int
             or self.sid < 1
             or type(self.ticker_ts_ms) is not int
             or self.ticker_ts_ms < 0
+            or (
+                self.sending_ts_ms is not None
+                and (type(self.sending_ts_ms) is not int or self.sending_ts_ms < 0)
+            )
         ):
             raise ShadowResearchError("invalid ticker identity")
+        if self.asset_class is not None and (
+            not isinstance(self.asset_class, str) or not self.asset_class
+        ):
+            raise ShadowResearchError("invalid asset_class")
         if not isinstance(self.connection_epoch, UUID) or self.connection_epoch.int == 0:
             raise ShadowResearchError("non-zero ticker epoch required")
         received, available = (
@@ -241,10 +269,14 @@ class PerpsMarketStateObservation:
         values: dict[str, Any] = dict(
             ticker=event.ticker,
             exchange_index=market.exchange_index,
+            market_version=market.market_version,
+            underlying_multiplier=market.underlying_multiplier,
+            asset_class=market.asset_class,
             connection_epoch=epoch,
             sid=event.sid,
             source_fingerprint=perps_ticker_fingerprint(event),
             ticker_ts_ms=event.ts_ms,
+            sending_ts_ms=event.sending_ts_ms,
             received_at=received_at,
             available_at=available_at,
             price=event.price,
