@@ -47,6 +47,7 @@ from .phase0_prospective import (
     SESSION_START_LATE_TOLERANCE_SECONDS,
     TICKER,
     expected_session_ids,
+    protocol_sha256,
     scheduled_at,
 )
 
@@ -213,12 +214,12 @@ async def run_session(
     paths: SessionPaths,
     provider: VerifiedProductionReadCredentialProvider,
     *,
-    now: datetime | None = None,
     http_transport: UrllibMarginHttpTransport | None = None,
     connector: WebSocketConnector = websockets_connector,
-    duration_seconds: float = SESSION_DURATION_SECONDS,
 ) -> dict[str, Any]:
-    invocation = (now or datetime.now(UTC)).astimezone(UTC)
+    if protocol_sha256() != PROTOCOL_SHA256:
+        raise ProspectiveCollectionError("prospective protocol identity mismatch")
+    invocation = datetime.now(UTC)
     claim_session(paths, now=invocation)
 
     if type(provider) is not VerifiedProductionReadCredentialProvider:
@@ -261,7 +262,7 @@ async def run_session(
         signer=signer,
         runtime=runtime,
         connector=connector,
-        duration_seconds=duration_seconds,
+        duration_seconds=SESSION_DURATION_SECONDS,
     )
     health = runtime.health()
     if health.accepted_snapshot_count < 1 or health.accepted_ticker_count < 1:
@@ -284,6 +285,7 @@ async def run_session(
         "collection_started_at_utc": _iso_z(started_at),
         "collection_ended_at_utc": _iso_z(ended_at),
         "ticker": TICKER,
+        "session_duration_seconds": SESSION_DURATION_SECONDS,
         "connection_epoch": epoch,
         "exchange_index": market.exchange_index,
         "market_version": market.market_version,
@@ -354,6 +356,10 @@ def main() -> int:
         print(f"FAILED: {args.session_id}")
         return 2
     except (ShadowResearchError, ProductionCredentialError, ValueError) as exc:
+        _write_failure(paths, exc, now=datetime.now(UTC))
+        print(f"FAILED: {args.session_id}")
+        return 2
+    except Exception as exc:  # noqa: BLE001 - top-level fail-closed evidence boundary
         _write_failure(paths, exc, now=datetime.now(UTC))
         print(f"FAILED: {args.session_id}")
         return 2
