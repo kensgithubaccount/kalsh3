@@ -192,8 +192,13 @@ def test_reference_impulse_fails_closed_across_contract_or_time_boundary() -> No
         source_offset_ms=200,
         available_offset_ms=120,
     )
+    causal_current = state(
+        reference="101",
+        source_offset_ms=1_100,
+        available_offset_ms=1_120,
+    )
     with pytest.raises(ShadowResearchError, match="after local availability"):
-        build_reference_impulse(impossible_previous, current)
+        build_reference_impulse(impossible_previous, causal_current)
 
 
 def test_reference_impulse_cannot_span_reconnect_or_subscription_change() -> None:
