@@ -30,12 +30,15 @@ class PerpsEvidenceStore:
                     market_metadata_hash TEXT PRIMARY KEY,
                     ticker TEXT NOT NULL,
                     exchange_index INTEGER NOT NULL CHECK(exchange_index >= 0),
+                    market_version INTEGER NOT NULL CHECK(market_version >= 1),
                     observed_at TEXT NOT NULL,
                     contract_size TEXT NOT NULL,
+                    underlying_multiplier TEXT NOT NULL,
                     tick_size TEXT NOT NULL,
                     fractional_trading_enabled INTEGER NOT NULL
                         CHECK(fractional_trading_enabled IN (0,1)),
                     perps_contract_hash TEXT NOT NULL,
+                    asset_class TEXT,
                     normalized_snapshot TEXT NOT NULL,
                     source_contract_url TEXT NOT NULL,
                     source_retrieved_on TEXT NOT NULL,
@@ -48,6 +51,8 @@ class PerpsEvidenceStore:
                     update_kind TEXT NOT NULL CHECK(update_kind IN ('SNAPSHOT','DELTA')),
                     ticker TEXT NOT NULL,
                     exchange_index INTEGER NOT NULL CHECK(exchange_index >= 0),
+                    market_version INTEGER NOT NULL CHECK(market_version >= 1),
+                    underlying_multiplier TEXT NOT NULL,
                     connection_epoch TEXT NOT NULL,
                     sid INTEGER NOT NULL CHECK(sid >= 1),
                     sequence INTEGER NOT NULL CHECK(sequence >= 1),
@@ -70,9 +75,13 @@ class PerpsEvidenceStore:
                     evidence_id TEXT PRIMARY KEY,
                     ticker TEXT NOT NULL,
                     exchange_index INTEGER NOT NULL CHECK(exchange_index >= 0),
+                    market_version INTEGER NOT NULL CHECK(market_version >= 1),
+                    underlying_multiplier TEXT NOT NULL,
+                    asset_class TEXT,
                     connection_epoch TEXT NOT NULL, sid INTEGER NOT NULL CHECK(sid >= 1),
                     source_fingerprint TEXT NOT NULL CHECK(length(source_fingerprint)=64),
                     ticker_ts_ms INTEGER NOT NULL CHECK(ticker_ts_ms >= 0),
+                    sending_ts_ms INTEGER CHECK(sending_ts_ms IS NULL OR sending_ts_ms >= 0),
                     received_at TEXT NOT NULL, available_at TEXT NOT NULL,
                     price TEXT NOT NULL, bid TEXT NOT NULL, ask TEXT NOT NULL,
                     bid_size TEXT NOT NULL, ask_size TEXT NOT NULL, last_trade_size TEXT NOT NULL,
@@ -128,11 +137,14 @@ class PerpsEvidenceStore:
             market.market_metadata_hash,
             market.ticker,
             market.exchange_index,
+            market.market_version,
             self._text(market.observed_at),
             self._text(market.contract_size),
+            self._text(market.underlying_multiplier),
             self._text(market.tick_size),
             int(market.fractional_trading_enabled),
             market.perps_contract_hash,
+            market.asset_class,
             snapshot,
             market.source_provenance.source_url,
             market.source_provenance.retrieved_on.isoformat(),
@@ -144,7 +156,7 @@ class PerpsEvidenceStore:
             "perps_market_metadata",
             "market_metadata_hash",
             market.market_metadata_hash,
-            "INSERT INTO perps_market_metadata VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            "INSERT INTO perps_market_metadata VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
             values,
         )
 
@@ -161,6 +173,8 @@ class PerpsEvidenceStore:
             item.update_kind.value,
             item.ticker,
             item.exchange_index,
+            item.market_version,
+            self._text(item.underlying_multiplier),
             str(item.connection_epoch),
             item.sid,
             item.sequence,
@@ -195,7 +209,7 @@ class PerpsEvidenceStore:
                     raise ShadowResearchError("Perps book source-event logical identity collision")
                 db.execute(
                     "INSERT INTO perps_book_evidence VALUES "
-                    "(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                    "(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                     values,
                 )
         except sqlite3.Error as exc:
@@ -225,10 +239,14 @@ class PerpsEvidenceStore:
             item.evidence_id,
             item.ticker,
             item.exchange_index,
+            item.market_version,
+            self._text(item.underlying_multiplier),
+            item.asset_class,
             str(item.connection_epoch),
             item.sid,
             item.source_fingerprint,
             item.ticker_ts_ms,
+            item.sending_ts_ms,
             self._text(item.received_at),
             self._text(item.available_at),
             self._text(item.price),
@@ -273,7 +291,7 @@ class PerpsEvidenceStore:
                     return False
                 db.execute(
                     "INSERT INTO perps_market_state VALUES "
-                    "(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                    "(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                     values,
                 )
         except sqlite3.Error as exc:
