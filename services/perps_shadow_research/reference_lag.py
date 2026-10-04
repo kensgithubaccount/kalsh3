@@ -160,7 +160,7 @@ def build_reference_impulse(
         return None
     bps = change / previous.reference_price.price * Decimal("10000")
     direction = Direction.LONG if change > 0 else Direction.SHORT
-    values = {
+    identity_payload = {
         "ticker": current.ticker,
         "exchange_index": current.exchange_index,
         "market_version": current.market_version,
@@ -175,7 +175,21 @@ def build_reference_impulse(
         "direction": direction,
         "production_influence": PRODUCTION_INFLUENCE,
     }
-    return ReferenceImpulse(impulse_id=canonical_hash(values), **values)
+    return ReferenceImpulse(
+        impulse_id=canonical_hash(identity_payload),
+        ticker=current.ticker,
+        exchange_index=current.exchange_index,
+        market_version=current.market_version,
+        market_metadata_hash=current.market_metadata_hash,
+        previous_reference_price=previous.reference_price.price,
+        reference_price=current.reference_price.price,
+        previous_source_ts_ms=previous.reference_price.ts_ms,
+        source_ts_ms=current.reference_price.ts_ms,
+        available_at=current.available_at,
+        reference_change=change,
+        reference_change_bps=bps,
+        direction=direction,
+    )
 
 
 def _midpoint(book: PerpsBookEvidenceObservation) -> Decimal | None:
