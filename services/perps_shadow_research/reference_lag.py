@@ -22,12 +22,15 @@ from .perps_evidence import PerpsBookEvidenceObservation, PerpsMarketStateObserv
 from .perps_metadata import canonical_hash
 
 PHASE0_HORIZONS_MS = (1_000, 2_000, 5_000, 10_000)
+MAX_BOOK_AGE_MS = 30_000
 PRODUCTION_INFLUENCE = Decimal("0")
 
 
 class HorizonStatus(StrEnum):
     MEASURED = "MEASURED"
     NO_BASELINE_BOOK = "NO_BASELINE_BOOK"
+    STALE_BASELINE_BOOK = "STALE_BASELINE_BOOK"
+    STALE_HORIZON_BOOK = "STALE_HORIZON_BOOK"
     RECONNECT_WITHIN_HORIZON = "RECONNECT_WITHIN_HORIZON"
 
 
@@ -214,6 +217,19 @@ def _candidate_books(
     return tuple(sorted(material, key=lambda item: (item.available_at, item.evidence_id)))
 
 
+def _age_ms(earlier: datetime, later: datetime) -> int:
+    delta = later - earlier
+    microseconds = (
+        (delta.days * 86_400 + delta.seconds) * 1_000_000 + delta.microseconds
+    )
+    if microseconds < 0:
+        raise ShadowResearchError("book availability cannot be after evaluation cutoff")
+    milliseconds, remainder = divmod(microseconds, 1_000)
+    if remainder:
+        return milliseconds + 1
+    return milliseconds
+
+
 def measure_reference_lag_horizon(
     impulse: ReferenceImpulse,
     books: Iterable[PerpsBookEvidenceObservation],
@@ -243,8 +259,41 @@ def measure_reference_lag_horizon(
             None,
         )
     baseline = baseline_candidates[-1]
+    if _age_ms(baseline.available_at, impulse.available_at) > MAX_BOOK_AGE_MS:
+        return ReferenceLagMeasurement(
+            impulse.impulse_id,
+            impulse.ticker,
+            horizon_ms,
+            HorizonStatus.STALE_BASELINE_BOOK,
+            baseline.evidence_id,
+            None,
+            baseline.available_at,
+            cutoff,
+            None,
+            None,
+            None,
+            None,
+            None,
+        )
+
     horizon_candidates = [item for item in material if item.available_at <= cutoff]
     horizon = horizon_candidates[-1]
+    if _age_ms(horizon.available_at, cutoff) > MAX_BOOK_AGE_MS:
+        return ReferenceLagMeasurement(
+            impulse.impulse_id,
+            impulse.ticker,
+            horizon_ms,
+            HorizonStatus.STALE_HORIZON_BOOK,
+            baseline.evidence_id,
+            horizon.evidence_id,
+            baseline.available_at,
+            cutoff,
+            horizon.available_at,
+            None,
+            None,
+            None,
+            None,
+        )
     if horizon.connection_epoch != baseline.connection_epoch:
         return ReferenceLagMeasurement(
             impulse.impulse_id,
