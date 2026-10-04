@@ -18,6 +18,7 @@ from services.perps_shadow_research.perps_evidence import (
 from services.perps_shadow_research.perps_metadata import parse_perps_market
 from services.perps_shadow_research.perps_orderbook import PerpsBookState, PerpsBookView
 from services.perps_shadow_research.reference_lag import (
+    MAX_BOOK_AGE_MS,
     PHASE0_HORIZONS_MS,
     HorizonStatus,
     build_reference_impulse,
@@ -137,8 +138,9 @@ def book(
     )
 
 
-def test_phase0_horizons_are_frozen_to_whole_second_grid() -> None:
+def test_phase0_horizons_and_book_freshness_are_frozen() -> None:
     assert PHASE0_HORIZONS_MS == (1_000, 2_000, 5_000, 10_000)
+    assert MAX_BOOK_AGE_MS == 30_000
 
 
 def test_every_observed_nonzero_market_bound_reference_change_is_an_impulse() -> None:
@@ -225,6 +227,44 @@ def test_no_baseline_and_reconnect_are_explicit_abstentions() -> None:
     )
     assert reconnect.status is HorizonStatus.RECONNECT_WITHIN_HORIZON
     assert reconnect.midpoint_change is None
+
+
+def test_stale_baseline_and_horizon_are_explicit_abstentions() -> None:
+    previous = state(reference="100", source_offset_ms=100, available_offset_ms=40_120)
+    current = state(reference="101", source_offset_ms=41_100, available_offset_ms=41_120)
+    impulse = build_reference_impulse(previous, current)
+    assert impulse is not None
+
+    stale_baseline = measure_reference_lag_horizon(
+        impulse,
+        [book(sequence=1, bid="100", ask="101", available_offset_ms=10_000)],
+        horizon_ms=1_000,
+    )
+    assert stale_baseline.status is HorizonStatus.STALE_BASELINE_BOOK
+    assert stale_baseline.midpoint_change is None
+
+    fresh_previous = state(reference="100", source_offset_ms=100, available_offset_ms=120)
+    fresh_current = state(reference="101", source_offset_ms=1_100, available_offset_ms=1_120)
+    fresh_impulse = build_reference_impulse(fresh_previous, fresh_current)
+    assert fresh_impulse is not None
+    stale_horizon = measure_reference_lag_horizon(
+        fresh_impulse,
+        [book(sequence=1, bid="100", ask="101", available_offset_ms=1_000)],
+        horizon_ms=10_000,
+    )
+    assert stale_horizon.status is HorizonStatus.MEASURED
+
+    very_late_impulse = build_reference_impulse(
+        state(reference="101", source_offset_ms=31_100, available_offset_ms=31_120),
+        state(reference="102", source_offset_ms=32_100, available_offset_ms=32_120),
+    )
+    assert very_late_impulse is not None
+    horizon_row = measure_reference_lag_horizon(
+        very_late_impulse,
+        [book(sequence=1, bid="100", ask="101", available_offset_ms=2_000)],
+        horizon_ms=10_000,
+    )
+    assert horizon_row.status is HorizonStatus.STALE_BASELINE_BOOK
 
 
 def test_book_contract_mismatch_and_unfrozen_horizon_fail_closed() -> None:
