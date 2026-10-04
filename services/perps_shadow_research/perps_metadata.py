@@ -17,7 +17,7 @@ from .domain import ShadowResearchError
 
 PERPS_OPENAPI_URL = "https://docs.kalshi.com/perps_openapi.yaml"
 PERPS_ASYNCAPI_URL = "https://docs.kalshi.com/perps_asyncapi.yaml"
-PARSER_VERSION = "m25b1-v1"
+PARSER_VERSION = "m25b1-v2"
 OFFICIAL_OPENAPI_PROVENANCE: SourceContractProvenance
 
 
@@ -92,8 +92,14 @@ class SourceContractProvenance:
 
 OFFICIAL_OPENAPI_PROVENANCE = SourceContractProvenance(
     PERPS_OPENAPI_URL,
-    date(2026, 8, 13),
-    "af990c0e11353da0f06eaa017738646f70460784f3068a6c2460d51a0f21434b",
+    date(2026, 10, 3),
+    "d13cb9c5c18cbb9ab2fe60d173c74511dea627a89321d17f7b0505a88f82aeb0",
+)
+
+OFFICIAL_ASYNCAPI_PROVENANCE = SourceContractProvenance(
+    PERPS_ASYNCAPI_URL,
+    date(2026, 9, 30),
+    "e5cc0f026b8e306e917860b870e23c9152d0d782c33137d42698f051a9dbe824",
 )
 
 
@@ -129,8 +135,10 @@ class PerpsMarketMetadata:
     ticker: str
     status: str
     title: str
+    market_version: int
     exchange_index: int
     contract_size: Decimal
+    underlying_multiplier: Decimal
     tick_size: Decimal
     fractional_trading_enabled: bool
     schedule: PerpsSchedule | None
@@ -144,6 +152,7 @@ class PerpsMarketMetadata:
     settlement_mark_price: TimestampedPrice | None
     liquidation_mark_price: TimestampedPrice | None
     reference_price: TimestampedPrice | None
+    asset_class: str | None
     volume: Decimal | None
     open_interest: Decimal | None
     normalized_snapshot: Mapping[str, Any]
@@ -155,11 +164,17 @@ class PerpsMarketMetadata:
     def __post_init__(self) -> None:
         if not self.ticker or self.status not in {"inactive", "active", "closed"} or not self.title:
             raise ShadowResearchError("invalid Perps market identity or status")
+        if type(self.market_version) is not int or self.market_version < 1:
+            raise ShadowResearchError("market_version must be an exact integer >= 1")
         # Local fail-closed policy: exchange shards are required to be non-negative.
         if type(self.exchange_index) is not int or self.exchange_index < 0:
             raise ShadowResearchError("exchange_index must be an exact non-negative integer")
-        if self.contract_size <= 0 or self.tick_size <= 0:
-            raise ShadowResearchError("contract_size and tick_size must be positive")
+        if self.contract_size <= 0 or self.underlying_multiplier <= 0 or self.tick_size <= 0:
+            raise ShadowResearchError(
+                "contract_size, underlying_multiplier, and tick_size must be positive"
+            )
+        if self.asset_class is not None and not isinstance(self.asset_class, str):
+            raise ShadowResearchError("asset_class must be a string or null")
         if type(self.fractional_trading_enabled) is not bool:
             raise ShadowResearchError("fractional_trading_enabled must be boolean")
         if self.observed_at.tzinfo is None or self.observed_at.utcoffset() is None:
@@ -220,10 +235,13 @@ def parse_perps_market(
     if not isinstance(raw, Mapping):
         raise ShadowResearchError("Perps market payload must be an object")
     ticker, status, title = (_required(raw, name) for name in ("ticker", "status", "title"))
+    market_version = _required(raw, "market_version")
     exchange_index = _required(raw, "exchange_index")
     fractional = _required(raw, "fractional_trading_enabled")
     if not all(isinstance(value, str) for value in (ticker, status, title)):
         raise ShadowResearchError("ticker, status, and title must be strings")
+    if type(market_version) is not int:
+        raise ShadowResearchError("market_version must be an exact integer")
     if type(exchange_index) is not int:
         raise ShadowResearchError("exchange_index must be an exact integer")
     if type(fractional) is not bool:
@@ -239,12 +257,17 @@ def parse_perps_market(
             _required(schedule_raw, "next_close_ts"),
         )
     contract_size = decimal(_required(raw, "contract_size"), "contract_size")
+    underlying_multiplier = decimal(
+        _required(raw, "underlying_multiplier"), "underlying_multiplier"
+    )
     tick_size = decimal(_required(raw, "tick_size"), "tick_size")
     normalized = canonical_value(raw)
     contract = {
         "ticker": ticker,
+        "market_version": market_version,
         "exchange_index": exchange_index,
         "contract_size": contract_size,
+        "underlying_multiplier": underlying_multiplier,
         "tick_size": tick_size,
         "fractional_trading_enabled": fractional,
     }
@@ -252,8 +275,10 @@ def parse_perps_market(
         ticker=ticker,
         status=status,
         title=title,
+        market_version=market_version,
         exchange_index=exchange_index,
         contract_size=contract_size,
+        underlying_multiplier=underlying_multiplier,
         tick_size=tick_size,
         fractional_trading_enabled=fractional,
         schedule=schedule,
@@ -267,6 +292,7 @@ def parse_perps_market(
         settlement_mark_price=_timestamped(raw, "settlement_mark_price"),
         liquidation_mark_price=_timestamped(raw, "liquidation_mark_price"),
         reference_price=_timestamped(raw, "reference_price"),
+        asset_class=raw.get("asset_class"),
         volume=_optional_decimal(raw, "volume"),
         open_interest=_optional_decimal(raw, "open_interest"),
         normalized_snapshot=_freeze(normalized),
