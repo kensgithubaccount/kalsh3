@@ -17,7 +17,6 @@ import sqlite3
 import time
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
-from decimal import Decimal
 from pathlib import Path
 from typing import Any
 
@@ -125,7 +124,9 @@ def claim_session(paths: SessionPaths, *, now: datetime) -> None:
     try:
         paths.directory.mkdir(parents=True, exist_ok=False)
     except FileExistsError as exc:
-        raise ProspectiveCollectionError("prospective session already claimed; retry forbidden") from exc
+        raise ProspectiveCollectionError(
+            "prospective session already claimed; retry forbidden"
+        ) from exc
     _write_json_exclusive(
         paths.claim,
         {
@@ -192,19 +193,16 @@ async def _collect_full_window(
                 frame = await asyncio.wait_for(transport.receive(), timeout=remaining)
             except TimeoutError:
                 if loop.time() + 0.01 < deadline:
-                    raise ProspectiveCollectionError("prospective websocket timed out early") from None
+                    raise ProspectiveCollectionError(
+                        "prospective websocket timed out early"
+                    ) from None
                 break
             runtime.process(frame, connection_epoch=epoch)
             if runtime.state is PerpsRuntimeState.RECONNECT_REQUIRED:
-                raise ProspectiveCollectionError("prospective stream requires reconnect; retry forbidden")
+                raise ProspectiveCollectionError(
+                    "prospective stream requires reconnect; retry forbidden"
+                )
     finally:
-        protocol = transport.protocol
-        if protocol is not None:
-            for sid in tuple(protocol.subscriptions):
-                try:
-                    await transport.send_protocol_command(protocol.unsubscribe(sid))
-                except Exception:
-                    pass
         runtime.invalidate_live_connection(epoch)
         await transport.close()
     ended_at = datetime.now(UTC)
