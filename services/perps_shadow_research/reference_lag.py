@@ -16,6 +16,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from enum import StrEnum
+from itertools import pairwise
 from uuid import UUID
 
 from .domain import ShadowResearchError
@@ -366,10 +367,7 @@ def _has_contiguous_sequence(
     expected = list(range(baseline.sequence, witness.sequence + 1))
     if [item.sequence for item in stream] != expected:
         return False
-    return all(
-        earlier.available_at <= later.available_at
-        for earlier, later in zip(stream, stream[1:], strict=False)
-    )
+    return all(earlier.available_at <= later.available_at for earlier, later in pairwise(stream))
 
 
 def measure_reference_lag_horizon(
