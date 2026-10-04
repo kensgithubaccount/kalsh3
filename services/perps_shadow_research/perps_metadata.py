@@ -17,7 +17,7 @@ from .domain import ShadowResearchError
 
 PERPS_OPENAPI_URL = "https://docs.kalshi.com/perps_openapi.yaml"
 PERPS_ASYNCAPI_URL = "https://docs.kalshi.com/perps_asyncapi.yaml"
-PARSER_VERSION = "m25b1-v2"
+PARSER_VERSION = "m25b1-v3"
 OFFICIAL_OPENAPI_PROVENANCE: SourceContractProvenance
 
 
@@ -135,7 +135,7 @@ class PerpsMarketMetadata:
     status: str
     title: str
     exchange_index: int
-    market_version: int
+    market_version: int | None
     contract_size: Decimal
     underlying_multiplier: Decimal
     tick_size: Decimal
@@ -167,8 +167,10 @@ class PerpsMarketMetadata:
         # Local fail-closed policy: exchange shards are required to be non-negative.
         if type(self.exchange_index) is not int or self.exchange_index < 0:
             raise ShadowResearchError("exchange_index must be an exact non-negative integer")
-        if type(self.market_version) is not int or not 1 <= self.market_version <= 2_147_483_647:
-            raise ShadowResearchError("market_version must be an exact positive int32")
+        if self.market_version is not None and (
+            type(self.market_version) is not int or not 1 <= self.market_version <= 2_147_483_647
+        ):
+            raise ShadowResearchError("market_version must be null or an exact positive int32")
         if self.contract_size <= 0 or self.underlying_multiplier <= 0 or self.tick_size <= 0:
             raise ShadowResearchError(
                 "contract_size, underlying_multiplier, and tick_size must be positive"
@@ -244,8 +246,8 @@ def parse_perps_market(
         raise ShadowResearchError("ticker, status, and title must be strings")
     if type(exchange_index) is not int:
         raise ShadowResearchError("exchange_index must be an exact integer")
-    if type(market_version) is not int:
-        raise ShadowResearchError("market_version must be an exact integer")
+    if market_version is not None and type(market_version) is not int:
+        raise ShadowResearchError("market_version must be null or an exact integer")
     if type(fractional) is not bool:
         raise ShadowResearchError("fractional_trading_enabled must be boolean")
     schedule_raw = _required(raw, "schedule")

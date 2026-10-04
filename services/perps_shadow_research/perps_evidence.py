@@ -66,7 +66,7 @@ class PerpsBookEvidenceObservation:
     update_kind: PerpsUpdateKind
     ticker: str
     exchange_index: int
-    market_version: int
+    market_version: int | None
     underlying_multiplier: Decimal
     connection_epoch: UUID
     sid: int
@@ -93,8 +93,10 @@ class PerpsBookEvidenceObservation:
         if (
             type(self.exchange_index) is not int
             or self.exchange_index < 0
-            or type(self.market_version) is not int
-            or self.market_version < 1
+            or (
+                self.market_version is not None
+                and (type(self.market_version) is not int or self.market_version < 1)
+            )
             or not isinstance(self.underlying_multiplier, Decimal)
             or not self.underlying_multiplier.is_finite()
             or self.underlying_multiplier <= 0
