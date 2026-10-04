@@ -6,7 +6,7 @@ from uuid import UUID
 
 import pytest
 
-from services.perps_shadow_research.domain import Direction, ShadowResearchError
+from services.perps_shadow_research.domain import ShadowResearchError
 from services.perps_shadow_research.perps_events import (
     PerpsBookSnapshotEvent,
     PerpsTickerEvent,
@@ -24,6 +24,7 @@ from services.perps_shadow_research.reference_lag import (
     MAX_BOOK_AGE_MS,
     PHASE0_HORIZONS_MS,
     HorizonStatus,
+    ReferenceMove,
     build_reference_impulse,
     measure_reference_lag_grid,
     measure_reference_lag_horizon,
@@ -156,7 +157,7 @@ def test_every_observed_nonzero_market_bound_reference_change_is_an_impulse() ->
     assert impulse is not None
     assert impulse.reference_change == Decimal("0.2500")
     assert impulse.reference_change_bps == Decimal("25.0000")
-    assert impulse.direction is Direction.LONG
+    assert impulse.reference_move is ReferenceMove.UP
     assert impulse.previous_market_state_evidence_id == previous.evidence_id
     assert impulse.current_market_state_evidence_id == current.evidence_id
     assert impulse.connection_epoch == EPOCH
