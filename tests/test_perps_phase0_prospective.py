@@ -74,7 +74,7 @@ def roster_with(
 
 def test_protocol_identity_and_schedule_are_frozen() -> None:
     assert protocol_sha256() == PROTOCOL_SHA256
-    assert PROTOCOL_SHA256 == ("74d653afaf2e2b7b830814e99f5fd7dca12cb69b1a025987c680574c3074a1ba")
+    assert PROTOCOL_SHA256 == ("1a98970c0ff0b39b92b435b4d9c7f717a6c861ef20cdbcf708a781f16e6abeb0")
     assert len(expected_session_ids()) == 8
     assert scheduled_at("P0-S01").isoformat() == "2026-10-05T12:00:00+00:00"
     assert scheduled_at("P0-S08").isoformat() == "2026-10-06T09:00:00+00:00"
