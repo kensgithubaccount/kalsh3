@@ -1,0 +1,7 @@
+# WN-MULTICITY-D1 independent design review
+
+Result: **PASS — FIVE-CITY PROSPECTIVE DEVELOPMENT DESIGN READY**. This authorizes preparation of a separate paused multicity Cloud Run job and Scheduler, subject to IAM, credential, task-wiring, and timing canaries before any enablement. It does not authorize prospective acquisition, fitting, or trading.
+
+The design and evidence are in [the separate multicity experiment](../../experiments/wn_multicity_prospective_v1/WN-MULTICITY-D1-REPORT.md). The protocol was frozen and hashed before D1 ingestion/market timing inspection. Five per-city identities and fixed CLI windows, a hash-bound 09:00Z timing amendment, 120 historical 00Z point-hours, seven non-current ingestion dates, and 30 current public market depth endpoints were reviewed. Eight offline tests passed.
+
+An independent adversarial reviewer found and rechecked repairs for exact T/B ladder continuity, Kelvin-to-Fahrenheit conversion, source and station identity, per-artifact correlation fields, component hashes, amendment-derived timing, and injected one-city storage failure. The reviewer found no remaining D1 design blocker. A future build must independently validate the separate cloud IAM, Earth Engine credential mount, five-task mapping, and actual 09:00Z market evidence; no job or scheduler was built or enabled in D1. Chicago's scientific collector and evidence were not edited.

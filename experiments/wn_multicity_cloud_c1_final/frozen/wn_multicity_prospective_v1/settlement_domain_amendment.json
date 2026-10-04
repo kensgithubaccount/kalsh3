@@ -1,0 +1,8 @@
+{
+  "record_type": "WN-MULTICITY-D1-SETTLEMENT-DOMAIN-AMENDMENT-v1",
+  "frozen_protocol_sha256": "56fb3c00eec38286b64e57652dc822145a7fbcbe9d51e52693eb2f16943fd346",
+  "canonical_integer_fahrenheit_domain": "signed integral Fahrenheit values, represented exactly as Decimal with no rounding",
+  "application_rule": "only an exact integral source-reported finalized settlement may be mapped into this conditional integer domain; any non-integral value is unsupported and must fail closed pending new authority review",
+  "evidence_limit": "A0 observed one official CLI integer value per city, but GLOBALTEMPERATURE terms require full source precision and do not establish an unconditional integer-only future domain",
+  "forecast_rule_impact": "none; continuous WeatherNext p50 forecast remains unrounded"
+}

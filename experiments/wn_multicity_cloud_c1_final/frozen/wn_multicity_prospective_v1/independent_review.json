@@ -1,0 +1,30 @@
+{
+  "record_type": "WN-MULTICITY-D1-INDEPENDENT-ADVERSARIAL-REVIEW-v1",
+  "result": "PASS_NO_REMAINING_D1_DESIGN_BLOCKER",
+  "review_scope": [
+    "source and window cross-city contamination",
+    "grid-point identity and floating representation",
+    "exact 24-hour UTC windows and one 00Z initialization",
+    "duplicate claims, no retries, no backfills",
+    "cloud evidence isolation and one-city failure isolation",
+    "accidental Chicago collector mutation",
+    "outcome leakage",
+    "Kelvin-to-Fahrenheit unit handling and market ladder parsing"
+  ],
+  "blockers_found_and_repaired": [
+    "Exact integer-domain T/B ladder strike and ticker continuity now enforced.",
+    "Raw Kelvin p50 maximum and unrounded Fahrenheit conversion now both recorded.",
+    "Per-city TWC/CLI/station/window identities and settlement precision limits are hash-bound.",
+    "09:00Z gate is derived from the hash-bound timing amendment.",
+    "Every prospective city-day claim and evidence object carries correlation labels; packet hashes bind component bytes.",
+    "Cross-city source/rule, nonempty outcome, grid, and injected storage-failure tests now pass."
+  ],
+  "historical_point_canary": "120 actual non-current September 27 p50 point-hours passed; largest geometry delta approximately 1.42e-14 degrees, far below the 1e-6-degree frozen tolerance.",
+  "offline_tests_passed": 8,
+  "remaining_future_build_runtime_gates": [
+    "Separate multicity Cloud Run image, five-task mapping, IAM, dedicated OAuth credential and bucket must be provisioned and canary-validated before enablement.",
+    "Actual decision-time market active state, quotes, depth, and weather ingestion must pass each city-day's runtime gates."
+  ],
+  "chicago_boundary": "No tracked Chicago scientific collector/evidence path appears in the D1 diff; preexisting unrelated A2 edits and untracked experiments limit git-only byte-level attestation.",
+  "scientific_job_built_or_enabled": false
+}

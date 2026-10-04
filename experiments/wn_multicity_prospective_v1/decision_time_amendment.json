@@ -1,0 +1,12 @@
+{
+  "record_type": "WN-MULTICITY-D1-DECISION-TIME-AMENDMENT-v1",
+  "frozen_protocol_sha256": "56fb3c00eec38286b64e57652dc822145a7fbcbe9d51e52693eb2f16943fd346",
+  "reason": "The seven historical 00Z metadata runs include a latest required ingestion at 08:22:52.037603Z on 2026-09-27; 08:30Z leaves 7.133 minutes, below a 30-minute operational margin.",
+  "revised_common_decision_time_utc": "09:00:00Z",
+  "scientific_start_close_exclusive_utc": "09:05:00Z",
+  "minimum_observed_margin_minutes": 37.133,
+  "cities": ["boston", "miami", "denver", "los_angeles", "seattle"],
+  "scope": "prospective development design only; no existing Chicago policy or job changed",
+  "forecast_quality_optimization": false,
+  "live_collection_enabled": false
+}

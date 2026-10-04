@@ -1,0 +1,967 @@
+{
+  "block_date_queried": false,
+  "cities": {
+    "boston": {
+      "all_http_200": true,
+      "event_identity_ok": true,
+      "event_settlement_source_ok": true,
+      "historical_event_ticker": "KXHIGHTBOS-26SEP27",
+      "http": [
+        {
+          "body_bytes": 18135,
+          "path": "/trade-api/v2/events/KXHIGHTBOS-26SEP27",
+          "status": 200
+        },
+        {
+          "body_bytes": 1537,
+          "path": "/trade-api/v2/series/KXHIGHTBOS",
+          "status": 200
+        },
+        {
+          "body_bytes": 2953,
+          "path": "/trade-api/v2/markets/KXHIGHTBOS-26SEP27-B62.5",
+          "status": 200
+        },
+        {
+          "body_bytes": 104,
+          "path": "/trade-api/v2/markets/orderbooks?tickers=KXHIGHTBOS-26SEP27-B62.5",
+          "status": 200
+        },
+        {
+          "body_bytes": 2953,
+          "path": "/trade-api/v2/markets/KXHIGHTBOS-26SEP27-B64.5",
+          "status": 200
+        },
+        {
+          "body_bytes": 104,
+          "path": "/trade-api/v2/markets/orderbooks?tickers=KXHIGHTBOS-26SEP27-B64.5",
+          "status": 200
+        },
+        {
+          "body_bytes": 2951,
+          "path": "/trade-api/v2/markets/KXHIGHTBOS-26SEP27-B66.5",
+          "status": 200
+        },
+        {
+          "body_bytes": 104,
+          "path": "/trade-api/v2/markets/orderbooks?tickers=KXHIGHTBOS-26SEP27-B66.5",
+          "status": 200
+        },
+        {
+          "body_bytes": 2951,
+          "path": "/trade-api/v2/markets/KXHIGHTBOS-26SEP27-B68.5",
+          "status": 200
+        },
+        {
+          "body_bytes": 104,
+          "path": "/trade-api/v2/markets/orderbooks?tickers=KXHIGHTBOS-26SEP27-B68.5",
+          "status": 200
+        },
+        {
+          "body_bytes": 2930,
+          "path": "/trade-api/v2/markets/KXHIGHTBOS-26SEP27-T62",
+          "status": 200
+        },
+        {
+          "body_bytes": 102,
+          "path": "/trade-api/v2/markets/orderbooks?tickers=KXHIGHTBOS-26SEP27-T62",
+          "status": 200
+        },
+        {
+          "body_bytes": 2935,
+          "path": "/trade-api/v2/markets/KXHIGHTBOS-26SEP27-T69",
+          "status": 200
+        },
+        {
+          "body_bytes": 102,
+          "path": "/trade-api/v2/markets/orderbooks?tickers=KXHIGHTBOS-26SEP27-T69",
+          "status": 200
+        }
+      ],
+      "kalshi_host": "external-api.kalshi.com",
+      "market_statuses": [
+        "finalized"
+      ],
+      "outcome_values_recorded": false,
+      "packet_created": false,
+      "pass": true,
+      "request_count": 14,
+      "scientific_claim_created": false,
+      "series_identity_and_source_ok": true,
+      "sibling_count": 6,
+      "sibling_prefix_ok": true,
+      "siblings": [
+        {
+          "bounds_present": true,
+          "cli_rule_text_ok": true,
+          "executability_status_if_evaluated": "ABSTAIN_INSUFFICIENT_EXECUTABLE_MARKET",
+          "market_identity_ok": true,
+          "market_required_fields_present": true,
+          "orderbook_fp_is_object": true,
+          "orderbook_identity_ok": true,
+          "orderbook_side_keys": [
+            "no_dollars",
+            "yes_dollars"
+          ],
+          "status": "finalized",
+          "strike_type": "between",
+          "ticker": "KXHIGHTBOS-26SEP27-B62.5"
+        },
+        {
+          "bounds_present": true,
+          "cli_rule_text_ok": true,
+          "executability_status_if_evaluated": "ABSTAIN_INSUFFICIENT_EXECUTABLE_MARKET",
+          "market_identity_ok": true,
+          "market_required_fields_present": true,
+          "orderbook_fp_is_object": true,
+          "orderbook_identity_ok": true,
+          "orderbook_side_keys": [
+            "no_dollars",
+            "yes_dollars"
+          ],
+          "status": "finalized",
+          "strike_type": "between",
+          "ticker": "KXHIGHTBOS-26SEP27-B64.5"
+        },
+        {
+          "bounds_present": true,
+          "cli_rule_text_ok": true,
+          "executability_status_if_evaluated": "ABSTAIN_INSUFFICIENT_EXECUTABLE_MARKET",
+          "market_identity_ok": true,
+          "market_required_fields_present": true,
+          "orderbook_fp_is_object": true,
+          "orderbook_identity_ok": true,
+          "orderbook_side_keys": [
+            "no_dollars",
+            "yes_dollars"
+          ],
+          "status": "finalized",
+          "strike_type": "between",
+          "ticker": "KXHIGHTBOS-26SEP27-B66.5"
+        },
+        {
+          "bounds_present": true,
+          "cli_rule_text_ok": true,
+          "executability_status_if_evaluated": "ABSTAIN_INSUFFICIENT_EXECUTABLE_MARKET",
+          "market_identity_ok": true,
+          "market_required_fields_present": true,
+          "orderbook_fp_is_object": true,
+          "orderbook_identity_ok": true,
+          "orderbook_side_keys": [
+            "no_dollars",
+            "yes_dollars"
+          ],
+          "status": "finalized",
+          "strike_type": "between",
+          "ticker": "KXHIGHTBOS-26SEP27-B68.5"
+        },
+        {
+          "bounds_present": true,
+          "cli_rule_text_ok": true,
+          "executability_status_if_evaluated": "ABSTAIN_INSUFFICIENT_EXECUTABLE_MARKET",
+          "market_identity_ok": true,
+          "market_required_fields_present": true,
+          "orderbook_fp_is_object": true,
+          "orderbook_identity_ok": true,
+          "orderbook_side_keys": [
+            "no_dollars",
+            "yes_dollars"
+          ],
+          "status": "finalized",
+          "strike_type": "less",
+          "ticker": "KXHIGHTBOS-26SEP27-T62"
+        },
+        {
+          "bounds_present": true,
+          "cli_rule_text_ok": true,
+          "executability_status_if_evaluated": "ABSTAIN_INSUFFICIENT_EXECUTABLE_MARKET",
+          "market_identity_ok": true,
+          "market_required_fields_present": true,
+          "orderbook_fp_is_object": true,
+          "orderbook_identity_ok": true,
+          "orderbook_side_keys": [
+            "no_dollars",
+            "yes_dollars"
+          ],
+          "status": "finalized",
+          "strike_type": "greater",
+          "ticker": "KXHIGHTBOS-26SEP27-T69"
+        }
+      ],
+      "strike_shape_ok": true,
+      "task_index": 0
+    },
+    "denver": {
+      "all_http_200": true,
+      "event_identity_ok": true,
+      "event_settlement_source_ok": true,
+      "historical_event_ticker": "KXHIGHDEN-26SEP27",
+      "http": [
+        {
+          "body_bytes": 18124,
+          "path": "/trade-api/v2/events/KXHIGHDEN-26SEP27",
+          "status": 200
+        },
+        {
+          "body_bytes": 1533,
+          "path": "/trade-api/v2/series/KXHIGHDEN",
+          "status": 200
+        },
+        {
+          "body_bytes": 2951,
+          "path": "/trade-api/v2/markets/KXHIGHDEN-26SEP27-B80.5",
+          "status": 200
+        },
+        {
+          "body_bytes": 103,
+          "path": "/trade-api/v2/markets/orderbooks?tickers=KXHIGHDEN-26SEP27-B80.5",
+          "status": 200
+        },
+        {
+          "body_bytes": 2952,
+          "path": "/trade-api/v2/markets/KXHIGHDEN-26SEP27-B82.5",
+          "status": 200
+        },
+        {
+          "body_bytes": 103,
+          "path": "/trade-api/v2/markets/orderbooks?tickers=KXHIGHDEN-26SEP27-B82.5",
+          "status": 200
+        },
+        {
+          "body_bytes": 2951,
+          "path": "/trade-api/v2/markets/KXHIGHDEN-26SEP27-B84.5",
+          "status": 200
+        },
+        {
+          "body_bytes": 103,
+          "path": "/trade-api/v2/markets/orderbooks?tickers=KXHIGHDEN-26SEP27-B84.5",
+          "status": 200
+        },
+        {
+          "body_bytes": 2950,
+          "path": "/trade-api/v2/markets/KXHIGHDEN-26SEP27-B86.5",
+          "status": 200
+        },
+        {
+          "body_bytes": 103,
+          "path": "/trade-api/v2/markets/orderbooks?tickers=KXHIGHDEN-26SEP27-B86.5",
+          "status": 200
+        },
+        {
+          "body_bytes": 2925,
+          "path": "/trade-api/v2/markets/KXHIGHDEN-26SEP27-T80",
+          "status": 200
+        },
+        {
+          "body_bytes": 101,
+          "path": "/trade-api/v2/markets/orderbooks?tickers=KXHIGHDEN-26SEP27-T80",
+          "status": 200
+        },
+        {
+          "body_bytes": 2935,
+          "path": "/trade-api/v2/markets/KXHIGHDEN-26SEP27-T87",
+          "status": 200
+        },
+        {
+          "body_bytes": 101,
+          "path": "/trade-api/v2/markets/orderbooks?tickers=KXHIGHDEN-26SEP27-T87",
+          "status": 200
+        }
+      ],
+      "kalshi_host": "external-api.kalshi.com",
+      "market_statuses": [
+        "finalized"
+      ],
+      "outcome_values_recorded": false,
+      "packet_created": false,
+      "pass": true,
+      "request_count": 14,
+      "scientific_claim_created": false,
+      "series_identity_and_source_ok": true,
+      "sibling_count": 6,
+      "sibling_prefix_ok": true,
+      "siblings": [
+        {
+          "bounds_present": true,
+          "cli_rule_text_ok": true,
+          "executability_status_if_evaluated": "ABSTAIN_INSUFFICIENT_EXECUTABLE_MARKET",
+          "market_identity_ok": true,
+          "market_required_fields_present": true,
+          "orderbook_fp_is_object": true,
+          "orderbook_identity_ok": true,
+          "orderbook_side_keys": [
+            "no_dollars",
+            "yes_dollars"
+          ],
+          "status": "finalized",
+          "strike_type": "between",
+          "ticker": "KXHIGHDEN-26SEP27-B80.5"
+        },
+        {
+          "bounds_present": true,
+          "cli_rule_text_ok": true,
+          "executability_status_if_evaluated": "ABSTAIN_INSUFFICIENT_EXECUTABLE_MARKET",
+          "market_identity_ok": true,
+          "market_required_fields_present": true,
+          "orderbook_fp_is_object": true,
+          "orderbook_identity_ok": true,
+          "orderbook_side_keys": [
+            "no_dollars",
+            "yes_dollars"
+          ],
+          "status": "finalized",
+          "strike_type": "between",
+          "ticker": "KXHIGHDEN-26SEP27-B82.5"
+        },
+        {
+          "bounds_present": true,
+          "cli_rule_text_ok": true,
+          "executability_status_if_evaluated": "ABSTAIN_INSUFFICIENT_EXECUTABLE_MARKET",
+          "market_identity_ok": true,
+          "market_required_fields_present": true,
+          "orderbook_fp_is_object": true,
+          "orderbook_identity_ok": true,
+          "orderbook_side_keys": [
+            "no_dollars",
+            "yes_dollars"
+          ],
+          "status": "finalized",
+          "strike_type": "between",
+          "ticker": "KXHIGHDEN-26SEP27-B84.5"
+        },
+        {
+          "bounds_present": true,
+          "cli_rule_text_ok": true,
+          "executability_status_if_evaluated": "ABSTAIN_INSUFFICIENT_EXECUTABLE_MARKET",
+          "market_identity_ok": true,
+          "market_required_fields_present": true,
+          "orderbook_fp_is_object": true,
+          "orderbook_identity_ok": true,
+          "orderbook_side_keys": [
+            "no_dollars",
+            "yes_dollars"
+          ],
+          "status": "finalized",
+          "strike_type": "between",
+          "ticker": "KXHIGHDEN-26SEP27-B86.5"
+        },
+        {
+          "bounds_present": true,
+          "cli_rule_text_ok": true,
+          "executability_status_if_evaluated": "ABSTAIN_INSUFFICIENT_EXECUTABLE_MARKET",
+          "market_identity_ok": true,
+          "market_required_fields_present": true,
+          "orderbook_fp_is_object": true,
+          "orderbook_identity_ok": true,
+          "orderbook_side_keys": [
+            "no_dollars",
+            "yes_dollars"
+          ],
+          "status": "finalized",
+          "strike_type": "less",
+          "ticker": "KXHIGHDEN-26SEP27-T80"
+        },
+        {
+          "bounds_present": true,
+          "cli_rule_text_ok": true,
+          "executability_status_if_evaluated": "ABSTAIN_INSUFFICIENT_EXECUTABLE_MARKET",
+          "market_identity_ok": true,
+          "market_required_fields_present": true,
+          "orderbook_fp_is_object": true,
+          "orderbook_identity_ok": true,
+          "orderbook_side_keys": [
+            "no_dollars",
+            "yes_dollars"
+          ],
+          "status": "finalized",
+          "strike_type": "greater",
+          "ticker": "KXHIGHDEN-26SEP27-T87"
+        }
+      ],
+      "strike_shape_ok": true,
+      "task_index": 2
+    },
+    "los_angeles": {
+      "all_http_200": true,
+      "event_identity_ok": true,
+      "event_settlement_source_ok": true,
+      "historical_event_ticker": "KXHIGHLAX-26SEP27",
+      "http": [
+        {
+          "body_bytes": 18173,
+          "path": "/trade-api/v2/events/KXHIGHLAX-26SEP27",
+          "status": 200
+        },
+        {
+          "body_bytes": 1538,
+          "path": "/trade-api/v2/series/KXHIGHLAX",
+          "status": 200
+        },
+        {
+          "body_bytes": 2958,
+          "path": "/trade-api/v2/markets/KXHIGHLAX-26SEP27-B76.5",
+          "status": 200
+        },
+        {
+          "body_bytes": 103,
+          "path": "/trade-api/v2/markets/orderbooks?tickers=KXHIGHLAX-26SEP27-B76.5",
+          "status": 200
+        },
+        {
+          "body_bytes": 2958,
+          "path": "/trade-api/v2/markets/KXHIGHLAX-26SEP27-B78.5",
+          "status": 200
+        },
+        {
+          "body_bytes": 103,
+          "path": "/trade-api/v2/markets/orderbooks?tickers=KXHIGHLAX-26SEP27-B78.5",
+          "status": 200
+        },
+        {
+          "body_bytes": 2958,
+          "path": "/trade-api/v2/markets/KXHIGHLAX-26SEP27-B80.5",
+          "status": 200
+        },
+        {
+          "body_bytes": 103,
+          "path": "/trade-api/v2/markets/orderbooks?tickers=KXHIGHLAX-26SEP27-B80.5",
+          "status": 200
+        },
+        {
+          "body_bytes": 2958,
+          "path": "/trade-api/v2/markets/KXHIGHLAX-26SEP27-B82.5",
+          "status": 200
+        },
+        {
+          "body_bytes": 103,
+          "path": "/trade-api/v2/markets/orderbooks?tickers=KXHIGHLAX-26SEP27-B82.5",
+          "status": 200
+        },
+        {
+          "body_bytes": 2932,
+          "path": "/trade-api/v2/markets/KXHIGHLAX-26SEP27-T76",
+          "status": 200
+        },
+        {
+          "body_bytes": 101,
+          "path": "/trade-api/v2/markets/orderbooks?tickers=KXHIGHLAX-26SEP27-T76",
+          "status": 200
+        },
+        {
+          "body_bytes": 2944,
+          "path": "/trade-api/v2/markets/KXHIGHLAX-26SEP27-T83",
+          "status": 200
+        },
+        {
+          "body_bytes": 101,
+          "path": "/trade-api/v2/markets/orderbooks?tickers=KXHIGHLAX-26SEP27-T83",
+          "status": 200
+        }
+      ],
+      "kalshi_host": "external-api.kalshi.com",
+      "market_statuses": [
+        "finalized"
+      ],
+      "outcome_values_recorded": false,
+      "packet_created": false,
+      "pass": true,
+      "request_count": 14,
+      "scientific_claim_created": false,
+      "series_identity_and_source_ok": true,
+      "sibling_count": 6,
+      "sibling_prefix_ok": true,
+      "siblings": [
+        {
+          "bounds_present": true,
+          "cli_rule_text_ok": true,
+          "executability_status_if_evaluated": "ABSTAIN_INSUFFICIENT_EXECUTABLE_MARKET",
+          "market_identity_ok": true,
+          "market_required_fields_present": true,
+          "orderbook_fp_is_object": true,
+          "orderbook_identity_ok": true,
+          "orderbook_side_keys": [
+            "no_dollars",
+            "yes_dollars"
+          ],
+          "status": "finalized",
+          "strike_type": "between",
+          "ticker": "KXHIGHLAX-26SEP27-B76.5"
+        },
+        {
+          "bounds_present": true,
+          "cli_rule_text_ok": true,
+          "executability_status_if_evaluated": "ABSTAIN_INSUFFICIENT_EXECUTABLE_MARKET",
+          "market_identity_ok": true,
+          "market_required_fields_present": true,
+          "orderbook_fp_is_object": true,
+          "orderbook_identity_ok": true,
+          "orderbook_side_keys": [
+            "no_dollars",
+            "yes_dollars"
+          ],
+          "status": "finalized",
+          "strike_type": "between",
+          "ticker": "KXHIGHLAX-26SEP27-B78.5"
+        },
+        {
+          "bounds_present": true,
+          "cli_rule_text_ok": true,
+          "executability_status_if_evaluated": "ABSTAIN_INSUFFICIENT_EXECUTABLE_MARKET",
+          "market_identity_ok": true,
+          "market_required_fields_present": true,
+          "orderbook_fp_is_object": true,
+          "orderbook_identity_ok": true,
+          "orderbook_side_keys": [
+            "no_dollars",
+            "yes_dollars"
+          ],
+          "status": "finalized",
+          "strike_type": "between",
+          "ticker": "KXHIGHLAX-26SEP27-B80.5"
+        },
+        {
+          "bounds_present": true,
+          "cli_rule_text_ok": true,
+          "executability_status_if_evaluated": "ABSTAIN_INSUFFICIENT_EXECUTABLE_MARKET",
+          "market_identity_ok": true,
+          "market_required_fields_present": true,
+          "orderbook_fp_is_object": true,
+          "orderbook_identity_ok": true,
+          "orderbook_side_keys": [
+            "no_dollars",
+            "yes_dollars"
+          ],
+          "status": "finalized",
+          "strike_type": "between",
+          "ticker": "KXHIGHLAX-26SEP27-B82.5"
+        },
+        {
+          "bounds_present": true,
+          "cli_rule_text_ok": true,
+          "executability_status_if_evaluated": "ABSTAIN_INSUFFICIENT_EXECUTABLE_MARKET",
+          "market_identity_ok": true,
+          "market_required_fields_present": true,
+          "orderbook_fp_is_object": true,
+          "orderbook_identity_ok": true,
+          "orderbook_side_keys": [
+            "no_dollars",
+            "yes_dollars"
+          ],
+          "status": "finalized",
+          "strike_type": "less",
+          "ticker": "KXHIGHLAX-26SEP27-T76"
+        },
+        {
+          "bounds_present": true,
+          "cli_rule_text_ok": true,
+          "executability_status_if_evaluated": "ABSTAIN_INSUFFICIENT_EXECUTABLE_MARKET",
+          "market_identity_ok": true,
+          "market_required_fields_present": true,
+          "orderbook_fp_is_object": true,
+          "orderbook_identity_ok": true,
+          "orderbook_side_keys": [
+            "no_dollars",
+            "yes_dollars"
+          ],
+          "status": "finalized",
+          "strike_type": "greater",
+          "ticker": "KXHIGHLAX-26SEP27-T83"
+        }
+      ],
+      "strike_shape_ok": true,
+      "task_index": 3
+    },
+    "miami": {
+      "all_http_200": true,
+      "event_identity_ok": true,
+      "event_settlement_source_ok": true,
+      "historical_event_ticker": "KXHIGHMIA-26SEP27",
+      "http": [
+        {
+          "body_bytes": 18124,
+          "path": "/trade-api/v2/events/KXHIGHMIA-26SEP27",
+          "status": 200
+        },
+        {
+          "body_bytes": 1531,
+          "path": "/trade-api/v2/series/KXHIGHMIA",
+          "status": 200
+        },
+        {
+          "body_bytes": 2951,
+          "path": "/trade-api/v2/markets/KXHIGHMIA-26SEP27-B83.5",
+          "status": 200
+        },
+        {
+          "body_bytes": 103,
+          "path": "/trade-api/v2/markets/orderbooks?tickers=KXHIGHMIA-26SEP27-B83.5",
+          "status": 200
+        },
+        {
+          "body_bytes": 2951,
+          "path": "/trade-api/v2/markets/KXHIGHMIA-26SEP27-B85.5",
+          "status": 200
+        },
+        {
+          "body_bytes": 103,
+          "path": "/trade-api/v2/markets/orderbooks?tickers=KXHIGHMIA-26SEP27-B85.5",
+          "status": 200
+        },
+        {
+          "body_bytes": 2951,
+          "path": "/trade-api/v2/markets/KXHIGHMIA-26SEP27-B87.5",
+          "status": 200
+        },
+        {
+          "body_bytes": 103,
+          "path": "/trade-api/v2/markets/orderbooks?tickers=KXHIGHMIA-26SEP27-B87.5",
+          "status": 200
+        },
+        {
+          "body_bytes": 2952,
+          "path": "/trade-api/v2/markets/KXHIGHMIA-26SEP27-B89.5",
+          "status": 200
+        },
+        {
+          "body_bytes": 103,
+          "path": "/trade-api/v2/markets/orderbooks?tickers=KXHIGHMIA-26SEP27-B89.5",
+          "status": 200
+        },
+        {
+          "body_bytes": 2925,
+          "path": "/trade-api/v2/markets/KXHIGHMIA-26SEP27-T83",
+          "status": 200
+        },
+        {
+          "body_bytes": 101,
+          "path": "/trade-api/v2/markets/orderbooks?tickers=KXHIGHMIA-26SEP27-T83",
+          "status": 200
+        },
+        {
+          "body_bytes": 2935,
+          "path": "/trade-api/v2/markets/KXHIGHMIA-26SEP27-T90",
+          "status": 200
+        },
+        {
+          "body_bytes": 101,
+          "path": "/trade-api/v2/markets/orderbooks?tickers=KXHIGHMIA-26SEP27-T90",
+          "status": 200
+        }
+      ],
+      "kalshi_host": "external-api.kalshi.com",
+      "market_statuses": [
+        "finalized"
+      ],
+      "outcome_values_recorded": false,
+      "packet_created": false,
+      "pass": true,
+      "request_count": 14,
+      "scientific_claim_created": false,
+      "series_identity_and_source_ok": true,
+      "sibling_count": 6,
+      "sibling_prefix_ok": true,
+      "siblings": [
+        {
+          "bounds_present": true,
+          "cli_rule_text_ok": true,
+          "executability_status_if_evaluated": "ABSTAIN_INSUFFICIENT_EXECUTABLE_MARKET",
+          "market_identity_ok": true,
+          "market_required_fields_present": true,
+          "orderbook_fp_is_object": true,
+          "orderbook_identity_ok": true,
+          "orderbook_side_keys": [
+            "no_dollars",
+            "yes_dollars"
+          ],
+          "status": "finalized",
+          "strike_type": "between",
+          "ticker": "KXHIGHMIA-26SEP27-B83.5"
+        },
+        {
+          "bounds_present": true,
+          "cli_rule_text_ok": true,
+          "executability_status_if_evaluated": "ABSTAIN_INSUFFICIENT_EXECUTABLE_MARKET",
+          "market_identity_ok": true,
+          "market_required_fields_present": true,
+          "orderbook_fp_is_object": true,
+          "orderbook_identity_ok": true,
+          "orderbook_side_keys": [
+            "no_dollars",
+            "yes_dollars"
+          ],
+          "status": "finalized",
+          "strike_type": "between",
+          "ticker": "KXHIGHMIA-26SEP27-B85.5"
+        },
+        {
+          "bounds_present": true,
+          "cli_rule_text_ok": true,
+          "executability_status_if_evaluated": "ABSTAIN_INSUFFICIENT_EXECUTABLE_MARKET",
+          "market_identity_ok": true,
+          "market_required_fields_present": true,
+          "orderbook_fp_is_object": true,
+          "orderbook_identity_ok": true,
+          "orderbook_side_keys": [
+            "no_dollars",
+            "yes_dollars"
+          ],
+          "status": "finalized",
+          "strike_type": "between",
+          "ticker": "KXHIGHMIA-26SEP27-B87.5"
+        },
+        {
+          "bounds_present": true,
+          "cli_rule_text_ok": true,
+          "executability_status_if_evaluated": "ABSTAIN_INSUFFICIENT_EXECUTABLE_MARKET",
+          "market_identity_ok": true,
+          "market_required_fields_present": true,
+          "orderbook_fp_is_object": true,
+          "orderbook_identity_ok": true,
+          "orderbook_side_keys": [
+            "no_dollars",
+            "yes_dollars"
+          ],
+          "status": "finalized",
+          "strike_type": "between",
+          "ticker": "KXHIGHMIA-26SEP27-B89.5"
+        },
+        {
+          "bounds_present": true,
+          "cli_rule_text_ok": true,
+          "executability_status_if_evaluated": "ABSTAIN_INSUFFICIENT_EXECUTABLE_MARKET",
+          "market_identity_ok": true,
+          "market_required_fields_present": true,
+          "orderbook_fp_is_object": true,
+          "orderbook_identity_ok": true,
+          "orderbook_side_keys": [
+            "no_dollars",
+            "yes_dollars"
+          ],
+          "status": "finalized",
+          "strike_type": "less",
+          "ticker": "KXHIGHMIA-26SEP27-T83"
+        },
+        {
+          "bounds_present": true,
+          "cli_rule_text_ok": true,
+          "executability_status_if_evaluated": "ABSTAIN_INSUFFICIENT_EXECUTABLE_MARKET",
+          "market_identity_ok": true,
+          "market_required_fields_present": true,
+          "orderbook_fp_is_object": true,
+          "orderbook_identity_ok": true,
+          "orderbook_side_keys": [
+            "no_dollars",
+            "yes_dollars"
+          ],
+          "status": "finalized",
+          "strike_type": "greater",
+          "ticker": "KXHIGHMIA-26SEP27-T90"
+        }
+      ],
+      "strike_shape_ok": true,
+      "task_index": 1
+    },
+    "seattle": {
+      "all_http_200": true,
+      "event_identity_ok": true,
+      "event_settlement_source_ok": true,
+      "historical_event_ticker": "KXHIGHTSEA-26SEP27",
+      "http": [
+        {
+          "body_bytes": 18151,
+          "path": "/trade-api/v2/events/KXHIGHTSEA-26SEP27",
+          "status": 200
+        },
+        {
+          "body_bytes": 1537,
+          "path": "/trade-api/v2/series/KXHIGHTSEA",
+          "status": 200
+        },
+        {
+          "body_bytes": 2954,
+          "path": "/trade-api/v2/markets/KXHIGHTSEA-26SEP27-B61.5",
+          "status": 200
+        },
+        {
+          "body_bytes": 104,
+          "path": "/trade-api/v2/markets/orderbooks?tickers=KXHIGHTSEA-26SEP27-B61.5",
+          "status": 200
+        },
+        {
+          "body_bytes": 2956,
+          "path": "/trade-api/v2/markets/KXHIGHTSEA-26SEP27-B63.5",
+          "status": 200
+        },
+        {
+          "body_bytes": 104,
+          "path": "/trade-api/v2/markets/orderbooks?tickers=KXHIGHTSEA-26SEP27-B63.5",
+          "status": 200
+        },
+        {
+          "body_bytes": 2956,
+          "path": "/trade-api/v2/markets/KXHIGHTSEA-26SEP27-B65.5",
+          "status": 200
+        },
+        {
+          "body_bytes": 104,
+          "path": "/trade-api/v2/markets/orderbooks?tickers=KXHIGHTSEA-26SEP27-B65.5",
+          "status": 200
+        },
+        {
+          "body_bytes": 2954,
+          "path": "/trade-api/v2/markets/KXHIGHTSEA-26SEP27-B67.5",
+          "status": 200
+        },
+        {
+          "body_bytes": 104,
+          "path": "/trade-api/v2/markets/orderbooks?tickers=KXHIGHTSEA-26SEP27-B67.5",
+          "status": 200
+        },
+        {
+          "body_bytes": 2930,
+          "path": "/trade-api/v2/markets/KXHIGHTSEA-26SEP27-T61",
+          "status": 200
+        },
+        {
+          "body_bytes": 102,
+          "path": "/trade-api/v2/markets/orderbooks?tickers=KXHIGHTSEA-26SEP27-T61",
+          "status": 200
+        },
+        {
+          "body_bytes": 2938,
+          "path": "/trade-api/v2/markets/KXHIGHTSEA-26SEP27-T68",
+          "status": 200
+        },
+        {
+          "body_bytes": 102,
+          "path": "/trade-api/v2/markets/orderbooks?tickers=KXHIGHTSEA-26SEP27-T68",
+          "status": 200
+        }
+      ],
+      "kalshi_host": "external-api.kalshi.com",
+      "market_statuses": [
+        "finalized"
+      ],
+      "outcome_values_recorded": false,
+      "packet_created": false,
+      "pass": true,
+      "request_count": 14,
+      "scientific_claim_created": false,
+      "series_identity_and_source_ok": true,
+      "sibling_count": 6,
+      "sibling_prefix_ok": true,
+      "siblings": [
+        {
+          "bounds_present": true,
+          "cli_rule_text_ok": true,
+          "executability_status_if_evaluated": "ABSTAIN_INSUFFICIENT_EXECUTABLE_MARKET",
+          "market_identity_ok": true,
+          "market_required_fields_present": true,
+          "orderbook_fp_is_object": true,
+          "orderbook_identity_ok": true,
+          "orderbook_side_keys": [
+            "no_dollars",
+            "yes_dollars"
+          ],
+          "status": "finalized",
+          "strike_type": "between",
+          "ticker": "KXHIGHTSEA-26SEP27-B61.5"
+        },
+        {
+          "bounds_present": true,
+          "cli_rule_text_ok": true,
+          "executability_status_if_evaluated": "ABSTAIN_INSUFFICIENT_EXECUTABLE_MARKET",
+          "market_identity_ok": true,
+          "market_required_fields_present": true,
+          "orderbook_fp_is_object": true,
+          "orderbook_identity_ok": true,
+          "orderbook_side_keys": [
+            "no_dollars",
+            "yes_dollars"
+          ],
+          "status": "finalized",
+          "strike_type": "between",
+          "ticker": "KXHIGHTSEA-26SEP27-B63.5"
+        },
+        {
+          "bounds_present": true,
+          "cli_rule_text_ok": true,
+          "executability_status_if_evaluated": "ABSTAIN_INSUFFICIENT_EXECUTABLE_MARKET",
+          "market_identity_ok": true,
+          "market_required_fields_present": true,
+          "orderbook_fp_is_object": true,
+          "orderbook_identity_ok": true,
+          "orderbook_side_keys": [
+            "no_dollars",
+            "yes_dollars"
+          ],
+          "status": "finalized",
+          "strike_type": "between",
+          "ticker": "KXHIGHTSEA-26SEP27-B65.5"
+        },
+        {
+          "bounds_present": true,
+          "cli_rule_text_ok": true,
+          "executability_status_if_evaluated": "ABSTAIN_INSUFFICIENT_EXECUTABLE_MARKET",
+          "market_identity_ok": true,
+          "market_required_fields_present": true,
+          "orderbook_fp_is_object": true,
+          "orderbook_identity_ok": true,
+          "orderbook_side_keys": [
+            "no_dollars",
+            "yes_dollars"
+          ],
+          "status": "finalized",
+          "strike_type": "between",
+          "ticker": "KXHIGHTSEA-26SEP27-B67.5"
+        },
+        {
+          "bounds_present": true,
+          "cli_rule_text_ok": true,
+          "executability_status_if_evaluated": "ABSTAIN_INSUFFICIENT_EXECUTABLE_MARKET",
+          "market_identity_ok": true,
+          "market_required_fields_present": true,
+          "orderbook_fp_is_object": true,
+          "orderbook_identity_ok": true,
+          "orderbook_side_keys": [
+            "no_dollars",
+            "yes_dollars"
+          ],
+          "status": "finalized",
+          "strike_type": "less",
+          "ticker": "KXHIGHTSEA-26SEP27-T61"
+        },
+        {
+          "bounds_present": true,
+          "cli_rule_text_ok": true,
+          "executability_status_if_evaluated": "ABSTAIN_INSUFFICIENT_EXECUTABLE_MARKET",
+          "market_identity_ok": true,
+          "market_required_fields_present": true,
+          "orderbook_fp_is_object": true,
+          "orderbook_identity_ok": true,
+          "orderbook_side_keys": [
+            "no_dollars",
+            "yes_dollars"
+          ],
+          "status": "finalized",
+          "strike_type": "greater",
+          "ticker": "KXHIGHTSEA-26SEP27-T68"
+        }
+      ],
+      "strike_shape_ok": true,
+      "task_index": 4
+    }
+  },
+  "cloud_run_execution": "wn-multicity-c1-canary-55rzd",
+  "historical_date": "2026-09-27",
+  "image_digest": "sha256:0ffe08df80315922d64f2313f160b053151744416ed03dacafe38fcc6e24bc08",
+  "limit": "Finalized markets have empty books and status finalized. This proves reachability, HTTP 200, identities, field presence, and the empty-book shape ({yes_dollars:[],no_dollars:[]}); it does not prove a live active event passes validation at 09:00Z.",
+  "non_scientific": true,
+  "packet_created": false,
+  "pass": true,
+  "prices_results_or_bodies_recorded": false,
+  "record_type": "WN-MULTICITY-C1-FINAL-LIVE-KALSHI-CLOUD-CANARY-v1",
+  "runtime_service_account": "wn-multicity-c1-runtime",
+  "scientific_claim_created": false,
+  "transport": "cloud_collector.kalshi_get, same four path shapes as the scientific path"
+}

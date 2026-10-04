@@ -1,0 +1,6 @@
+__pycache__/
+*.pyc
+*.json
+*.md
+test_cloud_collector.py
+!frozen/**

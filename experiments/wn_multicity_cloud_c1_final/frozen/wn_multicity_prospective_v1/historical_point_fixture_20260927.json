@@ -1,0 +1,1602 @@
+{
+  "record_type": "WN-MULTICITY-D1-HISTORICAL-POINT-FIXTURE-v1",
+  "target_date": "2026-09-27",
+  "observational_unit": "CITY_DAY",
+  "city_days_independent": false,
+  "same_date_cluster": "2026-09-27",
+  "correlation_groups_by_city": {
+    "boston": {
+      "geographic_group": "northeast_us",
+      "weather_regime_group": "northeast_midlatitude"
+    },
+    "miami": {
+      "geographic_group": "southeast_us",
+      "weather_regime_group": "subtropical_atlantic"
+    },
+    "denver": {
+      "geographic_group": "rocky_mountain_us",
+      "weather_regime_group": "rockies_high_plains"
+    },
+    "los_angeles": {
+      "geographic_group": "southern_california",
+      "weather_regime_group": "pacific_coastal_marine"
+    },
+    "seattle": {
+      "geographic_group": "pacific_northwest",
+      "weather_regime_group": "pacific_maritime"
+    }
+  },
+  "query_scope": "non-current 2026-09-27 00Z point values only; no current forecast or market data",
+  "cities": {
+    "boston": [
+      {
+        "city_id": "boston",
+        "station_icao": "KBOS",
+        "grid_lonlat": [
+          -71,
+          42.35
+        ],
+        "init_time_utc": "2026-09-27T00:00:00Z",
+        "valid_time_utc": "2026-09-27T05:00:00Z",
+        "forecast_hour": 5,
+        "ingestion_time_utc": "2026-09-27T08:22:34.994033Z",
+        "station_head_temperature_2m_p50": 287.86968994140625
+      },
+      {
+        "city_id": "boston",
+        "station_icao": "KBOS",
+        "grid_lonlat": [
+          -71,
+          42.35
+        ],
+        "init_time_utc": "2026-09-27T00:00:00Z",
+        "valid_time_utc": "2026-09-27T06:00:00Z",
+        "forecast_hour": 6,
+        "ingestion_time_utc": "2026-09-27T08:22:40.458109Z",
+        "station_head_temperature_2m_p50": 287.76446533203125
+      },
+      {
+        "city_id": "boston",
+        "station_icao": "KBOS",
+        "grid_lonlat": [
+          -71,
+          42.35
+        ],
+        "init_time_utc": "2026-09-27T00:00:00Z",
+        "valid_time_utc": "2026-09-27T07:00:00Z",
+        "forecast_hour": 7,
+        "ingestion_time_utc": "2026-09-27T08:22:33.700662Z",
+        "station_head_temperature_2m_p50": 288.03277587890625
+      },
+      {
+        "city_id": "boston",
+        "station_icao": "KBOS",
+        "grid_lonlat": [
+          -71,
+          42.35
+        ],
+        "init_time_utc": "2026-09-27T00:00:00Z",
+        "valid_time_utc": "2026-09-27T08:00:00Z",
+        "forecast_hour": 8,
+        "ingestion_time_utc": "2026-09-27T08:22:28.393025Z",
+        "station_head_temperature_2m_p50": 288.13134765625
+      },
+      {
+        "city_id": "boston",
+        "station_icao": "KBOS",
+        "grid_lonlat": [
+          -71,
+          42.35
+        ],
+        "init_time_utc": "2026-09-27T00:00:00Z",
+        "valid_time_utc": "2026-09-27T09:00:00Z",
+        "forecast_hour": 9,
+        "ingestion_time_utc": "2026-09-27T08:22:35.879997Z",
+        "station_head_temperature_2m_p50": 288.23187255859375
+      },
+      {
+        "city_id": "boston",
+        "station_icao": "KBOS",
+        "grid_lonlat": [
+          -71,
+          42.35
+        ],
+        "init_time_utc": "2026-09-27T00:00:00Z",
+        "valid_time_utc": "2026-09-27T10:00:00Z",
+        "forecast_hour": 10,
+        "ingestion_time_utc": "2026-09-27T08:22:52.037603Z",
+        "station_head_temperature_2m_p50": 288.2973327636719
+      },
+      {
+        "city_id": "boston",
+        "station_icao": "KBOS",
+        "grid_lonlat": [
+          -71,
+          42.35
+        ],
+        "init_time_utc": "2026-09-27T00:00:00Z",
+        "valid_time_utc": "2026-09-27T11:00:00Z",
+        "forecast_hour": 11,
+        "ingestion_time_utc": "2026-09-27T08:22:39.501160Z",
+        "station_head_temperature_2m_p50": 288.3467102050781
+      },
+      {
+        "city_id": "boston",
+        "station_icao": "KBOS",
+        "grid_lonlat": [
+          -71,
+          42.35
+        ],
+        "init_time_utc": "2026-09-27T00:00:00Z",
+        "valid_time_utc": "2026-09-27T12:00:00Z",
+        "forecast_hour": 12,
+        "ingestion_time_utc": "2026-09-27T08:22:29.006149Z",
+        "station_head_temperature_2m_p50": 288.2752990722656
+      },
+      {
+        "city_id": "boston",
+        "station_icao": "KBOS",
+        "grid_lonlat": [
+          -71,
+          42.35
+        ],
+        "init_time_utc": "2026-09-27T00:00:00Z",
+        "valid_time_utc": "2026-09-27T13:00:00Z",
+        "forecast_hour": 13,
+        "ingestion_time_utc": "2026-09-27T08:22:42.118605Z",
+        "station_head_temperature_2m_p50": 288.57537841796875
+      },
+      {
+        "city_id": "boston",
+        "station_icao": "KBOS",
+        "grid_lonlat": [
+          -71,
+          42.35
+        ],
+        "init_time_utc": "2026-09-27T00:00:00Z",
+        "valid_time_utc": "2026-09-27T14:00:00Z",
+        "forecast_hour": 14,
+        "ingestion_time_utc": "2026-09-27T08:22:41.156877Z",
+        "station_head_temperature_2m_p50": 288.6904296875
+      },
+      {
+        "city_id": "boston",
+        "station_icao": "KBOS",
+        "grid_lonlat": [
+          -71,
+          42.35
+        ],
+        "init_time_utc": "2026-09-27T00:00:00Z",
+        "valid_time_utc": "2026-09-27T15:00:00Z",
+        "forecast_hour": 15,
+        "ingestion_time_utc": "2026-09-27T08:22:37.927112Z",
+        "station_head_temperature_2m_p50": 288.85797119140625
+      },
+      {
+        "city_id": "boston",
+        "station_icao": "KBOS",
+        "grid_lonlat": [
+          -71,
+          42.35
+        ],
+        "init_time_utc": "2026-09-27T00:00:00Z",
+        "valid_time_utc": "2026-09-27T16:00:00Z",
+        "forecast_hour": 16,
+        "ingestion_time_utc": "2026-09-27T08:22:34.523060Z",
+        "station_head_temperature_2m_p50": 288.8804016113281
+      },
+      {
+        "city_id": "boston",
+        "station_icao": "KBOS",
+        "grid_lonlat": [
+          -71,
+          42.35
+        ],
+        "init_time_utc": "2026-09-27T00:00:00Z",
+        "valid_time_utc": "2026-09-27T17:00:00Z",
+        "forecast_hour": 17,
+        "ingestion_time_utc": "2026-09-27T08:22:37.525019Z",
+        "station_head_temperature_2m_p50": 288.83294677734375
+      },
+      {
+        "city_id": "boston",
+        "station_icao": "KBOS",
+        "grid_lonlat": [
+          -71,
+          42.35
+        ],
+        "init_time_utc": "2026-09-27T00:00:00Z",
+        "valid_time_utc": "2026-09-27T18:00:00Z",
+        "forecast_hour": 18,
+        "ingestion_time_utc": "2026-09-27T08:22:31.699404Z",
+        "station_head_temperature_2m_p50": 288.6728210449219
+      },
+      {
+        "city_id": "boston",
+        "station_icao": "KBOS",
+        "grid_lonlat": [
+          -71,
+          42.35
+        ],
+        "init_time_utc": "2026-09-27T00:00:00Z",
+        "valid_time_utc": "2026-09-27T19:00:00Z",
+        "forecast_hour": 19,
+        "ingestion_time_utc": "2026-09-27T08:22:24.177748Z",
+        "station_head_temperature_2m_p50": 289.0198974609375
+      },
+      {
+        "city_id": "boston",
+        "station_icao": "KBOS",
+        "grid_lonlat": [
+          -71,
+          42.35
+        ],
+        "init_time_utc": "2026-09-27T00:00:00Z",
+        "valid_time_utc": "2026-09-27T20:00:00Z",
+        "forecast_hour": 20,
+        "ingestion_time_utc": "2026-09-27T08:22:44.021074Z",
+        "station_head_temperature_2m_p50": 288.91168212890625
+      },
+      {
+        "city_id": "boston",
+        "station_icao": "KBOS",
+        "grid_lonlat": [
+          -71,
+          42.35
+        ],
+        "init_time_utc": "2026-09-27T00:00:00Z",
+        "valid_time_utc": "2026-09-27T21:00:00Z",
+        "forecast_hour": 21,
+        "ingestion_time_utc": "2026-09-27T08:22:42.735055Z",
+        "station_head_temperature_2m_p50": 288.7987976074219
+      },
+      {
+        "city_id": "boston",
+        "station_icao": "KBOS",
+        "grid_lonlat": [
+          -71,
+          42.35
+        ],
+        "init_time_utc": "2026-09-27T00:00:00Z",
+        "valid_time_utc": "2026-09-27T22:00:00Z",
+        "forecast_hour": 22,
+        "ingestion_time_utc": "2026-09-27T08:22:35.326600Z",
+        "station_head_temperature_2m_p50": 288.625732421875
+      },
+      {
+        "city_id": "boston",
+        "station_icao": "KBOS",
+        "grid_lonlat": [
+          -71,
+          42.35
+        ],
+        "init_time_utc": "2026-09-27T00:00:00Z",
+        "valid_time_utc": "2026-09-27T23:00:00Z",
+        "forecast_hour": 23,
+        "ingestion_time_utc": "2026-09-27T08:22:25.416589Z",
+        "station_head_temperature_2m_p50": 288.48699951171875
+      },
+      {
+        "city_id": "boston",
+        "station_icao": "KBOS",
+        "grid_lonlat": [
+          -71,
+          42.35
+        ],
+        "init_time_utc": "2026-09-27T00:00:00Z",
+        "valid_time_utc": "2026-09-28T00:00:00Z",
+        "forecast_hour": 24,
+        "ingestion_time_utc": "2026-09-27T08:22:25.178565Z",
+        "station_head_temperature_2m_p50": 288.2316589355469
+      },
+      {
+        "city_id": "boston",
+        "station_icao": "KBOS",
+        "grid_lonlat": [
+          -71,
+          42.35
+        ],
+        "init_time_utc": "2026-09-27T00:00:00Z",
+        "valid_time_utc": "2026-09-28T01:00:00Z",
+        "forecast_hour": 25,
+        "ingestion_time_utc": "2026-09-27T08:22:24.617537Z",
+        "station_head_temperature_2m_p50": 288.4989013671875
+      },
+      {
+        "city_id": "boston",
+        "station_icao": "KBOS",
+        "grid_lonlat": [
+          -71,
+          42.35
+        ],
+        "init_time_utc": "2026-09-27T00:00:00Z",
+        "valid_time_utc": "2026-09-28T02:00:00Z",
+        "forecast_hour": 26,
+        "ingestion_time_utc": "2026-09-27T08:22:31.030908Z",
+        "station_head_temperature_2m_p50": 288.497802734375
+      },
+      {
+        "city_id": "boston",
+        "station_icao": "KBOS",
+        "grid_lonlat": [
+          -71,
+          42.35
+        ],
+        "init_time_utc": "2026-09-27T00:00:00Z",
+        "valid_time_utc": "2026-09-28T03:00:00Z",
+        "forecast_hour": 27,
+        "ingestion_time_utc": "2026-09-27T08:22:41.734545Z",
+        "station_head_temperature_2m_p50": 288.42218017578125
+      },
+      {
+        "city_id": "boston",
+        "station_icao": "KBOS",
+        "grid_lonlat": [
+          -71,
+          42.35
+        ],
+        "init_time_utc": "2026-09-27T00:00:00Z",
+        "valid_time_utc": "2026-09-28T04:00:00Z",
+        "forecast_hour": 28,
+        "ingestion_time_utc": "2026-09-27T08:22:25.151633Z",
+        "station_head_temperature_2m_p50": 288.2691650390625
+      }
+    ],
+    "miami": [
+      {
+        "city_id": "miami",
+        "station_icao": "KMIA",
+        "grid_lonlat": [
+          -80.3,
+          25.799999999999997
+        ],
+        "init_time_utc": "2026-09-27T00:00:00Z",
+        "valid_time_utc": "2026-09-27T05:00:00Z",
+        "forecast_hour": 5,
+        "ingestion_time_utc": "2026-09-27T08:22:34.994033Z",
+        "station_head_temperature_2m_p50": 300.41748046875
+      },
+      {
+        "city_id": "miami",
+        "station_icao": "KMIA",
+        "grid_lonlat": [
+          -80.3,
+          25.799999999999997
+        ],
+        "init_time_utc": "2026-09-27T00:00:00Z",
+        "valid_time_utc": "2026-09-27T06:00:00Z",
+        "forecast_hour": 6,
+        "ingestion_time_utc": "2026-09-27T08:22:40.458109Z",
+        "station_head_temperature_2m_p50": 299.9615478515625
+      },
+      {
+        "city_id": "miami",
+        "station_icao": "KMIA",
+        "grid_lonlat": [
+          -80.3,
+          25.799999999999997
+        ],
+        "init_time_utc": "2026-09-27T00:00:00Z",
+        "valid_time_utc": "2026-09-27T07:00:00Z",
+        "forecast_hour": 7,
+        "ingestion_time_utc": "2026-09-27T08:22:33.700662Z",
+        "station_head_temperature_2m_p50": 298.6463928222656
+      },
+      {
+        "city_id": "miami",
+        "station_icao": "KMIA",
+        "grid_lonlat": [
+          -80.3,
+          25.799999999999997
+        ],
+        "init_time_utc": "2026-09-27T00:00:00Z",
+        "valid_time_utc": "2026-09-27T08:00:00Z",
+        "forecast_hour": 8,
+        "ingestion_time_utc": "2026-09-27T08:22:28.393025Z",
+        "station_head_temperature_2m_p50": 298.2460632324219
+      },
+      {
+        "city_id": "miami",
+        "station_icao": "KMIA",
+        "grid_lonlat": [
+          -80.3,
+          25.799999999999997
+        ],
+        "init_time_utc": "2026-09-27T00:00:00Z",
+        "valid_time_utc": "2026-09-27T09:00:00Z",
+        "forecast_hour": 9,
+        "ingestion_time_utc": "2026-09-27T08:22:35.879997Z",
+        "station_head_temperature_2m_p50": 298.04193115234375
+      },
+      {
+        "city_id": "miami",
+        "station_icao": "KMIA",
+        "grid_lonlat": [
+          -80.3,
+          25.799999999999997
+        ],
+        "init_time_utc": "2026-09-27T00:00:00Z",
+        "valid_time_utc": "2026-09-27T10:00:00Z",
+        "forecast_hour": 10,
+        "ingestion_time_utc": "2026-09-27T08:22:52.037603Z",
+        "station_head_temperature_2m_p50": 297.7025146484375
+      },
+      {
+        "city_id": "miami",
+        "station_icao": "KMIA",
+        "grid_lonlat": [
+          -80.3,
+          25.799999999999997
+        ],
+        "init_time_utc": "2026-09-27T00:00:00Z",
+        "valid_time_utc": "2026-09-27T11:00:00Z",
+        "forecast_hour": 11,
+        "ingestion_time_utc": "2026-09-27T08:22:39.501160Z",
+        "station_head_temperature_2m_p50": 297.5669860839844
+      },
+      {
+        "city_id": "miami",
+        "station_icao": "KMIA",
+        "grid_lonlat": [
+          -80.3,
+          25.799999999999997
+        ],
+        "init_time_utc": "2026-09-27T00:00:00Z",
+        "valid_time_utc": "2026-09-27T12:00:00Z",
+        "forecast_hour": 12,
+        "ingestion_time_utc": "2026-09-27T08:22:29.006149Z",
+        "station_head_temperature_2m_p50": 298.10723876953125
+      },
+      {
+        "city_id": "miami",
+        "station_icao": "KMIA",
+        "grid_lonlat": [
+          -80.3,
+          25.799999999999997
+        ],
+        "init_time_utc": "2026-09-27T00:00:00Z",
+        "valid_time_utc": "2026-09-27T13:00:00Z",
+        "forecast_hour": 13,
+        "ingestion_time_utc": "2026-09-27T08:22:42.118605Z",
+        "station_head_temperature_2m_p50": 298.89373779296875
+      },
+      {
+        "city_id": "miami",
+        "station_icao": "KMIA",
+        "grid_lonlat": [
+          -80.3,
+          25.799999999999997
+        ],
+        "init_time_utc": "2026-09-27T00:00:00Z",
+        "valid_time_utc": "2026-09-27T14:00:00Z",
+        "forecast_hour": 14,
+        "ingestion_time_utc": "2026-09-27T08:22:41.156877Z",
+        "station_head_temperature_2m_p50": 301.067626953125
+      },
+      {
+        "city_id": "miami",
+        "station_icao": "KMIA",
+        "grid_lonlat": [
+          -80.3,
+          25.799999999999997
+        ],
+        "init_time_utc": "2026-09-27T00:00:00Z",
+        "valid_time_utc": "2026-09-27T15:00:00Z",
+        "forecast_hour": 15,
+        "ingestion_time_utc": "2026-09-27T08:22:37.927112Z",
+        "station_head_temperature_2m_p50": 302.6570129394531
+      },
+      {
+        "city_id": "miami",
+        "station_icao": "KMIA",
+        "grid_lonlat": [
+          -80.3,
+          25.799999999999997
+        ],
+        "init_time_utc": "2026-09-27T00:00:00Z",
+        "valid_time_utc": "2026-09-27T16:00:00Z",
+        "forecast_hour": 16,
+        "ingestion_time_utc": "2026-09-27T08:22:34.523060Z",
+        "station_head_temperature_2m_p50": 303.4720458984375
+      },
+      {
+        "city_id": "miami",
+        "station_icao": "KMIA",
+        "grid_lonlat": [
+          -80.3,
+          25.799999999999997
+        ],
+        "init_time_utc": "2026-09-27T00:00:00Z",
+        "valid_time_utc": "2026-09-27T17:00:00Z",
+        "forecast_hour": 17,
+        "ingestion_time_utc": "2026-09-27T08:22:37.525019Z",
+        "station_head_temperature_2m_p50": 304.00836181640625
+      },
+      {
+        "city_id": "miami",
+        "station_icao": "KMIA",
+        "grid_lonlat": [
+          -80.3,
+          25.799999999999997
+        ],
+        "init_time_utc": "2026-09-27T00:00:00Z",
+        "valid_time_utc": "2026-09-27T18:00:00Z",
+        "forecast_hour": 18,
+        "ingestion_time_utc": "2026-09-27T08:22:31.699404Z",
+        "station_head_temperature_2m_p50": 304.3050537109375
+      },
+      {
+        "city_id": "miami",
+        "station_icao": "KMIA",
+        "grid_lonlat": [
+          -80.3,
+          25.799999999999997
+        ],
+        "init_time_utc": "2026-09-27T00:00:00Z",
+        "valid_time_utc": "2026-09-27T19:00:00Z",
+        "forecast_hour": 19,
+        "ingestion_time_utc": "2026-09-27T08:22:24.177748Z",
+        "station_head_temperature_2m_p50": 304.6248779296875
+      },
+      {
+        "city_id": "miami",
+        "station_icao": "KMIA",
+        "grid_lonlat": [
+          -80.3,
+          25.799999999999997
+        ],
+        "init_time_utc": "2026-09-27T00:00:00Z",
+        "valid_time_utc": "2026-09-27T20:00:00Z",
+        "forecast_hour": 20,
+        "ingestion_time_utc": "2026-09-27T08:22:44.021074Z",
+        "station_head_temperature_2m_p50": 304.61932373046875
+      },
+      {
+        "city_id": "miami",
+        "station_icao": "KMIA",
+        "grid_lonlat": [
+          -80.3,
+          25.799999999999997
+        ],
+        "init_time_utc": "2026-09-27T00:00:00Z",
+        "valid_time_utc": "2026-09-27T21:00:00Z",
+        "forecast_hour": 21,
+        "ingestion_time_utc": "2026-09-27T08:22:42.735055Z",
+        "station_head_temperature_2m_p50": 304.08502197265625
+      },
+      {
+        "city_id": "miami",
+        "station_icao": "KMIA",
+        "grid_lonlat": [
+          -80.3,
+          25.799999999999997
+        ],
+        "init_time_utc": "2026-09-27T00:00:00Z",
+        "valid_time_utc": "2026-09-27T22:00:00Z",
+        "forecast_hour": 22,
+        "ingestion_time_utc": "2026-09-27T08:22:35.326600Z",
+        "station_head_temperature_2m_p50": 303.1727294921875
+      },
+      {
+        "city_id": "miami",
+        "station_icao": "KMIA",
+        "grid_lonlat": [
+          -80.3,
+          25.799999999999997
+        ],
+        "init_time_utc": "2026-09-27T00:00:00Z",
+        "valid_time_utc": "2026-09-27T23:00:00Z",
+        "forecast_hour": 23,
+        "ingestion_time_utc": "2026-09-27T08:22:25.416589Z",
+        "station_head_temperature_2m_p50": 301.85809326171875
+      },
+      {
+        "city_id": "miami",
+        "station_icao": "KMIA",
+        "grid_lonlat": [
+          -80.3,
+          25.799999999999997
+        ],
+        "init_time_utc": "2026-09-27T00:00:00Z",
+        "valid_time_utc": "2026-09-28T00:00:00Z",
+        "forecast_hour": 24,
+        "ingestion_time_utc": "2026-09-27T08:22:25.178565Z",
+        "station_head_temperature_2m_p50": 300.5427551269531
+      },
+      {
+        "city_id": "miami",
+        "station_icao": "KMIA",
+        "grid_lonlat": [
+          -80.3,
+          25.799999999999997
+        ],
+        "init_time_utc": "2026-09-27T00:00:00Z",
+        "valid_time_utc": "2026-09-28T01:00:00Z",
+        "forecast_hour": 25,
+        "ingestion_time_utc": "2026-09-27T08:22:24.617537Z",
+        "station_head_temperature_2m_p50": 299.37359619140625
+      },
+      {
+        "city_id": "miami",
+        "station_icao": "KMIA",
+        "grid_lonlat": [
+          -80.3,
+          25.799999999999997
+        ],
+        "init_time_utc": "2026-09-27T00:00:00Z",
+        "valid_time_utc": "2026-09-28T02:00:00Z",
+        "forecast_hour": 26,
+        "ingestion_time_utc": "2026-09-27T08:22:31.030908Z",
+        "station_head_temperature_2m_p50": 298.68170166015625
+      },
+      {
+        "city_id": "miami",
+        "station_icao": "KMIA",
+        "grid_lonlat": [
+          -80.3,
+          25.799999999999997
+        ],
+        "init_time_utc": "2026-09-27T00:00:00Z",
+        "valid_time_utc": "2026-09-28T03:00:00Z",
+        "forecast_hour": 27,
+        "ingestion_time_utc": "2026-09-27T08:22:41.734545Z",
+        "station_head_temperature_2m_p50": 298.2964172363281
+      },
+      {
+        "city_id": "miami",
+        "station_icao": "KMIA",
+        "grid_lonlat": [
+          -80.3,
+          25.799999999999997
+        ],
+        "init_time_utc": "2026-09-27T00:00:00Z",
+        "valid_time_utc": "2026-09-28T04:00:00Z",
+        "forecast_hour": 28,
+        "ingestion_time_utc": "2026-09-27T08:22:25.151633Z",
+        "station_head_temperature_2m_p50": 297.9667663574219
+      }
+    ],
+    "denver": [
+      {
+        "city_id": "denver",
+        "station_icao": "KDEN",
+        "grid_lonlat": [
+          -104.65,
+          39.85
+        ],
+        "init_time_utc": "2026-09-27T00:00:00Z",
+        "valid_time_utc": "2026-09-27T07:00:00Z",
+        "forecast_hour": 7,
+        "ingestion_time_utc": "2026-09-27T08:22:33.700662Z",
+        "station_head_temperature_2m_p50": 288.865234375
+      },
+      {
+        "city_id": "denver",
+        "station_icao": "KDEN",
+        "grid_lonlat": [
+          -104.65,
+          39.85
+        ],
+        "init_time_utc": "2026-09-27T00:00:00Z",
+        "valid_time_utc": "2026-09-27T08:00:00Z",
+        "forecast_hour": 8,
+        "ingestion_time_utc": "2026-09-27T08:22:28.393025Z",
+        "station_head_temperature_2m_p50": 288.2989501953125
+      },
+      {
+        "city_id": "denver",
+        "station_icao": "KDEN",
+        "grid_lonlat": [
+          -104.65,
+          39.85
+        ],
+        "init_time_utc": "2026-09-27T00:00:00Z",
+        "valid_time_utc": "2026-09-27T09:00:00Z",
+        "forecast_hour": 9,
+        "ingestion_time_utc": "2026-09-27T08:22:35.879997Z",
+        "station_head_temperature_2m_p50": 287.6666259765625
+      },
+      {
+        "city_id": "denver",
+        "station_icao": "KDEN",
+        "grid_lonlat": [
+          -104.65,
+          39.85
+        ],
+        "init_time_utc": "2026-09-27T00:00:00Z",
+        "valid_time_utc": "2026-09-27T10:00:00Z",
+        "forecast_hour": 10,
+        "ingestion_time_utc": "2026-09-27T08:22:52.037603Z",
+        "station_head_temperature_2m_p50": 286.9238586425781
+      },
+      {
+        "city_id": "denver",
+        "station_icao": "KDEN",
+        "grid_lonlat": [
+          -104.65,
+          39.85
+        ],
+        "init_time_utc": "2026-09-27T00:00:00Z",
+        "valid_time_utc": "2026-09-27T11:00:00Z",
+        "forecast_hour": 11,
+        "ingestion_time_utc": "2026-09-27T08:22:39.501160Z",
+        "station_head_temperature_2m_p50": 286.1432189941406
+      },
+      {
+        "city_id": "denver",
+        "station_icao": "KDEN",
+        "grid_lonlat": [
+          -104.65,
+          39.85
+        ],
+        "init_time_utc": "2026-09-27T00:00:00Z",
+        "valid_time_utc": "2026-09-27T12:00:00Z",
+        "forecast_hour": 12,
+        "ingestion_time_utc": "2026-09-27T08:22:29.006149Z",
+        "station_head_temperature_2m_p50": 285.69390869140625
+      },
+      {
+        "city_id": "denver",
+        "station_icao": "KDEN",
+        "grid_lonlat": [
+          -104.65,
+          39.85
+        ],
+        "init_time_utc": "2026-09-27T00:00:00Z",
+        "valid_time_utc": "2026-09-27T13:00:00Z",
+        "forecast_hour": 13,
+        "ingestion_time_utc": "2026-09-27T08:22:42.118605Z",
+        "station_head_temperature_2m_p50": 286.4236145019531
+      },
+      {
+        "city_id": "denver",
+        "station_icao": "KDEN",
+        "grid_lonlat": [
+          -104.65,
+          39.85
+        ],
+        "init_time_utc": "2026-09-27T00:00:00Z",
+        "valid_time_utc": "2026-09-27T14:00:00Z",
+        "forecast_hour": 14,
+        "ingestion_time_utc": "2026-09-27T08:22:41.156877Z",
+        "station_head_temperature_2m_p50": 288.5111083984375
+      },
+      {
+        "city_id": "denver",
+        "station_icao": "KDEN",
+        "grid_lonlat": [
+          -104.65,
+          39.85
+        ],
+        "init_time_utc": "2026-09-27T00:00:00Z",
+        "valid_time_utc": "2026-09-27T15:00:00Z",
+        "forecast_hour": 15,
+        "ingestion_time_utc": "2026-09-27T08:22:37.927112Z",
+        "station_head_temperature_2m_p50": 291.87237548828125
+      },
+      {
+        "city_id": "denver",
+        "station_icao": "KDEN",
+        "grid_lonlat": [
+          -104.65,
+          39.85
+        ],
+        "init_time_utc": "2026-09-27T00:00:00Z",
+        "valid_time_utc": "2026-09-27T16:00:00Z",
+        "forecast_hour": 16,
+        "ingestion_time_utc": "2026-09-27T08:22:34.523060Z",
+        "station_head_temperature_2m_p50": 295.25958251953125
+      },
+      {
+        "city_id": "denver",
+        "station_icao": "KDEN",
+        "grid_lonlat": [
+          -104.65,
+          39.85
+        ],
+        "init_time_utc": "2026-09-27T00:00:00Z",
+        "valid_time_utc": "2026-09-27T17:00:00Z",
+        "forecast_hour": 17,
+        "ingestion_time_utc": "2026-09-27T08:22:37.525019Z",
+        "station_head_temperature_2m_p50": 297.775390625
+      },
+      {
+        "city_id": "denver",
+        "station_icao": "KDEN",
+        "grid_lonlat": [
+          -104.65,
+          39.85
+        ],
+        "init_time_utc": "2026-09-27T00:00:00Z",
+        "valid_time_utc": "2026-09-27T18:00:00Z",
+        "forecast_hour": 18,
+        "ingestion_time_utc": "2026-09-27T08:22:31.699404Z",
+        "station_head_temperature_2m_p50": 299.52392578125
+      },
+      {
+        "city_id": "denver",
+        "station_icao": "KDEN",
+        "grid_lonlat": [
+          -104.65,
+          39.85
+        ],
+        "init_time_utc": "2026-09-27T00:00:00Z",
+        "valid_time_utc": "2026-09-27T19:00:00Z",
+        "forecast_hour": 19,
+        "ingestion_time_utc": "2026-09-27T08:22:24.177748Z",
+        "station_head_temperature_2m_p50": 300.1741638183594
+      },
+      {
+        "city_id": "denver",
+        "station_icao": "KDEN",
+        "grid_lonlat": [
+          -104.65,
+          39.85
+        ],
+        "init_time_utc": "2026-09-27T00:00:00Z",
+        "valid_time_utc": "2026-09-27T20:00:00Z",
+        "forecast_hour": 20,
+        "ingestion_time_utc": "2026-09-27T08:22:44.021074Z",
+        "station_head_temperature_2m_p50": 300.77008056640625
+      },
+      {
+        "city_id": "denver",
+        "station_icao": "KDEN",
+        "grid_lonlat": [
+          -104.65,
+          39.85
+        ],
+        "init_time_utc": "2026-09-27T00:00:00Z",
+        "valid_time_utc": "2026-09-27T21:00:00Z",
+        "forecast_hour": 21,
+        "ingestion_time_utc": "2026-09-27T08:22:42.735055Z",
+        "station_head_temperature_2m_p50": 301.12823486328125
+      },
+      {
+        "city_id": "denver",
+        "station_icao": "KDEN",
+        "grid_lonlat": [
+          -104.65,
+          39.85
+        ],
+        "init_time_utc": "2026-09-27T00:00:00Z",
+        "valid_time_utc": "2026-09-27T22:00:00Z",
+        "forecast_hour": 22,
+        "ingestion_time_utc": "2026-09-27T08:22:35.326600Z",
+        "station_head_temperature_2m_p50": 301.0615539550781
+      },
+      {
+        "city_id": "denver",
+        "station_icao": "KDEN",
+        "grid_lonlat": [
+          -104.65,
+          39.85
+        ],
+        "init_time_utc": "2026-09-27T00:00:00Z",
+        "valid_time_utc": "2026-09-27T23:00:00Z",
+        "forecast_hour": 23,
+        "ingestion_time_utc": "2026-09-27T08:22:25.416589Z",
+        "station_head_temperature_2m_p50": 300.537841796875
+      },
+      {
+        "city_id": "denver",
+        "station_icao": "KDEN",
+        "grid_lonlat": [
+          -104.65,
+          39.85
+        ],
+        "init_time_utc": "2026-09-27T00:00:00Z",
+        "valid_time_utc": "2026-09-28T00:00:00Z",
+        "forecast_hour": 24,
+        "ingestion_time_utc": "2026-09-27T08:22:25.178565Z",
+        "station_head_temperature_2m_p50": 299.1056213378906
+      },
+      {
+        "city_id": "denver",
+        "station_icao": "KDEN",
+        "grid_lonlat": [
+          -104.65,
+          39.85
+        ],
+        "init_time_utc": "2026-09-27T00:00:00Z",
+        "valid_time_utc": "2026-09-28T01:00:00Z",
+        "forecast_hour": 25,
+        "ingestion_time_utc": "2026-09-27T08:22:24.617537Z",
+        "station_head_temperature_2m_p50": 296.7588806152344
+      },
+      {
+        "city_id": "denver",
+        "station_icao": "KDEN",
+        "grid_lonlat": [
+          -104.65,
+          39.85
+        ],
+        "init_time_utc": "2026-09-27T00:00:00Z",
+        "valid_time_utc": "2026-09-28T02:00:00Z",
+        "forecast_hour": 26,
+        "ingestion_time_utc": "2026-09-27T08:22:31.030908Z",
+        "station_head_temperature_2m_p50": 294.8001403808594
+      },
+      {
+        "city_id": "denver",
+        "station_icao": "KDEN",
+        "grid_lonlat": [
+          -104.65,
+          39.85
+        ],
+        "init_time_utc": "2026-09-27T00:00:00Z",
+        "valid_time_utc": "2026-09-28T03:00:00Z",
+        "forecast_hour": 27,
+        "ingestion_time_utc": "2026-09-27T08:22:41.734545Z",
+        "station_head_temperature_2m_p50": 293.7432861328125
+      },
+      {
+        "city_id": "denver",
+        "station_icao": "KDEN",
+        "grid_lonlat": [
+          -104.65,
+          39.85
+        ],
+        "init_time_utc": "2026-09-27T00:00:00Z",
+        "valid_time_utc": "2026-09-28T04:00:00Z",
+        "forecast_hour": 28,
+        "ingestion_time_utc": "2026-09-27T08:22:25.151633Z",
+        "station_head_temperature_2m_p50": 293.040283203125
+      },
+      {
+        "city_id": "denver",
+        "station_icao": "KDEN",
+        "grid_lonlat": [
+          -104.65,
+          39.85
+        ],
+        "init_time_utc": "2026-09-27T00:00:00Z",
+        "valid_time_utc": "2026-09-28T05:00:00Z",
+        "forecast_hour": 29,
+        "ingestion_time_utc": "2026-09-27T08:22:23.605859Z",
+        "station_head_temperature_2m_p50": 292.49560546875
+      },
+      {
+        "city_id": "denver",
+        "station_icao": "KDEN",
+        "grid_lonlat": [
+          -104.65,
+          39.85
+        ],
+        "init_time_utc": "2026-09-27T00:00:00Z",
+        "valid_time_utc": "2026-09-28T06:00:00Z",
+        "forecast_hour": 30,
+        "ingestion_time_utc": "2026-09-27T08:22:47.024525Z",
+        "station_head_temperature_2m_p50": 291.998291015625
+      }
+    ],
+    "los_angeles": [
+      {
+        "city_id": "los_angeles",
+        "station_icao": "KLAX",
+        "grid_lonlat": [
+          -118.4,
+          33.95
+        ],
+        "init_time_utc": "2026-09-27T00:00:00Z",
+        "valid_time_utc": "2026-09-27T08:00:00Z",
+        "forecast_hour": 8,
+        "ingestion_time_utc": "2026-09-27T08:22:28.393025Z",
+        "station_head_temperature_2m_p50": 294.63372802734375
+      },
+      {
+        "city_id": "los_angeles",
+        "station_icao": "KLAX",
+        "grid_lonlat": [
+          -118.4,
+          33.95
+        ],
+        "init_time_utc": "2026-09-27T00:00:00Z",
+        "valid_time_utc": "2026-09-27T09:00:00Z",
+        "forecast_hour": 9,
+        "ingestion_time_utc": "2026-09-27T08:22:35.879997Z",
+        "station_head_temperature_2m_p50": 294.487060546875
+      },
+      {
+        "city_id": "los_angeles",
+        "station_icao": "KLAX",
+        "grid_lonlat": [
+          -118.4,
+          33.95
+        ],
+        "init_time_utc": "2026-09-27T00:00:00Z",
+        "valid_time_utc": "2026-09-27T10:00:00Z",
+        "forecast_hour": 10,
+        "ingestion_time_utc": "2026-09-27T08:22:52.037603Z",
+        "station_head_temperature_2m_p50": 294.32061767578125
+      },
+      {
+        "city_id": "los_angeles",
+        "station_icao": "KLAX",
+        "grid_lonlat": [
+          -118.4,
+          33.95
+        ],
+        "init_time_utc": "2026-09-27T00:00:00Z",
+        "valid_time_utc": "2026-09-27T11:00:00Z",
+        "forecast_hour": 11,
+        "ingestion_time_utc": "2026-09-27T08:22:39.501160Z",
+        "station_head_temperature_2m_p50": 294.17431640625
+      },
+      {
+        "city_id": "los_angeles",
+        "station_icao": "KLAX",
+        "grid_lonlat": [
+          -118.4,
+          33.95
+        ],
+        "init_time_utc": "2026-09-27T00:00:00Z",
+        "valid_time_utc": "2026-09-27T12:00:00Z",
+        "forecast_hour": 12,
+        "ingestion_time_utc": "2026-09-27T08:22:29.006149Z",
+        "station_head_temperature_2m_p50": 294.1050720214844
+      },
+      {
+        "city_id": "los_angeles",
+        "station_icao": "KLAX",
+        "grid_lonlat": [
+          -118.4,
+          33.95
+        ],
+        "init_time_utc": "2026-09-27T00:00:00Z",
+        "valid_time_utc": "2026-09-27T13:00:00Z",
+        "forecast_hour": 13,
+        "ingestion_time_utc": "2026-09-27T08:22:42.118605Z",
+        "station_head_temperature_2m_p50": 293.8331604003906
+      },
+      {
+        "city_id": "los_angeles",
+        "station_icao": "KLAX",
+        "grid_lonlat": [
+          -118.4,
+          33.95
+        ],
+        "init_time_utc": "2026-09-27T00:00:00Z",
+        "valid_time_utc": "2026-09-27T14:00:00Z",
+        "forecast_hour": 14,
+        "ingestion_time_utc": "2026-09-27T08:22:41.156877Z",
+        "station_head_temperature_2m_p50": 294.07781982421875
+      },
+      {
+        "city_id": "los_angeles",
+        "station_icao": "KLAX",
+        "grid_lonlat": [
+          -118.4,
+          33.95
+        ],
+        "init_time_utc": "2026-09-27T00:00:00Z",
+        "valid_time_utc": "2026-09-27T15:00:00Z",
+        "forecast_hour": 15,
+        "ingestion_time_utc": "2026-09-27T08:22:37.927112Z",
+        "station_head_temperature_2m_p50": 294.5828857421875
+      },
+      {
+        "city_id": "los_angeles",
+        "station_icao": "KLAX",
+        "grid_lonlat": [
+          -118.4,
+          33.95
+        ],
+        "init_time_utc": "2026-09-27T00:00:00Z",
+        "valid_time_utc": "2026-09-27T16:00:00Z",
+        "forecast_hour": 16,
+        "ingestion_time_utc": "2026-09-27T08:22:34.523060Z",
+        "station_head_temperature_2m_p50": 295.80633544921875
+      },
+      {
+        "city_id": "los_angeles",
+        "station_icao": "KLAX",
+        "grid_lonlat": [
+          -118.4,
+          33.95
+        ],
+        "init_time_utc": "2026-09-27T00:00:00Z",
+        "valid_time_utc": "2026-09-27T17:00:00Z",
+        "forecast_hour": 17,
+        "ingestion_time_utc": "2026-09-27T08:22:37.525019Z",
+        "station_head_temperature_2m_p50": 297.30615234375
+      },
+      {
+        "city_id": "los_angeles",
+        "station_icao": "KLAX",
+        "grid_lonlat": [
+          -118.4,
+          33.95
+        ],
+        "init_time_utc": "2026-09-27T00:00:00Z",
+        "valid_time_utc": "2026-09-27T18:00:00Z",
+        "forecast_hour": 18,
+        "ingestion_time_utc": "2026-09-27T08:22:31.699404Z",
+        "station_head_temperature_2m_p50": 298.6627197265625
+      },
+      {
+        "city_id": "los_angeles",
+        "station_icao": "KLAX",
+        "grid_lonlat": [
+          -118.4,
+          33.95
+        ],
+        "init_time_utc": "2026-09-27T00:00:00Z",
+        "valid_time_utc": "2026-09-27T19:00:00Z",
+        "forecast_hour": 19,
+        "ingestion_time_utc": "2026-09-27T08:22:24.177748Z",
+        "station_head_temperature_2m_p50": 299.90423583984375
+      },
+      {
+        "city_id": "los_angeles",
+        "station_icao": "KLAX",
+        "grid_lonlat": [
+          -118.4,
+          33.95
+        ],
+        "init_time_utc": "2026-09-27T00:00:00Z",
+        "valid_time_utc": "2026-09-27T20:00:00Z",
+        "forecast_hour": 20,
+        "ingestion_time_utc": "2026-09-27T08:22:44.021074Z",
+        "station_head_temperature_2m_p50": 300.14788818359375
+      },
+      {
+        "city_id": "los_angeles",
+        "station_icao": "KLAX",
+        "grid_lonlat": [
+          -118.4,
+          33.95
+        ],
+        "init_time_utc": "2026-09-27T00:00:00Z",
+        "valid_time_utc": "2026-09-27T21:00:00Z",
+        "forecast_hour": 21,
+        "ingestion_time_utc": "2026-09-27T08:22:42.735055Z",
+        "station_head_temperature_2m_p50": 299.8384704589844
+      },
+      {
+        "city_id": "los_angeles",
+        "station_icao": "KLAX",
+        "grid_lonlat": [
+          -118.4,
+          33.95
+        ],
+        "init_time_utc": "2026-09-27T00:00:00Z",
+        "valid_time_utc": "2026-09-27T22:00:00Z",
+        "forecast_hour": 22,
+        "ingestion_time_utc": "2026-09-27T08:22:35.326600Z",
+        "station_head_temperature_2m_p50": 299.45062255859375
+      },
+      {
+        "city_id": "los_angeles",
+        "station_icao": "KLAX",
+        "grid_lonlat": [
+          -118.4,
+          33.95
+        ],
+        "init_time_utc": "2026-09-27T00:00:00Z",
+        "valid_time_utc": "2026-09-27T23:00:00Z",
+        "forecast_hour": 23,
+        "ingestion_time_utc": "2026-09-27T08:22:25.416589Z",
+        "station_head_temperature_2m_p50": 298.9096374511719
+      },
+      {
+        "city_id": "los_angeles",
+        "station_icao": "KLAX",
+        "grid_lonlat": [
+          -118.4,
+          33.95
+        ],
+        "init_time_utc": "2026-09-27T00:00:00Z",
+        "valid_time_utc": "2026-09-28T00:00:00Z",
+        "forecast_hour": 24,
+        "ingestion_time_utc": "2026-09-27T08:22:25.178565Z",
+        "station_head_temperature_2m_p50": 298.0169677734375
+      },
+      {
+        "city_id": "los_angeles",
+        "station_icao": "KLAX",
+        "grid_lonlat": [
+          -118.4,
+          33.95
+        ],
+        "init_time_utc": "2026-09-27T00:00:00Z",
+        "valid_time_utc": "2026-09-28T01:00:00Z",
+        "forecast_hour": 25,
+        "ingestion_time_utc": "2026-09-27T08:22:24.617537Z",
+        "station_head_temperature_2m_p50": 296.7674865722656
+      },
+      {
+        "city_id": "los_angeles",
+        "station_icao": "KLAX",
+        "grid_lonlat": [
+          -118.4,
+          33.95
+        ],
+        "init_time_utc": "2026-09-27T00:00:00Z",
+        "valid_time_utc": "2026-09-28T02:00:00Z",
+        "forecast_hour": 26,
+        "ingestion_time_utc": "2026-09-27T08:22:31.030908Z",
+        "station_head_temperature_2m_p50": 295.89617919921875
+      },
+      {
+        "city_id": "los_angeles",
+        "station_icao": "KLAX",
+        "grid_lonlat": [
+          -118.4,
+          33.95
+        ],
+        "init_time_utc": "2026-09-27T00:00:00Z",
+        "valid_time_utc": "2026-09-28T03:00:00Z",
+        "forecast_hour": 27,
+        "ingestion_time_utc": "2026-09-27T08:22:41.734545Z",
+        "station_head_temperature_2m_p50": 295.2620849609375
+      },
+      {
+        "city_id": "los_angeles",
+        "station_icao": "KLAX",
+        "grid_lonlat": [
+          -118.4,
+          33.95
+        ],
+        "init_time_utc": "2026-09-27T00:00:00Z",
+        "valid_time_utc": "2026-09-28T04:00:00Z",
+        "forecast_hour": 28,
+        "ingestion_time_utc": "2026-09-27T08:22:25.151633Z",
+        "station_head_temperature_2m_p50": 294.8147277832031
+      },
+      {
+        "city_id": "los_angeles",
+        "station_icao": "KLAX",
+        "grid_lonlat": [
+          -118.4,
+          33.95
+        ],
+        "init_time_utc": "2026-09-27T00:00:00Z",
+        "valid_time_utc": "2026-09-28T05:00:00Z",
+        "forecast_hour": 29,
+        "ingestion_time_utc": "2026-09-27T08:22:23.605859Z",
+        "station_head_temperature_2m_p50": 294.4372863769531
+      },
+      {
+        "city_id": "los_angeles",
+        "station_icao": "KLAX",
+        "grid_lonlat": [
+          -118.4,
+          33.95
+        ],
+        "init_time_utc": "2026-09-27T00:00:00Z",
+        "valid_time_utc": "2026-09-28T06:00:00Z",
+        "forecast_hour": 30,
+        "ingestion_time_utc": "2026-09-27T08:22:47.024525Z",
+        "station_head_temperature_2m_p50": 294.1441650390625
+      },
+      {
+        "city_id": "los_angeles",
+        "station_icao": "KLAX",
+        "grid_lonlat": [
+          -118.4,
+          33.95
+        ],
+        "init_time_utc": "2026-09-27T00:00:00Z",
+        "valid_time_utc": "2026-09-28T07:00:00Z",
+        "forecast_hour": 31,
+        "ingestion_time_utc": "2026-09-27T08:22:36.253733Z",
+        "station_head_temperature_2m_p50": 293.95465087890625
+      }
+    ],
+    "seattle": [
+      {
+        "city_id": "seattle",
+        "station_icao": "KSEA",
+        "grid_lonlat": [
+          -122.30000000000001,
+          47.45
+        ],
+        "init_time_utc": "2026-09-27T00:00:00Z",
+        "valid_time_utc": "2026-09-27T08:00:00Z",
+        "forecast_hour": 8,
+        "ingestion_time_utc": "2026-09-27T08:22:28.393025Z",
+        "station_head_temperature_2m_p50": 283.44610595703125
+      },
+      {
+        "city_id": "seattle",
+        "station_icao": "KSEA",
+        "grid_lonlat": [
+          -122.30000000000001,
+          47.45
+        ],
+        "init_time_utc": "2026-09-27T00:00:00Z",
+        "valid_time_utc": "2026-09-27T09:00:00Z",
+        "forecast_hour": 9,
+        "ingestion_time_utc": "2026-09-27T08:22:35.879997Z",
+        "station_head_temperature_2m_p50": 283.07354736328125
+      },
+      {
+        "city_id": "seattle",
+        "station_icao": "KSEA",
+        "grid_lonlat": [
+          -122.30000000000001,
+          47.45
+        ],
+        "init_time_utc": "2026-09-27T00:00:00Z",
+        "valid_time_utc": "2026-09-27T10:00:00Z",
+        "forecast_hour": 10,
+        "ingestion_time_utc": "2026-09-27T08:22:52.037603Z",
+        "station_head_temperature_2m_p50": 282.85504150390625
+      },
+      {
+        "city_id": "seattle",
+        "station_icao": "KSEA",
+        "grid_lonlat": [
+          -122.30000000000001,
+          47.45
+        ],
+        "init_time_utc": "2026-09-27T00:00:00Z",
+        "valid_time_utc": "2026-09-27T11:00:00Z",
+        "forecast_hour": 11,
+        "ingestion_time_utc": "2026-09-27T08:22:39.501160Z",
+        "station_head_temperature_2m_p50": 282.62744140625
+      },
+      {
+        "city_id": "seattle",
+        "station_icao": "KSEA",
+        "grid_lonlat": [
+          -122.30000000000001,
+          47.45
+        ],
+        "init_time_utc": "2026-09-27T00:00:00Z",
+        "valid_time_utc": "2026-09-27T12:00:00Z",
+        "forecast_hour": 12,
+        "ingestion_time_utc": "2026-09-27T08:22:29.006149Z",
+        "station_head_temperature_2m_p50": 282.4894104003906
+      },
+      {
+        "city_id": "seattle",
+        "station_icao": "KSEA",
+        "grid_lonlat": [
+          -122.30000000000001,
+          47.45
+        ],
+        "init_time_utc": "2026-09-27T00:00:00Z",
+        "valid_time_utc": "2026-09-27T13:00:00Z",
+        "forecast_hour": 13,
+        "ingestion_time_utc": "2026-09-27T08:22:42.118605Z",
+        "station_head_temperature_2m_p50": 282.0224609375
+      },
+      {
+        "city_id": "seattle",
+        "station_icao": "KSEA",
+        "grid_lonlat": [
+          -122.30000000000001,
+          47.45
+        ],
+        "init_time_utc": "2026-09-27T00:00:00Z",
+        "valid_time_utc": "2026-09-27T14:00:00Z",
+        "forecast_hour": 14,
+        "ingestion_time_utc": "2026-09-27T08:22:41.156877Z",
+        "station_head_temperature_2m_p50": 282.23150634765625
+      },
+      {
+        "city_id": "seattle",
+        "station_icao": "KSEA",
+        "grid_lonlat": [
+          -122.30000000000001,
+          47.45
+        ],
+        "init_time_utc": "2026-09-27T00:00:00Z",
+        "valid_time_utc": "2026-09-27T15:00:00Z",
+        "forecast_hour": 15,
+        "ingestion_time_utc": "2026-09-27T08:22:37.927112Z",
+        "station_head_temperature_2m_p50": 282.97955322265625
+      },
+      {
+        "city_id": "seattle",
+        "station_icao": "KSEA",
+        "grid_lonlat": [
+          -122.30000000000001,
+          47.45
+        ],
+        "init_time_utc": "2026-09-27T00:00:00Z",
+        "valid_time_utc": "2026-09-27T16:00:00Z",
+        "forecast_hour": 16,
+        "ingestion_time_utc": "2026-09-27T08:22:34.523060Z",
+        "station_head_temperature_2m_p50": 284.1338195800781
+      },
+      {
+        "city_id": "seattle",
+        "station_icao": "KSEA",
+        "grid_lonlat": [
+          -122.30000000000001,
+          47.45
+        ],
+        "init_time_utc": "2026-09-27T00:00:00Z",
+        "valid_time_utc": "2026-09-27T17:00:00Z",
+        "forecast_hour": 17,
+        "ingestion_time_utc": "2026-09-27T08:22:37.525019Z",
+        "station_head_temperature_2m_p50": 285.58221435546875
+      },
+      {
+        "city_id": "seattle",
+        "station_icao": "KSEA",
+        "grid_lonlat": [
+          -122.30000000000001,
+          47.45
+        ],
+        "init_time_utc": "2026-09-27T00:00:00Z",
+        "valid_time_utc": "2026-09-27T18:00:00Z",
+        "forecast_hour": 18,
+        "ingestion_time_utc": "2026-09-27T08:22:31.699404Z",
+        "station_head_temperature_2m_p50": 287.3199768066406
+      },
+      {
+        "city_id": "seattle",
+        "station_icao": "KSEA",
+        "grid_lonlat": [
+          -122.30000000000001,
+          47.45
+        ],
+        "init_time_utc": "2026-09-27T00:00:00Z",
+        "valid_time_utc": "2026-09-27T19:00:00Z",
+        "forecast_hour": 19,
+        "ingestion_time_utc": "2026-09-27T08:22:24.177748Z",
+        "station_head_temperature_2m_p50": 288.6399841308594
+      },
+      {
+        "city_id": "seattle",
+        "station_icao": "KSEA",
+        "grid_lonlat": [
+          -122.30000000000001,
+          47.45
+        ],
+        "init_time_utc": "2026-09-27T00:00:00Z",
+        "valid_time_utc": "2026-09-27T20:00:00Z",
+        "forecast_hour": 20,
+        "ingestion_time_utc": "2026-09-27T08:22:44.021074Z",
+        "station_head_temperature_2m_p50": 289.7955322265625
+      },
+      {
+        "city_id": "seattle",
+        "station_icao": "KSEA",
+        "grid_lonlat": [
+          -122.30000000000001,
+          47.45
+        ],
+        "init_time_utc": "2026-09-27T00:00:00Z",
+        "valid_time_utc": "2026-09-27T21:00:00Z",
+        "forecast_hour": 21,
+        "ingestion_time_utc": "2026-09-27T08:22:42.735055Z",
+        "station_head_temperature_2m_p50": 290.4889831542969
+      },
+      {
+        "city_id": "seattle",
+        "station_icao": "KSEA",
+        "grid_lonlat": [
+          -122.30000000000001,
+          47.45
+        ],
+        "init_time_utc": "2026-09-27T00:00:00Z",
+        "valid_time_utc": "2026-09-27T22:00:00Z",
+        "forecast_hour": 22,
+        "ingestion_time_utc": "2026-09-27T08:22:35.326600Z",
+        "station_head_temperature_2m_p50": 291.039306640625
+      },
+      {
+        "city_id": "seattle",
+        "station_icao": "KSEA",
+        "grid_lonlat": [
+          -122.30000000000001,
+          47.45
+        ],
+        "init_time_utc": "2026-09-27T00:00:00Z",
+        "valid_time_utc": "2026-09-27T23:00:00Z",
+        "forecast_hour": 23,
+        "ingestion_time_utc": "2026-09-27T08:22:25.416589Z",
+        "station_head_temperature_2m_p50": 291.26678466796875
+      },
+      {
+        "city_id": "seattle",
+        "station_icao": "KSEA",
+        "grid_lonlat": [
+          -122.30000000000001,
+          47.45
+        ],
+        "init_time_utc": "2026-09-27T00:00:00Z",
+        "valid_time_utc": "2026-09-28T00:00:00Z",
+        "forecast_hour": 24,
+        "ingestion_time_utc": "2026-09-27T08:22:25.178565Z",
+        "station_head_temperature_2m_p50": 290.825927734375
+      },
+      {
+        "city_id": "seattle",
+        "station_icao": "KSEA",
+        "grid_lonlat": [
+          -122.30000000000001,
+          47.45
+        ],
+        "init_time_utc": "2026-09-27T00:00:00Z",
+        "valid_time_utc": "2026-09-28T01:00:00Z",
+        "forecast_hour": 25,
+        "ingestion_time_utc": "2026-09-27T08:22:24.617537Z",
+        "station_head_temperature_2m_p50": 289.8955078125
+      },
+      {
+        "city_id": "seattle",
+        "station_icao": "KSEA",
+        "grid_lonlat": [
+          -122.30000000000001,
+          47.45
+        ],
+        "init_time_utc": "2026-09-27T00:00:00Z",
+        "valid_time_utc": "2026-09-28T02:00:00Z",
+        "forecast_hour": 26,
+        "ingestion_time_utc": "2026-09-27T08:22:31.030908Z",
+        "station_head_temperature_2m_p50": 288.202880859375
+      },
+      {
+        "city_id": "seattle",
+        "station_icao": "KSEA",
+        "grid_lonlat": [
+          -122.30000000000001,
+          47.45
+        ],
+        "init_time_utc": "2026-09-27T00:00:00Z",
+        "valid_time_utc": "2026-09-28T03:00:00Z",
+        "forecast_hour": 27,
+        "ingestion_time_utc": "2026-09-27T08:22:41.734545Z",
+        "station_head_temperature_2m_p50": 286.5826721191406
+      },
+      {
+        "city_id": "seattle",
+        "station_icao": "KSEA",
+        "grid_lonlat": [
+          -122.30000000000001,
+          47.45
+        ],
+        "init_time_utc": "2026-09-27T00:00:00Z",
+        "valid_time_utc": "2026-09-28T04:00:00Z",
+        "forecast_hour": 28,
+        "ingestion_time_utc": "2026-09-27T08:22:25.151633Z",
+        "station_head_temperature_2m_p50": 285.2057800292969
+      },
+      {
+        "city_id": "seattle",
+        "station_icao": "KSEA",
+        "grid_lonlat": [
+          -122.30000000000001,
+          47.45
+        ],
+        "init_time_utc": "2026-09-27T00:00:00Z",
+        "valid_time_utc": "2026-09-28T05:00:00Z",
+        "forecast_hour": 29,
+        "ingestion_time_utc": "2026-09-27T08:22:23.605859Z",
+        "station_head_temperature_2m_p50": 284.25238037109375
+      },
+      {
+        "city_id": "seattle",
+        "station_icao": "KSEA",
+        "grid_lonlat": [
+          -122.30000000000001,
+          47.45
+        ],
+        "init_time_utc": "2026-09-27T00:00:00Z",
+        "valid_time_utc": "2026-09-28T06:00:00Z",
+        "forecast_hour": 30,
+        "ingestion_time_utc": "2026-09-27T08:22:47.024525Z",
+        "station_head_temperature_2m_p50": 283.2820739746094
+      },
+      {
+        "city_id": "seattle",
+        "station_icao": "KSEA",
+        "grid_lonlat": [
+          -122.30000000000001,
+          47.45
+        ],
+        "init_time_utc": "2026-09-27T00:00:00Z",
+        "valid_time_utc": "2026-09-28T07:00:00Z",
+        "forecast_hour": 31,
+        "ingestion_time_utc": "2026-09-27T08:22:36.253733Z",
+        "station_head_temperature_2m_p50": 283.23663330078125
+      }
+    ]
+  }
+}
