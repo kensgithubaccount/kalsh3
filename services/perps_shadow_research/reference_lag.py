@@ -339,10 +339,7 @@ def measure_reference_lag_horizon(
         if impulse.available_at < item.available_at <= cutoff
         and (
             item.connection_epoch != impulse.connection_epoch
-            or (
-                item.connection_epoch == impulse.connection_epoch
-                and item.sid != baseline.sid
-            )
+            or (item.connection_epoch == impulse.connection_epoch and item.sid != baseline.sid)
         )
     ]
     if boundary_books:
