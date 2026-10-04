@@ -8,6 +8,7 @@ import pytest
 
 from services.perps_shadow_research.phase0_prospective import (
     PROTOCOL_SHA256,
+    TICKER,
     CollectionStatus,
     ProspectiveProtocolError,
 )
@@ -22,7 +23,7 @@ def common(session_id: str) -> dict[str, object]:
     return {
         "protocol_sha256": PROTOCOL_SHA256,
         "session_id": session_id,
-        "ticker": "BTC-PERP",
+        "ticker": TICKER,
         "production_influence": "0",
     }
 

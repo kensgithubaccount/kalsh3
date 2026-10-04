@@ -15,7 +15,11 @@ from services.perps_shadow_research.phase0_collect import (
     seal_evidence_db,
     validate_invocation_time,
 )
-from services.perps_shadow_research.phase0_prospective import PROTOCOL_SHA256, scheduled_at
+from services.perps_shadow_research.phase0_prospective import (
+    PROTOCOL_SHA256,
+    TICKER,
+    scheduled_at,
+)
 
 
 def test_invocation_time_is_frozen_and_late_bounded() -> None:
@@ -35,7 +39,7 @@ def test_claim_is_exclusive_and_binds_protocol(tmp_path: Path) -> None:
     payload = json.loads(paths.claim.read_text())
     assert payload["protocol_sha256"] == PROTOCOL_SHA256
     assert payload["session_id"] == "P0-S01"
-    assert payload["ticker"] == "BTC-PERP"
+    assert payload["ticker"] == TICKER
     assert payload["no_retry"] is True
     with pytest.raises(ProspectiveCollectionError, match="already claimed"):
         claim_session(paths, now=now)
