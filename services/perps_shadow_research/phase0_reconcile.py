@@ -122,7 +122,9 @@ def reconcile_session(root: Path, session_id: str) -> ReconciledSession:
             raise ProspectiveProtocolError("prospective result has invalid evidence DB hash")
         if not evidence.is_file() or _sha256(evidence) != expected_sha:
             raise ProspectiveProtocolError("prospective evidence DB hash mismatch")
-        return ReconciledSession(session_id, CollectionStatus.CAPTURED, "SEALED_RESULT", expected_sha)
+        return ReconciledSession(
+            session_id, CollectionStatus.CAPTURED, "SEALED_RESULT", expected_sha
+        )
 
     if failure.is_file():
         payload = _json(failure)
@@ -135,7 +137,9 @@ def reconcile_session(root: Path, session_id: str) -> ReconciledSession:
                 raise ProspectiveProtocolError("prospective failure has invalid evidence DB hash")
             if not evidence.is_file() or _sha256(evidence) != expected_sha:
                 raise ProspectiveProtocolError("failed-session evidence DB hash mismatch")
-        return ReconciledSession(session_id, CollectionStatus.FAILED, "FAILURE_RECEIPT", expected_sha)
+        return ReconciledSession(
+            session_id, CollectionStatus.FAILED, "FAILURE_RECEIPT", expected_sha
+        )
 
     return ReconciledSession(session_id, CollectionStatus.FAILED, "CLAIMED_WITHOUT_RECEIPT", None)
 
@@ -150,7 +154,9 @@ def reconcile_root(root: Path) -> Reconciliation:
         )
         if unexpected:
             raise ProspectiveProtocolError("unexpected prospective session directories exist")
-    return Reconciliation(tuple(reconcile_session(root, session_id) for session_id in expected_session_ids()))
+    return Reconciliation(
+        tuple(reconcile_session(root, session_id) for session_id in expected_session_ids())
+    )
 
 
 def main() -> int:
