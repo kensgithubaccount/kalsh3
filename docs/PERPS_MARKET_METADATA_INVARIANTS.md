@@ -136,3 +136,27 @@ Before runtime code adopts these new required fields, refresh and hash the exact
 official Perps OpenAPI/AsyncAPI bytes and update the parser provenance. A
 documentation page or generated client alone must not silently widen the parser's
 accepted authority.
+
+
+## October 4, 2026 live `market_version` divergence
+
+No-secret production REST probes on 2026-10-04 confirmed the active Bitcoin
+Margin market is `KXBTCPERP`. A follow-up full-payload parser probe showed that
+the live detail object **omits the `market_version` key entirely**, despite the
+reviewed OpenAPI describing that field as required integer metadata.
+
+For read-only research evidence, this one observed absence is represented as
+**UNKNOWN**. The parser accepts a positive int32 when the field is present and
+accepts the field being absent. Explicit JSON null, booleans, strings, zero,
+negative values, and out-of-range integers remain invalid.
+
+UNKNOWN must never be replaced with a guessed or default version. The recursively
+retained raw snapshot preserves the key's absence, and the structural contract
+hash uses an explicit missing-field sentinel so missing, present-integer, and any
+future schema form cannot collapse to the same contract identity. A later
+appearance or change of a concrete version is therefore detectable.
+
+This is a read-only evidence-authority exception only. Any future order-capable
+milestone must separately establish and bind a concrete exchange version when
+the exchange requires one; UNKNOWN cannot authorize execution.
+

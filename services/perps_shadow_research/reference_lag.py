@@ -49,7 +49,7 @@ class ReferenceImpulse:
     impulse_id: str
     ticker: str
     exchange_index: int
-    market_version: int
+    market_version: int | None
     underlying_multiplier: Decimal
     market_metadata_hash: str
     previous_market_state_evidence_id: str

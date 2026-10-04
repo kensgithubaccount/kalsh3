@@ -142,7 +142,6 @@ def test_book_quantity_uses_fixed_point_granularity_not_fractional_flag(
         "status",
         "title",
         "exchange_index",
-        "market_version",
         "contract_size",
         "underlying_multiplier",
         "tick_size",
@@ -167,6 +166,12 @@ def test_market_version_underlying_multiplier_and_optional_metadata_fail_closed(
     for value in (True, 0, -1, "1", None):
         with pytest.raises(ShadowResearchError, match="market_version"):
             market(market_version=value)
+    missing_raw = market_raw()
+    del missing_raw["market_version"]
+    missing_version = parse_perps_market(missing_raw, observed_at=NOW)
+    assert missing_version.market_version is None
+    assert "market_version" not in missing_version.normalized_snapshot
+    assert missing_version.perps_contract_hash != market(market_version=1).perps_contract_hash
     for value in ("0", "-1", "NaN", True, None):
         with pytest.raises(ShadowResearchError, match="underlying_multiplier"):
             market(underlying_multiplier=value)
@@ -174,6 +179,29 @@ def test_market_version_underlying_multiplier_and_optional_metadata_fail_closed(
         market(asset_class=1)
     with pytest.raises(ShadowResearchError, match="product_metadata"):
         market(product_metadata="not-an-object")
+
+
+def test_live_kxbtcperp_shape_preserves_null_market_version() -> None:
+    item = parse_perps_market(
+        {
+            "ticker": "KXBTCPERP",
+            "status": "active",
+            "title": "0.0001 BTC",
+            "exchange_index": 0,
+            "contract_size": "0.000100",
+            "underlying_multiplier": "1.000000",
+            "tick_size": "0.0001",
+            "fractional_trading_enabled": True,
+            "schedule": None,
+            "asset_class": "Crypto",
+        },
+        observed_at=NOW,
+    )
+    assert item.ticker == "KXBTCPERP"
+    assert item.market_version is None
+    assert "market_version" not in item.normalized_snapshot
+    assert item.exchange_index == 0
+    assert item.underlying_multiplier == Decimal("1.000000")
 
 
 def test_schedule_absent_null_and_nested_semantics() -> None:
