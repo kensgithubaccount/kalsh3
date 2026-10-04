@@ -76,7 +76,9 @@ def market_reply(**changes: object) -> HttpReply:
         "status": "active",
         "title": "Bitcoin",
         "exchange_index": 4,
+        "market_version": 1,
         "contract_size": "1.000000",
+        "underlying_multiplier": "1.000000",
         "tick_size": "0.50",
         "fractional_trading_enabled": True,
         "schedule": None,
@@ -100,7 +102,9 @@ def test_fixed_hosts_and_public_market_contract(environment: MarginEnvironment) 
         )
     ]
     assert market.exchange_index == 4
+    assert market.market_version == 1
     assert market.contract_size == Decimal("1.000000")
+    assert market.underlying_multiplier == Decimal("1.000000")
     assert market.tick_size == Decimal("0.50")
 
 
