@@ -114,10 +114,15 @@ per second, the frozen diagnostic horizon grid is:
 `1s, 2s, 5s, 10s`.
 
 At each horizon, the evaluator uses the latest already-valid book evidence
-available no later than the relevant cutoff. If no baseline book exists, the
-row is an explicit `NO_BASELINE_BOOK` abstention. If a reconnect boundary
-appears between baseline and the horizon state, the row is an explicit
-`RECONNECT_WITHIN_HORIZON` abstention.
+available no later than the relevant cutoff. Book freshness is frozen at a
+30-second maximum age, matching the existing sequenced-book runtime stale
+ceiling. If no baseline book exists, the row is an explicit
+`NO_BASELINE_BOOK` abstention. An old baseline becomes
+`STALE_BASELINE_BOOK`; a baseline that was still current at impulse time but
+has aged past the ceiling by the horizon cutoff becomes
+`STALE_HORIZON_BOOK`. If a reconnect boundary appears between baseline and
+the horizon state, the row is an explicit `RECONNECT_WITHIN_HORIZON`
+abstention.
 
 The measured quantities are quote repricing only:
 
