@@ -1,11 +1,15 @@
 from __future__ import annotations
 
+import hashlib
+import json
 from datetime import date
+from decimal import Decimal
 
 import pytest
 
 from services.forecasting.wn_multicity_evaluation_spec import (
     CITY_DAYS_INDEPENDENT,
+    D1_SHA256SUMS_SHA256,
     EXPECTED_CITY_IDS,
     FROZEN_PROTOCOL_SHA256,
     PRE_FIRST_EVENT_AMENDMENT_SHA256,
@@ -15,10 +19,13 @@ from services.forecasting.wn_multicity_evaluation_spec import (
     REVIEWED_IMAGE_DIGEST,
     CaptureState,
     MulticityEvaluationSpecError,
+    aggregate_cluster_equal_point_scores,
     audit_inventory,
     classify_city_day_objects,
     expected_city_days,
     expected_target_dates,
+    score_point_forecast,
+    validate_sealed_preoutcome_packet,
 )
 
 
@@ -28,6 +35,9 @@ def test_frozen_identity_constants_match_reviewed_experiment() -> None:
     )
     assert PRE_FIRST_EVENT_AMENDMENT_SHA256 == (
         "b6ce8154d3a3eb4a90e1eefb3cd57b879a818eabee22b8f8c8fe2dcd7614f000"
+    )
+    assert D1_SHA256SUMS_SHA256 == (
+        "6d2c618e2ef0d99f87c12d50f41dfefa617f43cd7347aeef4c0a1d37c3ba3891"
     )
     assert REVIEWED_IMAGE_DIGEST == (
         "sha256:0ffe08df80315922d64f2313f160b053151744416ed03dacafe38fcc6e24bc08"
@@ -127,15 +137,12 @@ def _sealed_component_bytes(
         "pre_first_event_amendment_sha256": (
             "b6ce8154d3a3eb4a90e1eefb3cd57b879a818eabee22b8f8c8fe2dcd7614f000"
         ),
+        "d1_sha256sums_sha256": (
+            "6d2c618e2ef0d99f87c12d50f41dfefa617f43cd7347aeef4c0a1d37c3ba3891"
+        ),
     }
-    market = {
-        "record_type": "WN-MULTICITY-C1-CLOUD-MARKET-v1",
-        **common,
-    }
-    weather = {
-        "record_type": "WN-MULTICITY-C1-CLOUD-WEATHER-v1",
-        **common,
-    }
+    market = {"record_type": "WN-MULTICITY-C1-CLOUD-MARKET-v1", **common}
+    weather = {"record_type": "WN-MULTICITY-C1-CLOUD-WEATHER-v1", **common}
     market_bytes = json.dumps(market, sort_keys=True, separators=(",", ":")).encode()
     weather_bytes = json.dumps(weather, sort_keys=True, separators=(",", ":")).encode()
     forecast = {
@@ -203,16 +210,20 @@ def test_component_byte_change_fails_closed() -> None:
 
 def test_probability_or_outcome_leakage_flag_fails_closed() -> None:
     packet, forecast, market, weather = _sealed_component_bytes()
-    obj = json.loads(forecast)
-    obj["no_probability"] = False
-    changed = json.dumps(obj, sort_keys=True, separators=(",", ":")).encode()
+    forecast_obj = json.loads(forecast)
+    forecast_obj["no_probability"] = False
+    changed_forecast = json.dumps(
+        forecast_obj,
+        sort_keys=True,
+        separators=(",", ":"),
+    ).encode()
     packet_obj = json.loads(packet)
-    packet_obj["component_sha256"]["forecast.json"] = hashlib.sha256(changed).hexdigest()
+    packet_obj["component_sha256"]["forecast.json"] = hashlib.sha256(changed_forecast).hexdigest()
     changed_packet = json.dumps(packet_obj, sort_keys=True, separators=(",", ":")).encode()
     with pytest.raises(MulticityEvaluationSpecError, match="frozen pre-outcome rule"):
         validate_sealed_preoutcome_packet(
             packet_bytes=changed_packet,
-            forecast_bytes=changed,
+            forecast_bytes=changed_forecast,
             market_bytes=market,
             weather_bytes=weather,
         )
@@ -251,6 +262,7 @@ def test_cluster_equal_summary_requires_all_five_cities_for_primary_cluster() ->
                 finalized_fahrenheit=Decimal(str(69 + index)),
             )
         )
+
     full = aggregate_cluster_equal_point_scores(scores)
     assert full.complete_date_clusters == 1
     assert full.scored_city_days == 5
