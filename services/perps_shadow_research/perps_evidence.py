@@ -11,7 +11,12 @@ from uuid import UUID
 
 from .domain import ShadowResearchError
 from .perps_events import PerpsBookDeltaEvent, PerpsBookSnapshotEvent, PerpsTickerEvent
-from .perps_metadata import PerpsMarketMetadata, TimestampedPrice, canonical_hash
+from .perps_metadata import (
+    OFFICIAL_ASYNCAPI_PROVENANCE,
+    PerpsMarketMetadata,
+    TimestampedPrice,
+    canonical_hash,
+)
 from .perps_orderbook import PerpsBookState, PerpsBookView
 
 
@@ -67,6 +72,7 @@ class PerpsBookEvidenceObservation:
     sid: int
     sequence: int
     source_event_fingerprint: str
+    asyncapi_sha256: str
     book_state: PerpsBookState
     best_bid: Decimal | None
     best_ask: Decimal | None
@@ -126,6 +132,7 @@ class PerpsBookEvidenceObservation:
             raise ShadowResearchError("Perps evidence production influence must be zero")
         for digest in (
             self.source_event_fingerprint,
+            self.asyncapi_sha256,
             self.perps_contract_hash,
             self.market_metadata_hash,
             self.full_book_hash,
@@ -160,6 +167,7 @@ class PerpsBookEvidenceObservation:
             sid=event.sid,
             sequence=event.sequence,
             source_event_fingerprint=perps_book_fingerprint(event),
+            asyncapi_sha256=OFFICIAL_ASYNCAPI_PROVENANCE.sha256,
             book_state=view.state,
             best_bid=view.best_bid,
             best_ask=view.best_ask,
@@ -191,6 +199,7 @@ class PerpsMarketStateObservation:
     connection_epoch: UUID
     sid: int
     source_fingerprint: str
+    asyncapi_sha256: str
     ticker_ts_ms: int
     sending_ts_ms: int | None
     received_at: datetime
@@ -241,6 +250,10 @@ class PerpsMarketStateObservation:
             raise ShadowResearchError("invalid asset_class")
         if not isinstance(self.connection_epoch, UUID) or self.connection_epoch.int == 0:
             raise ShadowResearchError("non-zero ticker epoch required")
+        if len(self.asyncapi_sha256) != 64 or any(
+            char not in "0123456789abcdef" for char in self.asyncapi_sha256
+        ):
+            raise ShadowResearchError("ticker evidence AsyncAPI checksum must be SHA-256")
         received, available = (
             _utc(self.received_at, "received_at"),
             _utc(self.available_at, "available_at"),
@@ -275,6 +288,7 @@ class PerpsMarketStateObservation:
             connection_epoch=epoch,
             sid=event.sid,
             source_fingerprint=perps_ticker_fingerprint(event),
+            asyncapi_sha256=OFFICIAL_ASYNCAPI_PROVENANCE.sha256,
             ticker_ts_ms=event.ts_ms,
             sending_ts_ms=event.sending_ts_ms,
             received_at=received_at,
