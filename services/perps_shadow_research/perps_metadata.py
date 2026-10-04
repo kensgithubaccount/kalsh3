@@ -247,8 +247,8 @@ def parse_perps_market(
         raise ShadowResearchError("ticker, status, and title must be strings")
     if type(exchange_index) is not int:
         raise ShadowResearchError("exchange_index must be an exact integer")
-    if market_version is not None and type(market_version) is not int:
-        raise ShadowResearchError("market_version must be null or an exact integer")
+    if market_version_present and type(market_version) is not int:
+        raise ShadowResearchError("market_version must be an exact integer when present")
     if type(fractional) is not bool:
         raise ShadowResearchError("fractional_trading_enabled must be boolean")
     schedule_raw = _required(raw, "schedule")
