@@ -246,6 +246,10 @@ def evaluate_prospective_sessions(
 
     primary_count = sum(item.primary_measured_impulses for item in eligible)
 
+    primary_cluster_mean: Decimal | None
+    confirmatory_cluster_mean: Decimal | None
+    positive_fraction: Decimal | None
+
     if eligible:
         denominator = Decimal(len(eligible))
         primary_cluster_mean = (
