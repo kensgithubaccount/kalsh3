@@ -50,7 +50,7 @@ jobs:
                   f"sha256={hashlib.sha256(body).hexdigest()}"
               )
 
-          for ticker in ("BTC-PERP", "BTCPERP"):
+          for ticker in ("BTC-PERP", "BTCPERP", "KXBTCPERP"):
               req = urllib.request.Request(base + ticker, method="GET")
               try:
                   with urllib.request.urlopen(req, timeout=10) as response:
@@ -72,5 +72,10 @@ jobs:
                       "status": market.get("status"),
                       "title": market.get("title"),
                       "market_version": market.get("market_version"),
+                      "underlying_multiplier": market.get("underlying_multiplier"),
+                      "exchange_index": market.get("exchange_index"),
+                      "asset_class": market.get("asset_class"),
+                      "contract_size": market.get("contract_size"),
+                      "tick_size": market.get("tick_size"),
                   }, sort_keys=True))
           PY
