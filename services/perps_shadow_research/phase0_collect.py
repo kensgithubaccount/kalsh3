@@ -359,7 +359,7 @@ def main() -> int:
         _write_failure(paths, exc, now=datetime.now(UTC))
         print(f"FAILED: {args.session_id}")
         return 2
-    except Exception as exc:  # noqa: BLE001 - top-level fail-closed evidence boundary
+    except Exception as exc:
         _write_failure(paths, exc, now=datetime.now(UTC))
         print(f"FAILED: {args.session_id}")
         return 2
