@@ -18,7 +18,7 @@ dependencies = [
 # in-memory reader. Live-verified 2026-09-21 against gs://weathernext3_spatial -- see the
 # WN-A1 review doc.
 weathernext = [
-    "gcsfs==2026.8.1",
+    "gcsfs==2026.10.0",
     "zarr==3.3.0",
     "google-cloud-storage==3.14.1",
     # Bounded prefix decoding of the ~0.47 GB single-frame zstd chunks (streaming decode);
