@@ -73,8 +73,7 @@ def test_reuters_evidence_bar_is_not_weakened() -> None:
     assert tuple(evidence["approved_host_set"]) == APPROVED_REUTERS_HOSTS
     assert evidence["no_single_host_promotion"] is True
     assert any(
-        "at least 2 independently operated hosts" in row
-        for row in evidence["pass_requirements"]
+        "at least 2 independently operated hosts" in row for row in evidence["pass_requirements"]
     )
     assert evidence["publication_must_precede_each_scored_sibling_close"] is True
 
