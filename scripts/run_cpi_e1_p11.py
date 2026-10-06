@@ -16,6 +16,7 @@ from services.forecasting.cpi_p11_runtime import (
     capture_market_evidence,
     close_pre_release,
     collect_bls_truth,
+    record_reuters_nonpass,
     record_reuters_pass,
     run_preflight,
     score_and_seal,
@@ -34,6 +35,8 @@ def _parser() -> argparse.ArgumentParser:
     sub.add_parser("market")
     reuters = sub.add_parser("record-reuters-pass")
     reuters.add_argument("--input", required=True, type=Path)
+    reuters_nonpass = sub.add_parser("record-reuters-nonpass")
+    reuters_nonpass.add_argument("--input", required=True, type=Path)
     sub.add_parser("preclose")
     truth = sub.add_parser("truth")
     truth.add_argument("--score", action="store_true")
@@ -56,6 +59,11 @@ def main() -> int:
             if not isinstance(candidate, dict):
                 raise P11AuthorityError("Reuters input must be a JSON object")
             payload = record_reuters_pass(paths, candidate)
+        elif args.command == "record-reuters-nonpass":
+            candidate = json.loads(args.input.read_bytes())
+            if not isinstance(candidate, dict):
+                raise P11AuthorityError("Reuters input must be a JSON object")
+            payload = record_reuters_nonpass(paths, candidate)
         elif args.command == "preclose":
             payload = close_pre_release(paths)
         elif args.command == "truth":
