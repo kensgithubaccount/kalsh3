@@ -52,7 +52,7 @@ fi
 
 mkdir -p "$STATE/logs" "$STATE/plists" "$AGENTS"
 
-SHORT="${HEAD[1,12]}"
+SHORT="$(printf '%s' "$HEAD" | cut -c1-12)"
 WORKTREE="$HOME/kalsh3_cpi_p11_$SHORT"
 
 if [ -e "$WORKTREE" ]; then
@@ -85,6 +85,7 @@ WORKTREE="$WORKTREE"
 UV="$UV"
 ROOT="$RUN_ROOT"
 COMMAND="${1:?command required}"
+INPUT="${2:-}"
 
 cd "$WORKTREE"
 
@@ -94,6 +95,13 @@ case "$COMMAND" in
     ;;
   truth-score)
     exec "$UV" run --locked python scripts/run_cpi_e1_p11.py       --root "$ROOT" truth --score
+    ;;
+  record-reuters-pass|record-reuters-nonpass)
+    if [ -z "$INPUT" ]; then
+      echo "BLOCKER: Reuters receipt input path required"
+      exit 2
+    fi
+    exec "$UV" run --locked python scripts/run_cpi_e1_p11.py       --root "$ROOT" "$COMMAND" --input "$INPUT"
     ;;
   *)
     echo "BLOCKER: unsupported frozen runner command: $COMMAND"
