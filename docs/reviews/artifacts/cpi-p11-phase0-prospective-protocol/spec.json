@@ -1,0 +1,115 @@
+{
+  "anti_overfitting": [
+    "event KXCPI-26SEP is the only target; no substitution after protocol freeze",
+    "include the complete qualifying sibling set; no hand-selected thresholds",
+    "market observation time/selection rule cannot change after seeing Reuters or BLS truth",
+    "Reuters source/admission/corroboration rules cannot change per candidate",
+    "no Reuters probability transform is permitted",
+    "no fees, PnL, sizing, slippage, fills, queue position, or execution simulation in this gate",
+    "one supportive event cannot establish durable edge or production readiness"
+  ],
+  "canonical_base_sha": "1dca2f488e950dae86f8a57af556e000b7e3cca5",
+  "canonical_base_tree": "2165899e6770c9b363c2a5c38465d5578e93c911",
+  "decision_gate": {
+    "INCONCLUSIVE_INSUFFICIENT": "Reuters evidence is not PASS, first-party preflight fails, market evidence is incomplete, truth authority is unavailable, or fewer than 4 common eligible siblings remain",
+    "PROSPECTIVE_CONTRADICTION": "Reuters primary correct count is strictly less than Kalshi on at least 4 common eligible siblings",
+    "PROSPECTIVE_SUPPORT_DIAGNOSTIC": "Reuters primary correct count is strictly greater than Kalshi on at least 4 common eligible siblings",
+    "PROSPECTIVE_TIE_NO_ADVANTAGE": "Reuters and Kalshi primary correct counts are equal on at least 4 common eligible siblings",
+    "phase1_economic_test_authorized": false,
+    "promotion_authority": "NONE",
+    "support_next_action": "freeze a multi-event prospective extension before the next CPI event"
+  },
+  "market_observation": {
+    "acquisition_window_utc": [
+      "2026-10-14T12:05:00Z",
+      "2026-10-14T12:20:00Z"
+    ],
+    "bounded_retry_rule": "up to 3 acquisition attempts inside the fixed window; no attempts after 12:20Z",
+    "diagnostic_price": "two_sided_midpoint_only_when_both_sides_are_valid",
+    "fixed_market_snapshot_rule": true,
+    "interval_minutes": 60,
+    "missing_quote_rule": "missing or boundary yes_ask is excluded for both sources on that sibling; never impute, interpolate, use last trade, or substitute midpoint",
+    "primary_price": "yes_ask",
+    "selection_rule": "for each sibling select the unique latest 60-minute candle whose end_period_ts is strictly before that sibling market close",
+    "source": "Kalshi public historical candlesticks"
+  },
+  "preflight": {
+    "first_party_only": true,
+    "must_revalidate_before_collection": true,
+    "requirements": [
+      "BLS still identifies September 2026 CPI for 2026-10-14 08:30 ET",
+      "Kalshi event identity is exactly KXCPI-26SEP in series KXCPI",
+      "the complete event contains exactly 14 sibling markets",
+      "every admitted sibling is active/open, simple binary, non-provisional, non-MVE",
+      "every admitted sibling resolves strict-GT headline CPI month-over-month for 2026-09",
+      "every admitted sibling closes at 2026-10-14T12:25:00Z",
+      "any mismatch fails closed before Reuters evidence or scoring is used"
+    ]
+  },
+  "reuters_evidence": {
+    "acquisition_must_complete_by_utc": "2026-10-14T12:20:00Z",
+    "approved_host_set": [
+      "reuters.com",
+      "yahoo.com",
+      "ca.finance.yahoo.com",
+      "finance.yahoo.com",
+      "kfgo.com",
+      "tradingview.com",
+      "nasdaq.com",
+      "investing.com",
+      "wmbd.com",
+      "aol.com"
+    ],
+    "no_single_host_promotion": true,
+    "pass_requirements": [
+      "Reuters attribution is positively established",
+      "article body/dateline explicitly identifies reference month 2026-09",
+      "specific headline CPI month-over-month forecast is stated prospectively",
+      "value is preserved as exact Decimal at published precision",
+      "governing publication time is positively evidenced and precedes each scored sibling close",
+      "at least 2 independently operated hosts carry the same Reuters wire revision"
+    ],
+    "publication_must_precede_each_scored_sibling_close": true,
+    "search_rungs": [
+      "Reuters direct exact-release-date search/fetch",
+      "approved syndicated Reuters hosts using exact release-date and day-before queries",
+      "Wayback/CDX retrieval over the same approved host set"
+    ],
+    "terminal_states": [
+      "PASS",
+      "UNKNOWN_SEARCHED_NO_QUALIFYING_OBSERVATION",
+      "FAILURE_ACQUISITION_OR_AUTHORITY"
+    ]
+  },
+  "safety": {
+    "capital_allocation": false,
+    "live_trading_promotion": false,
+    "orders": false,
+    "production_influence": "0",
+    "research_only": true
+  },
+  "schema_version": "cpi-e1-p11-phase0-prospective-protocol-v1",
+  "scoring": {
+    "aggregation_rule": "mean directional correctness across eligible siblings within the single event",
+    "common_denominator_rule": "both Reuters and Kalshi are scored only on the same eligible siblings",
+    "kalshi_call": "YES iff yes_ask > 0.5; NO iff yes_ask < 0.5; exact 0.5 is TIE",
+    "minimum_primary_eligible_siblings": 4,
+    "reuters_call": "YES iff Reuters forecast > sibling threshold; otherwise NO",
+    "sibling_rows_independent": false,
+    "tie_rule": "Kalshi exact-0.5 sibling is excluded from the common primary denominator",
+    "truth_authority": "BLS initial release only; no later revision",
+    "truth_call": "YES iff BLS initial-release headline CPI MoM > sibling threshold; otherwise NO",
+    "unit_of_independence": "event"
+  },
+  "spec_digest_sha256": "041c3cd71025023064b6999b216cb460d3dcc6bcc2c701ede9542ef07c9d2b46",
+  "target": {
+    "bls_release_at_utc": "2026-10-14T12:30:00Z",
+    "event_ticker": "KXCPI-26SEP",
+    "expected_sibling_count": 14,
+    "kalshi_market_close_at_utc": "2026-10-14T12:25:00Z",
+    "market_source_url": "https://kalshi.com/markets/kxcpi/kxcpi-26sep",
+    "reference_month": "2026-09",
+    "release_source_url": "https://www.bls.gov/schedule/news_release/cpi.htm",
+    "series_ticker": "KXCPI"
+  }
+}
