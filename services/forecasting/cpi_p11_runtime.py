@@ -530,10 +530,86 @@ def _live_candle_path(market: MarketIdentity) -> tuple[str, int, int]:
     end_ts = int(market.close_time.timestamp())
     ticker = quote(market.ticker, safe="")
     path = (
-        f"{public_read.BASE}/markets/{ticker}/candlesticks"
+        f"{public_read.BASE}/series/{TARGET_SERIES}/markets/{ticker}/candlesticks"
         f"?start_ts={start_ts}&end_ts={end_ts}&period_interval=60"
     )
     return path, start_ts, end_ts
+
+
+def _live_quote_close(container: object, field: str) -> str | None:
+    if container is None:
+        return None
+    if not isinstance(container, dict):
+        raise P11AuthorityError(f"{field} quote container is malformed")
+    close = container.get("close")
+    close_dollars = container.get("close_dollars")
+
+    dollars: Decimal | None = None
+    if close_dollars is not None:
+        if not isinstance(close_dollars, str):
+            raise P11AuthorityError(f"{field}.close_dollars must be an exact string")
+        try:
+            dollars = Decimal(close_dollars)
+        except InvalidOperation as exc:
+            raise P11AuthorityError(f"{field}.close_dollars is malformed") from exc
+        if not dollars.is_finite() or not Decimal("0") <= dollars <= Decimal("1"):
+            raise P11AuthorityError(f"{field}.close_dollars is outside [0,1]")
+
+    cents_dollars: Decimal | None = None
+    if close is not None:
+        if isinstance(close, bool) or not isinstance(close, (int, str)):
+            raise P11AuthorityError(f"{field}.close has unsupported runtime type")
+        try:
+            parsed = Decimal(str(close))
+        except InvalidOperation as exc:
+            raise P11AuthorityError(f"{field}.close is malformed") from exc
+        if not parsed.is_finite():
+            raise P11AuthorityError(f"{field}.close is non-finite")
+        if isinstance(close, int) or parsed > 1:
+            if parsed != parsed.to_integral_value() or not Decimal("0") <= parsed <= Decimal("100"):
+                raise P11AuthorityError(f"{field}.close cents are outside [0,100]")
+            cents_dollars = parsed / Decimal("100")
+        elif Decimal("0") <= parsed <= Decimal("1"):
+            cents_dollars = parsed
+        else:
+            raise P11AuthorityError(f"{field}.close is outside reviewed price bounds")
+
+    if dollars is not None and cents_dollars is not None and dollars != cents_dollars:
+        raise P11AuthorityError(f"{field} dollar/cents close representations disagree")
+    chosen = dollars if dollars is not None else cents_dollars
+    return None if chosen is None else format(chosen, "f")
+
+
+def _normalize_live_candle_payload(
+    payload: dict[str, Any],
+    *,
+    market_ticker: str,
+) -> dict[str, Any]:
+    response_ticker = payload.get("ticker")
+    if response_ticker not in (None, market_ticker):
+        raise P11AuthorityError("live candle response ticker mismatch")
+    candles = payload.get("candlesticks")
+    if not isinstance(candles, list) or any(not isinstance(row, dict) for row in candles):
+        raise P11AuthorityError("live candle response is malformed")
+
+    normalized: list[dict[str, Any]] = []
+    for source in candles:
+        row = dict(source)
+        for field in ("yes_bid", "yes_ask"):
+            container = source.get(field)
+            if container is None:
+                row[field] = None
+                continue
+            if not isinstance(container, dict):
+                raise P11AuthorityError(f"{field} quote container is malformed")
+            normalized_container = dict(container)
+            normalized_container["close"] = _live_quote_close(container, field)
+            row[field] = normalized_container
+        if "volume" not in row and "volume_fp" in row:
+            row["volume"] = row["volume_fp"]
+        normalized.append(row)
+
+    return {"ticker": market_ticker, "candlesticks": normalized}
 
 
 def run_preflight(
@@ -661,8 +737,12 @@ def capture_market_evidence(
         raw, payload, observed = _kalshi_get(
             path, deadline=PRE_RELEASE_DEADLINE, clock=clock, sleeper=sleeper
         )
-        candles = validate_candle_payload(
+        normalized_payload = _normalize_live_candle_payload(
             payload,
+            market_ticker=market.ticker,
+        )
+        candles = validate_candle_payload(
+            normalized_payload,
             market_ticker=market.ticker,
             request_start_ts=start_ts,
             request_end_ts=end_ts,
