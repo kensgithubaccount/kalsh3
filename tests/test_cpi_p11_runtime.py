@@ -108,9 +108,7 @@ def test_market_preflight_requires_complete_active_strict_gt_cohort() -> None:
 def test_live_candle_request_preserves_frozen_preclose_selector() -> None:
     market = runtime._validate_markets(_markets_payload())[0]
     path, start_ts, end_ts = runtime._live_candle_path(market)
-    assert path.startswith(
-        f"{runtime.public_read.BASE}/series/{runtime.TARGET_SERIES}/markets/"
-    )
+    assert path.startswith(f"{runtime.public_read.BASE}/series/{runtime.TARGET_SERIES}/markets/")
     assert "/historical/" not in path
     assert "period_interval=60" in path
     assert end_ts == int(runtime.MARKET_CLOSE.timestamp())
