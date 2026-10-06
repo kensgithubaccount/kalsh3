@@ -70,6 +70,39 @@ window. Nothing acquired after 12:20Z can become primary evidence.
 Missing/boundary YES asks are excluded symmetrically for both Reuters and
 Kalshi. They are never imputed.
 
+## Artifact layout and immutability
+
+The logical run root is frozen as:
+
+`cpi_e1_p11_prospective_20261014/`
+
+Required terminal evidence layout:
+
+- `protocol.json` — byte-identical copy of this frozen machine-readable spec;
+- `preflight.json` — first-party BLS/Kalshi identity and timing checks;
+- `kalshi/event.json` — exact bounded first-party event response/evidence envelope;
+- `kalshi/candles/<market_ticker>.json` — one exact bounded response/evidence
+  envelope per sibling used by the fixed candle selector;
+- `reuters/coverage.json` — terminal Reuters acquisition state;
+- `reuters/receipt.json` and `reuters/extract.json` only when Reuters
+  evidence reaches PASS;
+- `bls/initial_release.json` — post-release first-party truth evidence;
+- exactly one of `result.json` or `failure.json`;
+- `manifest.sha256` covering the terminal run artifacts.
+
+First-party responses retain exact bounded bytes, or an equivalent raw-body
+envelope plus SHA-256. Reuters evidence follows the established minimal
+reviewable metadata/extract-hash model and does not require committing full
+copyrighted wire text.
+
+Every receipt binds the frozen protocol digest and target event. Terminal
+artifacts are create-once: no artifact may be rewritten after terminal
+issuance. Any correction must be a new append-only receipt.
+
+**No backfill is permitted after 12:20Z on Oct. 14.** A late or missed
+collection is `INCONCLUSIVE_INSUFFICIENT`, never reconstructed after the
+fact into a prospective PASS.
+
 ## Reuters evidence authority
 
 P11 carries forward the reviewed P10B/P10C admission bar.
@@ -136,4 +169,4 @@ The frozen machine-readable artifact is:
 
 Its frozen digest is:
 
-`041c3cd71025023064b6999b216cb460d3dcc6bcc2c701ede9542ef07c9d2b46`
+`e62374c9db5b7f3355d413687ab82e868ca2686fbdd6fd9c57a1329151a8b40d`
