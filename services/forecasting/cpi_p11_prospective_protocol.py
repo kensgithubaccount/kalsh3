@@ -187,6 +187,42 @@ def build_phase0_protocol() -> dict[str, Any]:
             ),
             "one supportive event cannot establish durable edge or production readiness",
         ],
+        "artifact_policy": {
+            "logical_run_root": "cpi_e1_p11_prospective_20261014",
+            "required_paths": [
+                "protocol.json",
+                "preflight.json",
+                "kalshi/event.json",
+                "kalshi/candles/<market_ticker>.json",
+                "reuters/coverage.json",
+                "bls/initial_release.json",
+                "result.json OR failure.json",
+                "manifest.sha256",
+            ],
+            "conditional_paths": [
+                "reuters/receipt.json when Reuters evidence is PASS",
+                "reuters/extract.json when Reuters evidence is PASS",
+            ],
+            "integrity_rules": [
+                "protocol.json must be byte-identical to the frozen reviewed spec",
+                (
+                    "every acquired first-party response must retain exact bounded bytes "
+                    "or an equivalent raw-body envelope plus SHA-256"
+                ),
+                (
+                    "Reuters evidence stores minimal reviewable metadata/extract hashes "
+                    "and must not require committing full copyrighted wire text"
+                ),
+                "all receipts bind the protocol digest and target event identity",
+                "result.json and failure.json are mutually exclusive terminal receipts",
+                (
+                    "no artifact may be rewritten after terminal issuance; corrections "
+                    "are append-only new receipts"
+                ),
+            ],
+            "no_backfill_after_utc": "2026-10-14T12:20:00Z",
+            "late_or_missed_collection_disposition": "INCONCLUSIVE_INSUFFICIENT",
+        },
         "safety": {
             "research_only": True,
             "production_influence": "0",
