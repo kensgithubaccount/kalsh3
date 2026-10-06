@@ -566,7 +566,10 @@ def _live_quote_close(container: object, field: str) -> str | None:
         if not parsed.is_finite():
             raise P11AuthorityError(f"{field}.close is non-finite")
         if isinstance(close, int) or parsed > 1:
-            if parsed != parsed.to_integral_value() or not Decimal("0") <= parsed <= Decimal("100"):
+            if (
+                parsed != parsed.to_integral_value()
+                or not Decimal("0") <= parsed <= Decimal("100")
+            ):
                 raise P11AuthorityError(f"{field}.close cents are outside [0,100]")
             cents_dollars = parsed / Decimal("100")
         elif Decimal("0") <= parsed <= Decimal("1"):
@@ -907,7 +910,9 @@ def record_reuters_pass(
         retrieved = _parse_utc(item.get("retrieved_at"), "host.retrieved_at")
         published = _parse_utc(item.get("published_at"), "host.published_at")
         if retrieved > now or retrieved >= PRE_RELEASE_DEADLINE:
-            raise P11AuthorityError("Reuters host retrieval was not completed by the frozen cutoff")
+            raise P11AuthorityError(
+                "Reuters host retrieval was not completed by the frozen cutoff"
+            )
         if published >= MARKET_CLOSE:
             raise P11AuthorityError("Reuters publication did not precede market close")
         host_sentence_hash = _require_hex_digest(
