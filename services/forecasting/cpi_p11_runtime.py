@@ -59,6 +59,7 @@ from services.market_universe.domain import (
 
 PROTOCOL_SHA256 = "e62374c9db5b7f3355d413687ab82e868ca2686fbdd6fd9c57a1329151a8b40d"
 FROZEN_SPEC = Path("docs/reviews/artifacts/cpi-p11-phase0-prospective-protocol/spec.json")
+RUN_ROOT_NAME = "cpi_e1_p11_prospective_20261014"
 RUN_RECORD_TYPE = "CPI-E1-P11-PROSPECTIVE-RUNTIME-v1"
 ZERO = Decimal("0")
 
@@ -279,6 +280,8 @@ def _load_frozen_spec() -> tuple[dict[str, Any], bytes]:
 
 
 def ensure_protocol(paths: RunPaths) -> dict[str, Any]:
+    if paths.root.name != RUN_ROOT_NAME:
+        raise P11AuthorityError("runtime root does not match frozen logical run root")
     spec, raw = _load_frozen_spec()
     paths.root.mkdir(parents=True, exist_ok=True)
     if paths.protocol.exists():
@@ -904,6 +907,66 @@ def record_reuters_pass(
     return coverage
 
 
+def record_reuters_nonpass(
+    paths: RunPaths,
+    input_record: dict[str, Any],
+    *,
+    clock: Callable[[], datetime] = _now,
+) -> dict[str, Any]:
+    ensure_protocol(paths)
+    _terminal_guard(paths)
+    if paths.reuters_coverage.exists():
+        raise P11AuthorityError("Reuters evidence already has a terminal state")
+    if not paths.preflight.is_file():
+        raise P11AuthorityError("Reuters evidence cannot precede first-party preflight")
+    now = clock()
+    if now >= PRE_RELEASE_DEADLINE:
+        raise P11TimingError("Reuters evidence cannot be recorded after 12:20Z")
+    if input_record.get("event_ticker") != TARGET_EVENT:
+        raise P11AuthorityError("Reuters non-PASS event identity mismatch")
+    if input_record.get("reference_month") != TARGET_REFERENCE_MONTH:
+        raise P11AuthorityError("Reuters non-PASS reference month mismatch")
+
+    state = input_record.get("terminal_state")
+    if state not in {
+        "UNKNOWN_SEARCHED_NO_QUALIFYING_OBSERVATION",
+        "FAILURE_ACQUISITION_OR_AUTHORITY",
+    }:
+        raise P11AuthorityError("Reuters non-PASS terminal state is invalid")
+    reason = input_record.get("reason")
+    if not isinstance(reason, str) or not reason.strip():
+        raise P11AuthorityError("Reuters non-PASS reason is required")
+
+    if state == "UNKNOWN_SEARCHED_NO_QUALIFYING_OBSERVATION":
+        if input_record.get("all_three_search_rungs_completed") is not True:
+            raise P11AuthorityError("Reuters UNKNOWN requires all three frozen search rungs")
+        attempted = input_record.get("attempted_host_groups")
+        if not isinstance(attempted, list) or any(not isinstance(item, str) for item in attempted):
+            raise P11AuthorityError("Reuters UNKNOWN attempted host groups are malformed")
+        normalized_groups = {_operator_group(item) for item in attempted}
+        if "reuters" not in normalized_groups or len(normalized_groups) < 2:
+            raise P11AuthorityError("Reuters UNKNOWN search coverage is not reviewable")
+    else:
+        normalized_groups = set()
+
+    coverage = {
+        "record_type": "CPI-E1-P11-REUTERS-COVERAGE-v1",
+        "protocol_sha256": PROTOCOL_SHA256,
+        "event_ticker": TARGET_EVENT,
+        "reference_month": TARGET_REFERENCE_MONTH,
+        "terminal_state": state,
+        "completed_at_utc": _iso(now),
+        "reason": reason.strip(),
+        "all_three_search_rungs_completed": (
+            input_record.get("all_three_search_rungs_completed") is True
+        ),
+        "attempted_host_groups": sorted(normalized_groups),
+        "production_influence": "0",
+    }
+    _write_json_exclusive(paths.reuters_coverage, coverage)
+    return coverage
+
+
 def close_pre_release(
     paths: RunPaths,
     *,
@@ -928,9 +991,12 @@ def close_pre_release(
         "record_type": "CPI-E1-P11-REUTERS-COVERAGE-v1",
         "protocol_sha256": PROTOCOL_SHA256,
         "event_ticker": TARGET_EVENT,
-        "terminal_state": "UNKNOWN_SEARCHED_NO_QUALIFYING_OBSERVATION",
+        "reference_month": TARGET_REFERENCE_MONTH,
+        "terminal_state": "FAILURE_ACQUISITION_OR_AUTHORITY",
         "completed_at_utc": _iso(now),
-        "reason": "NO_ADMISSIBLE_PASS_RECEIPT_RECORDED_BY_FROZEN_12_20Z_CUTOFF",
+        "reason": "NO_COMPLETED_REUTERS_ACQUISITION_RECEIPT_BY_FROZEN_12_20Z_CUTOFF",
+        "all_three_search_rungs_completed": False,
+        "attempted_host_groups": [],
         "production_influence": "0",
     }
     _write_json_exclusive(paths.reuters_coverage, coverage)
@@ -1006,8 +1072,12 @@ def _load_market_rows(paths: RunPaths) -> list[dict[str, Any]]:
 def score_and_seal(paths: RunPaths, *, clock: Callable[[], datetime] = _now) -> dict[str, Any]:
     ensure_protocol(paths)
     if paths.failure.exists():
+        if not paths.manifest.exists():
+            seal_manifest(paths)
         return _read_json(paths.failure)
     if paths.result.exists():
+        if not paths.manifest.exists():
+            seal_manifest(paths)
         return _read_json(paths.result)
     if clock() < BLS_RELEASE_AT:
         raise P11TimingError("P11 score cannot run before BLS initial-release time")
