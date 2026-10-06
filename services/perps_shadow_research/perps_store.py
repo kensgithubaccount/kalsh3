@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterator
+from contextlib import contextmanager
 import json
 import sqlite3
 from datetime import datetime
@@ -114,14 +116,19 @@ class PerpsEvidenceStore:
                     BEGIN SELECT RAISE(ABORT, 'append only'); END;
                 """)
 
-    def _connect(self) -> sqlite3.Connection:
+    @contextmanager
+    def _connect(self) -> Iterator[sqlite3.Connection]:
         db = sqlite3.connect(self.path, timeout=30)
         db.row_factory = sqlite3.Row
         db.execute("PRAGMA journal_mode=WAL")
         db.execute("PRAGMA synchronous=FULL")
         db.execute("PRAGMA busy_timeout=30000")
         db.execute("PRAGMA foreign_keys=ON")
-        return db
+        try:
+            with db:
+                yield db
+        finally:
+            db.close()
 
     @staticmethod
     def _text(value: Decimal | datetime | UUID | None) -> str | None:
