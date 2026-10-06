@@ -7,6 +7,7 @@ from pathlib import Path
 
 import pytest
 
+from services.perps_shadow_research.perps_store import PerpsEvidenceStore
 from services.perps_shadow_research.phase0_collect import (
     ProspectiveCollectionError,
     SessionPaths,
@@ -62,6 +63,22 @@ def test_sqlite_seal_checks_integrity_and_hashes_file(tmp_path: Path) -> None:
     assert len(first) == 64
     assert first == second
     assert not Path(str(path) + "-wal").exists() or Path(str(path) + "-wal").stat().st_size == 0
+
+
+def test_perps_store_connection_context_closes_before_seal(tmp_path: Path) -> None:
+    path = tmp_path / "evidence.sqlite3"
+    store = PerpsEvidenceStore(path)
+
+    with store._connect() as db:
+        assert db.execute("SELECT 1").fetchone()[0] == 1
+
+    with pytest.raises(sqlite3.ProgrammingError, match="closed"):
+        db.execute("SELECT 1")
+
+    digest = seal_evidence_db(path)
+    assert len(digest) == 64
+    with sqlite3.connect(path) as sealed:
+        assert sealed.execute("PRAGMA journal_mode").fetchone()[0] == "delete"
 
 
 def test_naive_invocation_time_fails_closed() -> None:
