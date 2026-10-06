@@ -109,11 +109,68 @@ def test_market_preflight_requires_complete_active_strict_gt_cohort() -> None:
 def test_live_candle_request_preserves_frozen_preclose_selector() -> None:
     market = runtime._validate_markets(_markets_payload())[0]
     path, start_ts, end_ts = runtime._live_candle_path(market)
-    assert path.startswith(f"{runtime.public_read.BASE}/markets/")
+    assert path.startswith(
+        f"{runtime.public_read.BASE}/series/{runtime.TARGET_SERIES}/markets/"
+    )
     assert "/historical/" not in path
     assert "period_interval=60" in path
     assert end_ts == int(runtime.MARKET_CLOSE.timestamp())
     assert start_ts < end_ts
+
+
+def test_live_candle_normalizer_accepts_cents_and_dollar_crosscheck() -> None:
+    payload = {
+        "candlesticks": [
+            {
+                "end_period_ts": 1791979200,
+                "volume_fp": "10.00",
+                "yes_bid": {"close": 42, "close_dollars": "0.42"},
+                "yes_ask": {"close": 47, "close_dollars": "0.47"},
+            }
+        ]
+    }
+    normalized = runtime._normalize_live_candle_payload(
+        payload,
+        market_ticker="KXCPI-26SEP-T0.2",
+    )
+    candle = normalized["candlesticks"][0]
+    assert candle["yes_bid"]["close"] == "0.42"
+    assert candle["yes_ask"]["close"] == "0.47"
+    assert candle["volume"] == "10.00"
+
+    bad = {
+        "candlesticks": [
+            {
+                "end_period_ts": 1791979200,
+                "yes_bid": {"close": 42, "close_dollars": "0.41"},
+                "yes_ask": {"close": 47, "close_dollars": "0.47"},
+            }
+        ]
+    }
+    with pytest.raises(runtime.P11AuthorityError, match="representations disagree"):
+        runtime._normalize_live_candle_payload(
+            bad,
+            market_ticker="KXCPI-26SEP-T0.2",
+        )
+
+
+def test_live_candle_normalizer_accepts_reviewed_historical_dollar_shape() -> None:
+    payload = {
+        "ticker": "KXCPI-26SEP-T0.2",
+        "candlesticks": [
+            {
+                "end_period_ts": 1791979200,
+                "volume": "10.00",
+                "yes_bid": {"close": "0.4200"},
+                "yes_ask": {"close": "0.4700"},
+            }
+        ],
+    }
+    normalized = runtime._normalize_live_candle_payload(
+        payload,
+        market_ticker="KXCPI-26SEP-T0.2",
+    )
+    assert normalized["candlesticks"][0]["yes_ask"]["close"] == "0.4700"
 
 
 def test_reuters_pass_requires_two_independent_hosts_before_cutoff(tmp_path: Path) -> None:
