@@ -1,6 +1,6 @@
 # Canonical Project State
 
-Last updated: 2026-10-04
+Last updated: 2026-10-06
 
 This file is the durable handoff record for the Kalshi project. New oversight or implementation sessions should read this file first, then verify GitHub and current runtime state before acting.
 
@@ -12,24 +12,26 @@ Repository: `kensgithubaccount/kalsh3`
 
 Verified canonical main immediately before this state-update PR lands:
 
-- SHA: `5292e9b062a4103ec4af59a7674e36fbffe74fb1`
-- tree: `66ba32da011b121764f9184cb4af103ccd58bec3`
-- commit: merge of PR #173, refreshed Perps spec authority and reference-lag Phase 0
+- SHA: `3eeb4850db0704dd349e2cf22b9d450694850a30`
+- tree: `b04b556f50eb1786890cf5175354d3d8acc591c5`
+- commit: merge of PR #182, canonical Perps SQLite connection-lifecycle repair
 - production write authority: OFF
 
-This file itself lands through PR #169 after that verified checkpoint, so a fresh
+This file itself lands through a later state-update PR after that verified checkpoint, so a fresh
 session must still verify live `main` before acting rather than treating the SHA
 above as a permanent self-reference.
 
 Recent canonical merges relevant to the active work:
 
+- PR #182: deterministic close of every `PerpsEvidenceStore` SQLite connection plus a regression proving the connection is closed before Phase-0 evidence sealing; canonical CI passed with 4404 tests passed and 18 skipped, strict mypy clean, Ruff clean, and all workflow jobs green.
 - PR #166: WN-A2-E1 settlement bucket semantics repair. RANGE is inclusive, LT/GT are strict, full source precision is preserved, and unsupported rounding is not invented.
 - PR #170: urllib3 2.8.0 security repair. All canonical CI jobs passed before merge.
 - PR #171: exact frozen WeatherNext multicity provenance import. The imported experiment/review bytes remain unchanged; root regression tests verify the frozen manifests.
 - PR #168: outcome-blind WeatherNext multicity evaluator boundary. It freezes continuous Fahrenheit point-error scoring and explicitly blocks retrospective probability/bucket/P&L reconstruction.
 - PR #164: current Perps API/schema authority constraints.
 - PR #165: Perps edge research and radar admission plan, with market-bound reference-price lead/lag as the first read-only checkpoint.
-- PR #173: first-party Perps spec authority refresh plus offline/read-only reference-lag Phase 0. Temporary probe PR #172 fetched the official Kalshi Perps OpenAPI/AsyncAPI bytes directly from `docs.kalshi.com` and closed without merge. PR #173 then passed all canonical CI gates before merge.
+- PR #173: first-party Perps spec authority refresh plus offline/read-only reference-lag Phase 0.
+- PR #175 / #176: frozen prospective Perps protocol and bounded collector used by the completed October 5-6 Phase-0 campaign.
 
 No current repository state establishes a profitable autonomous strategy or authorizes real-money trading.
 
@@ -164,74 +166,104 @@ After the block closes:
 4. run deterministic continuous point-forecast evaluation;
 5. decide whether the mechanism warrants a separately prespecified prospective edge experiment.
 
-## 7. Perps read-only challenger
+## 7. Perps read-only challenger — Phase 0 closed without promotion
 
 Perps remains DISARMED/read-only with `production_influence = 0`.
 
-PR #164 establishes the schema/authority constraints and PR #165 establishes the
-research ladder. PR #173 is now canonical and closes the first schema-refresh
-and offline mechanism-harness checkpoint.
+The first frozen prospective reference-lag experiment is complete. Its terminal scientific
+disposition is:
 
-### Current first-party spec authority
+`INCONCLUSIVE_MIXED — PROMOTION AUTHORITY NONE`
 
-Temporary probe PR #172 fetched the official specification bytes directly from
-Kalshi on 2026-10-04, then closed without merge:
+The experiment must not be retrospectively tuned, reclassified, backfilled, retried, or promoted.
 
-- Perps OpenAPI URL: `https://docs.kalshi.com/perps_openapi.yaml`
-- OpenAPI SHA-256:
-  `d13cb9c5c18cbb9ab2fe60d173c74511dea627a89321d17f7b0505a88f82aeb0`
-- OpenAPI bytes: 146790
-- Perps AsyncAPI URL: `https://docs.kalshi.com/perps_asyncapi.yaml`
-- AsyncAPI SHA-256:
-  `e5cc0f026b8e306e917860b870e23c9152d0d782c33137d42698f051a9dbe824`
-- AsyncAPI bytes: 38219
+### Frozen prospective identity
 
-The reviewed read-only parser now requires/preserves current structural and
-timing authority including:
+The completed experiment used:
 
-- `market_version`;
-- `underlying_multiplier`;
-- optional `asset_class`;
-- optional `product_metadata`;
-- market-bound timestamped `reference_price`;
-- optional `sending_ts_ms`;
-- current documented orderbook update reasons.
+- ticker: `KXBTCPERP`;
+- protocol SHA-256:
+  `482677be45be623a443647e347f854db9693ec82371a460adfed2a6ec20fed46`;
+- primary horizon: 2 seconds;
+- confirmatory horizon: 5 seconds;
+- primary independence unit: SESSION;
+- no retry;
+- no backfill;
+- no fees/P&L/orders;
+- production influence: zero.
 
-New book/ticker evidence binds the exact AsyncAPI SHA-256 into the append-only
-evidence identity and persistence layer. Market metadata separately retains the
-exact OpenAPI source provenance.
+### Final collection ledger
 
-### Frozen offline Phase 0 mechanism diagnostic
+The frozen reconciliation is:
 
-The first falsifiable checkpoint remains:
+- `P0-S01`: MISSING / `NO_SESSION_DIRECTORY` — original macOS `atrun` scheduler failure;
+- `P0-S02`: MISSING / `NO_SESSION_DIRECTORY` — same scheduler failure;
+- `P0-S03`: FAILED / `FAILURE_RECEIPT` — collected a full prospective evidence window but failed final seal; canonical status remains FAILED forever;
+- `P0-S04`: CAPTURED / `SEALED_RESULT`;
+- `P0-S05`: CAPTURED / `SEALED_RESULT`;
+- `P0-S06`: CAPTURED / `SEALED_RESULT`;
+- `P0-S07`: CAPTURED / `SEALED_RESULT`;
+- `P0-S08`: CAPTURED / `SEALED_RESULT`.
 
-> market-bound reference-price movement -> Kalshi executable-book repricing
+Aggregate reconciliation:
 
-The canonical Phase 0 harness is mechanism-only and uses the market's own
-timestamped Margin ticker `reference_price`. It freezes:
+- captured sessions: 5;
+- failed sessions: 1;
+- missing sessions: 2.
 
-- every observed nonzero market-bound reference change as an impulse;
-- source movement labels `UP` / `DOWN`, never LONG / SHORT;
-- fixed 1s, 2s, 5s, and 10s horizons;
-- exact previous/current market-state evidence IDs;
-- connection epoch, ticker SID, structural contract identity, and causal source
-  timestamps;
-- exact baseline, horizon, and post-horizon continuity-witness book evidence;
-- contiguous same-stream orderbook sequence proof;
-- explicit abstentions for missing/stale baselines, stream boundaries, missing
-  continuity witnesses, sequence gaps, and non-comparable one-sided quotes.
+S01/S02 were never backfilled. S03 was never retried or retrospectively promoted.
 
-Because the Margin ticker stream is coalesced to at most one update per market
-per second, Phase 0 makes no sub-second benchmark-observability claim.
+The S03 sealing failure was diagnosed as a SQLite connection-lifecycle defect rather than
+intrinsic evidence-DB corruption: the original DB passed integrity diagnostics and a consistent
+disposable copy sealed successfully, while a scratch reproduction showed an outstanding WAL
+connection causes the final `PRAGMA journal_mode=DELETE` transition to fail with
+`database is locked`.
 
-Phase 0 contains no probability model, fees, P&L, order construction, live
-collector, alert authority, capital allocation, or production influence. Passing
-this software/mechanism checkpoint does not establish predictive advantage or
-after-cost edge.
+A documented forward-only connection-lifecycle repair was used for S04-S08. PR #182 later
+canonicalized that mechanical repair and added regression coverage. The repair does not alter
+the scientific status of S03 or any collected evidence.
 
-A later CF Benchmarks 5 Hz or Pyth-based checkpoint still requires separately
-reviewed exact market-to-index mapping and timestamp authority before any such
-data can enter an evaluation.
+### Frozen Phase-0 mechanism result
+
+All five captured sessions were eligible under the prespecified gate.
+
+Observed frozen-gate aggregates:
+
+- eligible sessions: 5;
+- primary measured 2-second impulses: 167;
+- cluster-equal primary signed midpoint mean:
+  `-0.000160951206836437278667876082` bps;
+- cluster-equal confirmatory 5-second signed midpoint mean:
+  `0.06784604770117591310229551974` bps;
+- positive-primary-session fraction: `0.4`;
+- frozen promising threshold for positive-session fraction: `0.60`.
+
+The primary cluster mean was not positive and only two of five eligible sessions had positive
+primary means. Therefore the exact frozen decision is `INCONCLUSIVE_MIXED`, not
+`INCONCLUSIVE_INSUFFICIENT` and not `PROMISING_DIAGNOSTIC_CONTINUE_RESEARCH`.
+
+The operator-side read-only analysis artifact was SHA-256
+`277fda6f63bbc3186ffbcde0c85f0e7c03042bc9aa370ff63b8786b53d606da3`.
+The terminal owner decision artifact was SHA-256
+`4b781bf58db440e3b66413ac6a302c6b27fd24e5e822127c1f5f03d2a51ed670`
+and explicitly records:
+
+- promotion authority: NONE;
+- Phase-1 economic test authorized: false;
+- next action: `DO_NOT_PROMOTE_THIS_FROZEN_HYPOTHESIS`.
+
+These operator-local artifact hashes are runtime/evidence handoff facts, not repository-hosted
+scientific artifacts unless separately imported and reviewed later.
+
+### Perps disposition
+
+Do not proceed to fee/fill/P&L testing for this exact frozen market-bound reference-price
+lead/lag formulation.
+
+The positive average at 5 seconds does not override the failed prespecified primary gate.
+Any future 5-10 second, external-index, different-market, or otherwise modified Perps hypothesis
+must be treated as a new hypothesis with a newly frozen protocol before untouched evaluation.
+The completed sample may inform hypothesis generation but must not become its own validation set.
 
 No Perps alert, order, capital allocation, or execution authority exists.
 
@@ -271,24 +303,24 @@ Software completion can support these gates but cannot substitute for them.
 
 1. Leave the October 3-14 WeatherNext collector scientifically untouched except
    for read-only health/reconciliation.
-2. Keep the merged Perps Phase 0 mechanism definition frozen; do not tune
-   impulses, horizons, continuity rules, or abstention semantics on observed
-   results.
-3. Before any untouched Perps evaluation slice, freeze a bounded read-only
-   collection/evaluation protocol: exact markets, collection window, evidence
-   completeness rules, de-duplication/cooldown policy if any, dependence units,
-   missing-data treatment, and pass/kill criteria.
-4. Only then run a narrow read-only Perps collection using the canonical evidence
-   model. Preserve every attempted observation, missing interval, reconnect, and
-   abstention; no orders and no production influence.
-5. Evaluate mechanism evidence first. Do not add probabilities, fees, P&L, or
-   trade simulation unless a later checkpoint explicitly freezes those economic
-   rules before its untouched data.
-6. After October 14, reconcile the complete WeatherNext block before outcome
-   scoring.
-7. Run only the already-frozen continuous WeatherNext evaluator.
-8. Continue, redesign, or kill research lanes based on prespecified evidence; no
-   automatic production promotion.
+2. Treat the completed market-bound Perps reference-lag Phase 0 as closed:
+   `INCONCLUSIVE_MIXED`, promotion authority NONE, no Phase-1 economics for
+   that frozen formulation.
+3. Do not tune Perps horizons, impulse definitions, or filters against the completed
+   sample and call the result validation. Any materially changed Perps idea requires a
+   new frozen untouched experiment.
+4. Recover and rank the next edge-discovery candidates from canonical repository evidence
+   before starting another prospective campaign. Prefer mechanisms with strong source authority,
+   executable scalability, and low semantic ambiguity.
+5. Keep the prior sibling-threshold structural lane fail-closed unless its unresolved semantic
+   timezone and generic-comparator authority gaps are positively repaired; do not infer semantic
+   timezone from UTC offsets or invent comparator meaning.
+6. Do not start exceptional-edge capital sizing merely because infrastructure exists. Issue #79
+   requires calibrated after-cost profitable opportunities first.
+7. After October 14, reconcile the complete WeatherNext block before outcome scoring.
+8. Run only the already-frozen continuous WeatherNext evaluator.
+9. Continue, redesign, or kill research lanes based on prespecified evidence; no automatic
+   production promotion.
 
 ## 12. Authority
 
