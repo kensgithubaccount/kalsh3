@@ -34,8 +34,8 @@ def test_scheduler_logs_are_outside_scientific_root() -> None:
     arm = ARM.read_text()
     assert 'STATE="$HOME/cpi_p11_scheduler_20261014"' in arm
     assert 'RUN_ROOT="$HOME/cpi_e1_p11_prospective_20261014"' in arm
-    assert '$STATE/logs/' in arm
-    assert '$RUN_ROOT/logs/' not in arm
+    assert "$STATE/logs/" in arm
+    assert "$RUN_ROOT/logs/" not in arm
 
 
 def test_reuters_ingress_uses_same_pinned_runner() -> None:
