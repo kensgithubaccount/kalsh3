@@ -137,12 +137,8 @@ def test_artifact_layout_is_frozen_and_non_backfillable() -> None:
     assert "kalshi/candles/<market_ticker>.json" in policy["required_paths"]
     assert "result.json OR failure.json" in policy["required_paths"]
     assert policy["no_backfill_after_utc"] == "2026-10-14T12:20:00Z"
-    assert policy["late_or_missed_collection_disposition"] == (
-        "INCONCLUSIVE_INSUFFICIENT"
-    )
-    assert any(
-        "mutually exclusive" in rule for rule in policy["integrity_rules"]
-    )
+    assert policy["late_or_missed_collection_disposition"] == "INCONCLUSIVE_INSUFFICIENT"
+    assert any("mutually exclusive" in rule for rule in policy["integrity_rules"])
 
 
 def test_support_still_has_no_promotion_or_economic_authority() -> None:
