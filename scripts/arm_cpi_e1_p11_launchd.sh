@@ -91,11 +91,11 @@ cd "$WORKTREE"
 
 case "\\$COMMAND" in
   preflight|market|preclose)
-    exec "$UV" run --locked python scripts/run_cpi_e1_p11.py \\
+    exec "$UV" run --locked python scripts/run_cpi_e1_p11.py \
       --root "\\$ROOT" "\\$COMMAND"
     ;;
   truth-score)
-    exec "$UV" run --locked python scripts/run_cpi_e1_p11.py \\
+    exec "$UV" run --locked python scripts/run_cpi_e1_p11.py \
       --root "\\$ROOT" truth --score
     ;;
   record-reuters-pass|record-reuters-nonpass)
@@ -103,7 +103,7 @@ case "\\$COMMAND" in
       echo "BLOCKER: Reuters receipt input path required"
       exit 2
     fi
-    exec "$UV" run --locked python scripts/run_cpi_e1_p11.py \\
+    exec "$UV" run --locked python scripts/run_cpi_e1_p11.py \
       --root "\\$ROOT" "\\$COMMAND" --input "\\$INPUT"
     ;;
   *)
