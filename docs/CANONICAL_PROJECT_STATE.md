@@ -12,9 +12,9 @@ Repository: `kensgithubaccount/kalsh3`
 
 Verified canonical main immediately before this state-update PR lands:
 
-- SHA: `3eeb4850db0704dd349e2cf22b9d450694850a30`
-- tree: `b04b556f50eb1786890cf5175354d3d8acc591c5`
-- commit: merge of PR #182, canonical Perps SQLite connection-lifecycle repair
+- SHA: `9aaa1d717b92ed9625f021bd443da0689842e5a5`
+- tree: `4f12d0b4125ddb5a2046df3ee3610d5779610699`
+- commit: merge of PR #184, frozen CPI-E1-P11 prospective replication protocol
 - production write authority: OFF
 
 This file itself lands through a later state-update PR after that verified checkpoint, so a fresh
@@ -23,15 +23,26 @@ above as a permanent self-reference.
 
 Recent canonical merges relevant to the active work:
 
-- PR #182: deterministic close of every `PerpsEvidenceStore` SQLite connection plus a regression proving the connection is closed before Phase-0 evidence sealing; canonical CI passed with 4404 tests passed and 18 skipped, strict mypy clean, Ruff clean, and all workflow jobs green.
-- PR #166: WN-A2-E1 settlement bucket semantics repair. RANGE is inclusive, LT/GT are strict, full source precision is preserved, and unsupported rounding is not invented.
+- PR #184: freezes the untouched CPI-E1-P11 Reuters-vs-Kalshi replication for
+  `KXCPI-26SEP`, including first-party preflight, the fixed 60-minute candle/YES-ask
+  convention, Reuters evidence admission, common-denominator scoring, a four-sibling minimum,
+  artifact immutability/no-backfill rules, and promotion authority NONE. Frozen protocol digest:
+  `e62374c9db5b7f3355d413687ab82e868ca2686fbdd6fd9c57a1329151a8b40d`.
+  Canonical CI passed with 4415 tests passed and 18 skipped, strict mypy clean, Ruff clean,
+  and all workflow jobs green.
+- PR #183: records Perps Phase 0 as closed `INCONCLUSIVE_MIXED` with promotion authority NONE.
+- PR #182: deterministic close of every `PerpsEvidenceStore` SQLite connection plus a
+  regression proving the connection is closed before Phase-0 evidence sealing.
+- PR #166: WN-A2-E1 settlement bucket semantics repair. RANGE is inclusive, LT/GT are strict,
+  full source precision is preserved, and unsupported rounding is not invented.
 - PR #170: urllib3 2.8.0 security repair. All canonical CI jobs passed before merge.
-- PR #171: exact frozen WeatherNext multicity provenance import. The imported experiment/review bytes remain unchanged; root regression tests verify the frozen manifests.
-- PR #168: outcome-blind WeatherNext multicity evaluator boundary. It freezes continuous Fahrenheit point-error scoring and explicitly blocks retrospective probability/bucket/P&L reconstruction.
-- PR #164: current Perps API/schema authority constraints.
-- PR #165: Perps edge research and radar admission plan, with market-bound reference-price lead/lag as the first read-only checkpoint.
-- PR #173: first-party Perps spec authority refresh plus offline/read-only reference-lag Phase 0.
-- PR #175 / #176: frozen prospective Perps protocol and bounded collector used by the completed October 5-6 Phase-0 campaign.
+- PR #171: exact frozen WeatherNext multicity provenance import. The imported experiment/review
+  bytes remain unchanged; root regression tests verify the frozen manifests.
+- PR #168: outcome-blind WeatherNext multicity evaluator boundary. It freezes continuous
+  Fahrenheit point-error scoring and explicitly blocks retrospective probability/bucket/P&L
+  reconstruction.
+- PR #175 / #176: frozen prospective Perps protocol and bounded collector used by the completed
+  October 5-6 Phase-0 campaign.
 
 No current repository state establishes a profitable autonomous strategy or authorizes real-money trading.
 
@@ -294,13 +305,65 @@ The operator's local Python 3.13 `make verify` had a separate mypy/psycopg impor
 
 ## 9. Other research lanes
 
+### CPI — P11 prospective replication frozen
+
+CPI is now the highest-priority challenger with a prospectively frozen next test.
+
+PR #184 freezes the first untouched replication of the historical P10D
+Reuters-vs-Kalshi directional diagnostic against exactly:
+
+- series: `KXCPI`;
+- event: `KXCPI-26SEP`;
+- reference month: `2026-09`;
+- BLS release: `2026-10-14T12:30:00Z`;
+- Kalshi event close: `2026-10-14T12:25:00Z`;
+- expected complete sibling count: 14;
+- minimum common primary denominator: 4 siblings.
+
+Frozen protocol SHA-256:
+
+`e62374c9db5b7f3355d413687ab82e868ca2686fbdd6fd9c57a1329151a8b40d`
+
+The primary market evidence remains the unique latest 60-minute Kalshi candle whose
+`end_period_ts` is strictly before each sibling close, with YES ask as the primary price.
+Reuters remains an exact point forecast, never converted to a probability. PASS requires the
+reviewed P10B/P10C attribution/reference-month/prospective-language/timing requirements plus at
+least two independently operated hosts carrying the same wire revision.
+
+The fixed scientific decision classes are:
+
+- `PROSPECTIVE_SUPPORT_DIAGNOSTIC`;
+- `PROSPECTIVE_CONTRADICTION`;
+- `PROSPECTIVE_TIE_NO_ADVANTAGE`;
+- `INCONCLUSIVE_INSUFFICIENT`.
+
+Even SUPPORT has promotion authority NONE and does not authorize fee/P&L testing. It can only
+justify freezing a later multi-event prospective extension.
+
+The logical runtime artifact root is
+`cpi_e1_p11_prospective_20261014/`. Evidence is create-once, terminal
+`result.json` / `failure.json` are mutually exclusive, and no backfill is permitted after
+`2026-10-14T12:20:00Z`. A missed/late collection is permanently
+`INCONCLUSIVE_INSUFFICIENT`.
+
+No target Reuters numeric forecast, target BLS outcome, target score, or target current Kalshi
+price was admitted into the protocol freeze.
+
+The next authorized CPI action is purely operational: build and arm acquisition tooling that
+implements this exact frozen protocol without changing any scientific rule.
+
 ### GDP
 
-A manually acted-on GDP opportunity was owner-reported correct and profitable. That remains an anecdotal economic result, not proof of repeatable automated GDP alpha. Previously accepted GDP engineering/authority repairs remain closed unless a concrete regression is reproduced.
+A manually acted-on GDP opportunity was owner-reported correct and profitable. That remains an
+anecdotal economic result, not proof of repeatable automated GDP alpha. The canonical GDP
+one-decision path still fails closed on incomplete fee authority; do not activate it by assumption.
 
 ### Historical/manual radar and specialist probes
 
-Older RADAR-P0, YouTube, USGS, gas, RT, and CPI work remains historical context. Do not infer that an old conversation's unfinished status is current. Recover durable artifacts where useful; otherwise mark the lane incomplete/parked rather than reconstructing missing prospective evidence from memory.
+Older RADAR-P0, YouTube, USGS, gas, RT, and CPI work not incorporated into the canonical P11
+lineage remains historical context. Do not infer that an old conversation's unfinished status is
+current. Recover durable artifacts where useful; otherwise mark the lane incomplete/parked rather
+than reconstructing missing prospective evidence from memory.
 
 ## 10. Profitability ladder
 
@@ -320,15 +383,15 @@ Software completion can support these gates but cannot substitute for them.
 
 1. Leave the October 3-14 WeatherNext collector scientifically untouched except
    for read-only health/reconciliation.
-2. Treat the completed market-bound Perps reference-lag Phase 0 as closed:
-   `INCONCLUSIVE_MIXED`, promotion authority NONE, no Phase-1 economics for
-   that frozen formulation.
-3. Do not tune Perps horizons, impulse definitions, or filters against the completed
-   sample and call the result validation. Any materially changed Perps idea requires a
-   new frozen untouched experiment.
-4. Recover and rank the next edge-discovery candidates from canonical repository evidence
-   before starting another prospective campaign. Prefer mechanisms with strong source authority,
-   executable scalability, and low semantic ambiguity.
+2. Treat CPI P11 as scientifically frozen. Do not search for or inspect a target Reuters
+   forecast in order to alter the protocol, and do not change event, market timing, source bar,
+   denominator floor, scoring rule, artifact policy, or decision gate.
+3. Implement and arm only the acquisition/receipt machinery required to execute the exact frozen
+   CPI P11 protocol. Preserve first-party preflight, the 12:05Z-12:20Z market-evidence window,
+   Reuters evidence completion by 12:20Z, create-once artifacts, and no backfill.
+4. Treat the completed market-bound Perps reference-lag Phase 0 as closed:
+   `INCONCLUSIVE_MIXED`, promotion authority NONE, no Phase-1 economics for that frozen
+   formulation.
 5. Keep the prior sibling-threshold structural lane fail-closed unless its unresolved semantic
    timezone and generic-comparator authority gaps are positively repaired; do not infer semantic
    timezone from UTC offsets or invent comparator meaning.
@@ -336,8 +399,10 @@ Software completion can support these gates but cannot substitute for them.
    requires calibrated after-cost profitable opportunities first.
 7. After October 14, reconcile the complete WeatherNext block before outcome scoring.
 8. Run only the already-frozen continuous WeatherNext evaluator.
-9. Continue, redesign, or kill research lanes based on prespecified evidence; no automatic
-   production promotion.
+9. Evaluate CPI P11 only through its frozen result classes after authoritative BLS initial-release
+   truth is available; no retrospective economics or probability transformation.
+10. Continue, redesign, or kill research lanes based on prespecified evidence; no automatic
+    production promotion.
 
 ## 12. Authority
 
