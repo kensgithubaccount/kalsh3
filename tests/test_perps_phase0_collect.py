@@ -7,6 +7,7 @@ from pathlib import Path
 
 import pytest
 
+from services.perps_shadow_research.perps_store import PerpsEvidenceStore
 from services.perps_shadow_research.phase0_collect import (
     ProspectiveCollectionError,
     SessionPaths,
@@ -20,7 +21,6 @@ from services.perps_shadow_research.phase0_prospective import (
     TICKER,
     scheduled_at,
 )
-from services.perps_shadow_research.perps_store import PerpsEvidenceStore
 
 
 def test_invocation_time_is_frozen_and_late_bounded() -> None:
