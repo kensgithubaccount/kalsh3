@@ -177,6 +177,23 @@ disposition is:
 
 The experiment must not be retrospectively tuned, reclassified, backfilled, retried, or promoted.
 
+### Current first-party Perps source authority
+
+The reviewed first-party specification authority remains available for any future *new* Perps
+research checkpoint:
+
+- Perps OpenAPI URL: `https://docs.kalshi.com/perps_openapi.yaml`;
+- OpenAPI SHA-256:
+  `d13cb9c5c18cbb9ab2fe60d173c74511dea627a89321d17f7b0505a88f82aeb0`;
+- Perps AsyncAPI URL: `https://docs.kalshi.com/perps_asyncapi.yaml`;
+- AsyncAPI SHA-256:
+  `e5cc0f026b8e306e917860b870e23c9152d0d782c33137d42698f051a9dbe824`.
+
+New evidence must continue to bind reviewed source/spec authority and current market metadata.
+The live read-only parser preserves missing `market_version` as unknown only when the key is
+actually absent; a present value must satisfy the reviewed positive-int32 contract, and explicit
+JSON null remains invalid.
+
 ### Frozen prospective identity
 
 The completed experiment used:
