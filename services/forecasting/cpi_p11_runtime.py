@@ -974,7 +974,10 @@ def close_pre_release(
 ) -> dict[str, Any]:
     ensure_protocol(paths)
     if paths.result.exists() or paths.failure.exists():
-        return _read_json(paths.result if paths.result.exists() else paths.failure)
+        terminal = paths.result if paths.result.exists() else paths.failure
+        if not paths.manifest.exists():
+            seal_manifest(paths)
+        return _read_json(terminal)
     now = clock()
     if now < PRE_RELEASE_DEADLINE:
         raise P11TimingError("pre-release closeout cannot run before 12:20Z")
@@ -1225,6 +1228,8 @@ def write_failure(
     if paths.result.exists():
         raise P11AuthorityError("result already exists; failure cannot be added")
     if paths.failure.exists():
+        if not paths.manifest.exists():
+            seal_manifest(paths)
         return _read_json(paths.failure)
     timestamp = now or _now()
     receipt = {
