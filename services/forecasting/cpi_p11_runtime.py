@@ -15,12 +15,13 @@ import os
 import re
 import ssl
 import time
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal, InvalidOperation
 from html.parser import HTMLParser
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any
 from urllib.parse import quote, urlsplit
 
 from services.contract_intelligence.specification import (
@@ -1240,7 +1241,8 @@ def score_and_seal(paths: RunPaths, *, clock: Callable[[], datetime] = _now) -> 
                 }
             )
             continue
-        assert ask_raw is not None
+        if ask_raw is None:
+            raise P11AuthorityError("missing YES ask reached eligible scorer")
         ask = _decimal(ask_raw, "market yes_ask")
         reuters_call, kalshi_call = classify_directional_call(
             reuters_value=reuters_value,
