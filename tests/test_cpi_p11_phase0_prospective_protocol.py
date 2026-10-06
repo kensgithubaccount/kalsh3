@@ -130,6 +130,21 @@ def test_event_gate_rejects_impossible_counts() -> None:
         classify_event_result(reuters_correct=7, kalshi_correct=1, eligible_siblings=6)
 
 
+def test_artifact_layout_is_frozen_and_non_backfillable() -> None:
+    policy = build_phase0_protocol()["artifact_policy"]
+    assert policy["logical_run_root"] == "cpi_e1_p11_prospective_20261014"
+    assert "protocol.json" in policy["required_paths"]
+    assert "kalshi/candles/<market_ticker>.json" in policy["required_paths"]
+    assert "result.json OR failure.json" in policy["required_paths"]
+    assert policy["no_backfill_after_utc"] == "2026-10-14T12:20:00Z"
+    assert policy["late_or_missed_collection_disposition"] == (
+        "INCONCLUSIVE_INSUFFICIENT"
+    )
+    assert any(
+        "mutually exclusive" in rule for rule in policy["integrity_rules"]
+    )
+
+
 def test_support_still_has_no_promotion_or_economic_authority() -> None:
     gate = build_phase0_protocol()["decision_gate"]
     assert gate["promotion_authority"] == "NONE"
