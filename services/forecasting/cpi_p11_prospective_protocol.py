@@ -67,10 +67,7 @@ def build_phase0_protocol() -> dict[str, Any]:
                 "BLS still identifies September 2026 CPI for 2026-10-14 08:30 ET",
                 "Kalshi event identity is exactly KXCPI-26SEP in series KXCPI",
                 "the complete event contains exactly 14 sibling markets",
-                (
-                    "every admitted sibling is active/open, simple binary, "
-                    "non-provisional, non-MVE"
-                ),
+                ("every admitted sibling is active/open, simple binary, non-provisional, non-MVE"),
                 (
                     "every admitted sibling resolves strict-GT headline CPI "
                     "month-over-month for 2026-09"
@@ -91,13 +88,10 @@ def build_phase0_protocol() -> dict[str, Any]:
                 "2026-10-14T12:20:00Z",
             ],
             "bounded_retry_rule": (
-                "up to 3 acquisition attempts inside the fixed window; "
-                "no attempts after 12:20Z"
+                "up to 3 acquisition attempts inside the fixed window; no attempts after 12:20Z"
             ),
             "primary_price": "yes_ask",
-            "diagnostic_price": (
-                "two_sided_midpoint_only_when_both_sides_are_valid"
-            ),
+            "diagnostic_price": ("two_sided_midpoint_only_when_both_sides_are_valid"),
             "missing_quote_rule": (
                 "missing or boundary yes_ask is excluded for both sources on that "
                 "sibling; never impute, interpolate, use last trade, or substitute midpoint"
@@ -119,19 +113,13 @@ def build_phase0_protocol() -> dict[str, Any]:
             "pass_requirements": [
                 "Reuters attribution is positively established",
                 "article body/dateline explicitly identifies reference month 2026-09",
-                (
-                    "specific headline CPI month-over-month forecast is stated "
-                    "prospectively"
-                ),
+                ("specific headline CPI month-over-month forecast is stated prospectively"),
                 "value is preserved as exact Decimal at published precision",
                 (
                     "governing publication time is positively evidenced and precedes "
                     "each scored sibling close"
                 ),
-                (
-                    "at least 2 independently operated hosts carry the same Reuters "
-                    "wire revision"
-                ),
+                ("at least 2 independently operated hosts carry the same Reuters wire revision"),
             ],
             "terminal_states": [
                 "PASS",
@@ -144,19 +132,13 @@ def build_phase0_protocol() -> dict[str, Any]:
             "unit_of_independence": "event",
             "sibling_rows_independent": False,
             "minimum_primary_eligible_siblings": MIN_PRIMARY_ELIGIBLE_SIBLINGS,
-            "reuters_call": (
-                "YES iff Reuters forecast > sibling threshold; otherwise NO"
-            ),
-            "kalshi_call": (
-                "YES iff yes_ask > 0.5; NO iff yes_ask < 0.5; exact 0.5 is TIE"
-            ),
+            "reuters_call": ("YES iff Reuters forecast > sibling threshold; otherwise NO"),
+            "kalshi_call": ("YES iff yes_ask > 0.5; NO iff yes_ask < 0.5; exact 0.5 is TIE"),
             "truth_call": (
-                "YES iff BLS initial-release headline CPI MoM > sibling threshold; "
-                "otherwise NO"
+                "YES iff BLS initial-release headline CPI MoM > sibling threshold; otherwise NO"
             ),
             "aggregation_rule": (
-                "mean directional correctness across eligible siblings within "
-                "the single event"
+                "mean directional correctness across eligible siblings within the single event"
             ),
             "tie_rule": (
                 "Kalshi exact-0.5 sibling is excluded from the common primary denominator"
