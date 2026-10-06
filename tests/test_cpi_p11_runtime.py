@@ -66,7 +66,7 @@ def _preflight_file(paths: runtime.RunPaths) -> None:
 
 
 def test_frozen_protocol_is_copied_byte_exactly_and_never_rewritten(tmp_path: Path) -> None:
-    paths = runtime.RunPaths(tmp_path / "run")
+    paths = runtime.RunPaths(tmp_path / runtime.RUN_ROOT_NAME)
     runtime.ensure_protocol(paths)
     source = runtime._repo_root() / runtime.FROZEN_SPEC
     assert paths.protocol.read_bytes() == source.read_bytes()
@@ -117,7 +117,7 @@ def test_live_candle_request_preserves_frozen_preclose_selector() -> None:
 
 
 def test_reuters_pass_requires_two_independent_hosts_before_cutoff(tmp_path: Path) -> None:
-    paths = runtime.RunPaths(tmp_path / "run")
+    paths = runtime.RunPaths(tmp_path / runtime.RUN_ROOT_NAME)
     _preflight_file(paths)
     sentence_hash = "a" * 64
     record = {
@@ -161,7 +161,7 @@ def test_reuters_pass_requires_two_independent_hosts_before_cutoff(tmp_path: Pat
     assert paths.reuters_receipt.is_file()
     assert paths.reuters_extract.is_file()
 
-    second = runtime.RunPaths(tmp_path / "same-operator")
+    second = runtime.RunPaths(tmp_path / "same-operator" / runtime.RUN_ROOT_NAME)
     _preflight_file(second)
     record["hosts"][1] = {  # type: ignore[index]
         **record["hosts"][0],  # type: ignore[index]
@@ -177,8 +177,62 @@ def test_reuters_pass_requires_two_independent_hosts_before_cutoff(tmp_path: Pat
         )
 
 
+def test_reuters_unknown_requires_completed_search_ladder(tmp_path: Path) -> None:
+    paths = runtime.RunPaths(tmp_path / runtime.RUN_ROOT_NAME)
+    _preflight_file(paths)
+    record = {
+        "event_ticker": runtime.TARGET_EVENT,
+        "reference_month": runtime.TARGET_REFERENCE_MONTH,
+        "terminal_state": "UNKNOWN_SEARCHED_NO_QUALIFYING_OBSERVATION",
+        "reason": "bounded search completed without an admissible candidate",
+        "all_three_search_rungs_completed": False,
+        "attempted_host_groups": ["reuters.com", "yahoo.com"],
+    }
+    with pytest.raises(runtime.P11AuthorityError, match="all three frozen search rungs"):
+        runtime.record_reuters_nonpass(
+            paths,
+            record,
+            clock=lambda: datetime(2026, 10, 14, 12, 12, tzinfo=UTC),
+        )
+
+    record["all_three_search_rungs_completed"] = True
+    coverage = runtime.record_reuters_nonpass(
+        paths,
+        record,
+        clock=lambda: datetime(2026, 10, 14, 12, 12, tzinfo=UTC),
+    )
+    assert coverage["terminal_state"] == "UNKNOWN_SEARCHED_NO_QUALIFYING_OBSERVATION"
+    assert coverage["all_three_search_rungs_completed"] is True
+
+
+def test_preclose_without_reuters_receipt_is_failure_not_searched_unknown(
+    tmp_path: Path,
+) -> None:
+    paths = runtime.RunPaths(tmp_path / runtime.RUN_ROOT_NAME)
+    _preflight_file(paths)
+    runtime._write_json_exclusive(
+        paths.market_capture,
+        {
+            "protocol_sha256": runtime.PROTOCOL_SHA256,
+            "event_ticker": runtime.TARGET_EVENT,
+            "markets": [],
+        },
+    )
+    coverage = runtime.close_pre_release(
+        paths,
+        clock=lambda: datetime(2026, 10, 14, 12, 20, 1, tzinfo=UTC),
+    )
+    assert coverage["terminal_state"] == "FAILURE_ACQUISITION_OR_AUTHORITY"
+    assert coverage["all_three_search_rungs_completed"] is False
+
+
+def test_run_root_name_is_frozen(tmp_path: Path) -> None:
+    with pytest.raises(runtime.P11AuthorityError, match="logical run root"):
+        runtime.ensure_protocol(runtime.RunPaths(tmp_path / "wrong-root"))
+
+
 def test_reuters_pass_cannot_be_backfilled_after_cutoff(tmp_path: Path) -> None:
-    paths = runtime.RunPaths(tmp_path / "run")
+    paths = runtime.RunPaths(tmp_path / runtime.RUN_ROOT_NAME)
     _preflight_file(paths)
     with pytest.raises(runtime.P11TimingError, match="after 12:20Z"):
         runtime.record_reuters_pass(
@@ -189,7 +243,7 @@ def test_reuters_pass_cannot_be_backfilled_after_cutoff(tmp_path: Path) -> None:
 
 
 def test_preclose_watchdog_terminalizes_missed_market_capture(tmp_path: Path) -> None:
-    paths = runtime.RunPaths(tmp_path / "run")
+    paths = runtime.RunPaths(tmp_path / runtime.RUN_ROOT_NAME)
     runtime.ensure_protocol(paths)
     result = runtime.close_pre_release(
         paths,
@@ -202,12 +256,12 @@ def test_preclose_watchdog_terminalizes_missed_market_capture(tmp_path: Path) ->
 
 
 def test_score_uses_common_denominator_and_seals_result(tmp_path: Path) -> None:
-    paths = runtime.RunPaths(tmp_path / "run")
+    paths = runtime.RunPaths(tmp_path / runtime.RUN_ROOT_NAME)
     _preflight_file(paths)
 
     markets = runtime._validate_markets(_markets_payload())
     rows: list[dict[str, object]] = []
-    asks = ["0.6", "0.6", "0.4", "0.6"] + [None] * 10
+    asks = ["0.6", "0.4", "0.4", "0.6"] + [None] * 10
     for market, ask in zip(markets, asks, strict=True):
         evidence_id = f"evidence-{market.ticker}"
         row = {
@@ -279,7 +333,7 @@ def test_score_uses_common_denominator_and_seals_result(tmp_path: Path) -> None:
 
 
 def test_terminal_manifest_detects_mutation(tmp_path: Path) -> None:
-    paths = runtime.RunPaths(tmp_path / "run")
+    paths = runtime.RunPaths(tmp_path / runtime.RUN_ROOT_NAME)
     runtime.ensure_protocol(paths)
     runtime.write_failure(
         paths,
