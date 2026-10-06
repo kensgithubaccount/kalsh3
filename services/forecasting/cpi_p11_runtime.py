@@ -76,9 +76,7 @@ MAX_BLS_BYTES = 4_000_000
 
 KALSHI_SERIES_PATH = f"{public_read.BASE}/series/{TARGET_SERIES}"
 KALSHI_EVENT_PATH = f"{public_read.BASE}/events/{TARGET_EVENT}"
-KALSHI_MARKETS_PATH = (
-    f"{public_read.BASE}/markets?event_ticker={TARGET_EVENT}&limit=100"
-)
+KALSHI_MARKETS_PATH = f"{public_read.BASE}/markets?event_ticker={TARGET_EVENT}&limit=100"
 
 APPROVED_HOST_GROUPS = {
     "reuters.com": "reuters",
@@ -293,9 +291,7 @@ def ensure_protocol(paths: RunPaths) -> dict[str, Any]:
     return spec
 
 
-def _raw_envelope(
-    *, path: str, body: bytes, status: int, observed_at: datetime
-) -> dict[str, Any]:
+def _raw_envelope(*, path: str, body: bytes, status: int, observed_at: datetime) -> dict[str, Any]:
     return {
         "path": path,
         "observed_at_utc": _iso(observed_at),
@@ -567,10 +563,7 @@ def _live_quote_close(container: object, field: str) -> str | None:
         if not parsed.is_finite():
             raise P11AuthorityError(f"{field}.close is non-finite")
         if isinstance(close, int) or parsed > 1:
-            if (
-                parsed != parsed.to_integral_value()
-                or not Decimal("0") <= parsed <= Decimal("100")
-            ):
+            if parsed != parsed.to_integral_value() or not Decimal("0") <= parsed <= Decimal("100"):
                 raise P11AuthorityError(f"{field}.close cents are outside [0,100]")
             cents_dollars = parsed / Decimal("100")
         elif Decimal("0") <= parsed <= Decimal("1"):
@@ -911,9 +904,7 @@ def record_reuters_pass(
         retrieved = _parse_utc(item.get("retrieved_at"), "host.retrieved_at")
         published = _parse_utc(item.get("published_at"), "host.published_at")
         if retrieved > now or retrieved >= PRE_RELEASE_DEADLINE:
-            raise P11AuthorityError(
-                "Reuters host retrieval was not completed by the frozen cutoff"
-            )
+            raise P11AuthorityError("Reuters host retrieval was not completed by the frozen cutoff")
         if published >= MARKET_CLOSE:
             raise P11AuthorityError("Reuters publication did not precede market close")
         host_sentence_hash = _require_hex_digest(
@@ -1342,14 +1333,9 @@ def seal_manifest(paths: RunPaths) -> None:
     if paths.manifest.exists():
         raise P11AuthorityError("terminal manifest already exists")
     files = sorted(
-        path
-        for path in paths.root.rglob("*")
-        if path.is_file() and path != paths.manifest
+        path for path in paths.root.rglob("*") if path.is_file() and path != paths.manifest
     )
-    lines = [
-        f"{_sha256_file(path)}  {path.relative_to(paths.root).as_posix()}"
-        for path in files
-    ]
+    lines = [f"{_sha256_file(path)}  {path.relative_to(paths.root).as_posix()}" for path in files]
     _write_bytes_exclusive(paths.manifest, ("\n".join(lines) + "\n").encode())
 
 
