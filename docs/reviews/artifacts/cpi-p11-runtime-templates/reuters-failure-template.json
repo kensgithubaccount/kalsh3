@@ -1,0 +1,8 @@
+{
+  "event_ticker": "KXCPI-26SEP",
+  "reference_month": "2026-09",
+  "terminal_state": "FAILURE_ACQUISITION_OR_AUTHORITY",
+  "reason": "REPLACE_WITH_CONCISE_ACQUISITION_OR_AUTHORITY_FAILURE",
+  "all_three_search_rungs_completed": false,
+  "attempted_host_groups": []
+}

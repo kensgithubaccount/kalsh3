@@ -1,0 +1,17 @@
+{
+  "event_ticker": "KXCPI-26SEP",
+  "reference_month": "2026-09",
+  "terminal_state": "UNKNOWN_SEARCHED_NO_QUALIFYING_OBSERVATION",
+  "reason": "REPLACE_WITH_CONCISE_EVIDENCE-BASED_REASON",
+  "all_three_search_rungs_completed": true,
+  "attempted_host_groups": [
+    "reuters.com",
+    "yahoo.com",
+    "kfgo.com",
+    "tradingview.com",
+    "nasdaq.com",
+    "investing.com",
+    "wmbd.com",
+    "aol.com"
+  ]
+}

@@ -1,0 +1,32 @@
+{
+  "event_ticker": "KXCPI-26SEP",
+  "reference_month": "2026-09",
+  "provider_organization": "Reuters",
+  "measure": "headline CPI, month-over-month, seasonally adjusted, nonannualized",
+  "value": "REPLACE_WITH_EXACT_DECIMAL",
+  "reuters_attribution_verified": true,
+  "reference_month_verified_in_body": true,
+  "prospective_headline_mom_verified": true,
+  "retrospective_language_found": false,
+  "load_bearing_sentence_sha256": "REPLACE_WITH_SHA256",
+  "hosts": [
+    {
+      "host": "REPLACE_APPROVED_HOST_1",
+      "url": "https://REPLACE_APPROVED_HOST_1/REPLACE_PATH",
+      "http_status": 200,
+      "retrieved_at": "2026-10-14T00:00:00Z",
+      "published_at": "2026-10-14T00:00:00Z",
+      "raw_response_sha256": "REPLACE_WITH_SHA256",
+      "load_bearing_sentence_sha256": "REPLACE_WITH_SHA256"
+    },
+    {
+      "host": "REPLACE_APPROVED_INDEPENDENT_HOST_2",
+      "url": "https://REPLACE_APPROVED_INDEPENDENT_HOST_2/REPLACE_PATH",
+      "http_status": 200,
+      "retrieved_at": "2026-10-14T00:00:00Z",
+      "published_at": "2026-10-14T00:00:00Z",
+      "raw_response_sha256": "REPLACE_WITH_SHA256",
+      "load_bearing_sentence_sha256": "REPLACE_WITH_SHA256"
+    }
+  ]
+}
