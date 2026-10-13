@@ -1,5 +1,5 @@
-from pathlib import Path
 import subprocess
+from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 ARM = ROOT / "scripts/arm_cpi_e1_p11_systemd.sh"
@@ -58,7 +58,7 @@ def test_gce_provisioner_uses_standard_protected_ubuntu_vm() -> None:
 
 def test_cloud_bootstrap_requires_exact_runtime_head() -> None:
     script = PROVISION.read_text()
-    assert 'RUNTIME_HEAD="\${1:?runtime head required}"' in script
+    assert 'RUNTIME_HEAD="${1:?runtime head required}"' in script
     assert "git rev-parse HEAD" in script
     assert "cloud main does not equal requested runtime head" in script
     assert '"uv==$UV_VERSION"' in script
