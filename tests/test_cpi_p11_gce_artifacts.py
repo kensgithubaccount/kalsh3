@@ -10,7 +10,7 @@ SUBMIT = ROOT / "scripts/submit_cpi_e1_p11_reuters_gce.sh"
 
 def test_gce_shell_artifacts_are_syntax_valid() -> None:
     for path in (ARM, CLEANUP, PROVISION, SUBMIT):
-        subprocess.run(["bash", "-n", str(path)], check=True)
+        subprocess.run(["/usr/bin/bash", "-n", str(path)], check=True)
 
 
 def test_systemd_timers_are_exact_utc_and_nonpersistent() -> None:
