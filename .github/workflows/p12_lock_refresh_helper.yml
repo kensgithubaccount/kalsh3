@@ -1,0 +1,36 @@
+name: p12-lock-refresh-helper
+
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: write
+
+jobs:
+  refresh-aiohttp-lock:
+    if: github.head_ref == 'research/cpi-p12-reliability-repair' && github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.head_ref }}
+          fetch-depth: 2
+      - uses: astral-sh/setup-uv@v6
+        with:
+          version: "0.12.23"
+      - name: Regenerate security refresh with canonical uv generation
+        run: |
+          git show origin/main:uv.lock > uv.lock
+          uv lock --upgrade-package aiohttp
+      - name: Commit lock refresh
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add uv.lock
+          if git diff --cached --quiet; then
+            echo "No lock change"
+            exit 0
+          fi
+          git commit -m "Refresh aiohttp lock with uv 0.12.23"
+          git push origin "HEAD:${{ github.head_ref }}"
