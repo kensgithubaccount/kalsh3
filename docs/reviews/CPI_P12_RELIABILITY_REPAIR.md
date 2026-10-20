@@ -71,6 +71,46 @@ python scripts/probe_cpi_bls_schedule_redundancy.py \
 
 The collector label is diagnostic metadata, not authenticated provenance.
 
+## Live egress findings - 2026-10-20
+
+A one-shot GitHub-hosted Ubuntu 24.04 diagnostic run executed the merged probe from an
+independent cloud provider/network. The probe attempted all four fixed first-party BLS paths.
+Every request returned HTTP 403:
+
+- `cpi_release_schedule`: 403
+- `monthly_release_list`: 403
+- `cpi_home`: 403
+- `current_cpi_release`: 403
+
+The report therefore recorded `transport_success_count=0`,
+`authority_valid_count=0`, `path_redundancy_ready=false`, and exited 4.
+
+Combined with P11's GCE failure, this demonstrates that merely moving the release-day BLS
+request between common cloud-hosted egress providers is not sufficient redundancy. The next
+readiness probe must use a genuinely different network route, such as the operator's
+residential/home egress, and the future protocol must not make live release-morning BLS
+schedule transport a prerequisite for preserving Kalshi or Reuters observations.
+
+This diagnostic result has no scientific-evidence authority and does not freeze P12.
+
+## Revised architecture direction
+
+The preferred P12 design now separates *schedule authority* from release-morning collection:
+
+- acquire and seal BLS schedule authority prospectively before release day through a reviewed
+  provenance lane on an egress that can reach BLS;
+- require repeated readiness success before the event-specific protocol freezes;
+- run release-morning Kalshi market capture independently of BLS schedule transport;
+- run Reuters acquisition independently of both BLS and Kalshi transport;
+- evaluate completeness only at the preclose/scoring gate;
+- allow post-release BLS truth acquisition to retry through a separately reviewed automated or
+  manual-attested lane without altering the already-frozen predictor/market evidence.
+
+The existing CPI evidence architecture already keeps manual-browser-attested BLS acquisition
+distinct from automated transport. P12 may reuse that design principle, but schedule evidence
+needs its own reviewed provenance contract rather than treating caller-authored bytes as
+automated first-party acquisition.
+
 ## Required gates before P12 may freeze
 
 P12 remains **NOT READY TO FREEZE** until all of these are completed:
