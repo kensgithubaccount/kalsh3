@@ -209,9 +209,7 @@ def _fetch_endpoint(endpoint: BLSProbeEndpoint, timeout_seconds: float) -> BLSHT
             content_type=response.getheader("Content-Type"),
         )
     except (OSError, TimeoutError, http.client.HTTPException) as exc:
-        raise BLSScheduleProbeError(
-            f"bounded BLS request failed: {type(exc).__name__}"
-        ) from exc
+        raise BLSScheduleProbeError(f"bounded BLS request failed: {type(exc).__name__}") from exc
     finally:
         connection.close()
 
