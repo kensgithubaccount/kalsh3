@@ -1,0 +1,40 @@
+name: cpi-p12-readiness-probe
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - research/cpi-p12-readiness-live
+
+permissions:
+  contents: read
+
+jobs:
+  bls-secondary-egress-probe:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          version: "0.12.23"
+      - name: Probe BLS schedule paths from GitHub-hosted egress
+        shell: bash
+        run: |
+          set -o pipefail
+          mkdir -p artifacts
+          uv run --locked python scripts/probe_cpi_bls_schedule_redundancy.py \
+            --reference-month 2026-10 \
+            --release-at 2026-11-10T13:30:00Z \
+            --collector-label "github-actions-ubuntu-24.04" \
+            --require-valid-paths 2 \
+            --output artifacts/cpi_p12_bls_secondary_probe.json \
+            | tee /tmp/cpi_p12_bls_secondary_probe.stdout
+      - name: Upload diagnostic report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: cpi-p12-bsl-secondary-egress-probe
+          path: artifacts/cpi_p12_bls_secondary_probe.json
+          if-no-files-found: warn
+          retention-days: 30
