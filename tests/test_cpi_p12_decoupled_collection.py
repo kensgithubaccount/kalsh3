@@ -120,6 +120,78 @@ def test_receipt_hash_mismatch_fails_schedule_stage(tmp_path: Path) -> None:
         runtime.verify_presealed_bls_schedule_receipt(receipt, wrong)
 
 
+
+@pytest.mark.parametrize(
+    "malformed_receipt",
+    [
+        b"{not-json",
+        (
+            json.dumps(
+                {
+                    "record_type": runtime.BLS_SCHEDULE_RECEIPT_TYPE,
+                    "source_locator": runtime.BLS_SCHEDULE_LOCATOR,
+                    "reference_month": "2026-10",
+                    "release_at_utc": "not-a-time",
+                    "raw_body_sha256": "0" * 64,
+                    "raw_body_b64": "",
+                    "byte_count": 1,
+                    "research_only": True,
+                    "production_influence": "0",
+                    "scientific_evidence_authorized": False,
+                    "p12_frozen": False,
+                },
+                sort_keys=True,
+                indent=2,
+            )
+            + "\n"
+        ).encode(),
+    ],
+)
+def test_malformed_schedule_receipt_failure_is_stage_local(
+    tmp_path: Path,
+    malformed_receipt: bytes,
+) -> None:
+    paths = runtime.P12IsolationPaths(tmp_path / "run")
+    receipt = tmp_path / "malformed_schedule.json"
+    receipt.write_bytes(malformed_receipt)
+    expectation = runtime.SealedBLSScheduleExpectation(
+        reference_month="2026-10",
+        release_at_utc=RELEASE,
+        source_sha256="0" * 64,
+        receipt_sha256=hashlib.sha256(malformed_receipt).hexdigest(),
+    )
+    calls: list[str] = []
+
+    def bls() -> runtime.StageCollection:
+        calls.append("bls")
+        return runtime.verify_presealed_bls_schedule_receipt(receipt, expectation)
+
+    def kalshi() -> runtime.StageCollection:
+        calls.append("kalshi")
+        return runtime.StageCollection(
+            artifacts=(_write_artifact(paths.root / "kalshi" / "market.json", b"market"),)
+        )
+
+    def reuters() -> runtime.StageCollection:
+        calls.append("reuters")
+        return runtime.StageCollection(
+            artifacts=(_write_artifact(paths.root / "reuters" / "coverage.json", b"reuters"),)
+        )
+
+    outcomes = runtime.run_all_independent_stages(
+        paths,
+        {
+            runtime.P12CollectorStage.BLS_SCHEDULE_AUTHORITY: bls,
+            runtime.P12CollectorStage.KALSHI_MARKET_CAPTURE: kalshi,
+            runtime.P12CollectorStage.REUTERS_ACQUISITION: reuters,
+        },
+        clock=lambda: NOW,
+    )
+    assert calls == ["bls", "kalshi", "reuters"]
+    assert outcomes["bls_schedule_authority"]["status"] == "FAILURE"
+    assert outcomes["kalshi_market_capture"]["status"] == "PASS"
+    assert outcomes["reuters_acquisition"]["status"] == "PASS"
+
 def test_bls_failure_cannot_suppress_kalshi_or_reuters(tmp_path: Path) -> None:
     paths = runtime.P12IsolationPaths(tmp_path / "run")
     calls: list[str] = []
