@@ -189,6 +189,35 @@ def test_real_http_reader_rejects_incomplete_or_ambiguous_framing(
         raw._https_get(URL1)
 
 
+def test_truncated_chunked_http_body_is_a_stage_local_transport_failure(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    wire = (
+        b"HTTP/1.1 200 OK\r\n"
+        b"Transfer-Encoding: chunked\r\n"
+        b"Content-Type: text/html\r\n\r\n"
+        b"5\r\nabc"
+    )
+    response = _fake_http_response(wire)
+
+    class Connection:
+        def __init__(self, host: str, timeout: int, context: object):
+            assert host == "www.reuters.com"
+
+        def request(self, method: str, path: str, headers: dict[str, str]) -> None:
+            assert method == "GET"
+
+        def getresponse(self) -> http.client.HTTPResponse:
+            return response
+
+        def close(self) -> None:
+            pass
+
+    monkeypatch.setattr(raw.http.client, "HTTPSConnection", Connection)
+    with pytest.raises(raw.P12ReutersRawAcquisitionError, match="transport failure"):
+        _run(source_urls=(URL1,), getter=raw._https_get)
+
+
 def test_clock_rollback_between_source_requests_fails_closed() -> None:
     sequence = iter(
         [
