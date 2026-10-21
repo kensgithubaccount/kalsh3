@@ -62,7 +62,7 @@ class P12CollectorStage(StrEnum):
 
 
 class P12StageStatus(StrEnum):
-    PASS = "PASS"
+    SUCCEEDED = "PASS"
     FAILURE = "FAILURE"
 
 
@@ -386,7 +386,7 @@ def run_independent_stage(
     completed = clock()
     receipt = _stage_receipt_payload(
         stage=stage,
-        status=P12StageStatus.PASS,
+        status=P12StageStatus.SUCCEEDED,
         started_at=started,
         completed_at=completed,
         artifacts=artifacts,
@@ -425,7 +425,7 @@ def validate_stage_receipt(
     artifacts = receipt.get("artifacts")
     if not isinstance(artifacts, list):
         raise P12IsolationAuthorityError("stage receipt artifacts are malformed")
-    if status is P12StageStatus.PASS and not artifacts:
+    if status is P12StageStatus.SUCCEEDED and not artifacts:
         raise P12IsolationAuthorityError("PASS stage receipt must preserve artifacts")
     if status is P12StageStatus.FAILURE and artifacts:
         raise P12IsolationAuthorityError("FAILURE orchestration receipt must not claim artifacts")
@@ -440,7 +440,7 @@ def validate_stage_receipt(
 
     failure_type = receipt.get("failure_type")
     failure_reason = receipt.get("failure_reason")
-    if status is P12StageStatus.PASS:
+    if status is P12StageStatus.SUCCEEDED:
         if failure_type is not None or failure_reason is not None:
             raise P12IsolationAuthorityError("PASS receipt cannot contain failure metadata")
         if receipt.get("stage_local_failure_only") is not False:
@@ -514,7 +514,7 @@ def evaluate_preclose_completeness(
         receipt = validate_stage_receipt(paths, stage)
         status = receipt["status"]
         stage_states[stage.value] = status
-        if status != P12StageStatus.PASS.value:
+        if status != P12StageStatus.SUCCEEDED.value:
             all_pass = False
 
     gate = {
@@ -552,11 +552,11 @@ def validate_preclose_gate(paths: P12IsolationPaths) -> dict[str, Any]:
     states = gate.get("required_stage_states")
     if not isinstance(states, dict) or set(states) != {stage.value for stage in P12CollectorStage}:
         raise P12IsolationAuthorityError("preclose gate stage coverage is invalid")
-    allowed = {"MISSING", P12StageStatus.PASS.value, P12StageStatus.FAILURE.value}
+    allowed = {"MISSING", P12StageStatus.SUCCEEDED.value, P12StageStatus.FAILURE.value}
     if any(type(value) is not str or value not in allowed for value in states.values()):
         raise P12IsolationAuthorityError("preclose gate stage state is invalid")
 
-    all_pass = all(value == P12StageStatus.PASS.value for value in states.values())
+    all_pass = all(value == P12StageStatus.SUCCEEDED.value for value in states.values())
     if (decision is P12GateDecision.READY) != all_pass:
         raise P12IsolationAuthorityError("preclose gate decision conflicts with stage states")
     if gate.get("collectors_invoked_by_gate") is not False:
