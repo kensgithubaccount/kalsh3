@@ -238,7 +238,7 @@ def verify_presealed_bls_schedule_receipt(
     The expectation remains caller-supplied pre-freeze configuration and therefore grants
     no scientific authority. A later frozen P12 protocol must bind these exact values.
     """
-    if type(receipt_path) is not Path:
+    if not isinstance(receipt_path, Path):
         raise P12IsolationAuthorityError("receipt_path must be pathlib.Path")
     if type(expectation) is not SealedBLSScheduleExpectation:
         raise P12IsolationAuthorityError("expectation must have exact reviewed type")
@@ -315,7 +315,7 @@ def _normalize_collection(
     output: list[StageArtifact] = []
     seen: set[Path] = set()
     for item in collection.artifacts:
-        if type(item) is not Path:
+        if not isinstance(item, Path):
             raise P12IsolationAuthorityError("collector artifact path must be pathlib.Path")
         resolved = item.resolve()
         if resolved in seen:
