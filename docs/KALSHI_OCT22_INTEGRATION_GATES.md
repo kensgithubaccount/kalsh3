@@ -2,7 +2,7 @@
 
 Status: specification and test requirements; no execution authority.
 
-Source: https://docs.kalshi.com/changelog (October 15 and October 22 entries). Effective dates must be verified in the target environment. October 22 behavior is **future-dated** as of October 16.
+Source: https://docs.kalshi.com/changelog (October 15 and October 22 entries). Effective dates must be verified in the target environment. October 22 behavior is **future-dated** as of October 21.
 
 ## P-PERPS-EDGE-1: bar-based funding (October 22)
 
@@ -34,6 +34,18 @@ Required negative tests before any execution milestone: wrong symbol/account/sha
 - Prefer fill, settlement, and transfer driven reconciliation, with bounded balance refresh when necessary. Missing/stale balance authority must block any dependent production action, never imply zero exposure.
 
 Required tests: independent balance/general-read budgets, no burst, 429/backoff, unknown tier conservative fallback, no accidental Margin application, and event-driven balance reconciliation.
+
+## Intra-exchange transfer GET reconciliation (October 22)
+
+- The optional `client_transfer_id` may be returned by both `GET /portfolio/intra_exchange_instance_transfers` (list) and `GET /portfolio/intra_exchange_instance_transfers/{transfer_id}` (detail). This is a **response-schema addition**, not permission to initiate a transfer.
+- Preserve the original caller-generated UUID, exchange-assigned transfer ID, source and destination accounts/instances, amount, creation/request/receipt timestamps, status, and immutable raw GET evidence. Treat UUID identity as scoped to the originating primary-account transfer request; do not extrapolate to numbered subaccounts.
+- When a response includes `client_transfer_id`, validate UUID syntax and require an exact match to the locally persisted request identity before joining records. An ID mismatch, conflicting list/detail values, duplicate UUID mapped to distinct transfers, or disagreement in amount, direction, account, or state is a **RECONCILIATION_BLOCK** requiring investigation.
+- When the optional field is absent or null, represent it as **UNKNOWN**, not as a negative acknowledgement, failed transfer, or permission to issue another request. Reconcile via exchange transfer ID and independent account/balance evidence; if uniqueness or finality cannot be established, remain blocked.
+- A successful HTTP response or a matching UUID alone does not prove transfer finality. Require authoritative transfer status and independent before/after account-balance reconciliation, with freshness and pagination completeness checks. Pending, stale, incomplete, ambiguous, or contradictory evidence must fail closed.
+- For an ambiguous write outcome (including timeout), retain the original client UUID and exact immutable request payload. Do not automatically retry, mutate, or create a replacement transfer. Any future retry policy requires separate review of endpoint idempotency, primary-account scope, and the complete reconciliation state.
+- Preserve the distinction between primary-account client-ID support and numbered subaccount limitations. Do not infer that `exchange_index` routes margin subaccount transfers; the documented subaccount transfer endpoint ignores it.
+
+Required **deterministic offline tests** before any runtime adoption: matching UUID across list and detail; omitted and null optional fields; malformed UUID; UUID mismatch; list/detail conflict; duplicate UUID across exchange transfer IDs; pagination gaps; wrong account, instance, amount, or direction; stale or pending status; final status without balance corroboration; ambiguous timeout; attempted second request with changed payload; primary-account versus numbered-subaccount scope; and confirmation that no test path invokes transfer POST, credentials, FIX writes, or order endpoints. Use synthetic immutable fixtures only, and verify a RECONCILIATION_BLOCK for every ambiguous or contradictory case.
 
 ## Boundary
 
