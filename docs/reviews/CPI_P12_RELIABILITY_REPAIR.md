@@ -216,7 +216,10 @@ The BLS stage verifies exact, previously sealed calendar receipt bytes and its
 embedded source SHA, reference month, and release timestamp **offline**, without
 any live BLS HTTP request. A stage-local expected acquisition failure writes
 a create-once FAILURE receipt while the remaining stages can still run.
-The preclose gate reads stage receipts only and never invokes acquisition.
+The preclose gate reads stage receipts only and never invokes acquisition. On
+each revalidation it recomputes stage states from the actual preserved receipts
+and artifact hashes; a caller-altered gate claiming PASS cannot substitute
+for missing or failed stages.
 
 **Boundary:** the Kalshi and Reuters callbacks are adapters supplied by the
 caller. The included dry-run CLI uses synthetic sentinels in those slots;
