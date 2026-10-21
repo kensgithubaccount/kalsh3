@@ -120,7 +120,6 @@ def test_receipt_hash_mismatch_fails_schedule_stage(tmp_path: Path) -> None:
         runtime.verify_presealed_bls_schedule_receipt(receipt, wrong)
 
 
-
 @pytest.mark.parametrize(
     "malformed_receipt",
     [
@@ -191,6 +190,7 @@ def test_malformed_schedule_receipt_failure_is_stage_local(
     assert outcomes["bls_schedule_authority"]["status"] == "FAILURE"
     assert outcomes["kalshi_market_capture"]["status"] == "PASS"
     assert outcomes["reuters_acquisition"]["status"] == "PASS"
+
 
 def test_bls_failure_cannot_suppress_kalshi_or_reuters(tmp_path: Path) -> None:
     paths = runtime.P12IsolationPaths(tmp_path / "run")
