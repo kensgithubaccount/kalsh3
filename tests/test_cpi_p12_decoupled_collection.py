@@ -404,7 +404,6 @@ def test_stage_artifact_mutation_blocks_gate(tmp_path: Path) -> None:
         runtime.validate_stage_receipt(paths, stage)
 
 
-
 def test_expected_failure_exception_does_not_leak_raw_urls_or_forecasts(tmp_path: Path) -> None:
     paths = runtime.P12IsolationPaths(tmp_path / "run")
     stage = runtime.P12CollectorStage.REUTERS_ACQUISITION
