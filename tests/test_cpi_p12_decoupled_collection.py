@@ -437,6 +437,22 @@ def test_collector_aliases_and_noncallables_fail_before_any_stage(tmp_path: Path
     assert invoked == []
 
 
+def test_tampered_preclose_gate_cannot_forge_stage_success(tmp_path: Path) -> None:
+    paths = runtime.P12IsolationPaths(tmp_path / "run")
+    gate = runtime.evaluate_preclose_completeness(paths, clock=lambda: NOW)
+    assert gate["decision"] == runtime.P12GateDecision.INCOMPLETE.value
+
+    forged = json.loads(paths.gate.read_text())
+    forged["required_stage_states"] = {
+        stage.value: "PASS" for stage in runtime.P12CollectorStage
+    }
+    forged["decision"] = runtime.P12GateDecision.READY.value
+    paths.gate.write_text(json.dumps(forged))
+
+    with pytest.raises(runtime.P12IsolationAuthorityError, match="conflicts"):
+        runtime.validate_preclose_gate(paths)
+
+
 def test_runtime_contains_no_direct_transport_or_p11_dependency() -> None:
     source = inspect.getsource(runtime)
     forbidden = (
