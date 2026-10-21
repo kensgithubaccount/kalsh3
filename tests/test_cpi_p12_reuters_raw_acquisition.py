@@ -257,6 +257,88 @@ def test_malformed_chunked_http_cannot_create_cli_pass_receipt(
 
 
 @pytest.mark.parametrize(
+    "headers,body",
+    [
+        (b"Bad header\r\nContent-Length: 100\r\n", b"short"),
+        (b"Content-Length: 100\r\nBad header\r\n", b"short"),
+        (b"Bad header\r\nTransfer-Encoding: chunked\r\n", b"5\r\nhello\r\n0\r\n\r\n"),
+        (b"Transfer-Encoding: chunked\r\nBad header\r\n", b"5\r\nhello\r\n0\r\n\r\n"),
+        (b"Bad header\r\nContent-Length: 5\r\n", b"hello"),
+        (b"X-Note: synthetic\r\n folded\r\nContent-Length: 5\r\n", b"hello"),
+    ],
+)
+def test_malformed_http_headers_fail_closed_at_transport_and_cli(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, headers: bytes, body: bytes
+) -> None:
+    wire = b"HTTP/1.1 200 OK\r\n" + headers + b"\r\n" + body
+
+    def patch_connection() -> None:
+        response = _fake_http_response(wire)
+
+        class Connection:
+            def __init__(self, host: str, timeout: int, context: object):
+                assert host == "www.reuters.com"
+                assert timeout == 8
+
+            def request(self, method: str, path: str, headers: dict[str, str]) -> None:
+                assert method == "GET"
+
+            def getresponse(self) -> http.client.HTTPResponse:
+                return response
+
+            def close(self) -> None:
+                pass
+
+        monkeypatch.setattr(raw.http.client, "HTTPSConnection", Connection)
+
+    patch_connection()
+    with pytest.raises(raw.P12ReutersRawAcquisitionError, match="HTTP header"):
+        raw._https_get(URL1)
+
+    patch_connection()
+    with pytest.raises(raw.P12ReutersRawAcquisitionError):
+        _run(source_urls=(URL1,), getter=raw._https_get)
+
+    # A malformed header must produce a Reuters-only FAILURE receipt,
+    # not success even when the Python HTTP parser hides Content-Length.
+    patch_connection()
+    root = tmp_path / "experiment"
+    monkeypatch.setattr(
+        cli,
+        "capture_reuters_raw_sources",
+        lambda **kwargs: raw.capture_reuters_raw_sources(
+            **kwargs, getter=raw._https_get, clock=lambda: NOW
+        ),
+    )
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "capture_cpi_p12_reuters_raw.py",
+            "--root",
+            str(root),
+            "--source-url",
+            URL1,
+            "--window-start",
+            START.isoformat(),
+            "--deadline",
+            DEADLINE.isoformat(),
+            "--research-only",
+        ],
+    )
+    assert cli.main() == 4
+    paths = P12IsolationPaths(root)
+    receipt = json.loads(paths.stage_receipt(P12CollectorStage.REUTERS_ACQUISITION).read_text())
+    assert receipt["status"] == "FAILURE"
+    assert receipt["scientific_evidence_authorized"] is False
+    assert receipt["p12_frozen"] is False
+    assert receipt["production_influence"] == "0"
+    assert not (root / "reuters/raw_source_observations.json").exists()
+    assert not paths.stage_receipt(P12CollectorStage.BLS_SCHEDULE_AUTHORITY).exists()
+    assert not paths.stage_receipt(P12CollectorStage.KALSHI_MARKET_CAPTURE).exists()
+
+
+@pytest.mark.parametrize(
     "extra_headers,body",
     [
         ("Content-Length: 22\r\n", b"too short"),
