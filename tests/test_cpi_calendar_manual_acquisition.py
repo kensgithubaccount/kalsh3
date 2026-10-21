@@ -56,9 +56,7 @@ def import_calendar(
 
 
 def test_public_api_requires_file_reference_month_and_attestation_only(tmp_path) -> None:
-    params = tuple(
-        inspect.signature(calendar.attest_and_import_manual_bls_cpi_calendar).parameters
-    )
+    params = tuple(inspect.signature(calendar.attest_and_import_manual_bls_cpi_calendar).parameters)
     assert params == ("file_path", "reference_month", "operator_attestation")
 
     path = tmp_path / "cpi.htm"
@@ -148,8 +146,10 @@ def test_wrong_page_or_malformed_target_row_fails_closed(
 ) -> None:
     monkeypatch.setattr(calendar, "_utc_now", lambda: IMPORTED_AT)
     wrong = tmp_path / "wrong.htm"
-    wrong.write_text("<html><body><table><tr><td>October 2026</td>"
-                     "<td>Nov. 10, 2026</td><td>08:30 AM</td></tr></table></body></html>")
+    wrong.write_text(
+        "<html><body><table><tr><td>October 2026</td>"
+        "<td>Nov. 10, 2026</td><td>08:30 AM</td></tr></table></body></html>"
+    )
     with pytest.raises(calendar.CPICalendarManualAcquisitionError, match="identified"):
         calendar.attest_and_import_manual_bls_cpi_calendar(
             wrong,
@@ -268,6 +268,7 @@ def test_import_timestamp_is_internal_not_caller_authority(
 ) -> None:
     evidence = import_calendar(tmp_path, monkeypatch)
     assert evidence.imported_at == IMPORTED_AT
-    assert "imported_at" not in inspect.signature(
-        calendar.attest_and_import_manual_bls_cpi_calendar
-    ).parameters
+    assert (
+        "imported_at"
+        not in inspect.signature(calendar.attest_and_import_manual_bls_cpi_calendar).parameters
+    )
