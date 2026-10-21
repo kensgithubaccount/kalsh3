@@ -290,6 +290,12 @@ def _parse_month_name(value: str) -> int:
         ) from exc
 
 
+def _hour24(hour: int, ampm: str) -> int:
+    if ampm == "AM":
+        return 0 if hour == 12 else hour
+    return 12 if hour == 12 else hour + 12
+
+
 def _parse_release_instant(body: bytes, reference_month: str) -> datetime:
     _, label = _normalize_reference_month(reference_month)
     normalized = _visible_text(body)
@@ -330,10 +336,7 @@ def _parse_release_instant(body: bytes, reference_month: str) -> datetime:
         if hour < 1 or hour > 12 or minute > 59:
             continue
         ampm = time_match.group("ampm").replace(".", "").upper()
-        if ampm == "AM":
-            hour24 = 0 if hour == 12 else hour
-        else:
-            hour24 = 12 if hour == 12 else hour + 12
+        hour24 = _hour24(hour, ampm)
 
         try:
             local = datetime(
