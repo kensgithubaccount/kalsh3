@@ -502,8 +502,12 @@ def run_all_independent_stages(
     if not isinstance(collectors, Mapping):
         raise P12IsolationAuthorityError("collectors must be a mapping")
     required = tuple(P12CollectorStage)
-    if set(collectors) != set(required):
+    if set(collectors) != set(required) or any(
+        type(stage) is not P12CollectorStage for stage in collectors
+    ):
         raise P12IsolationAuthorityError("collector mapping must cover exactly all required stages")
+    if any(not callable(collectors[stage]) for stage in required):
+        raise P12IsolationAuthorityError("all stage collectors must be callable")
 
     outcomes: dict[str, dict[str, Any]] = {}
     for stage in required:
