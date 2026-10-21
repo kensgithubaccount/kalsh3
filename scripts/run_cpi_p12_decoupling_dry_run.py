@@ -110,9 +110,7 @@ def main() -> int:
             {
                 "policy": "P12_PRE_FREEZE_DECOUPLING_DRY_RUN",
                 "fail_stage": args.fail_stage,
-                "stage_status": {
-                    name: receipt["status"] for name, receipt in outcomes.items()
-                },
+                "stage_status": {name: receipt["status"] for name, receipt in outcomes.items()},
                 "gate": gate["decision"],
                 "scientific_evidence_authorized": False,
                 "p12_frozen": False,
