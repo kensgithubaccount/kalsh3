@@ -86,10 +86,27 @@ def _https_get(url: str) -> tuple[int, bytes, dict[str, str]]:
             headers={"Accept-Encoding": "identity", "User-Agent": "kalsh3-P12-research/1"},
         )
         response = conn.getresponse()
+        source_headers = response.getheaders()
+        lengths = [value for key, value in source_headers if key.lower() == "content-length"]
+        transfer_encodings = [
+            value for key, value in source_headers if key.lower() == "transfer-encoding"
+        ]
+        if len(lengths) > 1 or (lengths and transfer_encodings):
+            raise P12ReutersRawAcquisitionError("ambiguous source response framing")
+        expected_length = None
+        if lengths:
+            value = lengths[0]
+            if not value.isascii() or not value.isdecimal() or len(value) > 18:
+                raise P12ReutersRawAcquisitionError("invalid source content length")
+            expected_length = int(value)
+            if expected_length > MAX_RESPONSE_BYTES:
+                raise P12ReutersRawAcquisitionError("source body exceeds byte limit")
         raw = response.read(MAX_RESPONSE_BYTES + 1)
+        if expected_length is not None and len(raw) != expected_length:
+            raise P12ReutersRawAcquisitionError("source body is truncated or length inconsistent")
         headers = {
             name.lower(): value
-            for name, value in response.getheaders()
+            for name, value in source_headers
             if name.lower() in {"content-type", "last-modified", "etag"}
         }
         return response.status, raw, headers
@@ -134,6 +151,11 @@ def capture_reuters_raw_sources(
     observations: list[dict[str, Any]] = []
     for url, (host, _, group) in zip(source_urls, parsed_sources, strict=True):
         before = _utc(now(), "request start")
+        previous = started if not observations else datetime.fromisoformat(
+            observations[-1]["response_completed_at_utc"].replace("Z", "+00:00")
+        )
+        if before < previous:
+            raise P12ReutersRawAcquisitionError("acquisition clock moved backwards")
         if not start <= before < end:
             raise P12ReutersRawAcquisitionError("window expired before request")
         try:
@@ -177,7 +199,10 @@ def capture_reuters_raw_sources(
             }
         )
     completed = _utc(now(), "capture completion")
-    if completed < started or completed >= end:
+    last_observed = datetime.fromisoformat(
+        observations[-1]["response_completed_at_utc"].replace("Z", "+00:00")
+    )
+    if completed < last_observed or completed >= end:
         raise P12ReutersRawAcquisitionError("capture finished outside window")
     return {
         "record_type": RECORD_TYPE,
