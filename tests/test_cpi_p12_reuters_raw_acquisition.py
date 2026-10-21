@@ -193,10 +193,7 @@ def test_truncated_chunked_http_body_is_a_stage_local_transport_failure(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     wire = (
-        b"HTTP/1.1 200 OK\r\n"
-        b"Transfer-Encoding: chunked\r\n"
-        b"Content-Type: text/html\r\n\r\n"
-        b"5\r\nabc"
+        b"HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\nContent-Type: text/html\r\n\r\n5\r\nabc"
     )
     response = _fake_http_response(wire)
 
