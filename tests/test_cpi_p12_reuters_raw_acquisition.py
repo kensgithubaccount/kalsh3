@@ -150,19 +150,19 @@ def _fake_http_response(wire: bytes) -> http.client.HTTPResponse:
 @pytest.mark.parametrize(
     "extra_headers,body",
     [
-        ("Content-Length: 22\\r\\n", b"too short"),
-        ("Content-Length: 5\\r\\nContent-Length: 5\\r\\n", b"12345"),
-        ("Content-Length: 5\\r\\nTransfer-Encoding: chunked\\r\\n", b"12345"),
-        ("Content-Length: 1x\\r\\n", b"12345"),
+        ("Content-Length: 22\r\n", b"too short"),
+        ("Content-Length: 5\r\nContent-Length: 5\r\n", b"12345"),
+        ("Content-Length: 5\r\nTransfer-Encoding: chunked\r\n", b"12345"),
+        ("Content-Length: 1x\r\n", b"12345"),
     ],
 )
 def test_real_http_reader_rejects_incomplete_or_ambiguous_framing(
     monkeypatch: pytest.MonkeyPatch, extra_headers: str, body: bytes
 ) -> None:
     wire = (
-        b"HTTP/1.1 200 OK\\r\\n"
+        b"HTTP/1.1 200 OK\r\n"
         + extra_headers.encode("ascii")
-        + b"Content-Type: text/html\\r\\nConnection: close\\r\\n\\r\\n"
+        + b"Content-Type: text/html\r\nConnection: close\r\n\r\n"
         + body
     )
     response = _fake_http_response(wire)
