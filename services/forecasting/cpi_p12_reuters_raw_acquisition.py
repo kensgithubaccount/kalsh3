@@ -78,12 +78,11 @@ def _validate_url(url: str) -> tuple[str, str, str]:
 def _https_get(url: str) -> tuple[int, bytes, dict[str, str]]:
     """TLS-verified, exact-origin GET; redirects are NOT followed."""
     host, path, _ = _validate_url(url)
-    conn = http.client.HTTPSConnection(
-        host, timeout=8, context=ssl.create_default_context()
-    )
+    conn = http.client.HTTPSConnection(host, timeout=8, context=ssl.create_default_context())
     try:
         conn.request(
-            "GET", path,
+            "GET",
+            path,
             headers={"Accept-Encoding": "identity", "User-Agent": "kalsh3-P12-research/1"},
         )
         response = conn.getresponse()
@@ -157,9 +156,7 @@ def capture_reuters_raw_sources(
         for key in ("content-type", "last-modified", "etag"):
             value = headers.get(key)
             if value is not None:
-                if type(value) is not str or len(value) > 256 or any(
-                    ch in value for ch in "\r\n"
-                ):
+                if type(value) is not str or len(value) > 256 or any(ch in value for ch in "\r\n"):
                     raise P12ReutersRawAcquisitionError("source header invalid")
                 safe_headers[key] = value
         observations.append(
