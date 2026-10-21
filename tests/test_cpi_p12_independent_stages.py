@@ -56,25 +56,20 @@ def test_all_failures_are_preserved_and_cannot_claim_pass() -> None:
         {stage: (lambda stage=stage: broken(stage)) for stage in Stage}
     )
     assert observed == list(Stage)
-    assert all(
-        attempt.outcome is AttemptOutcome.ATTEMPT_FAILED
-        for attempt in diagnostic.attempts
-    )
-    assert all(
-        attempt.diagnostic_failure == "STAGE_EXCEPTION"
-        for attempt in diagnostic.attempts
-    )
+    assert all(attempt.outcome is AttemptOutcome.ATTEMPT_FAILED for attempt in diagnostic.attempts)
+    assert all(attempt.diagnostic_failure == "STAGE_EXCEPTION" for attempt in diagnostic.attempts)
     assert "sensitive evidence" not in json.dumps(diagnostic.as_record())
 
 
 def test_successful_callbacks_never_grant_scientific_authority() -> None:
     diagnostic = run_independent_stage_diagnostic(
-        {stage: (lambda: {"accepted": True, "scientific_evidence_authorized": True})
-         for stage in Stage}
+        {
+            stage: (lambda: {"accepted": True, "scientific_evidence_authorized": True})
+            for stage in Stage
+        }
     )
     assert all(
-        attempt.outcome is AttemptOutcome.ATTEMPT_COMPLETED
-        for attempt in diagnostic.attempts
+        attempt.outcome is AttemptOutcome.ATTEMPT_COMPLETED for attempt in diagnostic.attempts
     )
     record = diagnostic.as_record()
     assert record["scientific_evidence_authorized"] is False
@@ -87,18 +82,13 @@ def test_incomplete_stage_set_fails_before_any_callback_runs() -> None:
     calls: list[str] = []
 
     with pytest.raises(P12IndependenceContractError):
-        run_independent_stage_diagnostic(
-            {Stage.KALSHI_MARKET: lambda: calls.append("kalshi")}
-        )
+        run_independent_stage_diagnostic({Stage.KALSHI_MARKET: lambda: calls.append("kalshi")})
     assert calls == []
 
 
 def test_string_alias_is_not_a_valid_stage_identity() -> None:
     calls: list[str] = []
-    aliases = {
-        stage.value: (lambda: calls.append("called"))
-        for stage in Stage
-    }
+    aliases = {stage.value: (lambda: calls.append("called")) for stage in Stage}
     with pytest.raises(P12IndependenceContractError):
         run_independent_stage_diagnostic(aliases)  # type: ignore[arg-type]
     assert calls == []
