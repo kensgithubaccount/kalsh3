@@ -87,9 +87,7 @@ def main() -> int:
             {
                 "stage": receipt["stage"],
                 "status": receipt["status"],
-                "stage_receipt": str(
-                    paths.stage_receipt(P12CollectorStage.REUTERS_ACQUISITION)
-                ),
+                "stage_receipt": str(paths.stage_receipt(P12CollectorStage.REUTERS_ACQUISITION)),
                 "scientific_evidence_authorized": False,
                 "p12_frozen": False,
             },
