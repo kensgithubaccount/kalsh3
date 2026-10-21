@@ -422,8 +422,10 @@ def validate_stage_receipt(
         status = P12StageStatus(status_raw)
     except (TypeError, ValueError) as exc:
         raise P12IsolationAuthorityError("stage receipt status is invalid") from exc
-    _parse_utc(receipt.get("started_at_utc"), "started_at_utc")
-    _parse_utc(receipt.get("completed_at_utc"), "completed_at_utc")
+    started_at = _parse_utc(receipt.get("started_at_utc"), "started_at_utc")
+    completed_at = _parse_utc(receipt.get("completed_at_utc"), "completed_at_utc")
+    if completed_at < started_at:
+        raise P12IsolationAuthorityError("stage receipt completed before it started")
 
     artifacts = receipt.get("artifacts")
     if not isinstance(artifacts, list):
@@ -436,10 +438,22 @@ def validate_stage_receipt(
     for item in artifacts:
         if not isinstance(item, dict):
             raise P12IsolationAuthorityError("stage artifact reference is malformed")
-        _require_sha256(item.get("sha256"), "artifact.sha256")
+        expected_sha = _require_sha256(item.get("sha256"), "artifact.sha256")
         size = item.get("byte_count")
         if type(size) is not int or isinstance(size, bool) or size <= 0:
             raise P12IsolationAuthorityError("stage artifact byte count is invalid")
+        path_text = item.get("path")
+        if type(path_text) is not str or not path_text:
+            raise P12IsolationAuthorityError("stage artifact path is invalid")
+        artifact_path = Path(path_text)
+        if not artifact_path.is_absolute():
+            artifact_path = paths.root / artifact_path
+        if not artifact_path.is_file():
+            raise P12IsolationAuthorityError("stage artifact file is missing")
+        if artifact_path.stat().st_size != size:
+            raise P12IsolationAuthorityError("stage artifact byte count changed")
+        if _sha256_file(artifact_path) != expected_sha:
+            raise P12IsolationAuthorityError("stage artifact SHA-256 changed")
 
     failure_type = receipt.get("failure_type")
     failure_reason = receipt.get("failure_reason")
