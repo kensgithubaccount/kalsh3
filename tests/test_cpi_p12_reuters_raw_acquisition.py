@@ -156,6 +156,12 @@ def _fake_http_response(wire: bytes) -> http.client.HTTPResponse:
         ("Content-Length: 5\r\nContent-Length: 5\r\n", b"12345"),
         ("Content-Length: 5\r\nTransfer-Encoding: chunked\r\n", b"12345"),
         ("Content-Length: 1x\r\n", b"12345"),
+        ("Transfer-Encoding: gzip\r\n", b"unrecognized encoding"),
+        ("Transfer-Encoding: chunked, identity\r\n", b"5\r\nhello\r\n0\r\n\r\n"),
+        (
+            "Transfer-Encoding: chunked\r\nTransfer-Encoding: chunked\r\n",
+            b"5\r\nhello\r\n0\r\n\r\n",
+        ),
     ],
 )
 def test_real_http_reader_rejects_incomplete_or_ambiguous_framing(
