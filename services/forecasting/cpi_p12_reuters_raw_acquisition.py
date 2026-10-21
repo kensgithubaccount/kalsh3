@@ -1,0 +1,199 @@
+"""Independent, research-only Reuters-source raw HTTPS acquisition for CPI P12.
+
+This records raw first-party HTTPS response bytes from *explicit, preselected* URLs.
+It does not search the web, infer a forecast, validate Reuters attribution, select
+a CPI value, or authorize scientific evidence. Never call this with target source
+URLs before a separately reviewed pre-event source-selection protocol is frozen.
+"""
+
+from __future__ import annotations
+
+import base64
+import hashlib
+import http.client
+import ssl
+from collections.abc import Callable, Mapping
+from datetime import UTC, datetime
+from typing import Any
+from urllib.parse import urlsplit
+
+RECORD_TYPE = "CPI-P12-REUTERS-RAW-HTTPS-OBSERVATIONS-v1"
+MAX_SOURCES = 8
+MAX_RESPONSE_BYTES = 1_000_000
+
+# Explicit exact hosts, not suffix matching or caller-configurable host groups.
+# Presence of a host here does not establish Reuters attribution or independence.
+HOST_OPERATORS = {
+    "www.reuters.com": "reuters",
+    "reuters.com": "reuters",
+    "finance.yahoo.com": "yahoo",
+    "www.yahoo.com": "yahoo",
+    "www.nasdaq.com": "nasdaq",
+    "www.tradingview.com": "tradingview",
+    "www.kfgo.com": "kfgo",
+}
+
+
+class P12ReutersRawAcquisitionError(ValueError):
+    """An invalid source, failed fetch or missed prospective cutoff."""
+
+
+def _utc(value: datetime, label: str) -> datetime:
+    if type(value) is not datetime or value.tzinfo is None or value.utcoffset() is None:
+        raise P12ReutersRawAcquisitionError(f"{label} must be an aware datetime")
+    return value.astimezone(UTC)
+
+
+def _iso(value: datetime) -> str:
+    return value.isoformat().replace("+00:00", "Z")
+
+
+def _validate_url(url: str) -> tuple[str, str, str]:
+    if type(url) is not str or len(url) > 2048 or any(ord(ch) < 33 for ch in url):
+        raise P12ReutersRawAcquisitionError("source URL is invalid")
+    try:
+        parsed = urlsplit(url)
+        port = parsed.port
+    except ValueError as exc:
+        raise P12ReutersRawAcquisitionError("source URL is invalid") from exc
+    host = parsed.hostname
+    if (
+        parsed.scheme != "https"
+        or type(host) is not str
+        or host not in HOST_OPERATORS
+        or parsed.netloc != host
+        or port is not None
+        or parsed.username is not None
+        or parsed.password is not None
+        or parsed.query
+        or parsed.fragment
+        or not parsed.path.startswith("/")
+        or parsed.path.startswith("//")
+        or ".." in parsed.path.split("/")
+    ):
+        raise P12ReutersRawAcquisitionError("source URL is not an approved exact HTTPS endpoint")
+    return host, parsed.path, HOST_OPERATORS[host]
+
+
+def _https_get(url: str) -> tuple[int, bytes, dict[str, str]]:
+    """TLS-verified, exact-origin GET; redirects are NOT followed."""
+    host, path, _ = _validate_url(url)
+    conn = http.client.HTTPSConnection(
+        host, timeout=8, context=ssl.create_default_context()
+    )
+    try:
+        conn.request(
+            "GET", path,
+            headers={"Accept-Encoding": "identity", "User-Agent": "kalsh3-P12-research/1"},
+        )
+        response = conn.getresponse()
+        raw = response.read(MAX_RESPONSE_BYTES + 1)
+        headers = {
+            name.lower(): value
+            for name, value in response.getheaders()
+            if name.lower() in {"content-type", "last-modified", "etag"}
+        }
+        return response.status, raw, headers
+    finally:
+        conn.close()
+
+
+def capture_reuters_raw_sources(
+    *,
+    source_urls: tuple[str, ...],
+    window_start: datetime,
+    deadline: datetime,
+    getter: Callable[[str], tuple[int, bytes, Mapping[str, str]]] | None = None,
+    clock: Callable[[], datetime] | None = None,
+) -> dict[str, Any]:
+    """Capture exact raw source bodies; any invalid/late response fails this lane.
+
+    No source discovery, no unreviewed backfill, no Reuters value extraction.
+    Caller URL selection and cutoff dates confer *no* scientific authority.
+    """
+    if type(source_urls) is not tuple or not 1 <= len(source_urls) <= MAX_SOURCES:
+        raise P12ReutersRawAcquisitionError("source cohort size is invalid")
+    if len(set(source_urls)) != len(source_urls):
+        raise P12ReutersRawAcquisitionError("duplicate source URLs")
+    parsed_sources = [_validate_url(url) for url in source_urls]
+    start = _utc(window_start, "window_start")
+    end = _utc(deadline, "deadline")
+    if start >= end:
+        raise P12ReutersRawAcquisitionError("time window is empty")
+    now = clock or (lambda: datetime.now(UTC))
+    started = _utc(now(), "capture start")
+    if not start <= started < end:
+        raise P12ReutersRawAcquisitionError("capture began outside window")
+    transport = _https_get if getter is None else getter
+    if not callable(transport):
+        raise P12ReutersRawAcquisitionError("source getter is not callable")
+
+    observations: list[dict[str, Any]] = []
+    for url, (host, _, group) in zip(source_urls, parsed_sources, strict=True):
+        before = _utc(now(), "request start")
+        if not start <= before < end:
+            raise P12ReutersRawAcquisitionError("window expired before request")
+        try:
+            response = transport(url)
+        except (OSError, TimeoutError, http.client.HTTPException) as exc:
+            raise P12ReutersRawAcquisitionError("Reuters-source transport failure") from exc
+        after = _utc(now(), "request completed")
+        if not before <= after < end:
+            raise P12ReutersRawAcquisitionError("response missed frozen prospective deadline")
+        if type(response) is not tuple or len(response) != 3:
+            raise P12ReutersRawAcquisitionError("malformed transport response")
+        status, raw, headers = response
+        if type(status) is not int or status != 200:
+            raise P12ReutersRawAcquisitionError("source did not return HTTP 200")
+        if type(raw) is not bytes or not 0 < len(raw) <= MAX_RESPONSE_BYTES:
+            raise P12ReutersRawAcquisitionError("source response body size or type invalid")
+        if not isinstance(headers, Mapping):
+            raise P12ReutersRawAcquisitionError("source response headers invalid")
+        safe_headers: dict[str, str] = {}
+        for key in ("content-type", "last-modified", "etag"):
+            value = headers.get(key)
+            if value is not None:
+                if type(value) is not str or len(value) > 256 or any(
+                    ch in value for ch in "\r\n"
+                ):
+                    raise P12ReutersRawAcquisitionError("source header invalid")
+                safe_headers[key] = value
+        observations.append(
+            {
+                "url": url,
+                "host": host,
+                "operator_group_unverified": group,
+                "http_status": status,
+                "request_started_at_utc": _iso(before),
+                "response_completed_at_utc": _iso(after),
+                "raw_body_sha256": hashlib.sha256(raw).hexdigest(),
+                "byte_count": len(raw),
+                "raw_body_b64": base64.b64encode(raw).decode("ascii"),
+                "unverified_http_headers": safe_headers,
+                "publication_time_verified": False,
+                "reuters_attribution_verified": False,
+                "forecast_value_extracted": False,
+            }
+        )
+    completed = _utc(now(), "capture completion")
+    if completed < started or completed >= end:
+        raise P12ReutersRawAcquisitionError("capture finished outside window")
+    return {
+        "record_type": RECORD_TYPE,
+        "stage": "REUTERS_ACQUISITION",
+        "source_count": len(observations),
+        "observations": observations,
+        "window_start_utc": _iso(start),
+        "deadline_utc": _iso(end),
+        "capture_started_at_utc": _iso(started),
+        "capture_completed_at_utc": _iso(completed),
+        "transport_mode": "DIRECT_VERIFIED_HTTPS" if getter is None else "INJECTED_TEST_GETTER",
+        "selection_policy": "EXPLICIT_URLS_NOT_FROZEN_NO_DISCOVERY",
+        "scientific_evidence_authorized": False,
+        "source_publication_verified": False,
+        "reuters_forecast_authorized": False,
+        "phase1_economic_test_authorized": False,
+        "p12_frozen": False,
+        "promotion_authority": "NONE",
+        "production_influence": "0",
+    }
