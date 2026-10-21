@@ -178,9 +178,7 @@ def test_public_transport_mode_is_explicit(monkeypatch: pytest.MonkeyPatch) -> N
     assert result["scientific_evidence_authorized"] is False
 
 
-def test_create_once_cli_and_no_overwrite(
-    tmp_path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_create_once_cli_and_no_overwrite(tmp_path, monkeypatch: pytest.MonkeyPatch) -> None:
     record, _ = collect_with_fake()
     output = tmp_path / "inventory.json"
     monkeypatch.setattr(cli, "capture_kalshi_cpi_inventory", lambda _: record)
@@ -210,8 +208,13 @@ def test_cli_requires_explicit_research_acknowledgement(
     monkeypatch.setattr(
         sys,
         "argv",
-        ["capture_cpi_p12_kalshi_inventory.py", "--event-ticker", EVENT,
-         "--output", str(tmp_path / "x.json")],
+        [
+            "capture_cpi_p12_kalshi_inventory.py",
+            "--event-ticker",
+            EVENT,
+            "--output",
+            str(tmp_path / "x.json"),
+        ],
     )
     with pytest.raises(SystemExit, match="--research-only"):
         cli.main()
