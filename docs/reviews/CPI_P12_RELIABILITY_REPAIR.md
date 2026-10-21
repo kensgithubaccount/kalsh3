@@ -204,14 +204,48 @@ distinct from automated transport. P12 may reuse that design principle, but sche
 needs its own reviewed provenance contract rather than treating caller-authored bytes as
 automated first-party acquisition.
 
+## Decoupled collection orchestration checkpoint — October 21, 2026
+
+The recovered implementation in `services/forecasting/cpi_p12_decoupled_collection.py`
+provides a **pre-freeze, research-only orchestration layer** for three independent
+stages: `bls_schedule_authority`, `kalshi_market_capture`, and
+`reuters_acquisition`. This is separate from the pure diagnostic introduced in
+#198 and the standalone raw Kalshi inventory collector merged in #199.
+
+The BLS stage verifies exact, previously sealed calendar receipt bytes and its
+embedded source SHA, reference month, and release timestamp **offline**, without
+any live BLS HTTP request. A stage-local expected acquisition failure writes
+a create-once FAILURE receipt while the remaining stages can still run.
+The preclose gate reads stage receipts only and never invokes acquisition.
+
+**Boundary:** the Kalshi and Reuters callbacks are adapters supplied by the
+caller. The included dry-run CLI uses synthetic sentinels in those slots;
+this is not evidence of successful live Reuters or executable Kalshi market
+capture. The gate's READY state is explicitly **operational-stage presence
+only**, not scientific evidence validity, a P12 freeze, or trading authority.
+
+Expected-failure receipts store a fixed sanitized failure code, rather than
+exception messages that might contain raw Reuters content, URLs or tokens.
+Fault-injection tests verify that source failure cannot erase or suppress
+unrelated stage artifacts, that schedule receipt tampering fails locally,
+and that no preclose code initiates collection. Frozen P11 remains untouched.
+
+The original #197 had 18 pytest failures from exact `type(path) is Path`
+checks against valid `PosixPath` objects. This checkpoint carries the
+reviewed repair using `isinstance(path, Path)` and is recovered against
+current canonical `main` after #198/#199, avoiding stale PR-head history.
+
 ## Required gates before P12 may freeze
 
 P12 remains **NOT READY TO FREEZE** until all of these are completed:
 
-- the exact future P12 runtime decouples BLS, Kalshi, and Reuters acquisition stages;
-- the actual production runtime passes the BLS redundancy probe on at least two separate days;
-- at least one reviewed BLS acquisition path succeeds prospectively, with diagnostics proving
-  whether success depends on request profile, browser/manual acquisition, or network route;
+- the actual final P12 collectors for both Kalshi prices and Reuters forecasts are
+  independently launched and preserve timestamped evidence without dependency on BLS HTTP;
+  the present code establishes only the isolated orchestration boundary;
+- the event-specific frozen P12 protocol binds the exact prospectively sealed BLS calendar
+  receipt SHA-256, source hash, reference month and release instant before event execution;
+- the runtime verifies that sealed receipt offline; live BLS HTTP retrieval is not a
+  release-morning prerequisite for independently recording market or Reuters observations;
 - at least one complete unattended scheduled dry run succeeds from each required runtime path;
 - 403, timeout, redirect, malformed body, wrong reference month, and wrong release-time fault
   injection all fail closed without suppressing unrelated collectors;
