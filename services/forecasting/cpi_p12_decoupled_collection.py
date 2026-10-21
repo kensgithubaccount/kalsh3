@@ -97,9 +97,10 @@ class SealedBLSScheduleExpectation:
     receipt_sha256: str
 
     def __post_init__(self) -> None:
-        if type(self.reference_month) is not str or re.fullmatch(
-            r"\d{4}-\d{2}", self.reference_month
-        ) is None:
+        if (
+            type(self.reference_month) is not str
+            or re.fullmatch(r"\d{4}-\d{2}", self.reference_month) is None
+        ):
             raise P12IsolationAuthorityError("reference_month must be exact YYYY-MM")
         month = int(self.reference_month[5:])
         if month < 1 or month > 12:
@@ -520,9 +521,7 @@ def evaluate_preclose_completeness(
     gate = {
         "record_type": GATE_RECEIPT_SCHEMA,
         "policy_version": POLICY_VERSION,
-        "decision": (
-            P12GateDecision.READY.value if all_pass else P12GateDecision.INCOMPLETE.value
-        ),
+        "decision": (P12GateDecision.READY.value if all_pass else P12GateDecision.INCOMPLETE.value),
         "evaluated_at_utc": _iso(clock()),
         "required_stage_states": stage_states,
         "collectors_invoked_by_gate": False,
