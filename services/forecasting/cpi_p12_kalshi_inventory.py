@@ -154,9 +154,7 @@ def capture_kalshi_cpi_inventory(
         "requested_series_ticker": CPI_SERIES,
         "source_origin": f"https://{public_read.HOST}",
         "completed_at_utc": completed.astimezone(UTC).isoformat().replace("+00:00", "Z"),
-        "acquisition_mode": (
-            "PUBLIC_GET" if getter is None else "INJECTED_DIAGNOSTIC_GETTER"
-        ),
+        "acquisition_mode": ("PUBLIC_GET" if getter is None else "INJECTED_DIAGNOSTIC_GETTER"),
         "observations": envelopes,
         "market_row_count": len(markets),
         "scope": "RAW_INVENTORY_ONLY_NO_MARKET_QUOTES_OR_REUTERS",
