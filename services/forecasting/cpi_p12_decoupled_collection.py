@@ -389,7 +389,7 @@ def run_independent_stage(
             completed_at=completed,
             artifacts=(),
             root=paths.root,
-            failure_type=type(exc).__name__,
+            failure_type="P12ExpectedStageFailure",
             failure_reason="EXPECTED_STAGE_ACQUISITION_FAILURE",
         )
         _write_json_exclusive(receipt_path, receipt)
