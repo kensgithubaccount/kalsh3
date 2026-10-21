@@ -151,8 +151,12 @@ def capture_reuters_raw_sources(
     observations: list[dict[str, Any]] = []
     for url, (host, _, group) in zip(source_urls, parsed_sources, strict=True):
         before = _utc(now(), "request start")
-        previous = started if not observations else datetime.fromisoformat(
-            observations[-1]["response_completed_at_utc"].replace("Z", "+00:00")
+        previous = (
+            started
+            if not observations
+            else datetime.fromisoformat(
+                observations[-1]["response_completed_at_utc"].replace("Z", "+00:00")
+            )
         )
         if before < previous:
             raise P12ReutersRawAcquisitionError("acquisition clock moved backwards")
