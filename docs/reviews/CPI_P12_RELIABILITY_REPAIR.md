@@ -245,19 +245,38 @@ The frozen P11 runtime is untouched.
 
 ## Required gates before P12 may freeze
 
-P12 remains **NOT READY TO FREEZE** until all of these are completed:
+P12 remains **NOT READY TO FREEZE** until the remaining items below are completed.
 
-- the exact future P12 runtime decouples BLS, Kalshi, and Reuters acquisition stages; the pre-freeze isolation runtime and fault-injection harness now implement and test this boundary, pending event-specific collector adapters and scheduled dry runs;
-- the actual production runtime passes the BLS redundancy probe on at least two separate days;
-- at least one reviewed BLS acquisition path succeeds prospectively, with diagnostics proving
-  whether success depends on request profile, browser/manual acquisition, or network route;
-- at least one complete unattended scheduled dry run succeeds from each required runtime path;
-- 403, timeout, redirect, malformed body, wrong reference month, and wrong release-time fault
-  injection all fail closed without suppressing unrelated collectors;
-- the secondary-egress acquisition/provenance handoff is reviewed before it gains scientific
-  authority;
-- event-specific Kalshi identity, siblings, close times, and settlement semantics are frozen
-  only after those reliability gates pass.
+Completed reliability foundations:
+
+- a reviewed browser/manual BLS schedule-acquisition lane succeeded prospectively;
+- the exact schedule source and receipt were preserved off-laptop and independently
+  byte-verified;
+- the pre-freeze isolation runtime now makes BLS schedule authority, Kalshi market capture,
+  and Reuters acquisition independent stages;
+- fault tests prove malformed/wrong BLS schedule artifacts and expected BLS/Kalshi/Reuters
+  stage failures cannot suppress unrelated collectors;
+- the preclose completeness gate is receipt-only and invokes no collector.
+
+Remaining before freeze:
+
+- the event-specific P12 protocol must bind the exact sealed BLS schedule receipt hash,
+  reference month, and release instant;
+- event-specific Kalshi and Reuters collector adapters must plug into the independent stage
+  boundary without reintroducing cross-stage prerequisites;
+- at least one complete unattended scheduled dry run must succeed on the actual production
+  runtime using the exact code/receipt configuration intended for P12;
+- scheduled fault-injection dry runs must demonstrate that a BLS, Kalshi, or Reuters
+  acquisition failure leaves the other independent stage artifacts intact;
+- event-specific Kalshi identity, siblings, close times, settlement semantics, collection
+  windows, and preclose cutoff must be frozen only after those runtime gates pass;
+- post-release BLS truth acquisition must remain a separate lane so a truth-transport problem
+  cannot mutate or erase already sealed pre-release evidence.
+
+The earlier requirement for repeated live automated BLS schedule probes is superseded by the
+reviewed browser-attested schedule-authority lane. Python/curl probes remain useful
+diagnostics, but they are not a freeze prerequisite because BLS/Akamai demonstrably blocks
+those clients while the full browser path succeeds.
 
 Until then, this is infrastructure preparation only: promotion authority `NONE`, production
 influence `0`, and no trading authority.
