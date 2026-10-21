@@ -153,7 +153,9 @@ def test_network_failure_fails_only_kalshi_stage(tmp_path, monkeypatch: pytest.M
 
     monkeypatch.setattr(cli, "capture_kalshi_raw_market_snapshots", with_clock)
     assert cli.main() == 4
-    receipt = json.loads(\n        (tmp_path / "run/orchestration/stages/kalshi_market_capture.json").read_text()\n    )
+    receipt = json.loads(
+        (tmp_path / "run/orchestration/stages/kalshi_market_capture.json").read_text()
+    )
     assert receipt["status"] == "FAILURE"
     assert receipt["scientific_evidence_authorized"] is False
     assert not (tmp_path / "run/kalshi/raw_market_snapshots.json").exists()
