@@ -443,9 +443,7 @@ def test_tampered_preclose_gate_cannot_forge_stage_success(tmp_path: Path) -> No
     assert gate["decision"] == runtime.P12GateDecision.INCOMPLETE.value
 
     forged = json.loads(paths.gate.read_text())
-    forged["required_stage_states"] = {
-        stage.value: "PASS" for stage in runtime.P12CollectorStage
-    }
+    forged["required_stage_states"] = {stage.value: "PASS" for stage in runtime.P12CollectorStage}
     forged["decision"] = runtime.P12GateDecision.READY.value
     paths.gate.write_text(json.dumps(forged))
 
