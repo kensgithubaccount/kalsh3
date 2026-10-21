@@ -21,6 +21,7 @@ Design:
 from __future__ import annotations
 
 import base64
+import binascii
 import hashlib
 import json
 import os
@@ -244,11 +245,17 @@ def verify_presealed_bls_schedule_receipt(
     if not receipt_path.is_file():
         raise P12ExpectedStageFailure("sealed BLS schedule receipt is unavailable")
 
-    receipt_raw = receipt_path.read_bytes()
+    try:
+        receipt_raw = receipt_path.read_bytes()
+    except OSError as exc:
+        raise P12ExpectedStageFailure("sealed BLS schedule receipt could not be read") from exc
     if _sha256_bytes(receipt_raw) != expectation.receipt_sha256:
         raise P12ExpectedStageFailure("sealed BLS schedule receipt SHA-256 mismatch")
 
-    payload = strict_json_loads(receipt_raw)
+    try:
+        payload = strict_json_loads(receipt_raw)
+    except ValueError as exc:
+        raise P12ExpectedStageFailure("sealed BLS schedule receipt JSON is malformed") from exc
     if not isinstance(payload, dict):
         raise P12ExpectedStageFailure("sealed BLS schedule receipt is not a JSON object")
     if payload.get("record_type") != BLS_SCHEDULE_RECEIPT_TYPE:
@@ -257,7 +264,13 @@ def verify_presealed_bls_schedule_receipt(
         raise P12ExpectedStageFailure("sealed BLS schedule source locator mismatch")
     if payload.get("reference_month") != expectation.reference_month:
         raise P12ExpectedStageFailure("sealed BLS schedule reference month mismatch")
-    if _parse_utc(payload.get("release_at_utc"), "release_at_utc") != expectation.release_at_utc:
+    try:
+        release_at = _parse_utc(payload.get("release_at_utc"), "release_at_utc")
+    except P12IsolationAuthorityError as exc:
+        raise P12ExpectedStageFailure(
+            "sealed BLS schedule release instant is malformed"
+        ) from exc
+    if release_at != expectation.release_at_utc:
         raise P12ExpectedStageFailure("sealed BLS schedule release instant mismatch")
     if payload.get("raw_body_sha256") != expectation.source_sha256:
         raise P12ExpectedStageFailure("sealed BLS schedule source SHA-256 mismatch")
@@ -277,7 +290,7 @@ def verify_presealed_bls_schedule_receipt(
         raise P12ExpectedStageFailure("sealed BLS schedule receipt lacks exact source bytes")
     try:
         source_raw = base64.b64decode(encoded, validate=True)
-    except ValueError as exc:
+    except (ValueError, binascii.Error) as exc:
         raise P12ExpectedStageFailure(
             "sealed BLS schedule source bytes are invalid base64"
         ) from exc
