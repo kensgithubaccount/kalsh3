@@ -80,6 +80,8 @@ def test_raw_bytes_and_metadata_are_preserved_without_forecast_selection() -> No
         ("https://www.reuters.com/foo?token=secret",),
         ("https://www.reuters.com/../secret",),
         ("https://www.reuters.com//evil",),
+        ("https://www.reuters.com/café",),
+        ("https://www.reuters.com/path\x7f",),
         tuple(URL1 + str(i) for i in range(9)),
     ],
 )
