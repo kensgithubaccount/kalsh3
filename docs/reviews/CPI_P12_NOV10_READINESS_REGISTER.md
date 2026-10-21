@@ -29,7 +29,7 @@ America/New_York (EST, UTC-05:00) = `2026-11-10T13:30:00Z`.
 | Gate | What must be proved | Current state |
 | --- | --- | --- |
 | Kalshi real quotes | Independently timed, raw, fixed-origin market/candle/quote capture; verified complete sibling cohort, close times and as-of timing; deterministic admissible price selection | Raw inventory merged; independent single-market raw snapshot checkpoint in review. No frozen price selection yet |
-| Reuters first-party source | Independently launched acquisition, frozen locator/search methodology, bounded and timed raw-source provenance, immutable PASS/NONPASS decision contract | NOT COMPLETE. Target Reuters forecast must not be inspected before freezing its source/selection rule |
+| Reuters first-party source | Independently launched acquisition, frozen locator/search methodology, bounded and timed raw-source provenance, immutable PASS/NONPASS decision contract | Direct raw HTTPS capture checkpoint in review. **NOT COMPLETE**: URL discovery, first-party attribution, independently operated corroboration, publication timing and source-selection freeze remain blocking. Do not inspect target value yet |
 | Frozen contract identity | Select actual P12 event/series, all sibling tickers, exact contract rules, reference month, strike comparators, close times and settlement authority | NOT COMPLETE. Do not reuse September P11 specifics |
 | Schedule binding | Event-specific P12 protocol must bind exact presealed BLS receipt SHA, raw HTML SHA, reference month and release instant | Receipt durably preserved; event protocol not frozen |
 | Timing and cutoff | Frozen pre-release time windows, deadline, clock skew allowances, contemporaneous request/response timestamps and delayed/failure handling | NOT COMPLETE |
@@ -73,3 +73,35 @@ Kalshi stage and records an isolated create-once stage receipt.
 This is genuine raw-source acquisition infrastructure, but caller-provided
 market identities and timing do not yet confer complete-cohort, economic, or
 scientific authority. No canonical source selected for Reuters in this PR.
+
+## Reuters raw-source checkpoint — October 21, 2026
+
+A new `services/forecasting/cpi_p12_reuters_raw_acquisition.py` and
+`scripts/capture_cpi_p12_reuters_raw.py` provide a separate, standalone
+`REUTERS_ACQUISITION` raw-source stage. This checkpoint does not import or
+execute P11 preflight or issue live BLS schedule queries. Reuters failure
+cannot change the Kalshi or BLS stage receipts.
+
+The proposed transport makes a bounded, TLS-verified first-party HTTPS GET,
+with **no redirects**, to an explicit caller-supplied list of **exact
+allowlisted hostnames**. It validates a strict pre-release window before and
+after every request, records original returned response bytes (base64), SHA256,
+HTTP status, local UTC request/response times and unverified source headers,
+then exclusively writes a hash-revalidated stage artifact.
+
+The list of URLs is **not a prospectively frozen search protocol**. The
+allowlisted host/operator-group names do not prove source independence. HTTP
+200 does not prove Reuters attribution, pre-close publication, or any CPI
+forecast. The adapter deliberately performs no numeric forecast extraction,
+web search, market comparison, or backward-looking observation. Test fixtures
+are synthetic and non-target-specific.
+
+The operational stage may report PASS for complete raw HTTP observations,
+but these are explicitly stamped **scientific evidence unauthorized**, **P12
+unfrozen**, and **production influence zero**. The separate mandatory
+next checkpoint is to freeze and verify Reuters source discovery/selection,
+publication timing, attribution and cross-host text matching, including an
+objective UNKNOWN/FAILURE outcome when provenance is insufficient.
+
+Do not run the actual November 2026 Reuters-source observation until its
+locator/search rules and cutoffs are independently reviewed and frozen.
