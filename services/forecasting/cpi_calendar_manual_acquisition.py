@@ -94,6 +94,42 @@ class _VisibleText(HTMLParser):
         self.parts.append(data)
 
 
+class _TableRows(HTMLParser):
+    def __init__(self) -> None:
+        super().__init__()
+        self.rows: list[tuple[str, ...]] = []
+        self._row: list[str] | None = None
+        self._cell_parts: list[str] | None = None
+
+    def handle_starttag(
+        self,
+        tag: str,
+        attrs: list[tuple[str, str | None]],
+    ) -> None:
+        del attrs
+        lowered = tag.casefold()
+        if lowered == "tr":
+            self._row = []
+            self._cell_parts = None
+        elif lowered in {"td", "th"} and self._row is not None:
+            self._cell_parts = []
+
+    def handle_data(self, data: str) -> None:
+        if self._cell_parts is not None:
+            self._cell_parts.append(data)
+
+    def handle_endtag(self, tag: str) -> None:
+        lowered = tag.casefold()
+        if lowered in {"td", "th"} and self._row is not None and self._cell_parts is not None:
+            self._row.append(" ".join(" ".join(self._cell_parts).split()))
+            self._cell_parts = None
+        elif lowered == "tr" and self._row is not None:
+            if self._row:
+                self.rows.append(tuple(self._row))
+            self._row = None
+            self._cell_parts = None
+
+
 def _utc_now() -> datetime:
     return datetime.now(UTC)
 
@@ -262,14 +298,28 @@ def _parse_release_instant(body: bytes, reference_month: str) -> datetime:
             "page is not positively identified as the CPI release schedule"
         )
 
+    try:
+        html = body.decode("utf-8")
+    except UnicodeDecodeError as exc:
+        raise CPICalendarManualAcquisitionError(
+            "BLS calendar HTML is not valid UTF-8"
+        ) from exc
+    table = _TableRows()
+    try:
+        table.feed(html)
+        table.close()
+    except Exception as exc:
+        raise CPICalendarManualAcquisitionError(
+            "BLS calendar table could not be parsed"
+        ) from exc
+
     candidates: set[datetime] = set()
-    for ref_match in re.finditer(re.escape(label), normalized, flags=re.IGNORECASE):
-        window = normalized[ref_match.end() : ref_match.end() + 260]
-        date_match = _DATE_RE.search(window)
-        time_match = _TIME_RE.search(window)
-        if date_match is None or time_match is None:
+    for row in table.rows:
+        if len(row) < 3 or row[0].casefold() != label.casefold():
             continue
-        if date_match.start() > 180 or time_match.start() > 220:
+        date_match = _DATE_RE.fullmatch(row[1])
+        time_match = _TIME_RE.fullmatch(row[2])
+        if date_match is None or time_match is None:
             continue
 
         release_month = _parse_month_name(date_match.group("month"))
