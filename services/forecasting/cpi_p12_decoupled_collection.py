@@ -267,9 +267,7 @@ def verify_presealed_bls_schedule_receipt(
     try:
         release_at = _parse_utc(payload.get("release_at_utc"), "release_at_utc")
     except P12IsolationAuthorityError as exc:
-        raise P12ExpectedStageFailure(
-            "sealed BLS schedule release instant is malformed"
-        ) from exc
+        raise P12ExpectedStageFailure("sealed BLS schedule release instant is malformed") from exc
     if release_at != expectation.release_at_utc:
         raise P12ExpectedStageFailure("sealed BLS schedule release instant mismatch")
     if payload.get("raw_body_sha256") != expectation.source_sha256:
