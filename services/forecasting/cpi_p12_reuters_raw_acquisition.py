@@ -111,8 +111,12 @@ def capture_reuters_raw_sources(
     No source discovery, no unreviewed backfill, no Reuters value extraction.
     Caller URL selection and cutoff dates confer *no* scientific authority.
     """
-    if type(source_urls) is not tuple or not 1 <= len(source_urls) <= MAX_SOURCES:
-        raise P12ReutersRawAcquisitionError("source cohort size is invalid")
+    if (
+        type(source_urls) is not tuple
+        or not 1 <= len(source_urls) <= MAX_SOURCES
+        or any(type(url) is not str for url in source_urls)
+    ):
+        raise P12ReutersRawAcquisitionError("source cohort size or type is invalid")
     if len(set(source_urls)) != len(source_urls):
         raise P12ReutersRawAcquisitionError("duplicate source URLs")
     parsed_sources = [_validate_url(url) for url in source_urls]
