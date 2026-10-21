@@ -145,6 +145,47 @@ freeze instead of weakening automated provenance rules.
 
 This matrix is operational-only and has no scientific-evidence authority.
 
+## Real-browser finding - 2026-10-21
+
+Safari successfully loaded the exact first-party BLS CPI release-calendar page on the same
+Mac/home network where Python and curl were rejected by Akamai. The rendered table explicitly
+bound:
+
+- reference month: October 2026
+- release date: Nov. 10, 2026
+- release time: 08:30 AM
+
+Safari also successfully downloaded the official BLS `bls.ics` calendar. This establishes
+that the residential route can reach BLS through a full browser and that the operational
+failure is not a simple network-route outage.
+
+The screenshot and downloaded ICS are diagnostic observations only. The screenshot is not
+accepted as raw source bytes, and the ICS does not encode the CPI reference month. The
+reviewed acquisition lane therefore uses a browser-saved copy of the exact already-reviewed
+P1 CPI schedule HTML locator, not the screenshot and not a caller-authored transcription.
+
+## Browser/manual schedule acquisition lane
+
+`services/forecasting/cpi_calendar_manual_acquisition.py` introduces a distinct
+`MANUAL_BROWSER_ATTESTED_RELEASE_CALENDAR` mode. It reuses the existing P1
+`RELEASE_CALENDAR / BLS_CPI_RELEASE_SCHEDULE_HTML` authority and does not impersonate
+automated HTTP provenance.
+
+The importer accepts only a local file path plus the target reference month and explicit
+operator attestation. It reads exact bytes itself, stamps importer-observed UTC time, binds
+the exact SHA-256 and byte count, parses the exact table row for the reference month, and
+derives the release instant from the saved HTML. Caller-supplied raw bytes, acquisition
+timestamps, and release timestamps are not public inputs.
+
+`scripts/import_cpi_p12_bls_calendar_browser.py` writes a create-once receipt containing
+the exact raw bytes (base64), file hash, importer timestamp, parsed reference month/release
+instant, P1 authority identities, and manual acquisition identity. The receipt explicitly
+states `scientific_evidence_authorized=false` and `p12_frozen=false`.
+
+This is still pre-freeze infrastructure. The resulting receipt gains no test authority until
+a later reviewed P12 protocol binds its exact content hash and expected reference month before
+the prospective event.
+
 ## Revised architecture direction
 
 The preferred P12 design now separates *schedule authority* from release-morning collection:
