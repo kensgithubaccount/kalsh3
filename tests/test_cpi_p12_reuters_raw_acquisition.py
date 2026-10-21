@@ -149,6 +149,115 @@ def _fake_http_response(wire: bytes) -> http.client.HTTPResponse:
     return response
 
 
+def _patch_chunked_transport(monkeypatch: pytest.MonkeyPatch, body: bytes) -> None:
+    response = _fake_http_response(
+        b"HTTP/1.1 200 OK\r\n"
+        b"Transfer-Encoding: chunked\r\n"
+        b"Content-Type: text/html\r\n\r\n" + body
+    )
+
+    class Connection:
+        def __init__(self, host: str, timeout: int, context: object):
+            assert host == "www.reuters.com"
+            assert timeout == 8
+
+        def request(self, method: str, path: str, headers: dict[str, str]) -> None:
+            assert method == "GET"
+
+        def getresponse(self) -> http.client.HTTPResponse:
+            return response
+
+        def close(self) -> None:
+            pass
+
+    monkeypatch.setattr(raw.http.client, "HTTPSConnection", Connection)
+
+
+@pytest.mark.parametrize(
+    "bad_body",
+    [
+        b"5\r\nhello\r\n0\r\n",  # zero chunk without terminal CRLF
+        b"5\r\nhello\r\n0\r\nETag: synthetic",  # unfinished trailer
+        b"5\r\nhelloXX0\r\n\r\n",  # invalid data/chunk separator
+        b"5\r\nhello\r\n0\r\nETag: synthetic\r\n",  # unfinished trailer section
+        b"5\r\nhello\r\n0\r\nNo-colon\r\n\r\n",  # malformed trailer
+        b"5\r\nhello\r\n0\r\nBad Name: x\r\n\r\n",
+        b"5\r\nhello\r\n",  # missing terminal zero-size chunk
+        b"5\nhello\r\n0\r\n\r\n",  # non-CRLF size delimiter
+        b"5\r\nhell",  # incomplete data
+        b"Z\r\nhello\r\n0\r\n\r\n",  # invalid size
+        b"5;extension=x\r\nhello\r\n0\r\n\r\n",  # unsupported extension
+        b"100000\r\n",  # size exceeds byte cap, no unbounded read
+    ],
+)
+def test_malformed_chunked_http_is_stage_local_transport_failure(
+    monkeypatch: pytest.MonkeyPatch, bad_body: bytes
+) -> None:
+    _patch_chunked_transport(monkeypatch, bad_body)
+    with pytest.raises(raw.P12ReutersRawAcquisitionError, match="transport failure"):
+        _run(source_urls=(URL1,), getter=raw._https_get)
+
+
+@pytest.mark.parametrize(
+    "valid_body",
+    [
+        b"5\r\nhello\r\n0\r\n\r\n",
+        b"2\r\nhe\r\n3\r\nllo\r\n0\r\n\r\n",
+        b"5\r\nhello\r\n0\r\nETag: synthetic\r\n\r\n",
+    ],
+)
+def test_complete_chunked_http_preserves_exact_entity_bytes(
+    monkeypatch: pytest.MonkeyPatch, valid_body: bytes
+) -> None:
+    _patch_chunked_transport(monkeypatch, valid_body)
+    result = _run(source_urls=(URL1,), getter=raw._https_get)
+    observed = result["observations"][0]
+    assert base64.b64decode(observed["raw_body_b64"], validate=True) == b"hello"
+    assert observed["raw_body_sha256"] == hashlib.sha256(b"hello").hexdigest()
+    assert observed["byte_count"] == 5
+    assert observed["publication_time_verified"] is False
+    assert result["scientific_evidence_authorized"] is False
+    assert result["p12_frozen"] is False
+
+
+def test_malformed_chunked_http_cannot_create_cli_pass_receipt(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    root = tmp_path / "experiment"
+    _patch_chunked_transport(monkeypatch, b"5\r\nhelloXX0\r\n\r\n")
+    monkeypatch.setattr(
+        cli,
+        "capture_reuters_raw_sources",
+        lambda **kwargs: raw.capture_reuters_raw_sources(
+            **kwargs, getter=raw._https_get, clock=lambda: NOW
+        ),
+    )
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "capture_cpi_p12_reuters_raw.py",
+            "--root",
+            str(root),
+            "--source-url",
+            URL1,
+            "--window-start",
+            START.isoformat(),
+            "--deadline",
+            DEADLINE.isoformat(),
+            "--research-only",
+        ],
+    )
+    assert cli.main() == 4
+    paths = P12IsolationPaths(root)
+    receipt = json.loads(paths.stage_receipt(P12CollectorStage.REUTERS_ACQUISITION).read_text())
+    assert receipt["status"] == "FAILURE"
+    assert receipt["scientific_evidence_authorized"] is False
+    assert not (root / "reuters/raw_source_observations.json").exists()
+    assert not paths.stage_receipt(P12CollectorStage.BLS_SCHEDULE_AUTHORITY).exists()
+    assert not paths.stage_receipt(P12CollectorStage.KALSHI_MARKET_CAPTURE).exists()
+
+
 @pytest.mark.parametrize(
     "extra_headers,body",
     [
