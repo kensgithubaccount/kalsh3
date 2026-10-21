@@ -117,6 +117,34 @@ network-route failure before any further runtime architecture is frozen.
 
 This result is operational-only and contributes zero Reuters-vs-Kalshi directional evidence.
 
+
+## Request-profile matrix - 2026-10-21
+
+A second home-egress diagnostic compared the same BLS targets under macOS `curl` using
+HTTP/1.1 with both its default request profile and a browser-like Safari User-Agent plus
+HTML Accept/Accept-Language headers.
+
+All four combinations still returned HTTP 403 with `Server: AkamaiGHost` and a 1325-byte
+HTML body:
+
+- CPI schedule HTML + default curl: 403
+- CPI schedule HTML + browser-like headers: 403
+- BLS calendar ICS + default curl: 403
+- BLS calendar ICS + browser-like headers: 403
+
+This rules out a simple Python-specific failure and rules out a repair based only on changing
+User-Agent/Accept headers or switching the first-party path to the BLS ICS feed. The common
+remaining possibilities include BLS/Akamai policy against generic command-line TLS clients,
+client/TLS fingerprinting, cookie/challenge state available only to a full browser, or a
+broader edge-policy decision.
+
+The next diagnostic should therefore use a real browser session rather than another synthetic
+HTTP-header variant. If a real browser succeeds while command-line clients remain blocked,
+P12 should use a separately reviewed browser/manual-attested schedule-authority lane before
+freeze instead of weakening automated provenance rules.
+
+This matrix is operational-only and has no scientific-evidence authority.
+
 ## Revised architecture direction
 
 The preferred P12 design now separates *schedule authority* from release-morning collection:
