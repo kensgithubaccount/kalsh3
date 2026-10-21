@@ -38,7 +38,7 @@ def html(
     </table>
   </body>
 </html>
-""".encode("utf-8")
+""".encode()
 
 
 def import_calendar(
