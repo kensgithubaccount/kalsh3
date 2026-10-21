@@ -398,7 +398,7 @@ def test_stage_artifact_mutation_blocks_gate(tmp_path: Path) -> None:
         _collector(artifact, b"original"),
         clock=lambda: NOW,
     )
-    artifact.write_bytes(b"mutated")
+    artifact.write_bytes(b"mutation")
     with pytest.raises(runtime.P12IsolationAuthorityError, match="SHA-256 changed"):
         runtime.validate_stage_receipt(paths, stage)
 
