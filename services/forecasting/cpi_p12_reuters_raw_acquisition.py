@@ -80,6 +80,63 @@ def _validate_url(url: str) -> tuple[str, str, str]:
     return host, parsed.path, HOST_OPERATORS[host]
 
 
+def _read_complete_chunked_body(response: http.client.HTTPResponse) -> bytes:
+    """Strictly validate HTTP/1.1 chunk boundaries before trusting entity bytes.
+
+    HTTPResponse.read() silently tolerates some malformed chunk terminators and
+    unfinished trailer sections. Read its already-positioned raw body stream
+    directly and require the terminal CRLF. Unsupported chunk extensions fail
+    closed rather than granting an operational PASS to incomplete evidence.
+    """
+    stream = response.fp
+    if stream is None:
+        raise http.client.HTTPException("chunked response stream is unavailable")
+    hexdigits = b"0123456789abcdefABCDEF"
+    token_bytes = (
+        b"!#$%&'*+-.^_`|~0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"
+    )
+    body = bytearray()
+    for _ in range(4096):
+        line = stream.readline(67)
+        size_text = line[:-2]
+        if (
+            not line.endswith(b"\r\n")
+            or not 1 <= len(size_text) <= 16
+            or any(ch not in hexdigits for ch in size_text)
+        ):
+            raise http.client.HTTPException("invalid chunk size line")
+        size = int(size_text, 16)
+        if size > MAX_RESPONSE_BYTES - len(body):
+            raise http.client.HTTPException("chunk body exceeds byte limit")
+        if size == 0:
+            trailer_bytes = 0
+            for _ in range(32):
+                trailer = stream.readline(1025)
+                trailer_bytes += len(trailer)
+                if (
+                    not trailer.endswith(b"\r\n")
+                    or len(trailer) > 1024
+                    or trailer_bytes > 8192
+                ):
+                    raise http.client.HTTPException("invalid or oversized chunk trailer")
+                if trailer == b"\r\n":
+                    return bytes(body)
+                name, separator, value = trailer[:-2].partition(b":")
+                if (
+                    not separator
+                    or not name
+                    or any(ch not in token_bytes for ch in name)
+                    or any((ch < 32 and ch != 9) or ch == 127 for ch in value)
+                ):
+                    raise http.client.HTTPException("invalid chunk trailer field")
+            raise http.client.HTTPException("too many chunk trailers")
+        chunk = stream.read(size)
+        if len(chunk) != size or stream.read(2) != b"\r\n":
+            raise http.client.HTTPException("truncated chunk or invalid chunk separator")
+        body.extend(chunk)
+    raise http.client.HTTPException("too many chunks")
+
+
 def _https_get(url: str) -> tuple[int, bytes, dict[str, str]]:
     """TLS-verified, exact-origin GET; redirects are NOT followed."""
     host, path, _ = _validate_url(url)
@@ -111,7 +168,11 @@ def _https_get(url: str) -> tuple[int, bytes, dict[str, str]]:
             expected_length = int(value)
             if expected_length > MAX_RESPONSE_BYTES:
                 raise P12ReutersRawAcquisitionError("source body exceeds byte limit")
-        raw = response.read(MAX_RESPONSE_BYTES + 1)
+        raw = (
+            _read_complete_chunked_body(response)
+            if transfer_encodings
+            else response.read(MAX_RESPONSE_BYTES + 1)
+        )
         if expected_length is not None and len(raw) != expected_length:
             raise P12ReutersRawAcquisitionError("source body is truncated or length inconsistent")
         headers = {
