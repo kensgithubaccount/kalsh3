@@ -96,8 +96,13 @@ def _https_get(url: str) -> tuple[int, bytes, dict[str, str]]:
         transfer_encodings = [
             value for key, value in source_headers if key.lower() == "transfer-encoding"
         ]
-        if len(lengths) > 1 or (lengths and transfer_encodings):
-            raise P12ReutersRawAcquisitionError("ambiguous source response framing")
+        if (
+            len(lengths) > 1
+            or len(transfer_encodings) > 1
+            or (lengths and transfer_encodings)
+            or (transfer_encodings and transfer_encodings[0].lower() != "chunked")
+        ):
+            raise P12ReutersRawAcquisitionError("ambiguous or unsupported source response framing")
         expected_length = None
         if lengths:
             value = lengths[0]
