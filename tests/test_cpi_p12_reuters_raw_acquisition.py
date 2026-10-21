@@ -144,10 +144,14 @@ def test_cli_failure_receipt_is_local_to_reuters(
         "argv",
         [
             "capture_cpi_p12_reuters_raw.py",
-            "--root", str(root),
-            "--source-url", URL1,
-            "--window-start", START.isoformat(),
-            "--deadline", DEADLINE.isoformat(),
+            "--root",
+            str(root),
+            "--source-url",
+            URL1,
+            "--window-start",
+            START.isoformat(),
+            "--deadline",
+            DEADLINE.isoformat(),
             "--research-only",
         ],
     )
@@ -175,10 +179,14 @@ def test_cli_success_is_raw_only_and_create_once(
         "argv",
         [
             "capture_cpi_p12_reuters_raw.py",
-            "--root", str(root),
-            "--source-url", URL1,
-            "--window-start", START.isoformat(),
-            "--deadline", DEADLINE.isoformat(),
+            "--root",
+            str(root),
+            "--source-url",
+            URL1,
+            "--window-start",
+            START.isoformat(),
+            "--deadline",
+            DEADLINE.isoformat(),
             "--research-only",
         ],
     )
@@ -193,10 +201,20 @@ def test_cli_success_is_raw_only_and_create_once(
 
 
 def test_cli_requires_research_only(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(sys, "argv", [
-        "capture_cpi_p12_reuters_raw.py", "--root", str(tmp_path),
-        "--source-url", URL1, "--window-start", START.isoformat(),
-        "--deadline", DEADLINE.isoformat(),
-    ])
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "capture_cpi_p12_reuters_raw.py",
+            "--root",
+            str(tmp_path),
+            "--source-url",
+            URL1,
+            "--window-start",
+            START.isoformat(),
+            "--deadline",
+            DEADLINE.isoformat(),
+        ],
+    )
     with pytest.raises(SystemExit, match="research-only"):
         cli.main()
