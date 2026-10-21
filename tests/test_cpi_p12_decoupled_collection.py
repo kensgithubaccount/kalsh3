@@ -316,6 +316,21 @@ def test_stage_receipt_mutation_fails_validation(tmp_path: Path) -> None:
         runtime.validate_stage_receipt(paths, stage)
 
 
+
+def test_stage_artifact_mutation_blocks_gate(tmp_path: Path) -> None:
+    paths = runtime.P12IsolationPaths(tmp_path / "run")
+    stage = runtime.P12CollectorStage.KALSHI_MARKET_CAPTURE
+    artifact = paths.root / "kalshi" / "market.json"
+    runtime.run_independent_stage(
+        paths,
+        stage,
+        _collector(artifact, b"original"),
+        clock=lambda: NOW,
+    )
+    artifact.write_bytes(b"mutated")
+    with pytest.raises(runtime.P12IsolationAuthorityError, match="SHA-256 changed"):
+        runtime.validate_stage_receipt(paths, stage)
+
 def test_runtime_contains_no_direct_transport_or_p11_dependency() -> None:
     source = inspect.getsource(runtime)
     forbidden = (
