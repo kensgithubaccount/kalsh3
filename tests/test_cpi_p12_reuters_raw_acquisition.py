@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import base64
 import hashlib
+import http.client
+import io
 import json
 import sys
 from datetime import UTC, datetime, timedelta
@@ -133,6 +135,82 @@ def test_deadline_crossed_during_request() -> None:
 
     with pytest.raises(raw.P12ReutersRawAcquisitionError, match="deadline"):
         _run(clock=clock)
+
+
+def _fake_http_response(wire: bytes) -> http.client.HTTPResponse:
+    class Socket:
+        def makefile(self, _: str):
+            return io.BytesIO(wire)
+
+    response = http.client.HTTPResponse(Socket())
+    response.begin()
+    return response
+
+
+@pytest.mark.parametrize(
+    "extra_headers,body",
+    [
+        ("Content-Length: 22\\r\\n", b"too short"),
+        ("Content-Length: 5\\r\\nContent-Length: 5\\r\\n", b"12345"),
+        ("Content-Length: 5\\r\\nTransfer-Encoding: chunked\\r\\n", b"12345"),
+        ("Content-Length: 1x\\r\\n", b"12345"),
+    ],
+)
+def test_real_http_reader_rejects_incomplete_or_ambiguous_framing(
+    monkeypatch: pytest.MonkeyPatch, extra_headers: str, body: bytes
+) -> None:
+    wire = (
+        b"HTTP/1.1 200 OK\\r\\n"
+        + extra_headers.encode("ascii")
+        + b"Content-Type: text/html\\r\\nConnection: close\\r\\n\\r\\n"
+        + body
+    )
+    response = _fake_http_response(wire)
+
+    class Connection:
+        def __init__(self, host: str, timeout: int, context: object):
+            assert host == "www.reuters.com"
+            assert timeout == 8
+
+        def request(self, method: str, path: str, headers: dict[str, str]) -> None:
+            assert method == "GET"
+            assert path == "/world/synthetic-source-example"
+
+        def getresponse(self) -> http.client.HTTPResponse:
+            return response
+
+        def close(self) -> None:
+            pass
+
+    monkeypatch.setattr(raw.http.client, "HTTPSConnection", Connection)
+    with pytest.raises(raw.P12ReutersRawAcquisitionError):
+        raw._https_get(URL1)
+
+
+def test_clock_rollback_between_source_requests_fails_closed() -> None:
+    sequence = iter(
+        [
+            NOW,
+            NOW,
+            NOW + timedelta(seconds=10),
+            NOW - timedelta(seconds=1),
+        ]
+    )
+    with pytest.raises(raw.P12ReutersRawAcquisitionError, match="clock moved backwards"):
+        _run(clock=lambda: next(sequence))
+
+
+def test_clock_rollback_after_last_response_fails_closed() -> None:
+    sequence = iter(
+        [
+            NOW,
+            NOW,
+            NOW + timedelta(seconds=10),
+            NOW + timedelta(seconds=5),
+        ]
+    )
+    with pytest.raises(raw.P12ReutersRawAcquisitionError, match="finished outside window"):
+        _run(source_urls=(URL1,), clock=lambda: next(sequence))
 
 
 def test_cli_failure_receipt_is_local_to_reuters(
