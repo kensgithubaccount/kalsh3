@@ -416,6 +416,8 @@ def validate_stage_receipt(
     if receipt.get("stage") != stage.value:
         raise P12IsolationAuthorityError("stage receipt identity mismatch")
     status_raw = receipt.get("status")
+    if type(status_raw) is not str:
+        raise P12IsolationAuthorityError("stage receipt status is invalid")
     try:
         status = P12StageStatus(status_raw)
     except (TypeError, ValueError) as exc:
@@ -542,8 +544,11 @@ def validate_preclose_gate(paths: P12IsolationPaths) -> dict[str, Any]:
         raise P12IsolationAuthorityError("preclose gate record type mismatch")
     if gate.get("policy_version") != POLICY_VERSION:
         raise P12IsolationAuthorityError("preclose gate policy version mismatch")
+    decision_raw = gate.get("decision")
+    if type(decision_raw) is not str:
+        raise P12IsolationAuthorityError("preclose gate decision is invalid")
     try:
-        decision = P12GateDecision(gate.get("decision"))
+        decision = P12GateDecision(decision_raw)
     except (TypeError, ValueError) as exc:
         raise P12IsolationAuthorityError("preclose gate decision is invalid") from exc
     _parse_utc(gate.get("evaluated_at_utc"), "evaluated_at_utc")
