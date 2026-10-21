@@ -595,9 +595,7 @@ def validate_preclose_gate(paths: P12IsolationPaths) -> dict[str, Any]:
     for stage in P12CollectorStage:
         receipt_path = paths.stage_receipt(stage)
         actual = (
-            validate_stage_receipt(paths, stage)["status"]
-            if receipt_path.is_file()
-            else "MISSING"
+            validate_stage_receipt(paths, stage)["status"] if receipt_path.is_file() else "MISSING"
         )
         if states[stage.value] != actual:
             raise P12IsolationAuthorityError(
