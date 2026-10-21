@@ -590,6 +590,20 @@ def validate_preclose_gate(paths: P12IsolationPaths) -> dict[str, Any]:
     if any(type(value) is not str or value not in allowed for value in states.values()):
         raise P12IsolationAuthorityError("preclose gate stage state is invalid")
 
+    # A persisted gate is never authoritative merely because its own fields agree.
+    # Recheck create-once stage receipts and their artifact hashes without acquisition.
+    for stage in P12CollectorStage:
+        receipt_path = paths.stage_receipt(stage)
+        actual = (
+            validate_stage_receipt(paths, stage)["status"]
+            if receipt_path.is_file()
+            else "MISSING"
+        )
+        if states[stage.value] != actual:
+            raise P12IsolationAuthorityError(
+                "preclose gate stage state conflicts with preserved stage evidence"
+            )
+
     all_pass = all(value == P12StageStatus.SUCCEEDED.value for value in states.values())
     if (decision is P12GateDecision.READY) != all_pass:
         raise P12IsolationAuthorityError("preclose gate decision conflicts with stage states")
