@@ -419,6 +419,25 @@ def test_expected_failure_exception_does_not_leak_raw_urls_or_forecasts(tmp_path
     assert sensitive not in paths.stage_receipt(stage).read_text()
 
 
+def test_collector_aliases_and_noncallables_fail_before_any_stage(tmp_path: Path) -> None:
+    paths = runtime.P12IsolationPaths(tmp_path / "run")
+    invoked: list[str] = []
+
+    def probe() -> runtime.StageCollection:
+        invoked.append("invoked")
+        return runtime.StageCollection(artifacts=())
+
+    aliases = {stage.value: probe for stage in runtime.P12CollectorStage}
+    with pytest.raises(runtime.P12IsolationAuthorityError, match="exactly all"):
+        runtime.run_all_independent_stages(paths, aliases, clock=lambda: NOW)
+
+    bad = {stage: probe for stage in runtime.P12CollectorStage}
+    bad[runtime.P12CollectorStage.REUTERS_ACQUISITION] = None
+    with pytest.raises(runtime.P12IsolationAuthorityError, match="callable"):
+        runtime.run_all_independent_stages(paths, bad, clock=lambda: NOW)
+    assert invoked == []
+
+
 def test_runtime_contains_no_direct_transport_or_p11_dependency() -> None:
     source = inspect.getsource(runtime)
     forbidden = (
