@@ -151,9 +151,7 @@ def _fake_http_response(wire: bytes) -> http.client.HTTPResponse:
 
 def _patch_chunked_transport(monkeypatch: pytest.MonkeyPatch, body: bytes) -> None:
     response = _fake_http_response(
-        b"HTTP/1.1 200 OK\r\n"
-        b"Transfer-Encoding: chunked\r\n"
-        b"Content-Type: text/html\r\n\r\n" + body
+        b"HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\nContent-Type: text/html\r\n\r\n" + body
     )
 
     class Connection:
