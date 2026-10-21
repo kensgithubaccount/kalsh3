@@ -51,7 +51,7 @@ def capture_kalshi_raw_market_snapshots(
     """
     if type(event_ticker) is not str or _EVENT_RE.fullmatch(event_ticker) is None:
         raise P12SnapshotCaptureError("CPI event ticker is malformed")
-    if type(market_tickers) is not tuple or not (1 <= len(market_tickers) <= MAX_MARKETS_PER_CAPTURE):
+    if type(market_tickers) is not tuple or not (\n        1 <= len(market_tickers) <= MAX_MARKETS_PER_CAPTURE\n    ):
         raise P12SnapshotCaptureError("market ticker cohort size is invalid")
     if any(
         type(ticker) is not str
@@ -83,7 +83,7 @@ def capture_kalshi_raw_market_snapshots(
         try:
             envelope, payload = _get_and_bind(path, getter=transport)
         except P12KalshiCaptureError as exc:
-            raise P12SnapshotCaptureError("Kalshi market snapshot transport or body rejected") from exc
+            raise P12SnapshotCaptureError(\n                "Kalshi market snapshot transport or body rejected"\n            ) from exc
         observed_text = envelope["observed_at_utc"]
         if type(observed_text) is not str:
             raise P12SnapshotCaptureError("Kalshi observation timestamp missing")
