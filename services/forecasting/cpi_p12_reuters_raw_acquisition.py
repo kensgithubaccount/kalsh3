@@ -142,7 +142,23 @@ def _https_get(url: str) -> tuple[int, bytes, dict[str, str]]:
             headers={"Accept-Encoding": "identity", "User-Agent": "kalsh3-P12-research/1"},
         )
         response = conn.getresponse()
+        # http.client uses email parsing and can silently discard all headers
+        # following an invalid field line. That can hide Content-Length or
+        # Transfer-Encoding and turn a truncated body into an operational PASS.
+        defects = getattr(response.msg, "defects", None)
+        if not isinstance(defects, list) or defects:
+            raise P12ReutersRawAcquisitionError("malformed source HTTP headers")
         source_headers = response.getheaders()
+        field_name_chars = "!#$%&'*+-.^_`|~0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"
+        if any(
+            not name
+            or not name.isascii()
+            or any(ch not in field_name_chars for ch in name)
+            or "\r" in value
+            or "\n" in value
+            for name, value in source_headers
+        ):
+            raise P12ReutersRawAcquisitionError("invalid source HTTP header field")
         lengths = [value for key, value in source_headers if key.lower() == "content-length"]
         transfer_encodings = [
             value for key, value in source_headers if key.lower() == "transfer-encoding"
