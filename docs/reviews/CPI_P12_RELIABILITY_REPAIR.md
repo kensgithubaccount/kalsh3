@@ -93,6 +93,30 @@ schedule transport a prerequisite for preserving Kalshi or Reuters observations.
 
 This diagnostic result has no scientific-evidence authority and does not freeze P12.
 
+## Home-egress finding - 2026-10-21
+
+The same merged diagnostic probe was then run from the operator's Mac on home/residential
+egress. The repository was at canonical main
+`58430b3e6bf179a39051620b76cdaa9e1361f3d6`. All four first-party BLS requests again
+returned HTTP 403 with 1325-byte bodies:
+
+- `cpi_release_schedule`: 403
+- `monthly_release_list`: 403
+- `cpi_home`: 403
+- `current_cpi_release`: 403
+
+The home report recorded `transport_success_count=0`, `authority_valid_count=0`,
+`path_redundancy_ready=false`, and exited 4. It was explicitly diagnostic only with
+`scientific_evidence_authorized=false`.
+
+Because both cloud-hosted and residential egress fail under the same Python HTTPS probe,
+the evidence no longer supports treating egress location as the only likely blocker. The
+common request implementation, HTTP headers, TLS/client fingerprint, or BLS edge policy are
+now also plausible causes. The next diagnostic must distinguish request-profile failure from
+network-route failure before any further runtime architecture is frozen.
+
+This result is operational-only and contributes zero Reuters-vs-Kalshi directional evidence.
+
 ## Revised architecture direction
 
 The preferred P12 design now separates *schedule authority* from release-morning collection:
@@ -117,7 +141,8 @@ P12 remains **NOT READY TO FREEZE** until all of these are completed:
 
 - the exact future P12 runtime decouples BLS, Kalshi, and Reuters acquisition stages;
 - the actual production runtime passes the BLS redundancy probe on at least two separate days;
-- an independently routed secondary egress passes the same semantic probe;
+- at least one reviewed BLS acquisition path succeeds prospectively, with diagnostics proving
+  whether success depends on request profile, browser/manual acquisition, or network route;
 - at least one complete unattended scheduled dry run succeeds from each required runtime path;
 - 403, timeout, redirect, malformed body, wrong reference month, and wrong release-time fault
   injection all fail closed without suppressing unrelated collectors;
