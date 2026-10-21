@@ -204,11 +204,50 @@ distinct from automated transport. P12 may reuse that design principle, but sche
 needs its own reviewed provenance contract rather than treating caller-authored bytes as
 automated first-party acquisition.
 
+## Decoupled collection runtime - 2026-10-21
+
+`services/forecasting/cpi_p12_decoupled_collection.py` implements the pre-freeze
+failure-isolation boundary required after P11.
+
+The three required pre-release lanes are now explicit and independent:
+
+- `bls_schedule_authority`
+- `kalshi_market_capture`
+- `reuters_acquisition`
+
+The BLS schedule stage performs no live BLS request. It verifies a previously sealed
+browser-attested schedule receipt and its embedded source bytes against expected SHA-256,
+reference month, and release instant. The expected values remain pre-freeze configuration
+until an event-specific P12 protocol binds them.
+
+Kalshi and Reuters are independent collector callbacks. An expected transport/acquisition
+failure in one lane produces only that lane's create-once operational FAILURE receipt.
+`run_all_independent_stages` continues through every required lane, so a BLS failure cannot
+suppress Kalshi or Reuters collection, a Kalshi failure cannot suppress Reuters collection,
+and a Reuters failure cannot erase already-preserved market/schedule artifacts.
+
+`evaluate_preclose_completeness` is receipt-only. It does not call any collector or network
+transport. It reports READY only when all required stage receipts are PASS; otherwise it
+reports INCOMPLETE while preserving successful stage artifacts for review.
+
+All orchestration receipts remain explicitly:
+
+- `scientific_evidence_authorized=false`
+- `p12_frozen=false`
+- `production_influence=0`
+
+`scripts/run_cpi_p12_decoupling_dry_run.py` provides a non-scientific dry-run/fault-injection
+harness. It verifies the sealed BLS schedule receipt and uses synthetic non-target sentinels
+for Kalshi and Reuters, allowing unattended runtime tests of BLS/Kalshi/Reuters failure
+isolation without inspecting a target Reuters forecast.
+
+The frozen P11 runtime is untouched.
+
 ## Required gates before P12 may freeze
 
 P12 remains **NOT READY TO FREEZE** until all of these are completed:
 
-- the exact future P12 runtime decouples BLS, Kalshi, and Reuters acquisition stages;
+- the exact future P12 runtime decouples BLS, Kalshi, and Reuters acquisition stages; the pre-freeze isolation runtime and fault-injection harness now implement and test this boundary, pending event-specific collector adapters and scheduled dry runs;
 - the actual production runtime passes the BLS redundancy probe on at least two separate days;
 - at least one reviewed BLS acquisition path succeeds prospectively, with diagnostics proving
   whether success depends on request profile, browser/manual acquisition, or network route;
