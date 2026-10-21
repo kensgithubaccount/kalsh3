@@ -268,6 +268,6 @@ def test_import_timestamp_is_internal_not_caller_authority(
 ) -> None:
     evidence = import_calendar(tmp_path, monkeypatch)
     assert evidence.imported_at == IMPORTED_AT
-    assert "IMPORT_TIME_IS_ISSUER_OBSERVED_NOT_BROWSER_DOWNLOAD_TIME" in repr(
-        calendar.MANUAL_CALENDAR_POLICY_IDENTITY
-    ) is False
+    assert "imported_at" not in inspect.signature(
+        calendar.attest_and_import_manual_bls_cpi_calendar
+    ).parameters
