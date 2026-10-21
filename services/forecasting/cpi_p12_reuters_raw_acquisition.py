@@ -92,9 +92,7 @@ def _read_complete_chunked_body(response: http.client.HTTPResponse) -> bytes:
     if stream is None:
         raise http.client.HTTPException("chunked response stream is unavailable")
     hexdigits = b"0123456789abcdefABCDEF"
-    token_bytes = (
-        b"!#$%&'*+-.^_`|~0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"
-    )
+    token_bytes = b"!#$%&'*+-.^_`|~0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"
     body = bytearray()
     for _ in range(4096):
         line = stream.readline(67)
@@ -113,11 +111,7 @@ def _read_complete_chunked_body(response: http.client.HTTPResponse) -> bytes:
             for _ in range(32):
                 trailer = stream.readline(1025)
                 trailer_bytes += len(trailer)
-                if (
-                    not trailer.endswith(b"\r\n")
-                    or len(trailer) > 1024
-                    or trailer_bytes > 8192
-                ):
+                if not trailer.endswith(b"\r\n") or len(trailer) > 1024 or trailer_bytes > 8192:
                     raise http.client.HTTPException("invalid or oversized chunk trailer")
                 if trailer == b"\r\n":
                     return bytes(body)
