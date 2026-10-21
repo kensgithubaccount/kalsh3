@@ -49,7 +49,12 @@ def _iso(value: datetime) -> str:
 
 
 def _validate_url(url: str) -> tuple[str, str, str]:
-    if type(url) is not str or len(url) > 2048 or any(ord(ch) < 33 for ch in url):
+    if (
+        type(url) is not str
+        or len(url) > 2048
+        or not url.isascii()
+        or any(ord(ch) < 33 or ord(ch) == 127 for ch in url)
+    ):
         raise P12ReutersRawAcquisitionError("source URL is invalid")
     try:
         parsed = urlsplit(url)
