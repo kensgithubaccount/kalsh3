@@ -12,6 +12,7 @@ import base64
 import hashlib
 import http.client
 import ssl
+import string
 from collections.abc import Callable, Mapping
 from datetime import UTC, datetime
 from typing import Any
@@ -149,10 +150,7 @@ def _https_get(url: str) -> tuple[int, bytes, dict[str, str]]:
         if not isinstance(defects, list) or defects:
             raise P12ReutersRawAcquisitionError("malformed source HTTP headers")
         source_headers = response.getheaders()
-        field_name_chars = (
-            "!#$%&'*+-.^_`|~0123456789"
-            "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"
-        )
+        field_name_chars = "!#$%&'*+-.^_`|~" + string.digits + string.ascii_letters
         if any(
             not name
             or not name.isascii()
