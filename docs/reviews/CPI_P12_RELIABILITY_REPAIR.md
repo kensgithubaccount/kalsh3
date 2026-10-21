@@ -71,13 +71,106 @@ python scripts/probe_cpi_bls_schedule_redundancy.py \
 
 The collector label is diagnostic metadata, not authenticated provenance.
 
+## Live egress findings - 2026-10-20
+
+A one-shot GitHub-hosted Ubuntu 24.04 diagnostic run executed the merged probe from an
+independent cloud provider/network. The probe attempted all four fixed first-party BLS paths.
+Every request returned HTTP 403:
+
+- `cpi_release_schedule`: 403
+- `monthly_release_list`: 403
+- `cpi_home`: 403
+- `current_cpi_release`: 403
+
+The report therefore recorded `transport_success_count=0`,
+`authority_valid_count=0`, `path_redundancy_ready=false`, and exited 4.
+
+Combined with P11's GCE failure, this demonstrates that merely moving the release-day BLS
+request between common cloud-hosted egress providers is not sufficient redundancy. The next
+readiness probe must use a genuinely different network route, such as the operator's
+residential/home egress, and the future protocol must not make live release-morning BLS
+schedule transport a prerequisite for preserving Kalshi or Reuters observations.
+
+This diagnostic result has no scientific-evidence authority and does not freeze P12.
+
+## Home-egress finding - 2026-10-21
+
+The same merged diagnostic probe was then run from the operator's Mac on home/residential
+egress. The repository was at canonical main
+`58430b3e6bf179a39051620b76cdaa9e1361f3d6`. All four first-party BLS requests again
+returned HTTP 403 with 1325-byte bodies:
+
+- `cpi_release_schedule`: 403
+- `monthly_release_list`: 403
+- `cpi_home`: 403
+- `current_cpi_release`: 403
+
+The home report recorded `transport_success_count=0`, `authority_valid_count=0`,
+`path_redundancy_ready=false`, and exited 4. It was explicitly diagnostic only with
+`scientific_evidence_authorized=false`.
+
+Because both cloud-hosted and residential egress fail under the same Python HTTPS probe,
+the evidence no longer supports treating egress location as the only likely blocker. The
+common request implementation, HTTP headers, TLS/client fingerprint, or BLS edge policy are
+now also plausible causes. The next diagnostic must distinguish request-profile failure from
+network-route failure before any further runtime architecture is frozen.
+
+This result is operational-only and contributes zero Reuters-vs-Kalshi directional evidence.
+
+
+## Request-profile matrix - 2026-10-21
+
+A second home-egress diagnostic compared the same BLS targets under macOS `curl` using
+HTTP/1.1 with both its default request profile and a browser-like Safari User-Agent plus
+HTML Accept/Accept-Language headers.
+
+All four combinations still returned HTTP 403 with `Server: AkamaiGHost` and a 1325-byte
+HTML body:
+
+- CPI schedule HTML + default curl: 403
+- CPI schedule HTML + browser-like headers: 403
+- BLS calendar ICS + default curl: 403
+- BLS calendar ICS + browser-like headers: 403
+
+This rules out a simple Python-specific failure and rules out a repair based only on changing
+User-Agent/Accept headers or switching the first-party path to the BLS ICS feed. The common
+remaining possibilities include BLS/Akamai policy against generic command-line TLS clients,
+client/TLS fingerprinting, cookie/challenge state available only to a full browser, or a
+broader edge-policy decision.
+
+The next diagnostic should therefore use a real browser session rather than another synthetic
+HTTP-header variant. If a real browser succeeds while command-line clients remain blocked,
+P12 should use a separately reviewed browser/manual-attested schedule-authority lane before
+freeze instead of weakening automated provenance rules.
+
+This matrix is operational-only and has no scientific-evidence authority.
+
+## Revised architecture direction
+
+The preferred P12 design now separates *schedule authority* from release-morning collection:
+
+- acquire and seal BLS schedule authority prospectively before release day through a reviewed
+  provenance lane on an egress that can reach BLS;
+- require repeated readiness success before the event-specific protocol freezes;
+- run release-morning Kalshi market capture independently of BLS schedule transport;
+- run Reuters acquisition independently of both BLS and Kalshi transport;
+- evaluate completeness only at the preclose/scoring gate;
+- allow post-release BLS truth acquisition to retry through a separately reviewed automated or
+  manual-attested lane without altering the already-frozen predictor/market evidence.
+
+The existing CPI evidence architecture already keeps manual-browser-attested BLS acquisition
+distinct from automated transport. P12 may reuse that design principle, but schedule evidence
+needs its own reviewed provenance contract rather than treating caller-authored bytes as
+automated first-party acquisition.
+
 ## Required gates before P12 may freeze
 
 P12 remains **NOT READY TO FREEZE** until all of these are completed:
 
 - the exact future P12 runtime decouples BLS, Kalshi, and Reuters acquisition stages;
 - the actual production runtime passes the BLS redundancy probe on at least two separate days;
-- an independently routed secondary egress passes the same semantic probe;
+- at least one reviewed BLS acquisition path succeeds prospectively, with diagnostics proving
+  whether success depends on request profile, browser/manual acquisition, or network route;
 - at least one complete unattended scheduled dry run succeeds from each required runtime path;
 - 403, timeout, redirect, malformed body, wrong reference month, and wrong release-time fault
   injection all fail closed without suppressing unrelated collectors;
