@@ -136,9 +136,7 @@ def _utc_now() -> datetime:
 
 def _aware_utc(value: datetime, field_name: str) -> datetime:
     if type(value) is not datetime or value.tzinfo is None or value.utcoffset() is None:
-        raise CPICalendarManualAcquisitionError(
-            f"{field_name} must be an exact aware datetime"
-        )
+        raise CPICalendarManualAcquisitionError(f"{field_name} must be an exact aware datetime")
     return value.astimezone(UTC)
 
 
@@ -150,13 +148,9 @@ def _reviewed_authority() -> ReviewedCPISourceAuthority:
     )
     validate_cpi_source_authority(authority)
     if authority.source_interface is not _INTERFACE:
-        raise CPICalendarManualAcquisitionError(
-            "reviewed calendar source interface changed"
-        )
+        raise CPICalendarManualAcquisitionError("reviewed calendar source interface changed")
     if authority.policy_identity != CANONICAL_P1_POLICY_IDENTITY:
-        raise CPICalendarManualAcquisitionError(
-            "canonical P1 source policy identity moved"
-        )
+        raise CPICalendarManualAcquisitionError("canonical P1 source policy identity moved")
     return authority
 
 
@@ -195,9 +189,7 @@ def _read_exact_local_file(file_path: str | Path) -> bytes:
     finally:
         os.close(fd)
     if not body:
-        raise CPICalendarManualAcquisitionError(
-            "manual BLS calendar artifact must be non-empty"
-        )
+        raise CPICalendarManualAcquisitionError("manual BLS calendar artifact must be non-empty")
     if len(body) > MAX_MANUAL_CALENDAR_BYTES:
         raise CPICalendarManualAcquisitionError(
             "manual BLS calendar artifact exceeded bounded size"
@@ -207,15 +199,11 @@ def _read_exact_local_file(file_path: str | Path) -> bytes:
 
 def _normalize_reference_month(value: str) -> tuple[str, str]:
     if type(value) is not str or re.fullmatch(r"\d{4}-\d{2}", value) is None:
-        raise CPICalendarManualAcquisitionError(
-            "reference_month must be an exact YYYY-MM string"
-        )
+        raise CPICalendarManualAcquisitionError("reference_month must be an exact YYYY-MM string")
     year = int(value[:4])
     month = int(value[5:])
     if month < 1 or month > 12:
-        raise CPICalendarManualAcquisitionError(
-            "reference_month must be an exact YYYY-MM string"
-        )
+        raise CPICalendarManualAcquisitionError("reference_month must be an exact YYYY-MM string")
     label = datetime(year, month, 1).strftime("%B %Y")
     return value, label
 
@@ -224,17 +212,13 @@ def _visible_text(body: bytes) -> str:
     try:
         text = body.decode("utf-8")
     except UnicodeDecodeError as exc:
-        raise CPICalendarManualAcquisitionError(
-            "BLS calendar HTML is not valid UTF-8"
-        ) from exc
+        raise CPICalendarManualAcquisitionError("BLS calendar HTML is not valid UTF-8") from exc
     parser = _VisibleText()
     try:
         parser.feed(text)
         parser.close()
     except Exception as exc:
-        raise CPICalendarManualAcquisitionError(
-            "BLS calendar HTML could not be parsed"
-        ) from exc
+        raise CPICalendarManualAcquisitionError("BLS calendar HTML could not be parsed") from exc
     return " ".join(" ".join(parser.parts).split())
 
 
@@ -307,17 +291,13 @@ def _parse_release_instant(body: bytes, reference_month: str) -> datetime:
     try:
         html = body.decode("utf-8")
     except UnicodeDecodeError as exc:
-        raise CPICalendarManualAcquisitionError(
-            "BLS calendar HTML is not valid UTF-8"
-        ) from exc
+        raise CPICalendarManualAcquisitionError("BLS calendar HTML is not valid UTF-8") from exc
     table = _TableRows()
     try:
         table.feed(html)
         table.close()
     except Exception as exc:
-        raise CPICalendarManualAcquisitionError(
-            "BLS calendar table could not be parsed"
-        ) from exc
+        raise CPICalendarManualAcquisitionError("BLS calendar table could not be parsed") from exc
 
     candidates: set[datetime] = set()
     for row in table.rows:
@@ -362,9 +342,7 @@ def _digest_values(values: dict[str, object]) -> str:
     imported_at = values["imported_at"]
     release_at = values["release_at_utc"]
     if type(imported_at) is not datetime or type(release_at) is not datetime:
-        raise CPICalendarManualAcquisitionError(
-            "manual calendar timestamp type is invalid"
-        )
+        raise CPICalendarManualAcquisitionError("manual calendar timestamp type is invalid")
     return stable_hash(
         (
             MANUAL_CALENDAR_SCHEMA_VERSION,
@@ -532,8 +510,7 @@ def validate_cpi_bls_manual_calendar_evidence(
         evidence.release_at_utc == release_at
         and evidence.release_at_utc.tzinfo is UTC
         and evidence.release_at_utc == parsed_release_at,
-        type(evidence.acquisition_mode) is str
-        and evidence.acquisition_mode == ACQUISITION_MODE,
+        type(evidence.acquisition_mode) is str and evidence.acquisition_mode == ACQUISITION_MODE,
         type(evidence.operator_attestation) is str
         and evidence.operator_attestation == OPERATOR_ATTESTATION,
         type(evidence.manual_policy_identity) is str
@@ -549,13 +526,10 @@ def validate_cpi_bls_manual_calendar_evidence(
         type(evidence.evidence_id) is str and evidence.evidence_id == expected,
         type(evidence.content_hash) is str and evidence.content_hash == expected,
         type(evidence.research_only) is bool and evidence.research_only is True,
-        type(evidence.production_influence) is Decimal
-        and evidence.production_influence == ZERO,
+        type(evidence.production_influence) is Decimal and evidence.production_influence == ZERO,
     )
     if not all(exact):
-        raise CPICalendarManualAcquisitionError(
-            "manual calendar evidence failed revalidation"
-        )
+        raise CPICalendarManualAcquisitionError("manual calendar evidence failed revalidation")
     if _ISSUED_FINGERPRINTS.get(id(evidence)) != expected:
         raise CPICalendarManualAcquisitionError(
             "unissued, reconstructed, or mutated manual calendar evidence"
