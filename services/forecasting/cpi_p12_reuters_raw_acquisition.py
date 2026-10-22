@@ -15,7 +15,7 @@ import ssl
 import string
 from collections.abc import Callable, Mapping
 from datetime import UTC, datetime
-from typing import Any
+from typing import Any, cast
 from urllib.parse import urlsplit
 
 RECORD_TYPE = "CPI-P12-REUTERS-RAW-HTTPS-OBSERVATIONS-v1"
@@ -190,7 +190,7 @@ class _StrictHTTPResponse(http.client.HTTPResponse):
         if self.fp is None:
             raise P12ReutersRawAcquisitionError("missing source HTTP response stream")
         verified_stream = _StrictHeaderStream(self.fp)
-        self.fp = verified_stream  # type: ignore[assignment]
+        self.fp = cast(Any, verified_stream)
         super().begin()
         if not verified_stream.validated:
             raise P12ReutersRawAcquisitionError("source HTTP headers were not validated")
