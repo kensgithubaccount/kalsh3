@@ -150,7 +150,7 @@ class _StrictHeaderStream:
         if self._state == "status":
             # Unexpected interim responses are unsupported rather than allowing
             # parsing of an unverified second header block.
-            if line.split(b" ", 2)[1:2] == [b"100"]:
+            if line.split()[1:2] == [b"100"]:
                 raise P12ReutersRawAcquisitionError("unsupported interim HTTP response")
             self._state = "headers"
             return line
@@ -205,7 +205,7 @@ def _https_get(url: str) -> tuple[int, bytes, dict[str, str]]:
             headers={"Accept-Encoding": "identity", "User-Agent": "kalsh3-P12-research/1"},
         )
         response = conn.getresponse()
-        if type(response) is not _StrictHTTPResponse or not response.raw_headers_validated:
+        if type(response) is not _StrictHTTPResponse or getattr(response, "raw_headers_validated", False) is not True:
             raise P12ReutersRawAcquisitionError("source HTTP headers lack raw-byte validation")
         # http.client uses email parsing and can silently discard all headers
         # following an invalid field line. That can hide Content-Length or
