@@ -187,8 +187,10 @@ class _StrictHTTPResponse(http.client.HTTPResponse):
     def begin(self) -> None:
         if self.headers is not None:
             return
+        if self.fp is None:
+            raise P12ReutersRawAcquisitionError("missing source HTTP response stream")
         verified_stream = _StrictHeaderStream(self.fp)
-        self.fp = verified_stream
+        self.fp = verified_stream  # type: ignore[assignment]
         super().begin()
         if not verified_stream.validated:
             raise P12ReutersRawAcquisitionError("source HTTP headers were not validated")
