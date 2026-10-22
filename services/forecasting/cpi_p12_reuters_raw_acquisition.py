@@ -132,10 +132,72 @@ def _read_complete_chunked_body(response: http.client.HTTPResponse) -> bytes:
     raise http.client.HTTPException("too many chunks")
 
 
+class _StrictHeaderStream:
+    """Reject malformed header bytes before http.client's permissive parser sees them."""
+
+    def __init__(self, stream: Any) -> None:
+        self._stream = stream
+        self._state = "status"
+        self._header_bytes = 0
+        self.validated = False
+
+    def readline(self, limit: int = -1) -> bytes:
+        line: bytes = self._stream.readline(limit)
+        if self._state == "body":
+            return line
+        if not line.endswith(b"\\r\\n"):
+            raise P12ReutersRawAcquisitionError("malformed source HTTP header termination")
+        if self._state == "status":
+            # Unexpected interim responses are unsupported rather than allowing
+            # parsing of an unverified second header block.
+            if line.split(b" ", 2)[1:2] == [b"100"]:
+                raise P12ReutersRawAcquisitionError("unsupported interim HTTP response")
+            self._state = "headers"
+            return line
+        self._header_bytes += len(line)
+        if self._header_bytes > 65536:
+            raise P12ReutersRawAcquisitionError("source HTTP headers exceed byte limit")
+        if line == b"\\r\\n":
+            self._state = "body"
+            self.validated = True
+            return line
+        name, sep, value = line[:-2].partition(b":")
+        allowed = b"!#$%&'*+-.^_`|~0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"
+        if (
+            not sep
+            or not name
+            or any(ch not in allowed for ch in name)
+            or any((ch < 32 and ch != 9) or ch == 127 for ch in value)
+        ):
+            raise P12ReutersRawAcquisitionError("malformed source HTTP header bytes")
+        return line
+
+    def read(self, size: int = -1) -> bytes:
+        return self._stream.read(size)
+
+    def close(self) -> None:
+        self._stream.close()
+
+
+class _StrictHTTPResponse(http.client.HTTPResponse):
+    """HTTPResponse with provenance that raw header syntax was inspected."""
+
+    def begin(self) -> None:
+        if self.headers is not None:
+            return
+        verified_stream = _StrictHeaderStream(self.fp)
+        self.fp = verified_stream
+        super().begin()
+        if not verified_stream.validated:
+            raise P12ReutersRawAcquisitionError("source HTTP headers were not validated")
+        self.raw_headers_validated = True
+
+
 def _https_get(url: str) -> tuple[int, bytes, dict[str, str]]:
     """TLS-verified, exact-origin GET; redirects are NOT followed."""
     host, path, _ = _validate_url(url)
     conn = http.client.HTTPSConnection(host, timeout=8, context=ssl.create_default_context())
+    conn.response_class = _StrictHTTPResponse
     try:
         conn.request(
             "GET",
@@ -143,6 +205,8 @@ def _https_get(url: str) -> tuple[int, bytes, dict[str, str]]:
             headers={"Accept-Encoding": "identity", "User-Agent": "kalsh3-P12-research/1"},
         )
         response = conn.getresponse()
+        if type(response) is not _StrictHTTPResponse or not response.raw_headers_validated:
+            raise P12ReutersRawAcquisitionError("source HTTP headers lack raw-byte validation")
         # http.client uses email parsing and can silently discard all headers
         # following an invalid field line. That can hide Content-Length or
         # Transfer-Encoding and turn a truncated body into an operational PASS.
