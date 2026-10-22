@@ -347,6 +347,139 @@ def test_malformed_http_headers_fail_closed_at_transport_and_cli(
     assert not paths.stage_receipt(P12CollectorStage.KALSHI_MARKET_CAPTURE).exists()
 
 
+def _patch_closing_transport(monkeypatch: pytest.MonkeyPatch, wire: bytes) -> None:
+    """Exercise begin() cleanup and close() as a real HTTP connection does."""
+
+    class Connection:
+        def __init__(self, host: str, timeout: int, context: object) -> None:
+            assert host == "www.reuters.com"
+            self.response = _fake_http_response(wire, begin=False)
+
+        def request(self, method: str, path: str, headers: dict[str, str]) -> None:
+            assert method == "GET"
+
+        def getresponse(self) -> http.client.HTTPResponse:
+            try:
+                self.response.begin()
+            except BaseException:
+                self.response.close()
+                raise
+            return self.response
+
+        def close(self) -> None:
+            self.response.close()
+
+    monkeypatch.setattr(raw.http.client, "HTTPSConnection", Connection)
+
+
+@pytest.mark.parametrize(
+    "wire",
+    [
+        b"HTTP/1.1 200 OK\r\\nBad header\r\\nContent-Length: 100\r\\n\r\\nshort",
+        b"HTTP/1.1 200 OK\r\\nX: x\r\rContent-Length: 100\r\\n\r\\nshort",
+        b"HTTP/1.1 200 OK\r\\nX: x\x00\r\\nContent-Length: 5\r\\n\r\\nhello",
+        b"HTTP/1.1 200 OK\r\\nTransfer-Encoding: chunked\r\\n\r\\n5\r\\nhelloXX0\r\\n\r\\n",
+        b"HTTP/1.1 200 OK\r\\nTransfer-Encoding: chunked\r\\n\r\\n5\r\\nhello\r\\n0\r\\n",
+    ],
+)
+def test_strict_response_close_preserves_stage_failure_receipt(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, wire: bytes
+) -> None:
+    _patch_closing_transport(monkeypatch, wire)
+    root = tmp_path / "experiment"
+    paths = P12IsolationPaths(root)
+    sentinels: dict[Path, bytes] = {}
+    for stage in (
+        P12CollectorStage.BLS_SCHEDULE_AUTHORITY,
+        P12CollectorStage.KALSHI_MARKET_CAPTURE,
+    ):
+        sentinel = paths.stage_receipt(stage)
+        sentinel.parent.mkdir(parents=True, exist_ok=True)
+        sentinel.write_bytes(b"preexisting-stage-sentinel\\n")
+        sentinels[sentinel] = sentinel.read_bytes()
+
+    monkeypatch.setattr(
+        cli,
+        "capture_reuters_raw_sources",
+        lambda **kwargs: raw.capture_reuters_raw_sources(
+            **kwargs, getter=raw._https_get, clock=lambda: NOW
+        ),
+    )
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "capture_cpi_p12_reuters_raw.py",
+            "--root",
+            str(root),
+            "--source-url",
+            URL1,
+            "--window-start",
+            START.isoformat(),
+            "--deadline",
+            DEADLINE.isoformat(),
+            "--research-only",
+        ],
+    )
+    assert cli.main() == 4
+    receipt = json.loads(paths.stage_receipt(P12CollectorStage.REUTERS_ACQUISITION).read_text())
+    assert receipt["status"] == "FAILURE"
+    assert receipt["scientific_evidence_authorized"] is False
+    assert not (root / "reuters/raw_source_observations.json").exists()
+    for sentinel, contents in sentinels.items():
+        assert sentinel.read_bytes() == contents
+
+
+@pytest.mark.parametrize(
+    "wire",
+    [
+        b"HTTP/1.1 200 OK\r\\nContent-Length: 5\r\\n\r\\nhello",
+        b"HTTP/1.1 200 OK\r\\nTransfer-Encoding: chunked\r\\n\r\\n"
+        b"5\r\\nhello\r\\n0\r\\n\r\\n",
+    ],
+)
+def test_strict_response_close_keeps_valid_cli_capture_working(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, wire: bytes
+) -> None:
+    _patch_closing_transport(monkeypatch, wire)
+    root = tmp_path / "experiment"
+    monkeypatch.setattr(
+        cli,
+        "capture_reuters_raw_sources",
+        lambda **kwargs: raw.capture_reuters_raw_sources(
+            **kwargs, getter=raw._https_get, clock=lambda: NOW
+        ),
+    )
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "capture_cpi_p12_reuters_raw.py",
+            "--root",
+            str(root),
+            "--source-url",
+            URL1,
+            "--window-start",
+            START.isoformat(),
+            "--deadline",
+            DEADLINE.isoformat(),
+            "--research-only",
+        ],
+    )
+    assert cli.main() == 0
+    paths = P12IsolationPaths(root)
+    receipt = json.loads(paths.stage_receipt(P12CollectorStage.REUTERS_ACQUISITION).read_text())
+    assert receipt["status"] == "PASS"
+    output = json.loads((root / "reuters/raw_source_observations.json").read_text())
+    assert output["scientific_evidence_authorized"] is False
+    assert output["p12_frozen"] is False
+    assert output["production_influence"] == "0"
+    observation = output["observations"][0]
+    assert base64.b64decode(observation["raw_body_b64"], validate=True) == b"hello"
+    assert observation["byte_count"] == 5
+    assert observation["raw_body_sha256"] == hashlib.sha256(b"hello").hexdigest()
+
+
 @pytest.mark.parametrize(
     "extra_headers,body",
     [
