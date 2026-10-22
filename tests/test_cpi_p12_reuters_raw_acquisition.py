@@ -139,9 +139,7 @@ def test_deadline_crossed_during_request() -> None:
         _run(clock=clock)
 
 
-def _fake_http_response(
-    wire: bytes, *, begin: bool = True
-) -> http.client.HTTPResponse:
+def _fake_http_response(wire: bytes, *, begin: bool = True) -> http.client.HTTPResponse:
     class Socket:
         def makefile(self, _: str):
             return io.BytesIO(wire)
