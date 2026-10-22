@@ -434,8 +434,7 @@ def test_strict_response_close_preserves_stage_failure_receipt(
     "wire",
     [
         b"HTTP/1.1 200 OK\r\nContent-Length: 5\r\n\r\nhello",
-        b"HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n"
-        b"5\r\nhello\r\n0\r\n\r\n",
+        b"HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n5\r\nhello\r\n0\r\n\r\n",
     ],
 )
 def test_strict_response_close_keeps_valid_cli_capture_working(
