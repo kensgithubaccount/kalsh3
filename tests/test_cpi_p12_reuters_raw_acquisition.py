@@ -375,11 +375,11 @@ def _patch_closing_transport(monkeypatch: pytest.MonkeyPatch, wire: bytes) -> No
 @pytest.mark.parametrize(
     "wire",
     [
-        b"HTTP/1.1 200 OK\r\\nBad header\r\\nContent-Length: 100\r\\n\r\\nshort",
-        b"HTTP/1.1 200 OK\r\\nX: x\r\rContent-Length: 100\r\\n\r\\nshort",
-        b"HTTP/1.1 200 OK\r\\nX: x\x00\r\\nContent-Length: 5\r\\n\r\\nhello",
-        b"HTTP/1.1 200 OK\r\\nTransfer-Encoding: chunked\r\\n\r\\n5\r\\nhelloXX0\r\\n\r\\n",
-        b"HTTP/1.1 200 OK\r\\nTransfer-Encoding: chunked\r\\n\r\\n5\r\\nhello\r\\n0\r\\n",
+        b"HTTP/1.1 200 OK\r\nBad header\r\nContent-Length: 100\r\n\r\nshort",
+        b"HTTP/1.1 200 OK\r\nX: x\r\rContent-Length: 100\r\n\r\nshort",
+        b"HTTP/1.1 200 OK\r\nX: x\x00\r\nContent-Length: 5\r\n\r\nhello",
+        b"HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n5\r\nhelloXX0\r\n\r\n",
+        b"HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n5\r\nhello\r\n0\r\n",
     ],
 )
 def test_strict_response_close_preserves_stage_failure_receipt(
@@ -395,7 +395,7 @@ def test_strict_response_close_preserves_stage_failure_receipt(
     ):
         sentinel = paths.stage_receipt(stage)
         sentinel.parent.mkdir(parents=True, exist_ok=True)
-        sentinel.write_bytes(b"preexisting-stage-sentinel\\n")
+        sentinel.write_bytes(b"preexisting-stage-sentinel\n")
         sentinels[sentinel] = sentinel.read_bytes()
 
     monkeypatch.setattr(
@@ -433,9 +433,9 @@ def test_strict_response_close_preserves_stage_failure_receipt(
 @pytest.mark.parametrize(
     "wire",
     [
-        b"HTTP/1.1 200 OK\r\\nContent-Length: 5\r\\n\r\\nhello",
-        b"HTTP/1.1 200 OK\r\\nTransfer-Encoding: chunked\r\\n\r\\n"
-        b"5\r\\nhello\r\\n0\r\\n\r\\n",
+        b"HTTP/1.1 200 OK\r\nContent-Length: 5\r\n\r\nhello",
+        b"HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n"
+        b"5\r\nhello\r\n0\r\n\r\n",
     ],
 )
 def test_strict_response_close_keeps_valid_cli_capture_working(
