@@ -175,7 +175,8 @@ class _StrictHeaderStream:
         return line
 
     def read(self, size: int = -1) -> bytes:
-        return self._stream.read(size)
+        data: bytes = self._stream.read(size)
+        return data
 
     def close(self) -> None:
         self._stream.close()
