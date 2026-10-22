@@ -148,6 +148,8 @@ class _StrictHeaderStream:
         if not line.endswith(b"\r\n"):
             raise P12ReutersRawAcquisitionError("malformed source HTTP header termination")
         if self._state == "status":
+            if any((ch < 32 and ch != 9) or ch == 127 for ch in line[:-2]):
+                raise P12ReutersRawAcquisitionError("malformed source HTTP status line")
             # Unexpected interim responses are unsupported rather than allowing
             # parsing of an unverified second header block.
             if line.split()[1:2] == [b"100"]:
