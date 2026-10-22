@@ -139,13 +139,16 @@ def test_deadline_crossed_during_request() -> None:
         _run(clock=clock)
 
 
-def _fake_http_response(wire: bytes) -> http.client.HTTPResponse:
+def _fake_http_response(
+    wire: bytes, *, begin: bool = True
+) -> http.client.HTTPResponse:
     class Socket:
         def makefile(self, _: str):
             return io.BytesIO(wire)
 
-    response = http.client.HTTPResponse(Socket())
-    response.begin()
+    response = raw._StrictHTTPResponse(Socket())
+    if begin:
+        response.begin()
     return response
 
 
@@ -265,6 +268,13 @@ def test_malformed_chunked_http_cannot_create_cli_pass_receipt(
         (b"Transfer-Encoding: chunked\r\nBad header\r\n", b"5\r\nhello\r\n0\r\n\r\n"),
         (b"Bad header\r\nContent-Length: 5\r\n", b"hello"),
         (b"X-Note: synthetic\r\n folded\r\nContent-Length: 5\r\n", b"hello"),
+        (b"X: x\r\rContent-Length: 100\r\n", b"short"),
+        (b"X: x\r\rTransfer-Encoding: chunked\r\n", b"5\r\nhello\r\n0\r\n\r\n"),
+        (b"X: x\x00\r\nContent-Length: 5\r\n", b"hello"),
+        (b"X: x\x01\r\nContent-Length: 5\r\n", b"hello"),
+        (b"X: x\x7f\r\nContent-Length: 5\r\n", b"hello"),
+        (b"X: x\v\r\nContent-Length: 5\r\n", b"hello"),
+        (b"X: x\rContent-Length: 5\r\n", b"hello"),
     ],
 )
 def test_malformed_http_headers_fail_closed_at_transport_and_cli(
@@ -273,7 +283,7 @@ def test_malformed_http_headers_fail_closed_at_transport_and_cli(
     wire = b"HTTP/1.1 200 OK\r\n" + headers + b"\r\n" + body
 
     def patch_connection() -> None:
-        response = _fake_http_response(wire)
+        response = _fake_http_response(wire, begin=False)
 
         class Connection:
             def __init__(self, host: str, timeout: int, context: object):
@@ -284,6 +294,7 @@ def test_malformed_http_headers_fail_closed_at_transport_and_cli(
                 assert method == "GET"
 
             def getresponse(self) -> http.client.HTTPResponse:
+                response.begin()
                 return response
 
             def close(self) -> None:
