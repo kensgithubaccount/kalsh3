@@ -178,6 +178,11 @@ class _StrictHeaderStream:
         data: bytes = self._stream.read(size)
         return data
 
+    def flush(self) -> None:
+        # Read-only wrapper has no buffered writes. HTTPResponse.close()
+        # invokes fp.flush() even when the response contains only input.
+        pass
+
     def close(self) -> None:
         self._stream.close()
 
