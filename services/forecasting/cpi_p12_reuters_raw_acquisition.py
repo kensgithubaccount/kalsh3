@@ -145,7 +145,7 @@ class _StrictHeaderStream:
         line: bytes = self._stream.readline(limit)
         if self._state == "body":
             return line
-        if not line.endswith(b"\\r\\n"):
+        if not line.endswith(b"\r\n"):
             raise P12ReutersRawAcquisitionError("malformed source HTTP header termination")
         if self._state == "status":
             # Unexpected interim responses are unsupported rather than allowing
@@ -157,7 +157,7 @@ class _StrictHeaderStream:
         self._header_bytes += len(line)
         if self._header_bytes > 65536:
             raise P12ReutersRawAcquisitionError("source HTTP headers exceed byte limit")
-        if line == b"\\r\\n":
+        if line == b"\r\n":
             self._state = "body"
             self.validated = True
             return line
