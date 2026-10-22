@@ -209,7 +209,10 @@ def _https_get(url: str) -> tuple[int, bytes, dict[str, str]]:
             headers={"Accept-Encoding": "identity", "User-Agent": "kalsh3-P12-research/1"},
         )
         response = conn.getresponse()
-        if type(response) is not _StrictHTTPResponse or getattr(response, "raw_headers_validated", False) is not True:
+        if (
+            type(response) is not _StrictHTTPResponse
+            or getattr(response, "raw_headers_validated", False) is not True
+        ):
             raise P12ReutersRawAcquisitionError("source HTTP headers lack raw-byte validation")
         # http.client uses email parsing and can silently discard all headers
         # following an invalid field line. That can hide Content-Length or
