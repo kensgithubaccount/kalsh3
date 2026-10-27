@@ -859,8 +859,7 @@ def test_failed_receipt_rollback_cannot_promote_provisional_pass_on_retry(
         receipt_directory_sync = (
             failure_point == "directory_sync"
             and stat.S_ISDIR(metadata.st_mode)
-            and (metadata.st_dev, metadata.st_ino)
-            == (stage_dir_meta.st_dev, stage_dir_meta.st_ino)
+            and (metadata.st_dev, metadata.st_ino) == (stage_dir_meta.st_dev, stage_dir_meta.st_ino)
         )
         if armed and sync_failures == 0 and (receipt_file_sync or receipt_directory_sync):
             sync_failures += 1
