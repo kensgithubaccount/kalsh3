@@ -5,8 +5,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import os
-import tempfile
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -16,6 +14,7 @@ from services.forecasting.cpi_p12_decoupled_collection import (
     P12IsolationPaths,
     StageCollection,
     run_independent_stage,
+    write_bytes_durable_exclusive,
 )
 from services.forecasting.cpi_p12_reuters_raw_acquisition import (
     P12ReutersRawAcquisitionError,
@@ -44,24 +43,8 @@ def _parser() -> argparse.ArgumentParser:
 
 
 def _write_once(path: Path, content: bytes) -> None:
-    """Durably write before atomically publishing a create-once evidence path.
-
-    An fsync/write failure must never leave a partial final artifact that a
-    later stage run could mistake for a successful capture.
-    """
-    path.parent.mkdir(parents=True, exist_ok=True)
-    fd, temporary_name = tempfile.mkstemp(prefix=".reuters-p12-", dir=path.parent)
-    temporary = Path(temporary_name)
-    try:
-        with os.fdopen(fd, "wb") as file:
-            file.write(content)
-            file.flush()
-            os.fsync(file.fileno())
-        # Hard-link publication is atomic and fails if the destination exists;
-        # unlike os.replace(), it cannot overwrite create-once evidence.
-        os.link(temporary, path)
-    finally:
-        temporary.unlink(missing_ok=True)
+    """Publish Reuters bytes only after the shared P12 durability barrier."""
+    write_bytes_durable_exclusive(path, content)
 
 
 def main() -> int:
