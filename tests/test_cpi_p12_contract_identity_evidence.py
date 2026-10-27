@@ -109,6 +109,8 @@ def test_paginated_raw_identity_observations_never_promote_authority() -> None:
         lambda x: {**x, "markets": [market("T0.2")], "cursor": 7},
         lambda x: {**x, "markets": [{**market("T0.2"), "event_ticker": "OTHER"}]},
         lambda x: {**x, "markets": []},
+        lambda x: {"markets": [market("T0.2")]},
+        lambda x: {**x, "markets": [market("T0.2")], "cursor": None},
         lambda x: {**x, "markets": [market("T0.2")] * 101},
     ],
 )
