@@ -593,8 +593,6 @@ def test_raw_artifact_persistence_error_is_atomic_stage_failure(
 
         monkeypatch.setattr(cli.os, "fsync", fail_first_fsync)
     else:
-        original_link = cli.os.link
-
         def fail_first_link(source: Path, destination: Path) -> None:
             raise OSError("synthetic evidence hard-link publication failure")
 
