@@ -798,10 +798,8 @@ def test_receipt_dir_sync_failure_cannot_pass_or_refetch_orphan_artifact(
     # artifact exists but its prior PASS receipt was not durably committed.
     assert cli.main() == 4
     assert capture_count == 1
-    receipt = json.loads(stage_receipt.read_text())
-    assert receipt["status"] == "FAILURE"
-    assert receipt["scientific_evidence_authorized"] is False
-    assert receipt["production_influence"] == "0"
+    assert not stage_receipt.exists()
+    assert runtime._pending_receipt_path(stage_receipt).is_file()
     assert artifact.is_file()
     assert not list(stage_receipt.parent.glob(".p12-durable-*"))
 
@@ -844,10 +842,11 @@ def test_failed_receipt_rollback_cannot_promote_provisional_pass_on_retry(
     original_unlink = Path.unlink
     armed = True
     sync_failures = 0
+    directory_sync_calls = 0
     unlink_failures = 0
 
     def fail_receipt_sync(fd: int) -> None:
-        nonlocal sync_failures
+        nonlocal sync_failures, directory_sync_calls
         metadata = os.fstat(fd)
         receipt_file_sync = (
             failure_point == "final_file_sync"
@@ -861,7 +860,11 @@ def test_failed_receipt_rollback_cannot_promote_provisional_pass_on_retry(
             and stat.S_ISDIR(metadata.st_mode)
             and (metadata.st_dev, metadata.st_ino) == (stage_dir_meta.st_dev, stage_dir_meta.st_ino)
         )
-        if armed and sync_failures == 0 and (receipt_file_sync or receipt_directory_sync):
+        if armed and receipt_directory_sync:
+            directory_sync_calls += 1
+        if armed and sync_failures == 0 and (
+            receipt_file_sync or (receipt_directory_sync and directory_sync_calls == 2)
+        ):
             sync_failures += 1
             raise OSError("synthetic receipt durability failure")
         original_fsync(fd)
@@ -881,6 +884,7 @@ def test_failed_receipt_rollback_cannot_promote_provisional_pass_on_retry(
     assert unlink_failures == 1
     assert called == 1
     assert stage_receipt.is_file()
+    assert runtime._pending_receipt_path(stage_receipt).is_file()
     provisional = stage_receipt.read_bytes()
     assert provisional
     assert set(provisional) == {0}
