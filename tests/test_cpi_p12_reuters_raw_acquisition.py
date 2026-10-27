@@ -862,8 +862,10 @@ def test_failed_receipt_rollback_cannot_promote_provisional_pass_on_retry(
         )
         if armed and receipt_directory_sync:
             directory_sync_calls += 1
-        if armed and sync_failures == 0 and (
-            receipt_file_sync or (receipt_directory_sync and directory_sync_calls == 2)
+        if (
+            armed
+            and sync_failures == 0
+            and (receipt_file_sync or (receipt_directory_sync and directory_sync_calls == 2))
         ):
             sync_failures += 1
             raise OSError("synthetic receipt durability failure")
@@ -946,8 +948,7 @@ def test_final_fsync_poison_reopen_denied_and_concurrent_reader_fail_closed(
             and not failed_fsync
             and receipt.is_file()
             and stat.S_ISREG(metadata.st_mode)
-            and (metadata.st_dev, metadata.st_ino)
-            == (receipt.stat().st_dev, receipt.stat().st_ino)
+            and (metadata.st_dev, metadata.st_ino) == (receipt.stat().st_dev, receipt.stat().st_ino)
         ):
             failed_fsync = True
             # Simulate an independent reader while final JSON is entirely
