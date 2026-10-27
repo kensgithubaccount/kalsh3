@@ -151,7 +151,9 @@ def test_duplicate_sibling_across_pages_rejected() -> None:
         capture(change=change)
 
 
-@pytest.mark.parametrize("field,wrong", [("body_sha256", "0" * 64), ("bytes", 999), ("status", 403)])
+@pytest.mark.parametrize(
+    "field,wrong", [("body_sha256", "0" * 64), ("bytes", 999), ("status", 403)]
+)
 def test_tampered_envelope_rejected(field: str, wrong: object) -> None:
     def change(path: str, response: dict[str, object]) -> dict[str, object]:
         if "/events/" in path:
