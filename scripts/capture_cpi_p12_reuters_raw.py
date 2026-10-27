@@ -12,6 +12,7 @@ from pathlib import Path
 from services.forecasting.cpi_p12_decoupled_collection import (
     P12CollectorStage,
     P12ExpectedStageFailure,
+    P12IsolationAuthorityError,
     P12IsolationPaths,
     StageCollection,
     run_independent_stage,
@@ -79,9 +80,9 @@ def main() -> int:
             P12CollectorStage.REUTERS_ACQUISITION,
             collect,
         )
-    except OSError:
-        # The filesystem cannot provide a durable stage receipt. Never claim
-        # PASS or pretend that a FAILURE receipt was actually committed.
+    except (OSError, P12IsolationAuthorityError):
+        # A receipt could not be durably committed, or an earlier attempt
+        # left an invalid provisional receipt behind. Neither authorizes PASS.
         print(
             json.dumps(
                 {
