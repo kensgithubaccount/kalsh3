@@ -737,6 +737,75 @@ def test_post_link_failure_rolls_back_without_false_pass(
         assert sentinel.read_bytes() == data
 
 
+def test_receipt_dir_sync_failure_cannot_pass_or_refetch_orphan_artifact(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    root = tmp_path / "experiment"
+    paths = P12IsolationPaths(root)
+    stage_receipt = paths.stage_receipt(P12CollectorStage.REUTERS_ACQUISITION)
+    stage_receipt.parent.mkdir(parents=True)
+    receipt_directory_metadata = stage_receipt.parent.stat()
+    capture_count = 0
+
+    def capture_once(**kwargs: object) -> dict[str, object]:
+        nonlocal capture_count
+        capture_count += 1
+        return _run()
+
+    monkeypatch.setattr(cli, "capture_reuters_raw_sources", capture_once)
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "capture_cpi_p12_reuters_raw.py",
+            "--root",
+            str(root),
+            "--source-url",
+            URL1,
+            "--window-start",
+            START.isoformat(),
+            "--deadline",
+            DEADLINE.isoformat(),
+            "--research-only",
+        ],
+    )
+
+    original_fsync = os.fsync
+    sync_failures = 0
+
+    def fail_receipt_sync_once(fd: int) -> None:
+        nonlocal sync_failures
+        metadata = os.fstat(fd)
+        if (
+            stat.S_ISDIR(metadata.st_mode)
+            and (metadata.st_dev, metadata.st_ino)
+            == (receipt_directory_metadata.st_dev, receipt_directory_metadata.st_ino)
+            and sync_failures == 0
+        ):
+            sync_failures += 1
+            raise OSError("synthetic stage receipt directory sync failure")
+        original_fsync(fd)
+
+    monkeypatch.setattr(os, "fsync", fail_receipt_sync_once)
+    assert cli.main() == 4
+    artifact = root / "reuters" / "raw_source_observations.json"
+    assert artifact.is_file()
+    assert not stage_receipt.exists()
+    assert sync_failures == 1
+    assert capture_count == 1
+
+    # Recovery is fail-closed: do not acquire a second time when a complete
+    # artifact exists but its prior PASS receipt was not durably committed.
+    assert cli.main() == 4
+    assert capture_count == 1
+    receipt = json.loads(stage_receipt.read_text())
+    assert receipt["status"] == "FAILURE"
+    assert receipt["scientific_evidence_authorized"] is False
+    assert receipt["production_influence"] == "0"
+    assert artifact.is_file()
+    assert not list(stage_receipt.parent.glob(".p12-durable-*"))
+
+
 @pytest.mark.parametrize(
     "extra_headers,body",
     [
