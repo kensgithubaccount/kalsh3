@@ -98,8 +98,7 @@ def _gaps(market: dict[str, object]) -> list[str]:
     elif comparator == "less" and not _has_strike(market.get("cap_strike")):
         missing.append("cap_strike_unknown")
     elif comparator == "between" and not (
-        _has_strike(market.get("floor_strike"))
-        and _has_strike(market.get("cap_strike"))
+        _has_strike(market.get("floor_strike")) and _has_strike(market.get("cap_strike"))
     ):
         missing.append("strike_bounds_unknown")
     return missing
