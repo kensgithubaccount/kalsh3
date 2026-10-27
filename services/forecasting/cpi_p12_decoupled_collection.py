@@ -198,9 +198,7 @@ def _ensure_durable_directory(directory: Path) -> None:
         _fsync_directory(item.parent)
 
 
-def write_bytes_durable_exclusive(
-    path: Path, payload: bytes, *, provisional: bool = False
-) -> None:
+def write_bytes_durable_exclusive(path: Path, payload: bytes, *, provisional: bool = False) -> None:
     """Create-once, durably named publication with fail-closed provisional receipts.
 
     Stage receipts first publish an invalid, synced placeholder. Only after
