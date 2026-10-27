@@ -239,12 +239,11 @@ def write_bytes_durable_exclusive(
                     # Even if removing the published name is impossible,
                     # never intentionally leave a valid PASS receipt behind.
                     # The in-place poison requires no directory mutation.
-                    with suppress(OSError):
-                        with path.open("r+b") as handle:
-                            handle.seek(0)
-                            handle.write(bytes(len(payload)))
-                            handle.flush()
-                            os.fsync(handle.fileno())
+                    with suppress(OSError), path.open("r+b") as handle:
+                        handle.seek(0)
+                        handle.write(bytes(len(payload)))
+                        handle.flush()
+                        os.fsync(handle.fileno())
             else:
                 with suppress(OSError):
                     _fsync_directory(path.parent)
