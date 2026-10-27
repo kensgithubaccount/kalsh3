@@ -149,12 +149,11 @@ def capture_p12_kalshi_contract_identity(
     event = read(f"{public_read.BASE}/events/{event_ticker}").get("event")
     if type(series) is not dict or series.get("ticker") != CPI_SERIES:
         raise P12ContractIdentityError("wrong CPI series")
-    if (
-        type(event) is not dict
-        or event.get("ticker") != event_ticker
-        or event.get("series_ticker") != CPI_SERIES
-    ):
+    if type(event) is not dict or event.get("series_ticker") != CPI_SERIES:
         raise P12ContractIdentityError("wrong CPI event/series binding")
+    identities = [event[k] for k in ("ticker", "event_ticker") if k in event]
+    if not identities or any(value != event_ticker for value in identities):
+        raise P12ContractIdentityError("conflicting or absent CPI event identity")
 
     cursor: str | None = None
     seen_cursors: set[str] = set()
