@@ -198,33 +198,53 @@ def _ensure_durable_directory(directory: Path) -> None:
         _fsync_directory(item.parent)
 
 
-def write_bytes_durable_exclusive(path: Path, payload: bytes) -> None:
-    """Create-once publication with durable contents AND directory entry.
+def write_bytes_durable_exclusive(
+    path: Path, payload: bytes, *, provisional: bool = False
+) -> None:
+    """Create-once, durably named publication with fail-closed provisional receipts.
 
-    A completed file alone does not prove the final name will survive a crash.
-    Publish only a fully synced temporary inode; never replace an existing name.
-    A post-link error rolls back the final name on a best-effort basis and must
-    never be reported as a successful publication.
+    Stage receipts first publish an invalid, synced placeholder. Only after
+    the final directory entry has been synced do they write and sync the real
+    receipt bytes. If directory fsync AND rollback unlink both fail, a
+    leftover provisional receipt cannot be mistaken for an operational PASS.
     """
     _ensure_durable_directory(path.parent)
     fd, temporary_name = tempfile.mkstemp(prefix=".p12-durable-", dir=path.parent)
     temporary = Path(temporary_name)
     published = False
+    committed = False
     try:
         with os.fdopen(fd, "wb") as handle:
-            handle.write(payload)
+            handle.write(bytes(len(payload)) if provisional else payload)
             handle.flush()
             os.fsync(handle.fileno())
         os.link(temporary, path)
         published = True
         temporary.unlink()
         _fsync_directory(path.parent)
+        if provisional:
+            # No directory update follows this in-place finalization. The
+            # receipt stays invalid until its directory name is synced.
+            with path.open("r+b") as handle:
+                handle.write(payload)
+                handle.flush()
+                os.fsync(handle.fileno())
+        committed = True
     except BaseException:
-        if published:
+        if published and not committed:
             try:
                 path.unlink()
             except OSError:
-                pass
+                if provisional:
+                    # Even if removing the published name is impossible,
+                    # never intentionally leave a valid PASS receipt behind.
+                    # The in-place poison requires no directory mutation.
+                    with suppress(OSError):
+                        with path.open("r+b") as handle:
+                            handle.seek(0)
+                            handle.write(bytes(len(payload)))
+                            handle.flush()
+                            os.fsync(handle.fileno())
             else:
                 with suppress(OSError):
                     _fsync_directory(path.parent)
@@ -235,7 +255,7 @@ def write_bytes_durable_exclusive(path: Path, payload: bytes) -> None:
 
 def _write_bytes_exclusive(path: Path, payload: bytes) -> None:
     try:
-        write_bytes_durable_exclusive(path, payload)
+        write_bytes_durable_exclusive(path, payload, provisional=True)
     except FileExistsError as exc:
         raise P12IsolationAuthorityError(f"create-once receipt already exists: {path}") from exc
 
