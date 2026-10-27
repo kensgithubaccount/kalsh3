@@ -26,6 +26,7 @@ import hashlib
 import json
 import os
 import re
+import tempfile
 from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -173,20 +174,73 @@ def _require_sha256(value: object, field: str) -> str:
     return value
 
 
-def _write_bytes_exclusive(path: Path, payload: bytes) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL
+def _fsync_directory(directory: Path) -> None:
+    """Make directory-entry updates durable; failure must prevent operational PASS."""
+    fd = os.open(directory, os.O_RDONLY | getattr(os, "O_DIRECTORY", 0))
     try:
-        fd = os.open(path, flags, 0o600)
-    except FileExistsError as exc:
-        raise P12IsolationAuthorityError(f"create-once receipt already exists: {path}") from exc
+        os.fsync(fd)
+    finally:
+        os.close(fd)
+
+
+def _ensure_durable_directory(directory: Path) -> None:
+    """Sync each newly created directory's parent, including a new run root."""
+    missing: list[Path] = []
+    cursor = directory
+    while not cursor.is_dir():
+        if cursor.exists():
+            raise NotADirectoryError(f"stage directory is not a directory: {cursor}")
+        missing.append(cursor)
+        cursor = cursor.parent
+    for item in reversed(missing):
+        item.mkdir(exist_ok=True)
+        _fsync_directory(item.parent)
+
+
+def write_bytes_durable_exclusive(path: Path, payload: bytes) -> None:
+    """Create-once publication with durable contents AND directory entry.
+
+    A completed file alone does not prove the final name will survive a crash.
+    Publish only a fully synced temporary inode; never replace an existing name.
+    A post-link error rolls back the final name on a best-effort basis and must
+    never be reported as a successful publication.
+    """
+    _ensure_durable_directory(path.parent)
+    fd, temporary_name = tempfile.mkstemp(prefix=".p12-durable-", dir=path.parent)
+    temporary = Path(temporary_name)
+    published = False
     try:
-        with os.fdopen(fd, "wb", closefd=False) as handle:
+        with os.fdopen(fd, "wb") as handle:
             handle.write(payload)
             handle.flush()
             os.fsync(handle.fileno())
-    finally:
-        os.close(fd)
+        os.link(temporary, path)
+        published = True
+        temporary.unlink()
+        _fsync_directory(path.parent)
+    except BaseException:
+        if published:
+            try:
+                path.unlink()
+            except OSError:
+                pass
+            else:
+                try:
+                    _fsync_directory(path.parent)
+                except OSError:
+                    pass
+        try:
+            temporary.unlink(missing_ok=True)
+        except OSError:
+            pass
+        raise
+
+
+def _write_bytes_exclusive(path: Path, payload: bytes) -> None:
+    try:
+        write_bytes_durable_exclusive(path, payload)
+    except FileExistsError as exc:
+        raise P12IsolationAuthorityError(f"create-once receipt already exists: {path}") from exc
 
 
 def _json_bytes(value: Mapping[str, object]) -> bytes:
