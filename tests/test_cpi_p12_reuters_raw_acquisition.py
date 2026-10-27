@@ -718,9 +718,7 @@ def test_post_link_failure_rolls_back_without_false_pass(
         original_unlink = runtime.Path.unlink
         failures = 0
 
-        def fail_temporary_unlink(
-            path: Path, missing_ok: bool = False
-        ) -> None:
+        def fail_temporary_unlink(path: Path, missing_ok: bool = False) -> None:
             nonlocal failures
             if path.name.startswith(".p12-durable-") and failures == 0:
                 failures += 1
