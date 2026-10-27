@@ -105,7 +105,6 @@ def test_paginated_raw_identity_observations_never_promote_authority() -> None:
     "mutate",
     [
         lambda x: {**x, "markets": [market("T0.2"), market("T0.2")]},
-        lambda x: {**x, "markets": [market("T0.2")], "cursor": "next-page"},
         lambda x: {**x, "markets": [market("T0.2")], "cursor": "../escape"},
         lambda x: {**x, "markets": [market("T0.2")], "cursor": 7},
         lambda x: {**x, "markets": [{**market("T0.2"), "event_ticker": "OTHER"}]},
@@ -122,7 +121,22 @@ def test_invalid_page_shape_never_publishes_success(mutate) -> None:
         return response
 
     with pytest.raises(P12ContractIdentityError):
-        capture(change=change, max_pages=1)
+        capture(change=change)
+
+
+def test_page_bound_requires_terminal_cursor() -> None:
+    with pytest.raises(P12ContractIdentityError, match="not exhausted"):
+        capture(max_pages=1)
+
+
+def test_repeated_cursor_rejected() -> None:
+    def change(path: str, response: dict[str, object]) -> dict[str, object]:
+        if "&cursor=" in path:
+            return envelope(path, {"markets": [market("T0.3")], "cursor": "next-page"})
+        return response
+
+    with pytest.raises(P12ContractIdentityError, match="cursor"):
+        capture(change=change)
 
 
 def test_duplicate_sibling_across_pages_rejected() -> None:
