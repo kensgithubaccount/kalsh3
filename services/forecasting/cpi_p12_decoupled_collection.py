@@ -269,7 +269,10 @@ def _write_json_exclusive(path: Path, value: Mapping[str, object]) -> None:
 
 
 def _read_json(path: Path) -> dict[str, Any]:
-    value = strict_json_loads(path.read_bytes())
+    try:
+        value = strict_json_loads(path.read_bytes())
+    except ValueError as exc:
+        raise P12IsolationAuthorityError(f"{path} has invalid or uncommitted JSON") from exc
     if not isinstance(value, dict):
         raise P12IsolationAuthorityError(f"{path} is not a JSON object")
     return value
