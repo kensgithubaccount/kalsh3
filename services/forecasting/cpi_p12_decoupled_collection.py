@@ -22,13 +22,13 @@ from __future__ import annotations
 
 import base64
 import binascii
-from contextlib import suppress
 import hashlib
 import json
 import os
 import re
 import tempfile
 from collections.abc import Callable, Iterable, Mapping
+from contextlib import suppress
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from enum import StrEnum
