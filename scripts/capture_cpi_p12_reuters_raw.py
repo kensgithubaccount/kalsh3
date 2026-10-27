@@ -57,7 +57,7 @@ def main() -> int:
 
     def collect() -> StageCollection:
         if output.exists():
-            raise P12ExpectedStageFailure("Reuters artifact exists without a confirmed stage receipt")
+            raise P12ExpectedStageFailure("Reuters artifact exists without stage receipt")
         try:
             evidence = capture_reuters_raw_sources(
                 source_urls=tuple(args.source_url),
