@@ -899,6 +899,96 @@ def test_failed_receipt_rollback_cannot_promote_provisional_pass_on_retry(
     assert stage_receipt.read_bytes() == provisional
 
 
+def test_final_fsync_poison_reopen_denied_and_concurrent_reader_fail_closed(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    root = tmp_path / "experiment"
+    paths = P12IsolationPaths(root)
+    receipt = paths.stage_receipt(P12CollectorStage.REUTERS_ACQUISITION)
+    receipt.parent.mkdir(parents=True)
+    captures = 0
+
+    def capture_once(**kwargs: object) -> dict[str, object]:
+        nonlocal captures
+        captures += 1
+        return _run()
+
+    monkeypatch.setattr(cli, "capture_reuters_raw_sources", capture_once)
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "capture_cpi_p12_reuters_raw.py",
+            "--root",
+            str(root),
+            "--source-url",
+            URL1,
+            "--window-start",
+            START.isoformat(),
+            "--deadline",
+            DEADLINE.isoformat(),
+            "--research-only",
+        ],
+    )
+
+    original_fsync = os.fsync
+    original_unlink = Path.unlink
+    original_open = Path.open
+    opens = 0
+    failed_fsync = False
+    armed = True
+
+    def failed_final_fsync(fd: int) -> None:
+        nonlocal failed_fsync
+        metadata = os.fstat(fd)
+        if (
+            armed
+            and not failed_fsync
+            and receipt.is_file()
+            and stat.S_ISREG(metadata.st_mode)
+            and (metadata.st_dev, metadata.st_ino)
+            == (receipt.stat().st_dev, receipt.stat().st_ino)
+        ):
+            failed_fsync = True
+            # Simulate an independent reader while final JSON is entirely
+            # visible but its fsync is still outstanding.
+            assert receipt.read_bytes().startswith(b"{")
+            with pytest.raises(runtime.P12IsolationAuthorityError, match="uncommitted"):
+                runtime.validate_stage_receipt(paths, P12CollectorStage.REUTERS_ACQUISITION)
+            raise OSError("synthetic unsynced final receipt")
+        original_fsync(fd)
+
+    def failed_rollback_unlink(path: Path, missing_ok: bool = False) -> None:
+        if armed and path == receipt:
+            raise PermissionError("synthetic unlink denied")
+        original_unlink(path, missing_ok=missing_ok)
+
+    def failed_poison_open(path: Path, *args: object, **kwargs: object):
+        nonlocal opens
+        if armed and path == receipt and args and args[0] == "r+b":
+            opens += 1
+            if opens == 2:
+                raise PermissionError("synthetic poison reopen denied")
+        return original_open(path, *args, **kwargs)
+
+    monkeypatch.setattr(os, "fsync", failed_final_fsync)
+    monkeypatch.setattr(Path, "unlink", failed_rollback_unlink)
+    monkeypatch.setattr(Path, "open", failed_poison_open)
+
+    assert cli.main() == 4
+    assert failed_fsync
+    assert opens == 2
+    assert captures == 1
+    assert receipt.is_file()
+    assert receipt.read_bytes().startswith(b"{")
+    assert runtime._pending_receipt_path(receipt).is_file()
+    armed = False
+    assert cli.main() == 4
+    assert captures == 1
+    with pytest.raises(runtime.P12IsolationAuthorityError, match="uncommitted"):
+        runtime.validate_stage_receipt(paths, P12CollectorStage.REUTERS_ACQUISITION)
+
+
 @pytest.mark.parametrize(
     "extra_headers,body",
     [
