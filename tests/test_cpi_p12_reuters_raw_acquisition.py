@@ -479,7 +479,6 @@ def test_strict_response_close_keeps_valid_cli_capture_working(
     assert observation["raw_body_sha256"] == hashlib.sha256(b"hello").hexdigest()
 
 
-
 @pytest.mark.parametrize(
     "wire",
     [
@@ -593,6 +592,7 @@ def test_raw_artifact_persistence_error_is_atomic_stage_failure(
 
         monkeypatch.setattr(cli.os, "fsync", fail_first_fsync)
     else:
+
         def fail_first_link(source: Path, destination: Path) -> None:
             raise OSError("synthetic evidence hard-link publication failure")
 
@@ -610,6 +610,7 @@ def test_raw_artifact_persistence_error_is_atomic_stage_failure(
     # A failed prospective one-shot run retains its FAILURE receipt,
     # rather than silently re-fetching after an acquisition/persistence error.
     assert cli.main() == 4
+
 
 @pytest.mark.parametrize(
     "extra_headers,body",
