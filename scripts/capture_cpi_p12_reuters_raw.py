@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import sys
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -55,6 +56,8 @@ def main() -> int:
     output = args.root / "reuters" / "raw_source_observations.json"
 
     def collect() -> StageCollection:
+        if output.exists():
+            raise P12ExpectedStageFailure("Reuters artifact exists without a confirmed stage receipt")
         try:
             evidence = capture_reuters_raw_sources(
                 source_urls=tuple(args.source_url),
@@ -70,11 +73,29 @@ def main() -> int:
             raise P12ExpectedStageFailure("Reuters evidence persistence failed") from exc
         return StageCollection(artifacts=(output,))
 
-    receipt = run_independent_stage(
-        paths,
-        P12CollectorStage.REUTERS_ACQUISITION,
-        collect,
-    )
+    try:
+        receipt = run_independent_stage(
+            paths,
+            P12CollectorStage.REUTERS_ACQUISITION,
+            collect,
+        )
+    except OSError:
+        # The filesystem cannot provide a durable stage receipt. Never claim
+        # PASS or pretend that a FAILURE receipt was actually committed.
+        print(
+            json.dumps(
+                {
+                    "stage": P12CollectorStage.REUTERS_ACQUISITION.value,
+                    "status": "PERSISTENCE_UNCONFIRMED",
+                    "stage_receipt_durable": False,
+                    "scientific_evidence_authorized": False,
+                    "p12_frozen": False,
+                },
+                sort_keys=True,
+            ),
+            file=sys.stderr,
+        )
+        return 4
     print(
         json.dumps(
             {
