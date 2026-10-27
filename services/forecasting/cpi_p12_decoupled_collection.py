@@ -198,15 +198,41 @@ def _ensure_durable_directory(directory: Path) -> None:
         _fsync_directory(item.parent)
 
 
-def write_bytes_durable_exclusive(path: Path, payload: bytes, *, provisional: bool = False) -> None:
-    """Create-once, durably named publication with fail-closed provisional receipts.
+def _pending_receipt_path(path: Path) -> Path:
+    return path.with_name(path.name + ".pending")
 
-    Stage receipts first publish an invalid, synced placeholder. Only after
-    the final directory entry has been synced do they write and sync the real
-    receipt bytes. If directory fsync AND rollback unlink both fail, a
-    leftover provisional receipt cannot be mistaken for an operational PASS.
+
+def _establish_receipt_guard(path: Path) -> Path:
+    """Persist a write-ahead veto before a stage receipt can become visible.
+
+    The guard is never removed by the failure path. It makes a complete but
+    unsynced receipt non-authoritative even when rollback, poisoning, or the
+    process itself fails. A later validation must not infer commit from JSON.
+    """
+    pending = _pending_receipt_path(path)
+    fd = os.open(pending, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+    with os.fdopen(fd, "wb") as handle:
+        handle.write(b"P12_STAGE_RECEIPT_NOT_COMMITTED\n")
+        handle.flush()
+        os.fsync(handle.fileno())
+    _fsync_directory(path.parent)
+    return pending
+
+
+def write_bytes_durable_exclusive(path: Path, payload: bytes, *, provisional: bool = False) -> None:
+    """Publish only after syncing the file, name and receipt commit veto.
+
+    For stage receipts, a durable pending guard is installed first. The guard
+    remains throughout finalization, so concurrent readers, a failed final
+    fsync, and even a crash with a visible complete PASS still fail closed.
+    It is removed only after both the final receipt and its name are synced.
     """
     _ensure_durable_directory(path.parent)
+    if path.exists():
+        raise FileExistsError(f"create-once path already exists: {path}")
+    if provisional and _pending_receipt_path(path).exists():
+        raise P12IsolationAuthorityError("uncommitted stage receipt guard exists")
+    pending = _establish_receipt_guard(path) if provisional else None
     fd, temporary_name = tempfile.mkstemp(prefix=".p12-durable-", dir=path.parent)
     temporary = Path(temporary_name)
     published = False
@@ -221,22 +247,23 @@ def write_bytes_durable_exclusive(path: Path, payload: bytes, *, provisional: bo
         temporary.unlink()
         _fsync_directory(path.parent)
         if provisional:
-            # No directory update follows this in-place finalization. The
-            # receipt stays invalid until its directory name is synced.
             with path.open("r+b") as handle:
                 handle.write(payload)
                 handle.flush()
                 os.fsync(handle.fileno())
         committed = True
+        if pending is not None:
+            # The final receipt is fully durable before removing the veto.
+            # If this unlink or its directory fsync fails, a leftover veto
+            # denies PASS; a vanished veto exposes only a durable receipt.
+            pending.unlink()
+            _fsync_directory(path.parent)
     except BaseException:
         if published and not committed:
             try:
                 path.unlink()
             except OSError:
                 if provisional:
-                    # Even if removing the published name is impossible,
-                    # never intentionally leave a valid PASS receipt behind.
-                    # The in-place poison requires no directory mutation.
                     with suppress(OSError), path.open("r+b") as handle:
                         handle.seek(0)
                         handle.write(bytes(len(payload)))
@@ -266,6 +293,8 @@ def _write_json_exclusive(path: Path, value: Mapping[str, object]) -> None:
 
 
 def _read_json(path: Path) -> dict[str, Any]:
+    if _pending_receipt_path(path).exists():
+        raise P12IsolationAuthorityError("stage receipt has uncommitted durability guard")
     try:
         value = strict_json_loads(path.read_bytes())
     except ValueError as exc:
@@ -444,6 +473,8 @@ def run_independent_stage(
         raise P12IsolationAuthorityError("collector must be callable")
 
     receipt_path = paths.stage_receipt(stage)
+    if _pending_receipt_path(receipt_path).exists():
+        raise P12IsolationAuthorityError("stage receipt is pending or uncommitted")
     if receipt_path.exists():
         return validate_stage_receipt(paths, stage)
 
