@@ -596,11 +596,14 @@ def test_raw_artifact_persistence_error_is_atomic_stage_failure(
 
         monkeypatch.setattr(os, "fsync", fail_first_fsync)
     else:
+        original_link = os.link
 
-        def fail_first_link(source: Path, destination: Path) -> None:
-            raise OSError("synthetic evidence hard-link publication failure")
+        def fail_artifact_link(source: Path, destination: Path) -> None:
+            if destination.name == "raw_source_observations.json":
+                raise OSError("synthetic evidence hard-link publication failure")
+            original_link(source, destination)
 
-        monkeypatch.setattr(os, "link", fail_first_link)
+        monkeypatch.setattr(os, "link", fail_artifact_link)
 
     assert cli.main() == 4
     receipt = json.loads(paths.stage_receipt(P12CollectorStage.REUTERS_ACQUISITION).read_text())
