@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import tempfile
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -43,15 +44,24 @@ def _parser() -> argparse.ArgumentParser:
 
 
 def _write_once(path: Path, content: bytes) -> None:
+    """Durably write before atomically publishing a create-once evidence path.
+
+    An fsync/write failure must never leave a partial final artifact that a
+    later stage run could mistake for a successful capture.
+    """
     path.parent.mkdir(parents=True, exist_ok=True)
-    fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+    fd, temporary_name = tempfile.mkstemp(prefix=".reuters-p12-", dir=path.parent)
+    temporary = Path(temporary_name)
     try:
-        with os.fdopen(fd, "wb", closefd=False) as file:
+        with os.fdopen(fd, "wb") as file:
             file.write(content)
             file.flush()
             os.fsync(file.fileno())
+        # Hard-link publication is atomic and fails if the destination exists;
+        # unlike os.replace(), it cannot overwrite create-once evidence.
+        os.link(temporary, path)
     finally:
-        os.close(fd)
+        temporary.unlink(missing_ok=True)
 
 
 def main() -> int:
@@ -73,8 +83,8 @@ def main() -> int:
         content = (json.dumps(evidence, indent=2, sort_keys=True) + "\n").encode("utf-8")
         try:
             _write_once(output, content)
-        except FileExistsError as exc:
-            raise P12ExpectedStageFailure("Reuters evidence already exists") from exc
+        except OSError as exc:
+            raise P12ExpectedStageFailure("Reuters evidence persistence failed") from exc
         return StageCollection(artifacts=(output,))
 
     receipt = run_independent_stage(
