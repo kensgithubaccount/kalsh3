@@ -806,6 +806,96 @@ def test_receipt_dir_sync_failure_cannot_pass_or_refetch_orphan_artifact(
     assert not list(stage_receipt.parent.glob(".p12-durable-*"))
 
 
+@pytest.mark.parametrize("failure_point", ["directory_sync", "final_file_sync"])
+def test_failed_receipt_rollback_cannot_promote_provisional_pass_on_retry(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, failure_point: str
+) -> None:
+    root = tmp_path / "experiment"
+    paths = P12IsolationPaths(root)
+    stage_receipt = paths.stage_receipt(P12CollectorStage.REUTERS_ACQUISITION)
+    stage_receipt.parent.mkdir(parents=True)
+    stage_dir_meta = stage_receipt.parent.stat()
+    called = 0
+
+    def capture_once(**kwargs: object) -> dict[str, object]:
+        nonlocal called
+        called += 1
+        return _run()
+
+    monkeypatch.setattr(cli, "capture_reuters_raw_sources", capture_once)
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "capture_cpi_p12_reuters_raw.py",
+            "--root",
+            str(root),
+            "--source-url",
+            URL1,
+            "--window-start",
+            START.isoformat(),
+            "--deadline",
+            DEADLINE.isoformat(),
+            "--research-only",
+        ],
+    )
+
+    original_fsync = os.fsync
+    original_unlink = Path.unlink
+    armed = True
+    sync_failures = 0
+    unlink_failures = 0
+
+    def fail_receipt_sync(fd: int) -> None:
+        nonlocal sync_failures
+        metadata = os.fstat(fd)
+        receipt_file_sync = (
+            failure_point == "final_file_sync"
+            and stat.S_ISREG(metadata.st_mode)
+            and stage_receipt.exists()
+            and metadata.st_ino == stage_receipt.stat().st_ino
+            and metadata.st_dev == stage_receipt.stat().st_dev
+        )
+        receipt_directory_sync = (
+            failure_point == "directory_sync"
+            and stat.S_ISDIR(metadata.st_mode)
+            and (metadata.st_dev, metadata.st_ino)
+            == (stage_dir_meta.st_dev, stage_dir_meta.st_ino)
+        )
+        if armed and sync_failures == 0 and (receipt_file_sync or receipt_directory_sync):
+            sync_failures += 1
+            raise OSError("synthetic receipt durability failure")
+        original_fsync(fd)
+
+    def fail_rollback_unlink(path: Path, missing_ok: bool = False) -> None:
+        nonlocal unlink_failures
+        if armed and unlink_failures == 0 and path == stage_receipt:
+            unlink_failures += 1
+            raise OSError("synthetic receipt rollback unlink failure")
+        original_unlink(path, missing_ok=missing_ok)
+
+    monkeypatch.setattr(os, "fsync", fail_receipt_sync)
+    monkeypatch.setattr(Path, "unlink", fail_rollback_unlink)
+
+    assert cli.main() == 4
+    assert sync_failures == 1
+    assert unlink_failures == 1
+    assert called == 1
+    assert stage_receipt.is_file()
+    provisional = stage_receipt.read_bytes()
+    assert provisional
+    assert set(provisional) == {0}
+    assert not list(stage_receipt.parent.glob(".p12-durable-*"))
+    assert (root / "reuters/raw_source_observations.json").is_file()
+
+    armed = False
+    # This is the key counterexample: surviving uncertain receipt MUST NOT
+    # become operational PASS on the next process invocation.
+    assert cli.main() == 4
+    assert called == 1
+    assert stage_receipt.read_bytes() == provisional
+
+
 @pytest.mark.parametrize(
     "extra_headers,body",
     [
