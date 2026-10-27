@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import base64
 import binascii
+from contextlib import suppress
 import hashlib
 import json
 import os
@@ -225,14 +226,10 @@ def write_bytes_durable_exclusive(path: Path, payload: bytes) -> None:
             except OSError:
                 pass
             else:
-                try:
+                with suppress(OSError):
                     _fsync_directory(path.parent)
-                except OSError:
-                    pass
-        try:
+        with suppress(OSError):
             temporary.unlink(missing_ok=True)
-        except OSError:
-            pass
         raise
 
 
