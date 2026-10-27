@@ -479,6 +479,140 @@ def test_strict_response_close_keeps_valid_cli_capture_working(
     assert observation["raw_body_sha256"] == hashlib.sha256(b"hello").hexdigest()
 
 
+
+@pytest.mark.parametrize(
+    "wire",
+    [
+        b"HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\n\r\nshort",
+        b"HTTP/1.1 200 OK\r\nConnection: close\r\n\r\nshort",
+        b"HTTP/1.0 200 OK\r\n\r\nshort",
+    ],
+)
+def test_unframed_http_body_fails_closed_at_transport_acquisition_and_cli(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, wire: bytes
+) -> None:
+    _patch_closing_transport(monkeypatch, wire)
+    with pytest.raises(raw.P12ReutersRawAcquisitionError, match="framing"):
+        raw._https_get(URL1)
+
+    _patch_closing_transport(monkeypatch, wire)
+    with pytest.raises(raw.P12ReutersRawAcquisitionError, match="framing"):
+        _run(source_urls=(URL1,), getter=raw._https_get)
+
+    _patch_closing_transport(monkeypatch, wire)
+    root = tmp_path / "experiment"
+    paths = P12IsolationPaths(root)
+    sentinels: dict[Path, bytes] = {}
+    for stage in (
+        P12CollectorStage.BLS_SCHEDULE_AUTHORITY,
+        P12CollectorStage.KALSHI_MARKET_CAPTURE,
+    ):
+        sentinel = paths.stage_receipt(stage)
+        sentinel.parent.mkdir(parents=True, exist_ok=True)
+        sentinel.write_bytes(b"unchanged-independent-stage\n")
+        sentinels[sentinel] = sentinel.read_bytes()
+
+    monkeypatch.setattr(
+        cli,
+        "capture_reuters_raw_sources",
+        lambda **kwargs: raw.capture_reuters_raw_sources(
+            **kwargs, getter=raw._https_get, clock=lambda: NOW
+        ),
+    )
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "capture_cpi_p12_reuters_raw.py",
+            "--root",
+            str(root),
+            "--source-url",
+            URL1,
+            "--window-start",
+            START.isoformat(),
+            "--deadline",
+            DEADLINE.isoformat(),
+            "--research-only",
+        ],
+    )
+    assert cli.main() == 4
+    receipt = json.loads(paths.stage_receipt(P12CollectorStage.REUTERS_ACQUISITION).read_text())
+    assert receipt["status"] == "FAILURE"
+    assert receipt["scientific_evidence_authorized"] is False
+    assert receipt["p12_frozen"] is False
+    assert receipt["production_influence"] == "0"
+    assert not (root / "reuters/raw_source_observations.json").exists()
+    for sentinel, value in sentinels.items():
+        assert sentinel.read_bytes() == value
+
+
+@pytest.mark.parametrize("failure_point", ["fsync", "link"])
+def test_raw_artifact_persistence_error_is_atomic_stage_failure(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, failure_point: str
+) -> None:
+    root = tmp_path / "experiment"
+    paths = P12IsolationPaths(root)
+    sentinels: dict[Path, bytes] = {}
+    for stage in (
+        P12CollectorStage.BLS_SCHEDULE_AUTHORITY,
+        P12CollectorStage.KALSHI_MARKET_CAPTURE,
+    ):
+        sentinel = paths.stage_receipt(stage)
+        sentinel.parent.mkdir(parents=True, exist_ok=True)
+        sentinel.write_bytes(b"preexisting-independent-stage\n")
+        sentinels[sentinel] = sentinel.read_bytes()
+
+    monkeypatch.setattr(cli, "capture_reuters_raw_sources", lambda **kwargs: _run())
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "capture_cpi_p12_reuters_raw.py",
+            "--root",
+            str(root),
+            "--source-url",
+            URL1,
+            "--window-start",
+            START.isoformat(),
+            "--deadline",
+            DEADLINE.isoformat(),
+            "--research-only",
+        ],
+    )
+
+    if failure_point == "fsync":
+        original_fsync = cli.os.fsync
+        calls = 0
+
+        def fail_first_fsync(fd: int) -> None:
+            nonlocal calls
+            calls += 1
+            if calls == 1:
+                raise OSError("synthetic evidence fsync failure")
+            original_fsync(fd)
+
+        monkeypatch.setattr(cli.os, "fsync", fail_first_fsync)
+    else:
+        original_link = cli.os.link
+
+        def fail_first_link(source: Path, destination: Path) -> None:
+            raise OSError("synthetic evidence hard-link publication failure")
+
+        monkeypatch.setattr(cli.os, "link", fail_first_link)
+
+    assert cli.main() == 4
+    receipt = json.loads(paths.stage_receipt(P12CollectorStage.REUTERS_ACQUISITION).read_text())
+    assert receipt["status"] == "FAILURE"
+    assert receipt["scientific_evidence_authorized"] is False
+    assert receipt["production_influence"] == "0"
+    assert not (root / "reuters/raw_source_observations.json").exists()
+    assert not list((root / "reuters").glob(".reuters-p12-*"))
+    for sentinel, value in sentinels.items():
+        assert sentinel.read_bytes() == value
+    # A failed prospective one-shot run retains its FAILURE receipt,
+    # rather than silently re-fetching after an acquisition/persistence error.
+    assert cli.main() == 4
+
 @pytest.mark.parametrize(
     "extra_headers,body",
     [
