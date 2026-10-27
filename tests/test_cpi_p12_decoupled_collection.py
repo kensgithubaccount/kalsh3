@@ -4,6 +4,8 @@ import base64
 import hashlib
 import inspect
 import json
+import os
+import stat
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -65,6 +67,44 @@ def _sealed_schedule_receipt(tmp_path: Path) -> tuple[Path, runtime.SealedBLSSch
         receipt_sha256=hashlib.sha256(receipt_bytes).hexdigest(),
     )
     return path, expectation
+
+
+@pytest.mark.parametrize("failed_collector", [False, True])
+def test_stage_receipt_directory_fsync_failure_never_commits_operational_status(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, failed_collector: bool
+) -> None:
+    paths = runtime.P12IsolationPaths(tmp_path / "run")
+    stage = runtime.P12CollectorStage.REUTERS_ACQUISITION
+    receipt_path = paths.stage_receipt(stage)
+    receipt_path.parent.mkdir(parents=True)
+    directory_metadata = receipt_path.parent.stat()
+    original_fsync = os.fsync
+    failures = 0
+
+    def fail_receipt_dir_sync(fd: int) -> None:
+        nonlocal failures
+        metadata = os.fstat(fd)
+        if (
+            stat.S_ISDIR(metadata.st_mode)
+            and (metadata.st_dev, metadata.st_ino)
+            == (directory_metadata.st_dev, directory_metadata.st_ino)
+            and failures == 0
+        ):
+            failures += 1
+            raise OSError("synthetic stage receipt directory sync failure")
+        original_fsync(fd)
+
+    monkeypatch.setattr(os, "fsync", fail_receipt_dir_sync)
+    collector = (
+        _expected_failure("synthetic stage failure")
+        if failed_collector
+        else _collector(paths.root / "reuters" / "synthetic_artifact.bin")
+    )
+    with pytest.raises(OSError, match="receipt directory sync failure"):
+        runtime.run_independent_stage(paths, stage, collector, clock=lambda: NOW)
+    assert failures == 1
+    assert not receipt_path.exists()
+    assert not list(receipt_path.parent.glob(".p12-durable-*"))
 
 
 def test_presealed_schedule_verification_uses_exact_receipt_and_embedded_bytes(
