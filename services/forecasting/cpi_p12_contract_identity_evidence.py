@@ -178,8 +178,10 @@ def capture_p12_kalshi_contract_identity(
             ):
                 raise P12ContractIdentityError("duplicate or invalid sibling ticker")
             markets[ticker] = item
-        next_cursor = page.get("cursor")
-        if next_cursor is None or next_cursor == "":
+        if "cursor" not in page:
+            raise P12ContractIdentityError("missing pagination cursor does not prove terminal")
+        next_cursor = page["cursor"]
+        if next_cursor == "":
             break
         if (
             type(next_cursor) is not str
