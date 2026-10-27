@@ -7,6 +7,8 @@ import hashlib
 import http.client
 import io
 import json
+import os
+import stat
 import sys
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -14,6 +16,7 @@ from pathlib import Path
 import pytest
 
 from scripts import capture_cpi_p12_reuters_raw as cli
+from services.forecasting import cpi_p12_decoupled_collection as runtime
 from services.forecasting import cpi_p12_reuters_raw_acquisition as raw
 from services.forecasting.cpi_p12_decoupled_collection import (
     P12CollectorStage,
@@ -580,23 +583,24 @@ def test_raw_artifact_persistence_error_is_atomic_stage_failure(
     )
 
     if failure_point == "fsync":
-        original_fsync = cli.os.fsync
+        original_fsync = os.fsync
         calls = 0
 
         def fail_first_fsync(fd: int) -> None:
             nonlocal calls
-            calls += 1
-            if calls == 1:
-                raise OSError("synthetic evidence fsync failure")
+            if stat.S_ISREG(os.fstat(fd).st_mode):
+                calls += 1
+                if calls == 1:
+                    raise OSError("synthetic evidence fsync failure")
             original_fsync(fd)
 
-        monkeypatch.setattr(cli.os, "fsync", fail_first_fsync)
+        monkeypatch.setattr(os, "fsync", fail_first_fsync)
     else:
 
         def fail_first_link(source: Path, destination: Path) -> None:
             raise OSError("synthetic evidence hard-link publication failure")
 
-        monkeypatch.setattr(cli.os, "link", fail_first_link)
+        monkeypatch.setattr(os, "link", fail_first_link)
 
     assert cli.main() == 4
     receipt = json.loads(paths.stage_receipt(P12CollectorStage.REUTERS_ACQUISITION).read_text())
@@ -610,6 +614,126 @@ def test_raw_artifact_persistence_error_is_atomic_stage_failure(
     # A failed prospective one-shot run retains its FAILURE receipt,
     # rather than silently re-fetching after an acquisition/persistence error.
     assert cli.main() == 4
+
+
+def test_success_syncs_reuters_artifact_and_stage_receipt_directories(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    root = tmp_path / "experiment"
+    synced: list[tuple[int, int]] = []
+    original_fsync = os.fsync
+
+    def track_fsync(fd: int) -> None:
+        metadata = os.fstat(fd)
+        if stat.S_ISDIR(metadata.st_mode):
+            synced.append((metadata.st_dev, metadata.st_ino))
+        original_fsync(fd)
+
+    monkeypatch.setattr(os, "fsync", track_fsync)
+    monkeypatch.setattr(cli, "capture_reuters_raw_sources", lambda **kwargs: _run())
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "capture_cpi_p12_reuters_raw.py",
+            "--root",
+            str(root),
+            "--source-url",
+            URL1,
+            "--window-start",
+            START.isoformat(),
+            "--deadline",
+            DEADLINE.isoformat(),
+            "--research-only",
+        ],
+    )
+
+    assert cli.main() == 0
+    paths = P12IsolationPaths(root)
+    assert (root / "reuters/raw_source_observations.json").is_file()
+    assert paths.stage_receipt(P12CollectorStage.REUTERS_ACQUISITION).is_file()
+    for directory in (root / "reuters", root / "orchestration" / "stages"):
+        metadata = directory.stat()
+        assert (metadata.st_dev, metadata.st_ino) in synced
+
+
+@pytest.mark.parametrize("failure_point", ["directory_fsync", "temporary_cleanup"])
+def test_post_link_failure_rolls_back_without_false_pass(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, failure_point: str
+) -> None:
+    root = tmp_path / "experiment"
+    artifact_directory = root / "reuters"
+    artifact_directory.mkdir(parents=True)
+    paths = P12IsolationPaths(root)
+    sentinels: dict[Path, bytes] = {}
+    for stage in (
+        P12CollectorStage.BLS_SCHEDULE_AUTHORITY,
+        P12CollectorStage.KALSHI_MARKET_CAPTURE,
+    ):
+        sentinel = paths.stage_receipt(stage)
+        sentinel.parent.mkdir(parents=True, exist_ok=True)
+        sentinel.write_bytes(b"isolated-stage-sentinel\n")
+        sentinels[sentinel] = sentinel.read_bytes()
+
+    monkeypatch.setattr(cli, "capture_reuters_raw_sources", lambda **kwargs: _run())
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "capture_cpi_p12_reuters_raw.py",
+            "--root",
+            str(root),
+            "--source-url",
+            URL1,
+            "--window-start",
+            START.isoformat(),
+            "--deadline",
+            DEADLINE.isoformat(),
+            "--research-only",
+        ],
+    )
+    if failure_point == "directory_fsync":
+        original_fsync = os.fsync
+        directory_metadata = artifact_directory.stat()
+        failures = 0
+
+        def fail_artifact_dir_fsync(fd: int) -> None:
+            nonlocal failures
+            metadata = os.fstat(fd)
+            if (
+                stat.S_ISDIR(metadata.st_mode)
+                and (metadata.st_dev, metadata.st_ino)
+                == (directory_metadata.st_dev, directory_metadata.st_ino)
+                and failures == 0
+            ):
+                failures += 1
+                raise OSError("synthetic Reuters directory fsync failure")
+            original_fsync(fd)
+
+        monkeypatch.setattr(os, "fsync", fail_artifact_dir_fsync)
+    else:
+        original_unlink = runtime.Path.unlink
+        failures = 0
+
+        def fail_temporary_unlink(
+            path: Path, missing_ok: bool = False
+        ) -> None:
+            nonlocal failures
+            if path.name.startswith(".p12-durable-") and failures == 0:
+                failures += 1
+                raise OSError("synthetic temporary unlink failure")
+            original_unlink(path, missing_ok=missing_ok)
+
+        monkeypatch.setattr(runtime.Path, "unlink", fail_temporary_unlink)
+
+    assert cli.main() == 4
+    receipt = json.loads(paths.stage_receipt(P12CollectorStage.REUTERS_ACQUISITION).read_text())
+    assert receipt["status"] == "FAILURE"
+    assert receipt["scientific_evidence_authorized"] is False
+    assert not (artifact_directory / "raw_source_observations.json").exists()
+    assert not list(artifact_directory.glob(".p12-durable-*"))
+    for sentinel, data in sentinels.items():
+        assert sentinel.read_bytes() == data
 
 
 @pytest.mark.parametrize(
