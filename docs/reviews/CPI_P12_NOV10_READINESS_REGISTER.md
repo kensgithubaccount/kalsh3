@@ -6,6 +6,45 @@ none, production influence zero, no trading authorization.
 **Scheduled BLS release:** October 2026 CPI, November 10, 2026 at 08:30
 America/New_York (EST, UTC-05:00) = `2026-11-10T13:30:00Z`.
 
+## Post-merge control-room reconciliation — October 27, 2026
+
+**Current canonical main:** `92960c25ad952da88c1d6852d3088cc4bf9be648` (PR #202 merged).
+**Status remains P12 NOT FROZEN; research only; scientific/economic-test authority
+false, production influence zero, promotion/trading authority NONE.** This
+section supersedes older in-review labels below, which are retained as historical
+checkpoint descriptions rather than evidence of a still-open PR.
+
+| Source/checkpoint | Infrastructure now canonical | Still unproved (blocks prospective event freeze) |
+| --- | --- | --- |
+| BLS calendar (#195/#196) | Browser-attested exact schedule bytes and independently archived receipt | P12 event-specific protocol binding, cutoffs, and independent preclose validation |
+| Independent stage handling (#198/#200) | Isolated attempts, create-once receipts, source-failure containment, receipt-only operational gate | Real unattended scheduled execution and scientific evidence reconciliation |
+| Kalshi inventory (#199) and raw snapshots (#201) | Fixed-origin, raw-hashed source reads with request/response timestamps and caller-bounded windows | First-party proof of **complete sibling market cohort**, exact event/rules/settlement/close-time identity and deterministic admissible as-of price selection |
+| Reuters raw HTTPS acquisition (#202) | Strict first-party HTTPS raw-body framing, timestamps/hashes, stage isolation and crash-conscious receipt persistence; independently reviewed PASS on exact head `4c20cbd233427725c5ab7364f642f37b0cdb16ff` | Prospectively frozen URL/search/source-selection rules, Reuters attribution, publication chronology, independent corroboration and objective missing-source outcomes |
+
+External **schedule cross-check only:** the public BLS calendar at
+https://www.bls.gov/schedule/news_release/cpi.htm and November list at
+https://www.bls.gov/schedule/2026/11_sched_list.htm continue to list October
+2026 CPI for November 10, 2026, 08:30 EST (`2026-11-10T13:30:00Z`).
+This 2026-10-27 informational check is **not** an independent browser-attested
+raw acquisition, not a replacement for the sealed #196 receipt, and creates no
+new timing or scientific authority.
+
+**Next narrowly scoped candidate checkpoint (planning only):** P12 Kalshi
+event/contract-identity evidence specification. On an isolated research branch,
+inventory first-party event, full paginated sibling market cohort, contract
+rules/comparators, reference month, close times and settlement source as
+raw timestamped observations. Compare observed market identities against an
+explicit candidate protocol and document ambiguity without selecting a price,
+authorizing a strategy, or freezing the protocol. Require independent adversarial
+review and exact-head CI before any merge. If complete cohort identity or any
+contract rule is uncertain, record **UNKNOWN/NOT READY**. In parallel, plan
+Reuters locator/discovery and publication-attribution rules **without looking
+up or acquiring the November target forecast value**.
+
+Do **not** infer from this documentation update that the November 10 live
+test, source admissibility, operational schedule, scientific evidence or trading
+has been authorized. Keep P12 NOT FROZEN until every gate below is proved.
+
 ## Completed and canonical
 
 - PR #195: separate Safari/browser-attested exact BLS CPI schedule source,
@@ -28,8 +67,8 @@ America/New_York (EST, UTC-05:00) = `2026-11-10T13:30:00Z`.
 
 | Gate | What must be proved | Current state |
 | --- | --- | --- |
-| Kalshi real quotes | Independently timed, raw, fixed-origin market/candle/quote capture; verified complete sibling cohort, close times and as-of timing; deterministic admissible price selection | Raw inventory merged; independent single-market raw snapshot checkpoint in review. No frozen price selection yet |
-| Reuters first-party source | Independently launched acquisition, frozen locator/search methodology, bounded and timed raw-source provenance, immutable PASS/NONPASS decision contract | Direct raw HTTPS capture checkpoint in review. **NOT COMPLETE**: URL discovery, first-party attribution, independently operated corroboration, publication timing and source-selection freeze remain blocking. Do not inspect target value yet |
+| Kalshi real quotes | Independently timed, raw, fixed-origin market/candle/quote capture; verified complete sibling cohort, close times and as-of timing; deterministic admissible price selection | Raw inventory and time-guarded single-market snapshot infrastructure merged in #199/#201; complete sibling cohort and frozen price selection still missing |
+| Reuters first-party source | Independently launched acquisition, frozen locator/search methodology, bounded and timed raw-source provenance, immutable PASS/NONPASS decision contract | Raw HTTPS capture infrastructure merged in #202. **NOT COMPLETE**: URL discovery, first-party attribution, independently operated corroboration, publication timing and source-selection freeze remain blocking. Do not inspect target value yet |
 | Frozen contract identity | Select actual P12 event/series, all sibling tickers, exact contract rules, reference month, strike comparators, close times and settlement authority | NOT COMPLETE. Do not reuse September P11 specifics |
 | Schedule binding | Event-specific P12 protocol must bind exact presealed BLS receipt SHA, raw HTML SHA, reference month and release instant | Receipt durably preserved; event protocol not frozen |
 | Timing and cutoff | Frozen pre-release time windows, deadline, clock skew allowances, contemporaneous request/response timestamps and delayed/failure handling | NOT COMPLETE |
