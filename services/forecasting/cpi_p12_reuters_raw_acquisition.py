@@ -248,6 +248,10 @@ def _https_get(url: str) -> tuple[int, bytes, dict[str, str]]:
             or (transfer_encodings and transfer_encodings[0].lower() != "chunked")
         ):
             raise P12ReutersRawAcquisitionError("ambiguous or unsupported source response framing")
+        if not lengths and not transfer_encodings:
+            # An EOF-delimited body cannot prove its bytes were complete.
+            # Even HTTP 200 and a clean socket close do not establish framing.
+            raise P12ReutersRawAcquisitionError("source response lacks verifiable HTTP framing")
         expected_length = None
         if lengths:
             value = lengths[0]
