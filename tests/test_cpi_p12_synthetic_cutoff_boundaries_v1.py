@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 from datetime import UTC, datetime, timedelta
+from typing import Any, Callable
 
 import pytest
 
@@ -24,7 +25,7 @@ URL = "https://www.reuters.com/world/invented-p12-fixture-only"
 RAW = b"Entirely invented publisher text; no forecast or market data."
 
 
-def _clock(*values: datetime):
+def _clock(*values: datetime) -> Callable[[], datetime]:
     iterator = iter(values)
     return lambda: next(iterator)
 
@@ -50,7 +51,7 @@ def _raw_getter(_url: str) -> tuple[int, bytes, dict[str, str]]:
 
 def _capture(
     lane: str, times: tuple[datetime, ...], *, deadline: datetime = CUTOFF
-) -> dict[str, object]:
+) -> dict[str, Any]:
     clock = _clock(*times)
     if lane == "kalshi":
         return kalshi.capture_kalshi_raw_market_snapshots(
@@ -176,7 +177,7 @@ def test_backward_response_clock_cannot_produce_raw_success(lane: str) -> None:
             (
                 START,
                 OBS + timedelta(seconds=20),
-                OBS + timedelta(seconds=10),
+                OBS - timedelta(seconds=1),
             ),
         )
 
