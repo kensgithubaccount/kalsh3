@@ -156,7 +156,7 @@ def test_network_failure_fails_only_kalshi_stage(
     )
     # Production clock is outside the 2026-10-21 synthetic test window.
     # Force a transport attempt with a caller-injected test clock.
-    real = cli.capture_kalshi_raw_market_snapshots
+    real = snapshots.capture_kalshi_raw_market_snapshots
 
     def with_clock(**kwargs: Any) -> dict[str, Any]:
         return real(**kwargs, clock=lambda: NOW)
