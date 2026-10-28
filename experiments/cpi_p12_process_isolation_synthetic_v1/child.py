@@ -59,9 +59,7 @@ def _require_isolated_write_paths(root: Path, stage: P12CollectorStage) -> None:
     if root.is_symlink() or (root.exists() and not root.is_dir()):
         raise ValueError("synthetic root must be an ordinary directory")
     for destination in destinations:
-        if destination.is_symlink() or not destination.resolve().is_relative_to(
-            resolved_root
-        ):
+        if destination.is_symlink() or not destination.resolve().is_relative_to(resolved_root):
             raise ValueError("symlink or destination outside synthetic root is forbidden")
 
 
