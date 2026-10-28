@@ -209,3 +209,51 @@ def test_extreme_publication_time_is_fail_closed_without_overflow() -> None:
     result = classify_invented_case(case)
     assert result.reason == "PUBLICATION_CHRONOLOGY_CONFLICT"
     _assert_no_authority(result)
+
+
+class _ForgedMarkerNotEqual:
+    def __ne__(self, other: object) -> bool:
+        return False
+
+
+class _RaisingMarkerNotEqual:
+    def __ne__(self, other: object) -> bool:
+        raise RuntimeError("invented marker comparison trap")
+
+
+class _ForgedMarkerEqual:
+    def __eq__(self, other: object) -> bool:
+        return True
+
+
+class _ForgedStringSubclass(str):
+    def __ne__(self, other: object) -> bool:
+        return False
+
+
+@pytest.mark.parametrize(
+    "marker",
+    [
+        _ForgedMarkerNotEqual(),
+        _RaisingMarkerNotEqual(),
+        _ForgedMarkerEqual(),
+        _ForgedStringSubclass(
+            "CPI-P12-REUTERS-INVENTED-FIXTURE-ONLY-v1"
+        ),
+        None,
+        0,
+        b"CPI-P12-REUTERS-INVENTED-FIXTURE-ONLY-v1",
+        {},
+    ],
+)
+def test_malformed_marker_never_compares_or_escapes(marker: object) -> None:
+    case = replace(InventedEvidence(), marker=cast(Any, marker))
+    result = classify_invented_case(case)
+    assert result.reason == "INVALID_SYNTHETIC_INPUT"
+    _assert_no_authority(result)
+
+
+def test_exact_native_string_marker_still_inconclusive() -> None:
+    result = classify_invented_case(InventedEvidence())
+    assert result.reason == "CONSISTENT_INVENTED_CASE_ONLY"
+    _assert_no_authority(result)
