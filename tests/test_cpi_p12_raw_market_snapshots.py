@@ -171,3 +171,55 @@ def test_cli_requires_research_only(tmp_path, monkeypatch: pytest.MonkeyPatch) -
     )
     with pytest.raises(SystemExit):
         cli.main()
+
+
+def test_request_clock_rollback_with_earlier_envelope_rejected() -> None:
+    """Issue #224: pre-GET 11:01:20, observed 11:01, post-GET 11:01:10."""
+    first = NOW + timedelta(seconds=20)
+    backward = NOW + timedelta(seconds=10)
+    times = iter((NOW, first, backward, first))
+    with pytest.raises(snapshots.P12SnapshotCaptureError):
+        capture(getter=envelope, clock=lambda: next(times))
+
+
+def test_capture_completion_rollback_after_valid_response_rejected() -> None:
+    """Issue #224: post-GET 11:01:10, final 11:00:50."""
+    post = NOW + timedelta(seconds=10)
+    before_completion = NOW - timedelta(seconds=10)
+    times = iter((NOW, NOW, post, before_completion))
+    with pytest.raises(snapshots.P12SnapshotCaptureError):
+        capture(
+            getter=envelope,
+            clock=lambda: next(times),
+            tickers=(TICKERS[0],),
+        )
+
+
+def test_request_rollback_with_matching_envelope_time_rejected() -> None:
+    """Server observation at pre-request time cannot mask a clock rollback."""
+    before = NOW + timedelta(seconds=20)
+    after = NOW + timedelta(seconds=10)
+    times = iter((NOW, before, after))
+    with pytest.raises(snapshots.P12SnapshotCaptureError):
+        capture(
+            getter=lambda path: envelope(path, ticker=TICKERS[0]),
+            clock=lambda: next(times),
+            tickers=(TICKERS[0],),
+        )
+
+
+def test_clock_rollback_between_sibling_requests_rejected() -> None:
+    """A new request cannot start before the previous request finished."""
+    later = NOW + timedelta(seconds=10)
+    earlier = NOW - timedelta(seconds=10)
+    times = iter((NOW, NOW, later, earlier))
+    with pytest.raises(snapshots.P12SnapshotCaptureError):
+        capture(getter=envelope, clock=lambda: next(times))
+
+
+def test_monotonic_equal_clock_instants_still_capture_raw_only() -> None:
+    record = capture(getter=envelope, clock=lambda: NOW)
+    assert record["market_count"] == 2
+    assert record["scientific_evidence_authorized"] is False
+    assert record["p12_frozen"] is False
+    assert record["promotion_authority"] == "NONE"
