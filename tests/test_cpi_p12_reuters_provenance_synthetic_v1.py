@@ -237,9 +237,7 @@ class _ForgedStringSubclass(str):
         _ForgedMarkerNotEqual(),
         _RaisingMarkerNotEqual(),
         _ForgedMarkerEqual(),
-        _ForgedStringSubclass(
-            "CPI-P12-REUTERS-INVENTED-FIXTURE-ONLY-v1"
-        ),
+        _ForgedStringSubclass("CPI-P12-REUTERS-INVENTED-FIXTURE-ONLY-v1"),
         None,
         0,
         b"CPI-P12-REUTERS-INVENTED-FIXTURE-ONLY-v1",
