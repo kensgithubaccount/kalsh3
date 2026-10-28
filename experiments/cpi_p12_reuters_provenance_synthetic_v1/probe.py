@@ -76,7 +76,11 @@ def classify_invented_case(case: InventedEvidence) -> ResearchOnlyDisposition:
     This intentionally cannot accept real source bytes, URLs, forecasts, or
     issuer attestations. A green synthetic case cannot establish provenance.
     """
-    if type(case) is not InventedEvidence or case.marker != SYNTHETIC_MARKER:
+    if (
+        type(case) is not InventedEvidence
+        or type(case.marker) is not str
+        or case.marker != SYNTHETIC_MARKER
+    ):
         return ResearchOnlyDisposition("INVALID_SYNTHETIC_INPUT")
 
     flags = (
