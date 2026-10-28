@@ -21,12 +21,13 @@ authority. The #200 decoupled stage receipt `PASS` is operational **only**.
 
 | Role | Candidate documentary scope | What is not implied |
 | --- | --- | --- |
-| Reuters original issuer | `www.reuters.com` / `reuters.com` are already approved **transport** hostnames in #202 | A page on this host is not independently verified Reuters forecast authorship, publisher release time, unchanged text or applicability to the intended metric |
+| Reuters original issuer | `www.reuters.com` / `reuters.com` are already approved **transport** hostnames in #202 | A page on this host is not independently verified Reuters forecast authorship, publisher release time, unchanged text, legal permission or applicability to the intended metric |
 | Third-party repost / syndication | #202 transport also recognizes Yahoo, Nasdaq, TradingView, KFGO and other exact hosts named in its source `HOST_OPERATORS` mapping | A repost is not an independently authored forecast and its display time is not Reuters' original publication instant |
 | Article timestamp metadata | HTML timestamp, embedded structured fields, feed fields, HTTP `Date` or cache/last-modified headers if present | Client/server/header time does not prove original first public Reuters availability, and `updated` is not interchangeable with `published` |
 | Contemporary independent witness | A separately operated source with attested acquisition time, exact archived raw bytes and verifiable quotation/Reuters provenance | Two web domains copying one syndicated wire item are not two independent source claims; one witness alone does not prove original publish time |
 | BLS schedule receipt | Already sealed official schedule evidence from #195/#196 | BLS schedule says when CPI is due, not when Reuters first published its estimate |
 | P12 preclose market evidence | Separate first-party Kalshi captures under #201/#206 and future frozen cohort/timing protocol | Quote time, contract close and market pressure must not be used to choose Reuters search criteria retrospectively |
+| Reuters Connect, Reuters Agency API or licensed feed | Reuters describes optional Connect/API news search and retrieval: https://reutersagency.com/content-delivery-platforms/reuters-connect/ and https://reutersagency.com/content-delivery-platforms/content-delivery | A marketed commercial API is **not** an authorized free first-party source route; Reuters Connect platform terms at https://www.reutersconnect.com/general-terms limit automated collection and caching/archiving absent consent, subject to any controlling separate agreement. These platform terms must not be automatically applied to a distinct public reuters.com site or licensing contract. |
 
 **Do not confuse three distinct clocks:** independently observed
 client request/response time, article field `published_at` /
@@ -42,6 +43,13 @@ protocol must assign all required values. None is selected by this memo.
 - Fixed target reference month/statistic/Reuters evidence question and the
   permitted textual meaning of "forecast"; the **November target value must
   not influence** this binding.
+- Documented authorization/licensing for **each** selected route and intended
+  action, including automated search/retrieval and durable raw-byte archival.
+  In particular, Reuters Connect platform restrictions can prohibit these
+  actions without prior written consent or a superseding agreement; do not
+  assume Reuters Agency Connect/API access is free or that the same terms
+  govern public Reuters.com. The authority/rights proof and any license
+  conditions must be checked **before** a route is selected or accessed.
 - Explicit first-party issuer search or locator mechanism, including
   documentary proof the discovery route exists and is reproducible. An
   imagined Reuters search API, search engine snippet, unverified web index
@@ -76,9 +84,10 @@ better apparent accuracy.
 This is a **spec proposal**, not an executable pipeline or authorized
 scientific validator.
 
-1. Reject if the prospective method, independent source authority,
-   exact allowed source routes, clocks, allowed reference month, contract
-   timing, sealed BLS receipt or publication chronology protocol is absent.
+1. Reject if the prospective method, independently confirmed authorized
+   source access and archival rights, source authority, exact allowed
+   source routes, clocks, allowed reference month, contract timing, sealed
+   BLS receipt or publication chronology protocol is absent.
    Result: `NOT_READY_PROTOCOL_UNFROZEN`.
 2. At runtime **only after future independent authorization**, record
    request start, TLS/host, exact URL/path, bounded raw response bytes,
@@ -139,6 +148,7 @@ first Reuters publication time. Source timing and text extraction are
 | Case | Proposed scientific output | Veto / interpretation |
 | --- | --- | --- |
 | No frozen discovery procedure, no issuer-supported source route | UNKNOWN_NOT_READY | No article chosen |
+| Route requires license/consent for automated retrieval or raw archival and no applicable authorization is documented | NOT_READY / ACCESS_RIGHTS_UNVERIFIED | No collection or archiving; obtain proper rights or use a separately legally accessible source |
 | No article, unavailable Reuters page, 403, 429, network failure, timeout | INCONCLUSIVE / SOURCE_UNAVAILABLE | Failure local to Reuters; BLS/Kalshi stages unaffected |
 | HTTP redirect, untrusted hostname or unexpected URL | FAIL_CLOSED / SOURCE_IDENTITY_INVALID | Do not silently follow or accept mirror |
 | HTML has a Reuters logo or byline but issuer attribution cannot be independently proven | UNKNOWN_NOT_READY / ATTRIBUTION_MISSING | Branding alone no authority |
@@ -167,7 +177,10 @@ issuer evidence**:
 
 1. Does a first-party, stable, legally accessible publisher locator,
    search/archive/feed exist with documented query semantics, article
-   identity and update history?
+   identity and update history? What license or written authorization permits
+   its automated retrieval and prospective raw-byte retention? Reuters
+   Connect platform terms are distinct from public Reuters.com terms, and
+   a separate negotiated agreement may prevail.
 2. What evidence proves the original article's **first public
    accessibility** and effective revision, rather than cached or
    modified timestamps? Can that be independently attested pre-cutoff?
