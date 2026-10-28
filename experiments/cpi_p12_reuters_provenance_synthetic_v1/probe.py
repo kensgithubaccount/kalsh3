@@ -36,7 +36,7 @@ class InventedEvidence:
     has_conflicting_candidates: bool = False
     candidate_count: int = 1
     deterministic_selection_before_exposure: bool = True
-    corroboration_required: bool = True
+    corroboration_required: bool = True  # Untrusted input cannot waive protocol's required witness.
     corroborator_independent: bool = True
     corroborator_same_wire: bool = False
 
@@ -57,8 +57,17 @@ class ResearchOnlyDisposition:
     trading_authority: Literal["NONE"] = "NONE"
 
 
-def _aware(value: object) -> bool:
-    return type(value) is datetime and value.tzinfo is not None and value.utcoffset() is not None
+def _safe_utc(value: object) -> datetime | None:
+    """Reject malformed or adversarial time zones without raising to callers."""
+    if type(value) is not datetime:
+        return None
+    try:
+        if value.tzinfo is None or value.utcoffset() is None:
+            return None
+        return value.astimezone(UTC)
+    except Exception:
+        # Malformed caller-supplied tzinfo may raise on utcoffset/normalization.
+        return None
 
 
 def classify_invented_case(case: InventedEvidence) -> ResearchOnlyDisposition:
@@ -96,16 +105,18 @@ def classify_invented_case(case: InventedEvidence) -> ResearchOnlyDisposition:
         or case.candidate_count > 100
     ):
         return ResearchOnlyDisposition("INVALID_SYNTHETIC_INPUT")
-    if not all(
-        _aware(t)
-        for t in (
-            case.request_started_at,
-            case.response_finished_at,
-            case.cutoff_at,
+    started = _safe_utc(case.request_started_at)
+    finished = _safe_utc(case.response_finished_at)
+    cutoff = _safe_utc(case.cutoff_at)
+    publication = _safe_utc(case.claimed_first_publication_at)
+    if (
+        started is None
+        or finished is None
+        or cutoff is None
+        or (
+            case.claimed_first_publication_at is not None
+            and publication is None
         )
-    ) or (
-        case.claimed_first_publication_at is not None
-        and not _aware(case.claimed_first_publication_at)
     ):
         return ResearchOnlyDisposition("INVALID_SYNTHETIC_INPUT")
 
@@ -123,9 +134,9 @@ def classify_invented_case(case: InventedEvidence) -> ResearchOnlyDisposition:
         return ResearchOnlyDisposition("RETROSPECTIVE_SELECTION")
     error = timedelta(milliseconds=case.clock_error_ms)
     if (
-        case.response_finished_at < case.request_started_at
-        or case.request_started_at + error >= case.cutoff_at
-        or case.response_finished_at + error >= case.cutoff_at
+        finished < started
+        or cutoff - started <= error
+        or cutoff - finished <= error
     ):
         return ResearchOnlyDisposition("LATE_OR_UNPROVABLE_TIMING")
     if case.candidate_count == 0:
@@ -139,12 +150,18 @@ def classify_invented_case(case: InventedEvidence) -> ResearchOnlyDisposition:
         or not case.first_publication_independently_verified
     ):
         return ResearchOnlyDisposition("PUBLICATION_TIME_UNPROVED")
-    if case.claimed_first_publication_at + error >= case.cutoff_at:
+    if publication is None:
+        return ResearchOnlyDisposition("PUBLICATION_TIME_UNPROVED")
+    if cutoff - publication <= error:
         return ResearchOnlyDisposition("LATE_OR_UNPROVABLE_PUBLICATION")
+    if finished - publication <= error:
+        return ResearchOnlyDisposition("PUBLICATION_CHRONOLOGY_CONFLICT")
     if not case.revision_history_verified:
         return ResearchOnlyDisposition("REVISION_HISTORY_UNPROVED")
-    if case.corroboration_required and case.corroborator_same_wire:
+    if not case.corroboration_required:
+        return ResearchOnlyDisposition("CORROBORATION_PROTOCOL_BYPASS")
+    if case.corroborator_same_wire:
         return ResearchOnlyDisposition("DUPLICATED_WIRE_NOT_INDEPENDENT")
-    if case.corroboration_required and not case.corroborator_independent:
+    if not case.corroborator_independent:
         return ResearchOnlyDisposition("CORROBORATION_UNPROVED")
     return ResearchOnlyDisposition("CONSISTENT_INVENTED_CASE_ONLY")
