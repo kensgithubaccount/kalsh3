@@ -203,9 +203,7 @@ def test_kalshi_observed_time_after_response_completion_is_rejected() -> None:
 
 
 def test_reuters_completion_clock_regression_is_rejected() -> None:
-    with pytest.raises(
-        reuters.P12ReutersRawAcquisitionError, match="capture finished"
-    ):
+    with pytest.raises(reuters.P12ReutersRawAcquisitionError, match="capture finished"):
         _capture(
             "reuters",
             (
