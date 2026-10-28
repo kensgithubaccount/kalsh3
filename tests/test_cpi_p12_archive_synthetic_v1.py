@@ -140,7 +140,8 @@ def test_malformed_marker_does_not_invoke_caller_equality() -> None:
 
 
 def test_wrong_object_type_cannot_invoke_classifier() -> None:
-    for item in (None, {}, [], "fixture"):
+    items: tuple[object, ...] = (None, {}, [], "fixture")
+    for item in items:
         result = classify_invented_archive(cast(Any, item))
         assert result.reason == "INVALID_SYNTHETIC_INPUT"
         _assert_no_authority(result)
