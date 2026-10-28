@@ -214,6 +214,7 @@ def test_mutating_synthetic_artifact_blocks_receipt_validation(tmp_path: Path) -
     stage = P12CollectorStage.REUTERS_ACQUISITION
     assert _run(root, stage, "success").returncode == 0
     artifact = root / "invented-stage-artifacts" / f"{stage.value}.json"
-    artifact.write_bytes(b"synthetic corrupted bytes")
+    original = artifact.read_bytes()
+    artifact.write_bytes(original[:-1] + b"!")  # Preserve byte count; invalidate SHA-256.
     with pytest.raises(P12IsolationAuthorityError, match="SHA-256 changed"):
         validate_stage_receipt(P12IsolationPaths(root), stage)
