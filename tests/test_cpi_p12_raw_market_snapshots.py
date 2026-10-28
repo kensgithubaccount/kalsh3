@@ -256,9 +256,7 @@ def test_kalshi_pre_request_source_observation_does_not_count_as_live_get() -> N
     with pytest.raises(snapshots.P12SnapshotCaptureError, match="prospective window"):
         capture(
             tickers=(TICKERS[0],),
-            getter=lambda path: _envelope_observed_at(
-                path, NOW - timedelta(seconds=20)
-            ),
+            getter=lambda path: _envelope_observed_at(path, NOW - timedelta(seconds=20)),
             clock=_clock_sequence(
                 NOW - timedelta(seconds=50),
                 NOW - timedelta(seconds=10),
