@@ -113,10 +113,7 @@ def classify_invented_case(case: InventedEvidence) -> ResearchOnlyDisposition:
         started is None
         or finished is None
         or cutoff is None
-        or (
-            case.claimed_first_publication_at is not None
-            and publication is None
-        )
+        or (case.claimed_first_publication_at is not None and publication is None)
     ):
         return ResearchOnlyDisposition("INVALID_SYNTHETIC_INPUT")
 
@@ -133,11 +130,7 @@ def classify_invented_case(case: InventedEvidence) -> ResearchOnlyDisposition:
     if not case.deterministic_selection_before_exposure:
         return ResearchOnlyDisposition("RETROSPECTIVE_SELECTION")
     error = timedelta(milliseconds=case.clock_error_ms)
-    if (
-        finished < started
-        or cutoff - started <= error
-        or cutoff - finished <= error
-    ):
+    if finished < started or cutoff - started <= error or cutoff - finished <= error:
         return ResearchOnlyDisposition("LATE_OR_UNPROVABLE_TIMING")
     if case.candidate_count == 0:
         return ResearchOnlyDisposition("NO_CANDIDATE")
