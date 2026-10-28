@@ -173,9 +173,7 @@ def test_network_failure_fails_only_kalshi_stage(
     assert not (tmp_path / "run/orchestration/stages/reuters_acquisition.json").exists()
 
 
-def test_cli_requires_research_only(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_cli_requires_research_only(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(
         sys,
         "argv",
