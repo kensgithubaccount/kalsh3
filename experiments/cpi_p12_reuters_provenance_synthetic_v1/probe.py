@@ -58,11 +58,7 @@ class ResearchOnlyDisposition:
 
 
 def _aware(value: object) -> bool:
-    return (
-        type(value) is datetime
-        and value.tzinfo is not None
-        and value.utcoffset() is not None
-    )
+    return type(value) is datetime and value.tzinfo is not None and value.utcoffset() is not None
 
 
 def classify_invented_case(case: InventedEvidence) -> ResearchOnlyDisposition:
@@ -100,9 +96,14 @@ def classify_invented_case(case: InventedEvidence) -> ResearchOnlyDisposition:
         or case.candidate_count > 100
     ):
         return ResearchOnlyDisposition("INVALID_SYNTHETIC_INPUT")
-    if not all(_aware(t) for t in (
-        case.request_started_at, case.response_finished_at, case.cutoff_at,
-    )) or (
+    if not all(
+        _aware(t)
+        for t in (
+            case.request_started_at,
+            case.response_finished_at,
+            case.cutoff_at,
+        )
+    ) or (
         case.claimed_first_publication_at is not None
         and not _aware(case.claimed_first_publication_at)
     ):
