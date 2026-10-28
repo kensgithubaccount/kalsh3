@@ -51,7 +51,7 @@ unless independently explicit**. No content-hash or signed archive is asserted.
 
 | ID | First-party locator | Positive documentation | Inference not supplied |
 | --- | --- | --- | --- |
-| S01 | https://docs.kalshi.com/api-reference/market/get-markets | `GET /markets` with `event_ticker`, cursor, limit; created/updated/close/settle filters with documented compatibility constraints | No explicit atomic snapshot ID, common as-of instant, cross-page consistency token or complete-at-T warranty |
+| S01 | https://docs.kalshi.com/api-reference/market/get-markets | `GET /markets` documents `event_ticker`, `limit`, request and response `cursor` fields, next-page use, and timestamp-filter constraints | No endpoint-specific definition of an empty *response* cursor as terminal; no atomic snapshot ID, common as-of instant, cross-page consistency token or complete-at-T warranty |
 | S02 | https://docs.kalshi.com/api-reference/events/get-event | `GET /events/{event_ticker}`, event metadata and child markets; `with_nested_markets` / `exclude_markets` options | Historical markets settled before the cutoff are **excluded** from the event response; event child list not a certified all-time/as-of membership manifest |
 | S03 | https://docs.kalshi.com/api-reference/market/get-market | One ticker's current market fields, `rules_primary`, `rules_secondary`, `strike_type`, bounds, close/expiration and status fields | No immutable effective rule revision/time or proof that fields were valid at a past cutoff |
 | S04 | https://docs.kalshi.com/getting_started/historical_data | Live and historical tiers partition older market/trade records; per-data-type cutoff behavior | Archive rollover cutoff is **not** an event-cohort as-of timestamp or an atomic market inventory version |
@@ -75,7 +75,8 @@ made here and no linked PDF was reviewed.
 
 | Required proof | Verdict | What the reviewed first-party material does establish | Remaining required evidence |
 | --- | --- | --- | --- |
-| Event-filtered bounded list and explicit terminal cursor | SUPPORTED (documentation scope) | S01 documents event filter, page cursor/limit | An observed terminal cursor only closes the API traversal; it does not certify all at-T siblings |
+| Event-filtered bounded list and pagination cursor | SUPPORTED (documentation scope) | S01 documents event filter, page limit, response cursor and next-page use | Pagination support alone does not establish response terminal-marker semantics or complete at-T siblings |
+| Empty `GET /markets` response cursor conclusively marks the terminal page | UNKNOWN / NOT PROVED | S01 does not define an empty response cursor as terminal; another endpoint's documentation cannot supply that contract | Require explicit `GET /markets` first-party specification or verifiable issuer clarification; even proven terminal traversal cannot certify atomic at-T membership |
 | All contemporaneous siblings were present in one atomic as-of view | UNKNOWN / NOT PROVED | S01/S02 list current markets and S08 emits changes | Exchange-certified snapshot/version/manifest or independently reviewed equivalent with full inclusion and cross-page atomicity guarantee |
 | Reconstruct all siblings at prior pre-release T from archival APIs | UNKNOWN / NOT PROVED | S04–S07 provide historical storage partitions and per-market retrieval | Documented historical membership snapshots/versioned event lineage including delist/replace/late-list rules; **no post-cutoff repair** |
 | Use `/historical/cutoff` as an atomic sibling inventory timestamp | UNSUPPORTED CLAIM | S04/S05 define it as a *data-tier routing/settlement* boundary | A separate complete-cohort guarantee; do not relabel the archive cutoff |
@@ -86,7 +87,13 @@ made here and no linked PDF was reviewed.
 | Lifecycle feed alone proves historical complete cohort | UNSUPPORTED CLAIM | S08 describes *notifications*, not a sealed initial manifest or guaranteed historical replay | Initial certified snapshot plus independently complete delta/replay semantics |
 | Local GET timestamps certify first-party rule publication time | UNSUPPORTED CLAIM | S01–S10 describe APIs or client-facing fields | Issuer attestation of effective source publication, independently logged before frozen cutoff |
 
-**Critical nuance:** S01's `max_created_ts` or `max_updated_ts` query
+**Critical nuance:** S01's response schema contains a `cursor` string, but
+its empty-response terminal interpretation is not defined there. A documented
+empty-response terminal meaning for a *different* Kalshi endpoint must not be
+transferred to `GET /markets`. The current research-only #206 adapter may
+interpret `cursor=""` as a traversal stop, but that behavior has no
+endpoint-specific terminal-semantic authority from S01 and never proves a
+complete cohort. S01's `max_created_ts` or `max_updated_ts` query
 parameters are filters, not a documented snapshot isolation guarantee.
 The updated-time filter tracks **non-trading metadata** and is restricted
 against other timestamp/status filters. Querying values after the event
