@@ -36,6 +36,33 @@ def _parser() -> argparse.ArgumentParser:
     return parser
 
 
+def _require_isolated_write_paths(root: Path, stage: P12CollectorStage) -> None:
+    """Reject pre-existing symlinks and paths escaping the invented-only root.
+
+    The existing durable writer remains unchanged; this preflight is specific
+    to this deliberately synthetic child and grants no scheduler authority.
+    """
+    paths = P12IsolationPaths(root)
+    artifact_dir = root / "invented-stage-artifacts"
+    artifact = artifact_dir / f"{stage.value}.json"
+    receipt = paths.stage_receipt(stage)
+    destinations = (
+        root,
+        artifact_dir,
+        artifact,
+        paths.orchestration,
+        paths.orchestration / "stages",
+        receipt,
+        receipt.with_name(receipt.name + ".pending"),
+    )
+    resolved_root = root.resolve()
+    if root.is_symlink() or (root.exists() and not root.is_dir()):
+        raise ValueError("synthetic root must be an ordinary directory")
+    for destination in destinations:
+        if destination.is_symlink() or not destination.resolve().is_relative_to(resolved_root):
+            raise ValueError("symlink or destination outside synthetic root is forbidden")
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = _parser()
     args = parser.parse_args(argv)
@@ -50,6 +77,10 @@ def main(argv: list[str] | None = None) -> int:
     stage = P12CollectorStage(args.stage)
     mode: str = args.mode
     paths = P12IsolationPaths(root)
+    try:
+        _require_isolated_write_paths(root, stage)
+    except ValueError as exc:
+        parser.error(str(exc))
 
     def collect() -> StageCollection:
         if mode == "fatal-exit":
@@ -57,6 +88,7 @@ def main(argv: list[str] | None = None) -> int:
             raise RuntimeError("invented fatal child-process failure")
         if mode == "expected-failure":
             raise P12ExpectedStageFailure("invented stage-local acquisition failure")
+        _require_isolated_write_paths(root, stage)
         artifact = root / "invented-stage-artifacts" / f"{stage.value}.json"
         payload = {
             "record_type": SYNTHETIC_RECORD_TYPE,
