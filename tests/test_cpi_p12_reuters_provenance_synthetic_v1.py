@@ -44,8 +44,14 @@ from experiments.cpi_p12_reuters_provenance_synthetic_v1.probe import (
         ({"status_code": True}, "INVALID_SYNTHETIC_INPUT"),
         ({"corroboration_required": 1}, "INVALID_SYNTHETIC_INPUT"),
         ({"corroboration_required": False}, "CORROBORATION_PROTOCOL_BYPASS"),
-        ({"corroboration_required": False, "corroborator_same_wire": True}, "CORROBORATION_PROTOCOL_BYPASS"),
-        ({"corroboration_required": False, "corroborator_independent": False}, "CORROBORATION_PROTOCOL_BYPASS"),
+        (
+            {"corroboration_required": False, "corroborator_same_wire": True},
+            "CORROBORATION_PROTOCOL_BYPASS",
+        ),
+        (
+            {"corroboration_required": False, "corroborator_independent": False},
+            "CORROBORATION_PROTOCOL_BYPASS",
+        ),
         (
             {"claimed_first_publication_at": datetime(2026, 1, 2, 11, 3, tzinfo=UTC)},
             "PUBLICATION_CHRONOLOGY_CONFLICT",
