@@ -218,3 +218,56 @@ def test_mutating_synthetic_artifact_blocks_receipt_validation(tmp_path: Path) -
     artifact.write_bytes(original[:-1] + b"!")  # Preserve byte count; invalidate SHA-256.
     with pytest.raises(P12IsolationAuthorityError, match="SHA-256 changed"):
         validate_stage_receipt(P12IsolationPaths(root), stage)
+
+
+@pytest.mark.parametrize(
+    "symlink_component",
+    (
+        "invented-stage-artifacts",
+        "orchestration",
+        "orchestration/stages",
+        "invented-stage-artifacts/kalshi_market_capture.json",
+        "orchestration/stages/kalshi_market_capture.json",
+        "orchestration/stages/kalshi_market_capture.json.pending",
+    ),
+)
+def test_child_rejects_symlinked_artifact_and_receipt_destinations(
+    tmp_path: Path, symlink_component: str
+) -> None:
+    """Pre-existing symlinks may not redirect any invented-stage output."""
+    root = tmp_path / SYNTHETIC_ROOT_NAME
+    outside = tmp_path / "outside"
+    root.mkdir()
+    outside.mkdir()
+    link = root / symlink_component
+    link.parent.mkdir(parents=True, exist_ok=True)
+    is_directory = symlink_component in (
+        "invented-stage-artifacts",
+        "orchestration",
+        "orchestration/stages",
+    )
+    target = outside if is_directory else outside / "foreign.json"
+    link.symlink_to(target, target_is_directory=is_directory)
+
+    result = _run(root, P12CollectorStage.KALSHI_MARKET_CAPTURE, "success")
+    assert result.returncode == 2, result.stderr
+    assert "symlink or destination outside synthetic root is forbidden" in result.stderr
+    assert list(outside.iterdir()) == []
+    assert link.is_symlink()
+    receipt = root / "orchestration" / "stages" / "kalshi_market_capture.json"
+    artifact = root / "invented-stage-artifacts" / "kalshi_market_capture.json"
+    if receipt != link:
+        assert not receipt.exists()
+    if artifact != link:
+        assert not artifact.exists()
+
+
+def test_child_rejects_symlinked_root_even_with_same_resolved_name(tmp_path: Path) -> None:
+    real_root = tmp_path / "elsewhere" / SYNTHETIC_ROOT_NAME
+    real_root.mkdir(parents=True)
+    symlink_root = tmp_path / SYNTHETIC_ROOT_NAME
+    symlink_root.symlink_to(real_root, target_is_directory=True)
+    result = _run(symlink_root, P12CollectorStage.REUTERS_ACQUISITION, "success")
+    assert result.returncode == 2, result.stderr
+    assert not (real_root / "orchestration").exists()
+    assert not (real_root / "invented-stage-artifacts").exists()
