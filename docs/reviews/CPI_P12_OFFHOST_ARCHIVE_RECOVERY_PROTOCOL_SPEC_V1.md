@@ -87,11 +87,17 @@ on current P12 source/orchestration records.
    reacquiring a Reuters article or mutating sibling stages. Record immutable
    source origin, original request/response instants, source hash and cutoff
    claims *as unauthorizing data*, not as newly attested facts.
-3. Use a **create-if-absent** conditional upload for each uniquely named
-   object (for GCS, where applicable, `ifGenerationMatch=0`). Never use
-   ordinary overwrite or a replace-on-retry fallback. If an object exists,
-   first verify **its exact expected bytes and generation** under a reviewed
-   recovery policy; an existing name is not evidence of prior success.
+3. Use a **create-if-no-live-object** conditional upload for each unique
+   object (for GCS, where applicable, `ifGenerationMatch=0`). Official GCS
+   semantics allow this when **only noncurrent versions** exist: it proves
+   absence of a *live* generation, **not** that the name has never been used.
+   The separately reviewed policy must bind collision-resistant run/stage
+   object names, forbid intentional name reuse, inspect or account for prior
+   generations where available, and reject ambiguous historical identities.
+   Never use ordinary overwrite or a replace-on-retry fallback. If a live or
+   historical object with the same logical identity exists, verify exact
+   expected bytes **and generation** under a reviewed recovery policy; an
+   existing name is not evidence of prior success.
 4. Pin the server-returned generation. Independently fetch and stream that
    **specific immutable generation** through the authorized reader; compute
    SHA-256 and length locally, compare against the original local re-read,
@@ -132,7 +138,9 @@ those bytes after cutoff.
 - **No replay promotion:** An identical retry may verify an existing exact
   generation with exactly matching bytes, but must never choose a new
   generation or replace contradictory bytes merely because retry succeeds.
-  Any mismatch is a conflict requiring explicit review.
+  A GCS generation is an **opaque identity**, not a monotonic ordering rule
+  across objects or even successive versions. Any mismatch is a conflict
+  requiring explicit review.
 - **No stale/cached proof:** A remote `HEAD`, metadata lookup, cached proxy
   read, object listing, or unsigned filename cannot replace an independent,
   generation-specific full readback. A verifier must record where/when the
@@ -170,7 +178,7 @@ Reuters source contents, actual Kalshi market prices, credentials or trading.
 | A04 | Upload stream truncated or only first object exists | INCOMPLETE; no manifest PASS |
 | A05 | Upload returned success, remote bytes changed by one byte at same length | Independent SHA-256 mismatch; FAIL |
 | A06 | Existing same-key object contains different bytes, generation or source identity | Conflict; no overwrite or best-effort reconciliation |
-| A07 | Conditional upload races another writer | One immutable winner only; loser verifies exact bytes or fails |
+| A07 | Conditional upload races another writer; only noncurrent historical generations exist | At most one live winner; reject historical name reuse/ambiguous identity, loser verifies exact bytes/generation or fails |
 | A08 | HTTP/object metadata reports success but full readback fails/403/timeout | INCOMPLETE, never infer success |
 | A09 | Object generation differs between initial response and readback | Reject stale/generation-substituted proof |
 | A10 | Verifier uses listing/metadata/CRC32C only, not complete SHA-256 readback | Reject as missing independent byte proof |
@@ -189,6 +197,15 @@ A positive **synthetic** A00, where all bytes match after exact-generation
 readback, proves only that the rehearsal's storage contract works for the
 invented fixture. A future live-environment rehearsal must be separately
 reviewed and approved and still cannot overcome source-authority gaps.
+
+**GCS semantics reference (technical design only):** [Google Cloud Storage
+request preconditions](https://docs.cloud.google.com/storage/docs/request-preconditions)
+documents `ifGenerationMatch=0` as "no live object" (including the case with
+only noncurrent generations) and returns HTTP 412 when the precondition
+fails. [Object metadata](https://docs.cloud.google.com/storage/docs/metadata)
+defines generation/metageneration identity and does not promise numeric
+generation order. These public documents do not authorize an archival
+destination or constitute a live object verification.
 
 ## 6. Evidence required before operational gate #10 could close
 
