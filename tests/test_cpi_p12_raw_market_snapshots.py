@@ -5,8 +5,11 @@ from __future__ import annotations
 import base64
 import json
 import sys
+from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 from hashlib import sha256
+from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -30,7 +33,12 @@ def envelope(path: str, *, event: str = EVENT, ticker: str | None = None) -> dic
     return public_read._evidence_from_body(path, body, 200, NOW)
 
 
-def capture(*, getter=None, clock=None, tickers=TICKERS):
+def capture(
+    *,
+    getter: Callable[[str], dict[str, object]] | None = None,
+    clock: Callable[[], datetime] | None = None,
+    tickers: tuple[str, ...] = TICKERS,
+) -> dict[str, Any]:
     return snapshots.capture_kalshi_raw_market_snapshots(
         event_ticker=EVENT,
         market_tickers=tickers,
@@ -121,7 +129,9 @@ def test_request_completion_after_deadline_is_rejected() -> None:
         capture(clock=clock)
 
 
-def test_network_failure_fails_only_kalshi_stage(tmp_path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_network_failure_fails_only_kalshi_stage(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     def failure(path: str) -> dict[str, object]:
         raise public_read.PublicReadFailure("simulated source HTTP 403")
 
@@ -148,7 +158,7 @@ def test_network_failure_fails_only_kalshi_stage(tmp_path, monkeypatch: pytest.M
     # Force a transport attempt with a caller-injected test clock.
     real = cli.capture_kalshi_raw_market_snapshots
 
-    def with_clock(**kwargs):
+    def with_clock(**kwargs: Any) -> dict[str, Any]:
         return real(**kwargs, clock=lambda: NOW)
 
     monkeypatch.setattr(cli, "capture_kalshi_raw_market_snapshots", with_clock)
@@ -163,7 +173,9 @@ def test_network_failure_fails_only_kalshi_stage(tmp_path, monkeypatch: pytest.M
     assert not (tmp_path / "run/orchestration/stages/reuters_acquisition.json").exists()
 
 
-def test_cli_requires_research_only(tmp_path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_cli_requires_research_only(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     monkeypatch.setattr(
         sys,
         "argv",
@@ -173,7 +185,7 @@ def test_cli_requires_research_only(tmp_path, monkeypatch: pytest.MonkeyPatch) -
         cli.main()
 
 
-def _clock_sequence(*stamps: datetime):
+def _clock_sequence(*stamps: datetime) -> Callable[[], datetime]:
     values = iter(stamps)
     return lambda: next(values)
 
