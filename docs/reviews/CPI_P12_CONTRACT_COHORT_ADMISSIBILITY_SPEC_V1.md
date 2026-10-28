@@ -38,7 +38,7 @@ parameter, API response field, or page is implicitly authorized.
 
 | Claim | First-party evidence to preserve | Cross-check and proof still needed | Default if absent |
 | --- | --- | --- | --- |
-| Series identity | Exact raw GET `/trade-api/v2/series/KXCPI`, strict JSON `series.ticker`, signed-off path and envelope | Series specification/version and independently attested meaning of CPI series; avoid reusing P11's event | UNKNOWN |
+| Series identity | Exact raw GET `/trade-api/v2/series/KXCPI`, strict JSON `series.ticker`, exact path and envelope binding | Series specification/version and independently attested meaning of CPI series; avoid reusing P11's event | UNKNOWN |
 | Event identity, target reference month | Exact raw GET `/trade-api/v2/events/{event_ticker}`; event `ticker` or `event_ticker` and `series_ticker` | Same exact ticker across all endpoints **and** an issuer/exchange-authoritative document explicitly mapping that ticker to the intended index, month, statistic, units, and release; a ticker suffix is not proof | UNKNOWN |
 | Sibling candidate set | Raw GET `/trade-api/v2/markets?event_ticker={event_ticker}&limit=100` and every bounded cursor page; `markets[].ticker`, `markets[].event_ticker`, explicit terminal `cursor=""` | Authorized as-of complete-universe evidence (see §3), not merely terminal pagination; reconcile all market identities with event-detail metadata | UNKNOWN |
 | Per-market cross-check | Independent raw GET `/trade-api/v2/markets/{ticker}` for **every** candidate ticker; `market.ticker`, `market.event_ticker` | Exact bijection against candidate inventory and event detail; no missing or extra sibling, no mixed event or stale result | UNKNOWN |
