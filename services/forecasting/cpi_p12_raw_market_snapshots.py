@@ -78,9 +78,11 @@ def capture_kalshi_raw_market_snapshots(
         raise P12SnapshotCaptureError("Kalshi getter is not callable")
 
     captured: list[dict[str, object]] = []
+    previous_clock = opened_at
     for ticker in market_tickers:
-        if not start <= _utc(now(), "before request") < cutoff:
-            raise P12SnapshotCaptureError("capture window expired before a request")
+        before_request = _utc(now(), "before request")
+        if not start <= before_request < cutoff or before_request < previous_clock:
+            raise P12SnapshotCaptureError("capture window or clock ordering invalid before request")
         path = f"{public_read.BASE}/markets/{ticker}"
         try:
             envelope, payload = _get_and_bind(path, getter=transport)
@@ -93,8 +95,9 @@ def capture_kalshi_raw_market_snapshots(
             raise P12SnapshotCaptureError("Kalshi observation timestamp missing")
         observed = _utc(datetime.fromisoformat(observed_text.replace("Z", "+00:00")), "observed_at")
         finished_request = _utc(now(), "after request")
-        if not start <= observed <= finished_request < cutoff:
-            raise P12SnapshotCaptureError("Kalshi response is not within prospective window")
+        if not before_request <= observed <= finished_request < cutoff:
+            raise P12SnapshotCaptureError("Kalshi response or request clock ordering invalid")
+        previous_clock = finished_request
         market = payload.get("market")
         if type(market) is not dict or market.get("ticker") != ticker:
             raise P12SnapshotCaptureError("Kalshi snapshot market identity mismatch")
@@ -103,8 +106,8 @@ def capture_kalshi_raw_market_snapshots(
         captured.append({**envelope, "market_ticker": ticker})
 
     finished = _utc(now(), "capture completion")
-    if finished >= cutoff or finished < opened_at:
-        raise P12SnapshotCaptureError("capture finished outside requested window")
+    if finished >= cutoff or finished < previous_clock:
+        raise P12SnapshotCaptureError("capture completion clock ordering invalid")
     return {
         "record_type": RECORD_TYPE,
         "stage": "KALSHI_MARKET_CAPTURE",
