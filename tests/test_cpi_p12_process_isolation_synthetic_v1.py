@@ -101,13 +101,15 @@ def test_fatal_child_process_does_not_suppress_independent_sibling_processes(
             if process.poll() is None:
                 process.kill()
                 process.communicate()
+        assert process.returncode is not None
         results[stage] = (process.returncode, stdout, stderr)
 
     assert results[P12CollectorStage.BLS_SCHEDULE_AUTHORITY][0] == 0
     assert results[P12CollectorStage.KALSHI_MARKET_CAPTURE][0] != 0
     assert results[P12CollectorStage.REUTERS_ACQUISITION][0] == 0
-    assert "invented fatal child-process failure" in (
-        results[P12CollectorStage.KALSHI_MARKET_CAPTURE][2]
+    assert (
+        "invented fatal child-process failure"
+        in (results[P12CollectorStage.KALSHI_MARKET_CAPTURE][2])
     )
     for stage in (
         P12CollectorStage.BLS_SCHEDULE_AUTHORITY,
@@ -116,9 +118,9 @@ def test_fatal_child_process_does_not_suppress_independent_sibling_processes(
         assert json.loads(results[stage][1])["status"] == "PASS"
         assert _assert_non_authorizing_receipt(root, stage) == "PASS"
 
-    assert not P12IsolationPaths(root).stage_receipt(
-        P12CollectorStage.KALSHI_MARKET_CAPTURE
-    ).exists()
+    assert (
+        not P12IsolationPaths(root).stage_receipt(P12CollectorStage.KALSHI_MARKET_CAPTURE).exists()
+    )
     assert not (root / "invented-stage-artifacts" / "kalshi_market_capture.json").exists()
     pids = {
         _sentinel(root, P12CollectorStage.BLS_SCHEDULE_AUTHORITY)["child_pid"],
@@ -195,9 +197,7 @@ def test_restart_reuses_existing_receipt_without_rerunning_collector(tmp_path: P
 
 
 @pytest.mark.parametrize("missing_ack", [False, True])
-def test_child_rejects_non_synthetic_root_or_missing_ack(
-    tmp_path: Path, missing_ack: bool
-) -> None:
+def test_child_rejects_non_synthetic_root_or_missing_ack(tmp_path: Path, missing_ack: bool) -> None:
     root = tmp_path / (SYNTHETIC_ROOT_NAME if missing_ack else "actual-p12-run")
     args = _command(root, P12CollectorStage.KALSHI_MARKET_CAPTURE, "success")
     if missing_ack:
