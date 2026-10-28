@@ -5,8 +5,11 @@ from __future__ import annotations
 import base64
 import json
 import sys
+from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 from hashlib import sha256
+from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -30,7 +33,12 @@ def envelope(path: str, *, event: str = EVENT, ticker: str | None = None) -> dic
     return public_read._evidence_from_body(path, body, 200, NOW)
 
 
-def capture(*, getter=None, clock=None, tickers=TICKERS):
+def capture(
+    *,
+    getter: Callable[[str], dict[str, object]] | None = None,
+    clock: Callable[[], datetime] | None = None,
+    tickers: tuple[str, ...] = TICKERS,
+) -> dict[str, Any]:
     return snapshots.capture_kalshi_raw_market_snapshots(
         event_ticker=EVENT,
         market_tickers=tickers,
@@ -121,7 +129,9 @@ def test_request_completion_after_deadline_is_rejected() -> None:
         capture(clock=clock)
 
 
-def test_network_failure_fails_only_kalshi_stage(tmp_path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_network_failure_fails_only_kalshi_stage(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     def failure(path: str) -> dict[str, object]:
         raise public_read.PublicReadFailure("simulated source HTTP 403")
 
@@ -146,9 +156,9 @@ def test_network_failure_fails_only_kalshi_stage(tmp_path, monkeypatch: pytest.M
     )
     # Production clock is outside the 2026-10-21 synthetic test window.
     # Force a transport attempt with a caller-injected test clock.
-    real = cli.capture_kalshi_raw_market_snapshots
+    real = snapshots.capture_kalshi_raw_market_snapshots
 
-    def with_clock(**kwargs):
+    def with_clock(**kwargs: Any) -> dict[str, Any]:
         return real(**kwargs, clock=lambda: NOW)
 
     monkeypatch.setattr(cli, "capture_kalshi_raw_market_snapshots", with_clock)
@@ -163,7 +173,7 @@ def test_network_failure_fails_only_kalshi_stage(tmp_path, monkeypatch: pytest.M
     assert not (tmp_path / "run/orchestration/stages/reuters_acquisition.json").exists()
 
 
-def test_cli_requires_research_only(tmp_path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_cli_requires_research_only(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(
         sys,
         "argv",
@@ -171,3 +181,133 @@ def test_cli_requires_research_only(tmp_path, monkeypatch: pytest.MonkeyPatch) -
     )
     with pytest.raises(SystemExit):
         cli.main()
+
+
+def _clock_sequence(*stamps: datetime) -> Callable[[], datetime]:
+    values = iter(stamps)
+    return lambda: next(values)
+
+
+def _envelope_observed_at(path: str, stamp: datetime) -> dict[str, object]:
+    record = envelope(path)
+    record["observed_at"] = stamp.isoformat()
+    return record
+
+
+def test_kalshi_request_response_clock_rollback_from_issue_224_fails_closed() -> None:
+    """11:01:20 pre-GET to 11:01:10 post-GET must not produce raw success."""
+    with pytest.raises(snapshots.P12SnapshotCaptureError, match="clock moved backwards"):
+        capture(
+            tickers=(TICKERS[0],),
+            getter=lambda path: _envelope_observed_at(path, NOW),
+            clock=_clock_sequence(
+                NOW - timedelta(seconds=50),
+                NOW + timedelta(seconds=20),
+                NOW + timedelta(seconds=10),
+            ),
+        )
+
+
+def test_kalshi_capture_completion_rollback_from_issue_224_fails_closed() -> None:
+    """Final clock must not move behind last completed GET, even after opening."""
+    with pytest.raises(snapshots.P12SnapshotCaptureError, match="capture finished"):
+        capture(
+            tickers=(TICKERS[0],),
+            getter=lambda path: _envelope_observed_at(path, NOW),
+            clock=_clock_sequence(
+                NOW - timedelta(seconds=50),
+                NOW - timedelta(seconds=20),
+                NOW + timedelta(seconds=10),
+                NOW - timedelta(seconds=10),
+            ),
+        )
+
+
+def test_kalshi_second_sibling_request_cannot_roll_back_prior_request() -> None:
+    calls: list[str] = []
+
+    def getter(path: str) -> dict[str, object]:
+        calls.append(path)
+        return _envelope_observed_at(path, NOW - timedelta(seconds=20))
+
+    with pytest.raises(snapshots.P12SnapshotCaptureError, match="clock moved backwards"):
+        capture(
+            getter=getter,
+            clock=_clock_sequence(
+                NOW - timedelta(seconds=50),
+                NOW - timedelta(seconds=30),
+                NOW - timedelta(seconds=10),
+                NOW - timedelta(seconds=15),
+            ),
+        )
+    assert len(calls) == 1
+
+
+def test_kalshi_first_request_cannot_roll_back_capture_open() -> None:
+    calls: list[str] = []
+
+    def getter(path: str) -> dict[str, object]:
+        calls.append(path)
+        return envelope(path)
+
+    with pytest.raises(snapshots.P12SnapshotCaptureError, match="clock moved backwards"):
+        capture(
+            tickers=(TICKERS[0],),
+            getter=getter,
+            clock=_clock_sequence(
+                NOW - timedelta(seconds=10),
+                NOW - timedelta(seconds=20),
+            ),
+        )
+    assert not calls
+
+
+def test_kalshi_pre_request_source_observation_does_not_count_as_live_get() -> None:
+    with pytest.raises(snapshots.P12SnapshotCaptureError, match="prospective window"):
+        capture(
+            tickers=(TICKERS[0],),
+            getter=lambda path: _envelope_observed_at(path, NOW - timedelta(seconds=20)),
+            clock=_clock_sequence(
+                NOW - timedelta(seconds=50),
+                NOW - timedelta(seconds=10),
+                NOW + timedelta(seconds=10),
+            ),
+        )
+
+
+def test_kalshi_ordered_clocks_still_produce_raw_only_non_authorizing_record() -> None:
+    result = capture(
+        tickers=(TICKERS[0],),
+        getter=lambda path: _envelope_observed_at(path, NOW),
+        clock=_clock_sequence(
+            NOW - timedelta(seconds=50),
+            NOW - timedelta(seconds=20),
+            NOW + timedelta(seconds=10),
+            NOW + timedelta(seconds=20),
+        ),
+    )
+    assert result["market_count"] == 1
+    assert result["cohort_authority"] == "CALLER_PROVIDED_NOT_FROZEN"
+    assert result["scientific_evidence_authorized"] is False
+    assert result["phase1_economic_test_authorized"] is False
+    assert result["p12_frozen"] is False
+    assert result["promotion_authority"] == "NONE"
+    assert result["production_influence"] == "0"
+
+
+def test_kalshi_ordered_multi_sibling_clocks_preserve_raw_only_scope() -> None:
+    observed = iter((NOW - timedelta(seconds=30), NOW))
+    result = capture(
+        getter=lambda path: _envelope_observed_at(path, next(observed)),
+        clock=_clock_sequence(
+            NOW - timedelta(seconds=50),
+            NOW - timedelta(seconds=40),
+            NOW - timedelta(seconds=20),
+            NOW - timedelta(seconds=10),
+            NOW + timedelta(seconds=10),
+            NOW + timedelta(seconds=20),
+        ),
+    )
+    assert result["market_count"] == 2
+    assert result["scientific_evidence_authorized"] is False
+    assert result["promotion_authority"] == "NONE"

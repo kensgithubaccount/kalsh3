@@ -78,8 +78,12 @@ def capture_kalshi_raw_market_snapshots(
         raise P12SnapshotCaptureError("Kalshi getter is not callable")
 
     captured: list[dict[str, object]] = []
+    last_checked_at = opened_at
     for ticker in market_tickers:
-        if not start <= _utc(now(), "before request") < cutoff:
+        before_request = _utc(now(), "before request")
+        if before_request < last_checked_at:
+            raise P12SnapshotCaptureError("Kalshi acquisition clock moved backwards")
+        if not start <= before_request < cutoff:
             raise P12SnapshotCaptureError("capture window expired before a request")
         path = f"{public_read.BASE}/markets/{ticker}"
         try:
@@ -93,8 +97,11 @@ def capture_kalshi_raw_market_snapshots(
             raise P12SnapshotCaptureError("Kalshi observation timestamp missing")
         observed = _utc(datetime.fromisoformat(observed_text.replace("Z", "+00:00")), "observed_at")
         finished_request = _utc(now(), "after request")
-        if not start <= observed <= finished_request < cutoff:
+        if finished_request < before_request:
+            raise P12SnapshotCaptureError("Kalshi acquisition clock moved backwards")
+        if not before_request <= observed <= finished_request < cutoff:
             raise P12SnapshotCaptureError("Kalshi response is not within prospective window")
+        last_checked_at = finished_request
         market = payload.get("market")
         if type(market) is not dict or market.get("ticker") != ticker:
             raise P12SnapshotCaptureError("Kalshi snapshot market identity mismatch")
@@ -103,7 +110,7 @@ def capture_kalshi_raw_market_snapshots(
         captured.append({**envelope, "market_ticker": ticker})
 
     finished = _utc(now(), "capture completion")
-    if finished >= cutoff or finished < opened_at:
+    if finished >= cutoff or finished < last_checked_at:
         raise P12SnapshotCaptureError("capture finished outside requested window")
     return {
         "record_type": RECORD_TYPE,
