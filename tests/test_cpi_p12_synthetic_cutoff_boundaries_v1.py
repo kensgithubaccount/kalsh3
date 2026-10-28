@@ -7,8 +7,9 @@ persistence, or scientific authority. These are transport-contract tests.
 from __future__ import annotations
 
 import json
+from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
-from typing import Any, Callable
+from typing import Any
 
 import pytest
 
@@ -186,7 +187,7 @@ def test_kalshi_observed_time_after_response_completion_is_rejected() -> None:
     def late_observed(path: str) -> dict[str, object]:
         return _market_envelope(path, observed=OBS + timedelta(seconds=30))
 
-    with pytest.raises(kalshi.P12SnapshotCaptureError, match="timestamp|window"):
+    with pytest.raises(kalshi.P12SnapshotCaptureError, match=r"timestamp|window"):
         kalshi.capture_kalshi_raw_market_snapshots(
             event_ticker=EVENT,
             market_tickers=(MARKET,),
