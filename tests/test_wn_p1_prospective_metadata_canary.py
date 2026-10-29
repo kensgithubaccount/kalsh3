@@ -11,6 +11,7 @@ from typing import cast
 
 import pytest
 
+import scripts.wn_p1_prospective_metadata_canary as canary
 from scripts.audit_wn_p1_source_metadata import REQUIRED_BANDS
 from scripts.wn_p1_prospective_metadata_canary import (
     ProspectiveCanaryError,
@@ -338,3 +339,56 @@ def test_marker_is_not_a_remote_immutable_source_receipt(tmp_path: Path) -> None
     assert code == 0
     assert receipt["source_attestation"] == "NONE"
     assert policy()["writable_local_claims_tamper_proof"] is False
+
+
+@pytest.mark.parametrize("interrupt_type", [KeyboardInterrupt, SystemExit])
+def test_interrupted_getter_closes_claim_fds_without_claiming_a_receipt(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, interrupt_type: type[BaseException]
+) -> None:
+    """An unexpected process-level interruption must not leak root/slot FDs."""
+    tracked: dict[str, int] = {}
+    calls: list[int] = []
+    open_root = canary._open_root
+    reserve = canary._reserve_claim
+
+    def tracked_open_root(root: Path) -> int:
+        fd = open_root(root)
+        if "root" not in tracked:
+            tracked["root"] = fd
+        return fd
+
+    def tracked_reserve(root_fd: int, slot_name: str) -> tuple[int, str]:
+        fd, marker = reserve(root_fd, slot_name)
+        tracked["slot"] = fd
+        return fd, marker
+
+    def interrupted_getter(_project: str, _target: date) -> dict[str, object]:
+        calls.append(1)
+        raise interrupt_type("simulated interruption")
+
+    monkeypatch.setattr(canary, "_open_root", tracked_open_root)
+    monkeypatch.setattr(canary, "_reserve_claim", tracked_reserve)
+    with pytest.raises(interrupt_type, match="simulated interruption"):
+        capture_one(
+            target=TARGET,
+            project="research-project",
+            receipt_root=tmp_path,
+            getter=interrupted_getter,
+            clock=clock(
+                INIT + timedelta(hours=8, minutes=15),
+                INIT + timedelta(hours=8, minutes=16),
+            ),
+            monotonic=ticks(1, 2),
+        )
+
+    assert calls == [1]
+    assert set(tracked) == {"root", "slot"}
+    for fd in tracked.values():
+        with pytest.raises(OSError):
+            os.fstat(fd)
+    assert (tmp_path / f".{TARGET.isoformat()}.claimed").is_file()
+    assert not (tmp_path / TARGET.isoformat() / "receipt.json").exists()
+    # No second source request, even though the interrupted run made no receipt.
+    with pytest.raises(ProspectiveCanaryError, match="already claimed"):
+        run(tmp_path)
+    assert calls == [1]
