@@ -37,8 +37,7 @@ def specimen() -> PredecisionObservation:
         model_evidence_sha256=None,
         event_ticker=TICKER,
         sibling_tickers=tuple(
-            TICKER + suffix
-            for suffix in ("-T60", "-B60.5", "-B62.5", "-B64.5", "-B66.5", "-T67")
+            TICKER + suffix for suffix in ("-T60", "-B60.5", "-B62.5", "-B64.5", "-B66.5", "-T67")
         ),
         market_observed_at_utc=NOW - timedelta(seconds=5),
         market_sha256=HASH,
@@ -78,6 +77,12 @@ def test_caller_cannot_forge_positive_or_production_decision() -> None:
     with pytest.raises(PaperGateError, match="cannot grant"):
         replace(base, production_influence="1")
     with pytest.raises(PaperGateError, match="cannot grant"):
+        replace(base, state="PAPER_DIAGNOSTIC_ONLY")  # type: ignore[arg-type]
+    with pytest.raises(PaperGateError, match="cannot grant"):
+        replace(base, policy_id="caller-customized")
+    with pytest.raises(PaperGateError, match="cannot grant"):
+        replace(base, evidence_id="unverified")
+    with pytest.raises(PaperGateError, match="cannot grant"):
         PaperDecision(
             PaperState.ABSTAIN_NO_MODEL,
             "boston",
@@ -93,9 +98,12 @@ def test_evidence_identity_is_deterministic_and_sensitive_to_input() -> None:
     first = evaluate(specimen()).evidence_id
     assert first == evaluate(specimen()).evidence_id
     assert first != evaluate(replace(specimen(), market_sha256="b" * 64)).evidence_id
-    assert first != evaluate(
-        replace(specimen(), market_observed_at_utc=NOW - timedelta(seconds=15))
-    ).evidence_id
+    assert (
+        first
+        != evaluate(
+            replace(specimen(), market_observed_at_utc=NOW - timedelta(seconds=15))
+        ).evidence_id
+    )
 
 
 @pytest.mark.parametrize(
