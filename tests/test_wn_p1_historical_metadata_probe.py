@@ -72,9 +72,10 @@ def test_sha_identity_changes_when_metadata_changes() -> None:
     cast(list[object], variant["ingestion_times"])[5] = (
         INIT + timedelta(hours=8, minutes=1)
     ).timestamp()
-    assert validate(TARGET, original)["metadata_sha256"] != validate(
-        TARGET, variant
-    )["metadata_sha256"]
+    assert (
+        validate(TARGET, original)["metadata_sha256"]
+        != validate(TARGET, variant)["metadata_sha256"]
+    )
 
 
 @pytest.mark.parametrize(
@@ -121,9 +122,7 @@ def test_bad_metadata_fails_closed(mutation: str) -> None:
     elif mutation == "not_utc":
         cast(list[object], data["start_times"])[0] = "2026-10-27T00:00:00+00:00"
     elif mutation == "pre_init":
-        cast(list[object], data["ingestion_times"])[0] = (
-            INIT - timedelta(seconds=1)
-        ).timestamp()
+        cast(list[object], data["ingestion_times"])[0] = (INIT - timedelta(seconds=1)).timestamp()
     elif mutation == "overrange_hour":
         cast(list[object], data["forecast_hours"])[0] = 32
     elif mutation == "invalid_band_type":
