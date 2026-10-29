@@ -160,22 +160,54 @@ def _receipt_write_once(
     marker_name: str,
     data: dict[str, object],
 ) -> None:
+    """Fsync a private staging file before publishing a complete receipt.
+
+    A failed file fsync must NEVER leave receipt.json containing a positive
+    observation. Hard-link publication is exclusive and directory-FD-relative.
+    All failures poison the claimed date; no retry is ever attempted.
+    """
+    pending = "receipt.json.pending"
+    published = False
     try:
         blob = (json.dumps(data, sort_keys=True, indent=2, allow_nan=False) + "\n").encode()
         _assert_claim_binding(root, root_fd, slot_name, slot_fd, marker_name)
         flags = os.O_CREAT | os.O_EXCL | os.O_WRONLY | os.O_NOFOLLOW
-        # dir_fd binds the write to the ORIGINAL opened claim inode, not a
-        # caller-swapped symlink at receipt_root / target.
-        fd = os.open("receipt.json", flags, 0o600, dir_fd=slot_fd)
-        with os.fdopen(fd, "wb") as stream:
+        # Keep ownership of the bare FD until fdopen succeeds. An injected
+        # KeyboardInterrupt/SystemExit at fdopen must not leak it.
+        fd = os.open(pending, flags, 0o600, dir_fd=slot_fd)
+        try:
+            stream = os.fdopen(fd, "wb")
+        except BaseException:
+            os.close(fd)
+            raise
+        with stream:
             stream.write(blob)
             stream.flush()
             os.fsync(stream.fileno())
+        # The staged, fully fsynced content is not a success receipt.
+        os.fsync(slot_fd)
+        _assert_claim_binding(root, root_fd, slot_name, slot_fd, marker_name)
+        os.link(pending, "receipt.json", src_dir_fd=slot_fd, dst_dir_fd=slot_fd,
+                follow_symlinks=False)
+        published = True
+        os.unlink(pending, dir_fd=slot_fd)
         os.fsync(slot_fd)
         _assert_claim_binding(root, root_fd, slot_name, slot_fd, marker_name)
         os.fsync(root_fd)
-    except (OSError, ValueError, TypeError) as exc:
-        raise ProspectiveCanaryError("receipt incomplete; slot permanently poisoned") from exc
+    except BaseException as exc:
+        if published:
+            # Best-effort retraction if a later durability/identity check fails.
+            # On a persistently broken writable FS we cannot guarantee removal;
+            # the permanent claim marker is NOT an attestation authority.
+            try:
+                os.unlink("receipt.json", dir_fd=slot_fd)
+                os.fsync(slot_fd)
+            except OSError:
+                pass
+        if isinstance(exc, (OSError, ValueError, TypeError)):
+            raise ProspectiveCanaryError("receipt incomplete; slot permanently poisoned") from exc
+        raise
+
 
 
 def capture_one(
