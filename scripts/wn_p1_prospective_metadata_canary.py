@@ -140,24 +140,30 @@ def _reserve_claim(root_fd: int, slot_name: str) -> tuple[int, str]:
         raise ProspectiveCanaryError("cannot reserve claim marker") from exc
     try:
         with os.fdopen(fd, "wb") as stream:
-            stream.write(("RESERVED " + slot_name + "\\n").encode())
+            stream.write(("RESERVED " + slot_name + "\n").encode())
             stream.flush()
             os.fsync(stream.fileno())
         os.fsync(root_fd)
         os.mkdir(slot_name, 0o700, dir_fd=root_fd)
         os.fsync(root_fd)
-        return os.open(slot_name, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW,
-                       dir_fd=root_fd), marker_name
+        slot_fd = os.open(
+            slot_name, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=root_fd
+        )
+        return slot_fd, marker_name
     except OSError as exc:
         raise ProspectiveCanaryError("claim durability failed; slot permanently poisoned") from exc
 
 
 def _receipt_write_once(
-    root: Path, root_fd: int, slot_name: str, slot_fd: int,
-    marker_name: str, data: dict[str, object]
+    root: Path,
+    root_fd: int,
+    slot_name: str,
+    slot_fd: int,
+    marker_name: str,
+    data: dict[str, object],
 ) -> None:
     try:
-        blob = (json.dumps(data, sort_keys=True, indent=2, allow_nan=False) + "\\n").encode()
+        blob = (json.dumps(data, sort_keys=True, indent=2, allow_nan=False) + "\n").encode()
         _assert_claim_binding(root, root_fd, slot_name, slot_fd, marker_name)
         flags = os.O_CREAT | os.O_EXCL | os.O_WRONLY | os.O_NOFOLLOW
         # dir_fd binds the write to the ORIGINAL opened claim inode, not a
@@ -207,6 +213,8 @@ def capture_one(
         slot_fd, marker_name = _reserve_claim(root_fd, slot_name)
         _assert_claim_binding(receipt_root, root_fd, slot_name, slot_fd, marker_name)
     except BaseException:
+        if "slot_fd" in locals():
+            os.close(slot_fd)
         os.close(root_fd)
         raise
 
