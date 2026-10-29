@@ -60,7 +60,7 @@ def test_unmodified_p50_has_no_prospective_model_and_must_abstain() -> None:
 
 
 def test_forged_calibrated_probability_cannot_activate_paper_candidate() -> None:
-    assert APPROVED_PROSPECTIVE_MODEL_IDS == frozenset()
+    assert frozenset() == APPROVED_PROSPECTIVE_MODEL_IDS
     value = replace(
         specimen(),
         model_id="USER_CLAIMS_CALIBRATED",
