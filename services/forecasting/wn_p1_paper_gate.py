@@ -95,10 +95,15 @@ class PaperDecision:
 
     def __post_init__(self) -> None:
         if (
-            self.research_only is not True
+            type(self.state) is not PaperState
+            or self.state is PaperState.PAPER_DIAGNOSTIC_ONLY
+            or self.policy_id != POLICY_ID
+            or self.research_only is not True
             or self.production_influence != "0"
             or self.trading_authority != "NONE"
-            or self.state is PaperState.PAPER_DIAGNOSTIC_ONLY
+            or type(self.evidence_id) is not str
+            or len(self.evidence_id) != 64
+            or any(char not in "0123456789abcdef" for char in self.evidence_id)
             or self.selected_paper_side is not None
             or self.yes_after_cost_gap is not None
             or self.no_after_cost_gap is not None
@@ -115,8 +120,10 @@ def _utc(value: datetime, label: str) -> datetime:
 def _sha(value: str | None, label: str) -> None:
     if value is None:
         return
-    if not isinstance(value, str) or len(value) != PROVENANCE_SHA_LENGTH or any(
-        char not in "0123456789abcdef" for char in value
+    if (
+        not isinstance(value, str)
+        or len(value) != PROVENANCE_SHA_LENGTH
+        or any(char not in "0123456789abcdef" for char in value)
     ):
         raise PaperGateError(f"{label}: exact lowercase SHA-256 required")
 
@@ -150,9 +157,7 @@ def _admissible_identity(observation: PredecisionObservation) -> tuple[datetime,
     if observation.settlement_source != "The Weather Company":
         raise PaperGateError("settlement source is not bound to The Weather Company")
     ticker = (
-        CITY_SERIES[observation.city_id]
-        + "-"
-        + observation.target_date.strftime("%y%b%d").upper()
+        CITY_SERIES[observation.city_id] + "-" + observation.target_date.strftime("%y%b%d").upper()
     )
     if observation.event_ticker != ticker:
         raise PaperGateError("event/date/series identity mismatch")
@@ -161,15 +166,10 @@ def _admissible_identity(observation: PredecisionObservation) -> tuple[datetime,
         or len(observation.sibling_tickers) != 6
         or any(type(t) is not str for t in observation.sibling_tickers)
         or len(set(observation.sibling_tickers)) != 6
-        or any(
-            not t.startswith(ticker + "-") for t in observation.sibling_tickers
-        )
+        or any(not t.startswith(ticker + "-") for t in observation.sibling_tickers)
     ):
         raise PaperGateError("exact six unique sibling identities required")
-    if (
-        type(observation.book_quantity) is not Decimal
-        or observation.book_quantity != QUANTITY
-    ):
+    if type(observation.book_quantity) is not Decimal or observation.book_quantity != QUANTITY:
         raise PaperGateError("prospective paper unit is exactly one contract")
     due = datetime.combine(observation.target_date, time(9), tzinfo=UTC)
     at = _utc(observation.evaluated_at_utc, "evaluated_at_utc")
