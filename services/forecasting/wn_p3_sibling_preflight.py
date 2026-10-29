@@ -15,6 +15,7 @@ import re
 from dataclasses import dataclass
 from datetime import date
 from decimal import Decimal, InvalidOperation
+from itertools import pairwise
 
 CITY_SERIES = frozenset(
     {"KXHIGHTBOS", "KXHIGHMIA", "KXHIGHDEN", "KXHIGHLAX", "KXHIGHTSEA"}
@@ -149,7 +150,7 @@ def validate_untrusted_roster(
     greater = rows["greater"][0]
     if less[1] != bands[0][1] or greater[1] != bands[-1][2]:
         raise PreflightError("tails do not meet bounded endpoints")
-    for left, right in zip(bands, bands[1:], strict=False):
+    for left, right in pairwise(bands):
         if left[2] + 1 != right[1]:
             raise PreflightError("gap or overlap on integer Fahrenheit lattice")
     ordered = (less, *bands, greater)
