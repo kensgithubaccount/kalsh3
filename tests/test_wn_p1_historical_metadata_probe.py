@@ -281,7 +281,4 @@ def test_empty_raw_metadata_offline_never_returns_pass() -> None:
     for key in ("forecast_hours", "start_times", "end_times", "ingestion_times"):
         cast(list[object], data[key]).clear()
     report = validate(TARGET, data)
-    assert all(
-        row["status"] == "ABSTAIN_INCOMPLETE_OR_LATE"
-        for row in cities(report).values()
-    )
+    assert all(row["status"] == "ABSTAIN_INCOMPLETE_OR_LATE" for row in cities(report).values())
