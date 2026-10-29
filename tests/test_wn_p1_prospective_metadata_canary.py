@@ -113,9 +113,12 @@ def test_complete_metadata_never_gets_source_or_model_authority(tmp_path: Path) 
     assert len(cast(dict[str, object], receipt["five_city_diagnostic"])) == 5
 
 
-def test_duplicate_run_denied_even_when_final_receipt_deleted(tmp_path: Path) -> None:
+def test_duplicate_run_denied_after_receipt_and_entire_slot_deleted(tmp_path: Path) -> None:
     _, _, calls = run(tmp_path)
-    (tmp_path / TARGET.isoformat() / "receipt.json").unlink()
+    slot = tmp_path / TARGET.isoformat()
+    (slot / "receipt.json").unlink()
+    slot.rmdir()
+    assert (tmp_path / f".{TARGET.isoformat()}.claimed").is_file()
     with pytest.raises(ProspectiveCanaryError, match="already claimed"):
         run(tmp_path)
     assert len(calls) == 1
@@ -198,7 +201,7 @@ def test_forged_metadata_does_not_generate_observed_status(tmp_path: Path, fault
         cast(list[object], data["ingestion_times"])[0] = float("nan")
     code, receipt, _ = run(tmp_path, data=data)
     assert code == 2
-    assert receipt["status"].startswith("FAIL_CLOSED")
+    assert cast(str, receipt["status"]).startswith("FAIL_CLOSED")
     assert receipt["paper_signal_authorized"] is False
 
 
@@ -237,7 +240,7 @@ def test_fsync_error_poisoned_slot_cannot_retry(
     monkeypatch.setattr(os, "fsync", fail_second)
     with pytest.raises(ProspectiveCanaryError, match="slot permanently poisoned"):
         run(tmp_path)
-    assert (tmp_path / TARGET.isoformat()).exists()
+    assert (tmp_path / f".{TARGET.isoformat()}.claimed").exists()
     with pytest.raises(ProspectiveCanaryError, match="already claimed"):
         run(tmp_path)
 
@@ -246,3 +249,92 @@ def test_october_target_cannot_claim_future_source(tmp_path: Path) -> None:
     with pytest.raises(ProspectiveCanaryError, match="date scope"):
         capture_one(target=date(2026, 10, 27), project="p", receipt_root=tmp_path)
     assert not list(tmp_path.iterdir())
+
+
+def test_swapped_claim_directory_cannot_redirect_receipt(
+    tmp_path: Path,
+) -> None:
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    calls: list[int] = []
+
+    def swap(_project: str, _target: date) -> dict[str, object]:
+        calls.append(1)
+        slot = tmp_path / TARGET.isoformat()
+        slot.rename(tmp_path / "renamed-original")
+        slot.symlink_to(outside, target_is_directory=True)
+        return specimen()
+
+    with pytest.raises(ProspectiveCanaryError, match="slot permanently poisoned"):
+        capture_one(
+            target=TARGET,
+            project="research-project",
+            receipt_root=tmp_path,
+            getter=swap,
+            clock=clock(
+                INIT + timedelta(hours=8, minutes=15),
+                INIT + timedelta(hours=8, minutes=16),
+            ),
+            monotonic=ticks(1, 2),
+        )
+    assert calls == [1]
+    assert not (outside / "receipt.json").exists()
+    with pytest.raises(ProspectiveCanaryError, match="already claimed"):
+        run(tmp_path)
+
+
+def test_symlinked_ancestor_is_rejected_before_any_request(tmp_path: Path) -> None:
+    real = tmp_path / "real"
+    real.mkdir()
+    (tmp_path / "symlink").symlink_to(real, target_is_directory=True)
+    calls: list[int] = []
+
+    def getter(_project: str, _target: date) -> dict[str, object]:
+        calls.append(1)
+        return specimen()
+
+    with pytest.raises(ProspectiveCanaryError, match="symlink"):
+        capture_one(
+            target=TARGET,
+            project="research-project",
+            receipt_root=tmp_path / "symlink" / "nested",
+            getter=getter,
+        )
+    assert calls == []
+
+
+def test_existing_root_with_symlink_ancestor_cannot_claim(tmp_path: Path) -> None:
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    alias = tmp_path / "alias"
+    alias.symlink_to(outside, target_is_directory=True)
+    with pytest.raises(ProspectiveCanaryError, match="symlink"):
+        run(alias)
+    assert not list(outside.iterdir())
+
+
+def test_marker_disappears_during_getter_fails_closed(tmp_path: Path) -> None:
+    def getter(_project: str, _target: date) -> dict[str, object]:
+        (tmp_path / f".{TARGET.isoformat()}.claimed").unlink()
+        return specimen()
+
+    with pytest.raises(ProspectiveCanaryError, match="slot permanently poisoned"):
+        capture_one(
+            target=TARGET,
+            project="research-project",
+            receipt_root=tmp_path,
+            getter=getter,
+            clock=clock(
+                INIT + timedelta(hours=8, minutes=15),
+                INIT + timedelta(hours=8, minutes=16),
+            ),
+            monotonic=ticks(1, 2),
+        )
+    assert not (tmp_path / TARGET.isoformat() / "receipt.json").exists()
+
+
+def test_marker_is_not_a_remote_immutable_source_receipt(tmp_path: Path) -> None:
+    code, receipt, _ = run(tmp_path)
+    assert code == 0
+    assert receipt["source_attestation"] == "NONE"
+    assert policy()["writable_local_claims_tamper_proof"] is False
