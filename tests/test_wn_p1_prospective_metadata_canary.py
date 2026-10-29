@@ -404,8 +404,13 @@ def test_fdopen_interruption_closes_bare_receipt_fd(
     original_open = os.open
     original_fdopen = os.fdopen
 
-    def track_open(path: str | bytes | os.PathLike[str] | os.PathLike[bytes], flags: int,
-                   mode: int = 0o777, *, dir_fd: int | None = None) -> int:
+    def track_open(
+        path: str | bytes | os.PathLike[str] | os.PathLike[bytes],
+        flags: int,
+        mode: int = 0o777,
+        *,
+        dir_fd: int | None = None,
+    ) -> int:
         fd = original_open(path, flags, mode, dir_fd=dir_fd)
         if path == "receipt.json.pending":
             opened.append(fd)
@@ -428,8 +433,9 @@ def test_fdopen_interruption_closes_bare_receipt_fd(
             project="research-project",
             receipt_root=tmp_path,
             getter=getter,
-            clock=clock(INIT + timedelta(hours=8, minutes=15),
-                        INIT + timedelta(hours=8, minutes=16)),
+            clock=clock(
+                INIT + timedelta(hours=8, minutes=15), INIT + timedelta(hours=8, minutes=16)
+            ),
             monotonic=ticks(1, 2),
         )
     assert getter_calls == [1]
@@ -452,8 +458,13 @@ def test_receipt_file_fsync_eio_never_publishes_positive_receipt(
     stage_fds: set[int] = set()
     injection_count = 0
 
-    def track_open(path: str | bytes | os.PathLike[str] | os.PathLike[bytes], flags: int,
-                   mode: int = 0o777, *, dir_fd: int | None = None) -> int:
+    def track_open(
+        path: str | bytes | os.PathLike[str] | os.PathLike[bytes],
+        flags: int,
+        mode: int = 0o777,
+        *,
+        dir_fd: int | None = None,
+    ) -> int:
         fd = original_open(path, flags, mode, dir_fd=dir_fd)
         if path == "receipt.json.pending":
             stage_fds.add(fd)
@@ -486,13 +497,18 @@ def test_postpublication_fsync_eio_retracts_receipt(
     published = False
     injected = False
 
-    def track_link(src: str, dst: str, *,
-                   src_dir_fd: int | None = None,
-                   dst_dir_fd: int | None = None,
-                   follow_symlinks: bool = True) -> None:
+    def track_link(
+        src: str,
+        dst: str,
+        *,
+        src_dir_fd: int | None = None,
+        dst_dir_fd: int | None = None,
+        follow_symlinks: bool = True,
+    ) -> None:
         nonlocal published
-        original_link(src, dst, src_dir_fd=src_dir_fd,
-                      dst_dir_fd=dst_dir_fd, follow_symlinks=follow_symlinks)
+        original_link(
+            src, dst, src_dir_fd=src_dir_fd, dst_dir_fd=dst_dir_fd, follow_symlinks=follow_symlinks
+        )
         if dst == "receipt.json":
             published = True
 
