@@ -218,96 +218,99 @@ def capture_one(
         os.close(root_fd)
         raise
 
-    midnight = datetime.combine(target, datetime.min.time(), tzinfo=UTC)
-    opens = midnight + timedelta(hours=8)
-    deadline = midnight + timedelta(hours=9)
-    raw: dict[str, object] | None = None
-    diagnostic: dict[str, object] | None = None
-    digest: str | None = None
-    attempted = False
-    result = "FAIL_CLOSED_NO_SOURCE_CLAIM"
-    reason = "OUTSIDE_WINDOW"
-    ended = started
+    # Hold the claim handles across acquisition, validation and receipt creation.
+    # KeyboardInterrupt/SystemExit must propagate, but must not leak either FD.
+    # A durable marker is already reserved; no retry or success receipt is issued.
     try:
-        if started.date() != target or not opens <= started < deadline:
-            raise ProspectiveCanaryError("outside fixed target-day 08:00-09:00Z window")
-        attempted = True
-        transport = acquire_metadata if getter is None else getter
-        raw = transport(project, target)
-        digest = hashlib.sha256(_canonical_metadata(raw)).hexdigest()
-        diagnostic = validate(target, raw)
-        reason = "STRUCTURAL_EVALUATION"
-        result = "ABSTAIN_INCOMPLETE_OR_LATE"
-    except Exception as exc:
-        reason = "FAILED_" + type(exc).__name__
+        midnight = datetime.combine(target, datetime.min.time(), tzinfo=UTC)
+        opens = midnight + timedelta(hours=8)
+        deadline = midnight + timedelta(hours=9)
+        raw: dict[str, object] | None = None
+        diagnostic: dict[str, object] | None = None
+        digest: str | None = None
+        attempted = False
         result = "FAIL_CLOSED_NO_SOURCE_CLAIM"
-        # Do not poison the failure receipt with an oversized/non-JSON response.
-        if digest is None:
-            raw = None
-    finally:
+        reason = "OUTSIDE_WINDOW"
+        ended = started
         try:
-            ended = _utc(now())
-            tick_end = ticks()
-        except Exception:
-            ended = started
-            tick_end = -1
+            if started.date() != target or not opens <= started < deadline:
+                raise ProspectiveCanaryError("outside fixed target-day 08:00-09:00Z window")
+            attempted = True
+            transport = acquire_metadata if getter is None else getter
+            raw = transport(project, target)
+            digest = hashlib.sha256(_canonical_metadata(raw)).hexdigest()
+            diagnostic = validate(target, raw)
+            reason = "STRUCTURAL_EVALUATION"
+            result = "ABSTAIN_INCOMPLETE_OR_LATE"
+        except Exception as exc:
+            reason = "FAILED_" + type(exc).__name__
+            result = "FAIL_CLOSED_NO_SOURCE_CLAIM"
+            # Do not poison the failure receipt with an oversized/non-JSON response.
+            if digest is None:
+                raw = None
+        finally:
+            try:
+                ended = _utc(now())
+                tick_end = ticks()
+            except Exception:
+                ended = started
+                tick_end = -1
 
-    clock_ok = type(tick_end) is int and tick_end >= tick_start and started <= ended < deadline
-    if raw is not None and diagnostic is not None and clock_ok:
-        ingestions = cast(list[float], raw["ingestion_times"])
-        if any(ingested > ended.timestamp() for ingested in ingestions):
-            clock_ok = False
-            reason = "SOURCE_INGESTION_LATER_THAN_OBSERVATION"
-    if not clock_ok:
-        result = "FAIL_CLOSED_CLOCK_OR_DEADLINE"
-        if reason != "SOURCE_INGESTION_LATER_THAN_OBSERVATION":
-            reason = "CLOCK_ROLLBACK_OR_DEADLINE"
-    elif diagnostic is not None:
-        cities = cast(dict[str, dict[str, object]], diagnostic["cities"])
-        if all(c["status"] == "HISTORICAL_METADATA_PASS_NOT_SOURCE_PROOF" for c in cities.values()):
-            result = "METADATA_OBSERVED_IN_WINDOW_NOT_ATTESTED"
+        clock_ok = type(tick_end) is int and tick_end >= tick_start and started <= ended < deadline
+        if raw is not None and diagnostic is not None and clock_ok:
+            ingestions = cast(list[float], raw["ingestion_times"])
+            if any(ingested > ended.timestamp() for ingested in ingestions):
+                clock_ok = False
+                reason = "SOURCE_INGESTION_LATER_THAN_OBSERVATION"
+        if not clock_ok:
+            result = "FAIL_CLOSED_CLOCK_OR_DEADLINE"
+            if reason != "SOURCE_INGESTION_LATER_THAN_OBSERVATION":
+                reason = "CLOCK_ROLLBACK_OR_DEADLINE"
+        elif diagnostic is not None:
+            cities = cast(dict[str, dict[str, object]], diagnostic["cities"])
+            if all(c["status"] == "HISTORICAL_METADATA_PASS_NOT_SOURCE_PROOF" for c in cities.values()):
+                result = "METADATA_OBSERVED_IN_WINDOW_NOT_ATTESTED"
 
-    fixed = policy()
-    receipt: dict[str, object] = {
-        "record_type": RECORD_TYPE,
-        "policy": fixed,
-        "policy_sha256": hashlib.sha256(
-            json.dumps(fixed, sort_keys=True, separators=(",", ":")).encode()
-        ).hexdigest(),
-        "target_date_utc": target.isoformat(),
-        "ee_project": project,
-        "acquisition_mode": (
-            "TEST_INJECTED_UNTRUSTED" if getter is not None else "EE_LOGICAL_GETINFO"
-        ),
-        "started_host_utc": _iso(started),
-        "finished_host_utc": _iso(ended),
-        "monotonic_elapsed_ns": (
-            tick_end - tick_start if type(tick_end) is int and tick_end >= tick_start else None
-        ),
-        "source_request_attempted": attempted,
-        "status": result,
-        "failure_class": reason if result.startswith("FAIL_CLOSED") else None,
-        "canonical_structured_metadata_sha256_not_raw_transport": digest,
-        "returned_metadata": raw,
-        "five_city_diagnostic": diagnostic["cities"] if diagnostic else None,
-        "source_attestation": "NONE",
-        "scientific_evidence_authorized": False,
-        "probability_authorized": False,
-        "paper_signal_authorized": False,
-        "trading_authority": "NONE",
-        "production_influence": "0",
-    }
-    try:
+        fixed = policy()
+        receipt: dict[str, object] = {
+            "record_type": RECORD_TYPE,
+            "policy": fixed,
+            "policy_sha256": hashlib.sha256(
+                json.dumps(fixed, sort_keys=True, separators=(",", ":")).encode()
+            ).hexdigest(),
+            "target_date_utc": target.isoformat(),
+            "ee_project": project,
+            "acquisition_mode": (
+                "TEST_INJECTED_UNTRUSTED" if getter is not None else "EE_LOGICAL_GETINFO"
+            ),
+            "started_host_utc": _iso(started),
+            "finished_host_utc": _iso(ended),
+            "monotonic_elapsed_ns": (
+                tick_end - tick_start if type(tick_end) is int and tick_end >= tick_start else None
+            ),
+            "source_request_attempted": attempted,
+            "status": result,
+            "failure_class": reason if result.startswith("FAIL_CLOSED") else None,
+            "canonical_structured_metadata_sha256_not_raw_transport": digest,
+            "returned_metadata": raw,
+            "five_city_diagnostic": diagnostic["cities"] if diagnostic else None,
+            "source_attestation": "NONE",
+            "scientific_evidence_authorized": False,
+            "probability_authorized": False,
+            "paper_signal_authorized": False,
+            "trading_authority": "NONE",
+            "production_influence": "0",
+        }
         _receipt_write_once(receipt_root, root_fd, slot_name, slot_fd, marker_name, receipt)
+        code = (
+            0
+            if result == "METADATA_OBSERVED_IN_WINDOW_NOT_ATTESTED"
+            else (2 if result.startswith("FAIL_CLOSED") else 1)
+        )
+        return code, receipt
     finally:
         os.close(slot_fd)
         os.close(root_fd)
-    code = (
-        0
-        if result == "METADATA_OBSERVED_IN_WINDOW_NOT_ATTESTED"
-        else (2 if result.startswith("FAIL_CLOSED") else 1)
-    )
-    return code, receipt
 
 
 def main(argv: list[str] | None = None) -> int:
