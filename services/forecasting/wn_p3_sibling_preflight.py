@@ -36,13 +36,36 @@ class StructuralRoster:
     market_tickers: tuple[str, ...]
     integer_fahrenheit_bins: tuple[tuple[int, int], ...]
     policy: str = _POLICY
-    input_source_attested: bool = False
-    rules_and_station_authorized: bool = False
-    fee_depth_authorized: bool = False
-    probability_authorized: bool = False
-    paper_authorized: bool = False
-    trading_authority: str = "NONE"
-    research_only: bool = True
+
+    # Nonconstructible, read-only negative authority properties: the caller cannot
+    # pass a forged True flag or use this object as an attested source receipt.
+    @property
+    def input_source_attested(self) -> bool:
+        return False
+
+    @property
+    def rules_and_station_authorized(self) -> bool:
+        return False
+
+    @property
+    def fee_depth_authorized(self) -> bool:
+        return False
+
+    @property
+    def probability_authorized(self) -> bool:
+        return False
+
+    @property
+    def paper_authorized(self) -> bool:
+        return False
+
+    @property
+    def trading_authority(self) -> str:
+        return "NONE"
+
+    @property
+    def research_only(self) -> bool:
+        return True
 
 
 def event_ticker_for(series_ticker: str, target_local_date: date) -> str:
