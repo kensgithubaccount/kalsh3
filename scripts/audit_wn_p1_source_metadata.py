@@ -26,6 +26,8 @@ REQUIRED_BANDS = frozenset(
     f"station_head_temperature_2m_{x}" for x in ("mean", "p10", "p25", "p50", "p75", "p90")
 )
 POLICY_ID = "wn-p1-historical-ee-metadata-feasibility-v1"
+# Only 31 distinct forecast-hour labels exist. One extra is a bounded overflow sentinel.
+MAX_METADATA_IMAGES = 32
 
 
 class SourceMetadataError(ValueError):
@@ -66,6 +68,8 @@ def validate(target: date, metadata: dict[str, object]) -> dict[str, object]:
     )
     if not (len(hours) == len(starts) == len(ends) == len(ingestions)):
         raise SourceMetadataError("metadata array length mismatch")
+    if len(hours) >= MAX_METADATA_IMAGES:
+        raise SourceMetadataError("forecast image count exceeds 31-hour bound")
     if any(type(h) is not int or not 1 <= h <= 31 for h in hours):
         raise SourceMetadataError("unrecognized forecast hour")
     if len(hours) != len(set(hours)):
@@ -140,24 +144,32 @@ def acquire_metadata(project: str, target: date) -> dict[str, object]:
         import ee  # type: ignore[import-not-found]
     except ImportError as exc:
         raise SourceMetadataError("Earth Engine Python client not installed") from exc
-    ee.Initialize(project=project)
-    init = datetime.combine(target, datetime.min.time(), tzinfo=UTC)
-    images = (
-        ee.ImageCollection(ASSET)
-        .filter(ee.Filter.eq("start_time", init.isoformat().replace("+00:00", "Z")))
-        .filter(ee.Filter.gte("forecast_hour", 1))
-        .filter(ee.Filter.lte("forecast_hour", 31))
-        .sort("forecast_hour")
-    )
-    raw: Any = ee.Dictionary(
-        {
-            "forecast_hours": images.aggregate_array("forecast_hour"),
-            "start_times": images.aggregate_array("start_time"),
-            "end_times": images.aggregate_array("end_time"),
-            "ingestion_times": images.aggregate_array("ingestion_time_utc"),
-            "band_names": images.first().bandNames(),
-        }
-    ).getInfo()
+    try:
+        ee.Initialize(project=project)
+        init = datetime.combine(target, datetime.min.time(), tzinfo=UTC)
+        images = (
+            ee.ImageCollection(ASSET)
+            .filter(ee.Filter.eq("start_time", init.isoformat().replace("+00:00", "Z")))
+            .filter(ee.Filter.gte("forecast_hour", 1))
+            .filter(ee.Filter.lte("forecast_hour", 31))
+            .sort("forecast_hour")
+            .limit(MAX_METADATA_IMAGES)
+        )
+        raw: Any = ee.Dictionary(
+            {
+                "forecast_hours": images.aggregate_array("forecast_hour"),
+                "start_times": images.aggregate_array("start_time"),
+                "end_times": images.aggregate_array("end_time"),
+                "ingestion_times": images.aggregate_array("ingestion_time_utc"),
+                "band_names": ee.Image(images.first()).bandNames(),
+            }
+        ).getInfo()
+    except Exception as exc:
+        # EEException (including empty collections and service errors) inherits Exception.
+        # Never leak a traceback or silently treat acquisition failure as missing data.
+        raise SourceMetadataError(
+            f"Earth Engine metadata request failed ({type(exc).__name__})"
+        ) from exc
     if not isinstance(raw, dict):
         raise SourceMetadataError("Earth Engine response malformed")
     return cast(dict[str, object], raw)
