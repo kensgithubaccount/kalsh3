@@ -184,3 +184,34 @@ def test_caller_authored_rules_never_grant_semantic_authority() -> None:
     result = evaluate(payload)
     assert result.rules_and_station_authorized is False
     assert result.input_source_attested is False
+
+
+def test_caller_cannot_construct_positive_authority_flags() -> None:
+    source = evaluate(sample())
+    fields: dict[str, Any] = {
+        "series_ticker": source.series_ticker,
+        "event_ticker": source.event_ticker,
+        "target_local_date": source.target_local_date,
+        "market_tickers": source.market_tickers,
+        "integer_fahrenheit_bins": source.integer_fahrenheit_bins,
+        "input_source_attested": True,
+    }
+    with pytest.raises(TypeError):
+        StructuralRoster(**fields)
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("input_source_attested", True),
+        ("rules_and_station_authorized", True),
+        ("fee_depth_authorized", True),
+        ("probability_authorized", True),
+        ("paper_authorized", True),
+        ("trading_authority", "LIVE"),
+    ],
+)
+def test_cannot_override_negative_authority_properties(field: str, value: object) -> None:
+    result = evaluate(sample())
+    with pytest.raises(AttributeError):
+        object.__setattr__(result, field, value)
