@@ -175,30 +175,30 @@ def _admissible_identity(observation: PredecisionObservation) -> tuple[datetime,
     at = _utc(observation.evaluated_at_utc, "evaluated_at_utc")
     if at < due or at >= due + timedelta(minutes=5):
         raise PaperGateError("observation outside prospective decision interval")
-    for label, value in (
+    for label, sha_value in (
         ("forecast_sha256", observation.forecast_sha256),
         ("model_evidence_sha256", observation.model_evidence_sha256),
         ("market_sha256", observation.market_sha256),
     ):
-        _sha(value, label)
+        _sha(sha_value, label)
     if observation.model_probability_yes is not None and (
         type(observation.model_probability_yes) is not Decimal
         or not observation.model_probability_yes.is_finite()
         or not ZERO <= observation.model_probability_yes <= ONE
     ):
         raise PaperGateError("model probability is not an exact finite value in [0,1]")
-    for label, value in (
+    for label, price_value in (
         ("yes_fee_inclusive_debit", observation.yes_fee_inclusive_debit),
         ("no_fee_inclusive_debit", observation.no_fee_inclusive_debit),
     ):
-        if value is not None:
-            _price(value, label)
-    for label, value in (
+        if price_value is not None:
+            _price(price_value, label)
+    for label, timestamp_value in (
         ("forecast_observed_at_utc", observation.forecast_observed_at_utc),
         ("forecast_ingested_at_utc", observation.forecast_ingested_at_utc),
         ("market_observed_at_utc", observation.market_observed_at_utc),
     ):
-        if value is not None and _utc(value, label) > at:
+        if timestamp_value is not None and _utc(timestamp_value, label) > at:
             raise PaperGateError(f"{label}: observation cannot come from the future")
     return at, due
 
