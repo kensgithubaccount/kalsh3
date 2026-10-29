@@ -10,6 +10,7 @@ import argparse
 import hashlib
 import json
 import os
+import stat
 import sys
 import time
 from collections.abc import Callable
@@ -58,6 +59,7 @@ def policy() -> dict[str, object]:
         "timezone": "FROZEN_FIXED_STANDARD_TIME_NOT_DST_WALL_CLOCK",
         "source_bytes_independently_attested": False,
         "local_clock_independently_attested": False,
+        "writable_local_claims_tamper_proof": False,
         "all_image_bands_checked": False,
         "rights_approved_by_program": False,
         "probability_authorized": False,
@@ -77,26 +79,100 @@ def _canonical_metadata(value: dict[str, object]) -> bytes:
     return encoded
 
 
-def _sync_directory(path: Path) -> None:
-    fd = os.open(path, os.O_RDONLY | getattr(os, "O_DIRECTORY", 0))
+def _open_root(path: Path) -> int:
+    """Open every path component as a real directory, rejecting ancestor symlinks."""
+    if not path.is_absolute() or ".." in path.parts:
+        raise ProspectiveCanaryError("absolute non-traversing receipt root required")
+    flags = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW
     try:
-        os.fsync(fd)
+        fd = os.open("/", flags)
+        try:
+            for component in path.parts[1:]:
+                next_fd = os.open(component, flags, dir_fd=fd)
+                os.close(fd)
+                fd = next_fd
+        except BaseException:
+            os.close(fd)
+            raise
+        return fd
+    except OSError as exc:
+        raise ProspectiveCanaryError("receipt root contains symlink or is inaccessible") from exc
+
+
+def _assert_root_binding(path: Path, root_fd: int) -> None:
+    # A replaced ancestor path must never redirect the final receipt.
+    fresh_fd = _open_root(path)
+    try:
+        before, now = os.fstat(root_fd), os.fstat(fresh_fd)
+        if (before.st_dev, before.st_ino) != (now.st_dev, now.st_ino):
+            raise ProspectiveCanaryError("receipt root path was replaced")
     finally:
-        os.close(fd)
+        os.close(fresh_fd)
 
 
-def _receipt_write_once(directory: Path, data: dict[str, object]) -> None:
+def _assert_claim_binding(
+    root: Path, root_fd: int, slot_name: str, slot_fd: int, marker_name: str
+) -> None:
+    _assert_root_binding(root, root_fd)
     try:
-        blob = (json.dumps(data, sort_keys=True, indent=2, allow_nan=False) + "\n").encode()
-        flags = os.O_CREAT | os.O_EXCL | os.O_WRONLY | getattr(os, "O_NOFOLLOW", 0)
-        fd = os.open(directory / "receipt.json", flags, 0o600)
+        current = os.stat(slot_name, dir_fd=root_fd, follow_symlinks=False)
+        claimed = os.fstat(slot_fd)
+        marker = os.stat(marker_name, dir_fd=root_fd, follow_symlinks=False)
+        if (
+            not stat.S_ISDIR(current.st_mode)
+            or (current.st_dev, current.st_ino) != (claimed.st_dev, claimed.st_ino)
+            or not stat.S_ISREG(marker.st_mode)
+        ):
+            raise ProspectiveCanaryError("claim path or durable marker replaced")
+    except OSError as exc:
+        raise ProspectiveCanaryError("claim path or durable marker missing") from exc
+
+
+def _reserve_claim(root_fd: int, slot_name: str) -> tuple[int, str]:
+    """Two independent local artifacts: a date marker outside the receipt slot."""
+    marker_name = "." + slot_name + ".claimed"
+    flags = os.O_CREAT | os.O_EXCL | os.O_WRONLY | os.O_NOFOLLOW
+    try:
+        fd = os.open(marker_name, flags, 0o600, dir_fd=root_fd)
+    except FileExistsError as exc:
+        raise ProspectiveCanaryError("date already claimed; never retry") from exc
+    except OSError as exc:
+        raise ProspectiveCanaryError("cannot reserve claim marker") from exc
+    try:
+        with os.fdopen(fd, "wb") as stream:
+            stream.write(("RESERVED " + slot_name + "\\n").encode())
+            stream.flush()
+            os.fsync(stream.fileno())
+        os.fsync(root_fd)
+        os.mkdir(slot_name, 0o700, dir_fd=root_fd)
+        os.fsync(root_fd)
+        return os.open(slot_name, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW,
+                       dir_fd=root_fd), marker_name
+    except OSError as exc:
+        raise ProspectiveCanaryError("claim durability failed; slot permanently poisoned") from exc
+
+
+def _receipt_write_once(
+    root: Path, root_fd: int, slot_name: str, slot_fd: int,
+    marker_name: str, data: dict[str, object]
+) -> None:
+    try:
+        blob = (json.dumps(data, sort_keys=True, indent=2, allow_nan=False) + "\\n").encode()
+        _assert_claim_binding(root, root_fd, slot_name, slot_fd, marker_name)
+        flags = os.O_CREAT | os.O_EXCL | os.O_WRONLY | os.O_NOFOLLOW
+        # dir_fd binds the write to the ORIGINAL opened claim inode, not a
+        # caller-swapped symlink at receipt_root / target.
+        fd = os.open("receipt.json", flags, 0o600, dir_fd=slot_fd)
         with os.fdopen(fd, "wb") as stream:
             stream.write(blob)
             stream.flush()
             os.fsync(stream.fileno())
-        _sync_directory(directory)
+        os.fsync(slot_fd)
+        _assert_claim_binding(root, root_fd, slot_name, slot_fd, marker_name)
+        os.fsync(root_fd)
     except (OSError, ValueError, TypeError) as exc:
         raise ProspectiveCanaryError("receipt incomplete; slot permanently poisoned") from exc
+
 
 
 def capture_one(
@@ -113,28 +189,26 @@ def capture_one(
         raise ProspectiveCanaryError("target not in prospective date scope")
     if not project or any(not (ch.isalnum() or ch in "-_") for ch in project):
         raise ProspectiveCanaryError("invalid explicit EE project")
-    if not receipt_root.is_dir() or receipt_root.is_symlink():
-        raise ProspectiveCanaryError("existing non-symlink receipt directory required")
+    root_fd = _open_root(receipt_root)
 
     now: Callable[[], datetime] = clock or (lambda: datetime.now(UTC))
     ticks: Callable[[], int] = monotonic or time.monotonic_ns
-    started = _utc(now())
-    tick_start = ticks()
-    if type(tick_start) is not int or tick_start < 0:
-        raise ProspectiveCanaryError("bad monotonic start clock")
+    try:
+        started = _utc(now())
+        tick_start = ticks()
+        if type(tick_start) is not int or tick_start < 0:
+            raise ProspectiveCanaryError("bad monotonic start clock")
+    except BaseException:
+        os.close(root_fd)
+        raise
 
-    slot = receipt_root / target.isoformat()
+    slot_name = target.isoformat()
     try:
-        # Atomic reservation is before ANY source request; a crash poisons this date.
-        os.mkdir(slot, 0o700)
-    except FileExistsError as exc:
-        raise ProspectiveCanaryError("date already claimed; never retry") from exc
-    except OSError as exc:
-        raise ProspectiveCanaryError("unable to claim date") from exc
-    try:
-        _sync_directory(receipt_root)
-    except OSError as exc:
-        raise ProspectiveCanaryError("claim fsync failed; date poisoned") from exc
+        slot_fd, marker_name = _reserve_claim(root_fd, slot_name)
+        _assert_claim_binding(receipt_root, root_fd, slot_name, slot_fd, marker_name)
+    except BaseException:
+        os.close(root_fd)
+        raise
 
     midnight = datetime.combine(target, datetime.min.time(), tzinfo=UTC)
     opens = midnight + timedelta(hours=8)
@@ -215,7 +289,13 @@ def capture_one(
         "trading_authority": "NONE",
         "production_influence": "0",
     }
-    _receipt_write_once(slot, receipt)
+    try:
+        _receipt_write_once(
+            receipt_root, root_fd, slot_name, slot_fd, marker_name, receipt
+        )
+    finally:
+        os.close(slot_fd)
+        os.close(root_fd)
     code = (
         0
         if result == "METADATA_OBSERVED_IN_WINDOW_NOT_ATTESTED"
