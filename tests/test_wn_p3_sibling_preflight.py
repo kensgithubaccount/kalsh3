@@ -48,9 +48,7 @@ def sample(series: str = SERIES, target: date = TARGET) -> dict[str, Any]:
     }
 
 
-def evaluate(
-    payload: object, series: str = SERIES, target: date = TARGET
-) -> StructuralRoster:
+def evaluate(payload: object, series: str = SERIES, target: date = TARGET) -> StructuralRoster:
     return validate_untrusted_roster(
         series_ticker=series, target_local_date=target, event_payload=payload
     )
@@ -105,17 +103,20 @@ def test_incomplete_extra_duplicate_roster_rejected(mutate: str) -> None:
         evaluate(payload)
 
 
-@pytest.mark.parametrize("field,value", [
-    ("event_ticker", "KXHIGHTBOS-26NOV02"),
-    ("status", "closed"),
-    ("market_type", "categorical"),
-    ("is_provisional", True),
-    ("functional_strike", "x"),
-    ("strike_type", "binary"),
-    ("ticker", "KXHIGHMIA-26NOV01-T70"),
-    ("mve_collection_ticker", "MVE"),
-    ("rules_primary", ""),
-])
+@pytest.mark.parametrize(
+    "field,value",
+    [
+        ("event_ticker", "KXHIGHTBOS-26NOV02"),
+        ("status", "closed"),
+        ("market_type", "categorical"),
+        ("is_provisional", True),
+        ("functional_strike", "x"),
+        ("strike_type", "binary"),
+        ("ticker", "KXHIGHMIA-26NOV01-T70"),
+        ("mve_collection_ticker", "MVE"),
+        ("rules_primary", ""),
+    ],
+)
 def test_wrong_market_metadata_abstains(field: str, value: object) -> None:
     payload = sample()
     markets = payload["markets"]
@@ -137,17 +138,20 @@ def test_unsafe_or_fractional_bound_rejected(value: object) -> None:
         evaluate(payload)
 
 
-@pytest.mark.parametrize("row_index,field,value", [
-    (0, "cap_strike", 69),
-    (1, "floor_strike", 69),
-    (1, "cap_strike", 72),
-    (2, "floor_strike", 73),
-    (3, "cap_strike", 80),
-    (5, "floor_strike", 78),
-    (4, "cap_strike", 75),
-    (5, "cap_strike", 77),
-    (0, "floor_strike", 10),
-])
+@pytest.mark.parametrize(
+    "row_index,field,value",
+    [
+        (0, "cap_strike", 69),
+        (1, "floor_strike", 69),
+        (1, "cap_strike", 72),
+        (2, "floor_strike", 73),
+        (3, "cap_strike", 80),
+        (5, "floor_strike", 78),
+        (4, "cap_strike", 75),
+        (5, "cap_strike", 77),
+        (0, "floor_strike", 10),
+    ],
+)
 def test_gap_overlap_tail_and_inverted_topology_rejected(
     row_index: int, field: str, value: object
 ) -> None:
