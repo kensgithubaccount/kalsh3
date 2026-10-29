@@ -54,9 +54,12 @@ def validate(target: date, metadata: dict[str, object]) -> dict[str, object]:
     bands = metadata["band_names"]
     if not isinstance(bands, list) or not all(type(b) is str for b in bands):
         raise SourceMetadataError("band names must be strings")
-    if len(bands) != len(set(bands)) or not REQUIRED_BANDS <= set(bands):
+    if len(bands) != len(set(bands)) or not set(bands) >= REQUIRED_BANDS:
         raise SourceMetadataError("all six marginal band names required")
-    arrays = [metadata[key] for key in ("forecast_hours", "start_times", "end_times", "ingestion_times")]
+    arrays = [
+        metadata[key]
+        for key in ("forecast_hours", "start_times", "end_times", "ingestion_times")
+    ]
     if not all(isinstance(array, list) for array in arrays):
         raise SourceMetadataError("metadata arrays required")
     hours, starts, ends, ingestions = cast(
