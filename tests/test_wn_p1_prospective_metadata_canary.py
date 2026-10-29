@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import errno
 import json
 import os
 from collections.abc import Callable
@@ -392,3 +393,122 @@ def test_interrupted_getter_closes_claim_fds_without_claiming_a_receipt(
     with pytest.raises(ProspectiveCanaryError, match="already claimed"):
         run(tmp_path)
     assert calls == [1]
+
+
+@pytest.mark.parametrize("interrupt_type", [KeyboardInterrupt, SystemExit])
+def test_fdopen_interruption_closes_bare_receipt_fd(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, interrupt_type: type[BaseException]
+) -> None:
+    opened: list[int] = []
+    getter_calls: list[int] = []
+    original_open = os.open
+    original_fdopen = os.fdopen
+
+    def track_open(path: str | bytes | os.PathLike[str] | os.PathLike[bytes], flags: int,
+                   mode: int = 0o777, *, dir_fd: int | None = None) -> int:
+        fd = original_open(path, flags, mode, dir_fd=dir_fd)
+        if path == "receipt.json.pending":
+            opened.append(fd)
+        return fd
+
+    def break_fdopen(fd: int, mode: str = "r", *args: object, **kwargs: object) -> object:
+        if fd in opened:
+            raise interrupt_type("receipt file descriptor handoff interrupted")
+        return original_fdopen(fd, mode)
+
+    def getter(_project: str, _target: date) -> dict[str, object]:
+        getter_calls.append(1)
+        return specimen()
+
+    monkeypatch.setattr(os, "open", track_open)
+    monkeypatch.setattr(os, "fdopen", break_fdopen)
+    with pytest.raises(interrupt_type, match="receipt file descriptor"):
+        capture_one(
+            target=TARGET,
+            project="research-project",
+            receipt_root=tmp_path,
+            getter=getter,
+            clock=clock(INIT + timedelta(hours=8, minutes=15),
+                        INIT + timedelta(hours=8, minutes=16)),
+            monotonic=ticks(1, 2),
+        )
+    assert getter_calls == [1]
+    assert len(opened) == 1
+    with pytest.raises(OSError) as closed:
+        os.fstat(opened[0])
+    assert closed.value.errno == errno.EBADF
+    assert (tmp_path / f".{TARGET.isoformat()}.claimed").exists()
+    assert not (tmp_path / TARGET.isoformat() / "receipt.json").exists()
+    with pytest.raises(ProspectiveCanaryError, match="already claimed"):
+        run(tmp_path)
+    assert getter_calls == [1]
+
+
+def test_receipt_file_fsync_eio_never_publishes_positive_receipt(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    original_open = os.open
+    original_fsync = os.fsync
+    stage_fds: set[int] = set()
+    injection_count = 0
+
+    def track_open(path: str | bytes | os.PathLike[str] | os.PathLike[bytes], flags: int,
+                   mode: int = 0o777, *, dir_fd: int | None = None) -> int:
+        fd = original_open(path, flags, mode, dir_fd=dir_fd)
+        if path == "receipt.json.pending":
+            stage_fds.add(fd)
+        return fd
+
+    def fail_stage_fsync(fd: int) -> None:
+        nonlocal injection_count
+        if fd in stage_fds and injection_count == 0:
+            injection_count += 1
+            raise OSError(errno.EIO, "injected receipt fsync failure")
+        original_fsync(fd)
+
+    monkeypatch.setattr(os, "open", track_open)
+    monkeypatch.setattr(os, "fsync", fail_stage_fsync)
+    with pytest.raises(ProspectiveCanaryError, match="slot permanently poisoned"):
+        run(tmp_path)
+    assert injection_count == 1
+    slot = tmp_path / TARGET.isoformat()
+    assert not (slot / "receipt.json").exists()
+    assert (tmp_path / f".{TARGET.isoformat()}.claimed").exists()
+    with pytest.raises(ProspectiveCanaryError, match="already claimed"):
+        run(tmp_path)
+
+
+def test_postpublication_fsync_eio_retracts_receipt(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    original_link = os.link
+    original_fsync = os.fsync
+    published = False
+    injected = False
+
+    def track_link(src: str, dst: str, *,
+                   src_dir_fd: int | None = None,
+                   dst_dir_fd: int | None = None,
+                   follow_symlinks: bool = True) -> None:
+        nonlocal published
+        original_link(src, dst, src_dir_fd=src_dir_fd,
+                      dst_dir_fd=dst_dir_fd, follow_symlinks=follow_symlinks)
+        if dst == "receipt.json":
+            published = True
+
+    def fail_after_publication(fd: int) -> None:
+        nonlocal injected
+        if published and not injected:
+            injected = True
+            raise OSError(errno.EIO, "injected directory fsync failure")
+        original_fsync(fd)
+
+    monkeypatch.setattr(os, "link", track_link)
+    monkeypatch.setattr(os, "fsync", fail_after_publication)
+    with pytest.raises(ProspectiveCanaryError, match="slot permanently poisoned"):
+        run(tmp_path)
+    assert injected
+    assert not (tmp_path / TARGET.isoformat() / "receipt.json").exists()
+    assert (tmp_path / f".{TARGET.isoformat()}.claimed").exists()
+    with pytest.raises(ProspectiveCanaryError, match="already claimed"):
+        run(tmp_path)
