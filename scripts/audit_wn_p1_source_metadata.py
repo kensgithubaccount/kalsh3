@@ -57,8 +57,7 @@ def validate(target: date, metadata: dict[str, object]) -> dict[str, object]:
     if len(bands) != len(set(bands)) or not set(bands) >= REQUIRED_BANDS:
         raise SourceMetadataError("all six marginal band names required")
     arrays = [
-        metadata[key]
-        for key in ("forecast_hours", "start_times", "end_times", "ingestion_times")
+        metadata[key] for key in ("forecast_hours", "start_times", "end_times", "ingestion_times")
     ]
     if not all(isinstance(array, list) for array in arrays):
         raise SourceMetadataError("metadata arrays required")
