@@ -268,7 +268,10 @@ def capture_one(
                 reason = "CLOCK_ROLLBACK_OR_DEADLINE"
         elif diagnostic is not None:
             cities = cast(dict[str, dict[str, object]], diagnostic["cities"])
-            if all(c["status"] == "HISTORICAL_METADATA_PASS_NOT_SOURCE_PROOF" for c in cities.values()):
+            if all(
+                c["status"] == "HISTORICAL_METADATA_PASS_NOT_SOURCE_PROOF"
+                for c in cities.values()
+            ):
                 result = "METADATA_OBSERVED_IN_WINDOW_NOT_ATTESTED"
 
         fixed = policy()
