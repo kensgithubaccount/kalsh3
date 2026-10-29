@@ -187,8 +187,9 @@ def _receipt_write_once(
         # The staged, fully fsynced content is not a success receipt.
         os.fsync(slot_fd)
         _assert_claim_binding(root, root_fd, slot_name, slot_fd, marker_name)
-        os.link(pending, "receipt.json", src_dir_fd=slot_fd, dst_dir_fd=slot_fd,
-                follow_symlinks=False)
+        os.link(
+            pending, "receipt.json", src_dir_fd=slot_fd, dst_dir_fd=slot_fd, follow_symlinks=False
+        )
         published = True
         os.unlink(pending, dir_fd=slot_fd)
         os.fsync(slot_fd)
@@ -207,7 +208,6 @@ def _receipt_write_once(
         if isinstance(exc, (OSError, ValueError, TypeError)):
             raise ProspectiveCanaryError("receipt incomplete; slot permanently poisoned") from exc
         raise
-
 
 
 def capture_one(
