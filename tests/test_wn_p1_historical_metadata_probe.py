@@ -2,19 +2,19 @@
 
 from __future__ import annotations
 
+import sys
 from datetime import UTC, date, datetime, timedelta
 from types import ModuleType, SimpleNamespace
 from typing import cast
-import sys
 
 import pytest
 
 from scripts.audit_wn_p1_source_metadata import (
     MAX_METADATA_IMAGES,
     REQUIRED_BANDS,
+    SourceMetadataError,
     acquire_metadata,
     main,
-    SourceMetadataError,
     validate,
 )
 
@@ -208,20 +208,18 @@ def _install_fake_ee(
                 return ["not an EE dictionary"]
             return self.fields
 
-    setattr(fake, "Initialize", initialize)
-    setattr(fake, "ImageCollection", lambda _asset: Collection())
-    setattr(
-        fake,
-        "Filter",
-        SimpleNamespace(
-            eq=lambda *_args: None,
-            gte=lambda *_args: None,
-            lte=lambda *_args: None,
-        ),
+    fake.__dict__.update(
+        {
+            "Initialize": initialize,
+            "ImageCollection": lambda _asset: Collection(),
+            "Filter": SimpleNamespace(
+                eq=lambda *_args: None, gte=lambda *_args: None, lte=lambda *_args: None
+            ),
+            "Image": lambda image: image,
+            "Dictionary": Dictionary,
+            "EEException": _MockEarthEngineFailure,
+        }
     )
-    setattr(fake, "Image", lambda image: image)
-    setattr(fake, "Dictionary", Dictionary)
-    setattr(fake, "EEException", _MockEarthEngineFailure)
     monkeypatch.setitem(sys.modules, "ee", fake)
     return calls
 
@@ -233,7 +231,10 @@ def test_source_request_is_bounded_and_one_rpc(monkeypatch: pytest.MonkeyPatch) 
     assert calls.count("getInfo") == 1
     assert calls.count(f"limit:{MAX_METADATA_IMAGES}") == 1
     assert calls.index("sort:forecast_hour") < calls.index(f"limit:{MAX_METADATA_IMAGES}")
-    assert all(x["status"] == "HISTORICAL_METADATA_PASS_NOT_SOURCE_PROOF" for x in cities(validate(TARGET, result)).values())
+    assert all(
+        x["status"] == "HISTORICAL_METADATA_PASS_NOT_SOURCE_PROOF"
+        for x in cities(validate(TARGET, result)).values()
+    )
 
 
 def test_oversized_server_response_cannot_pass(monkeypatch: pytest.MonkeyPatch) -> None:
