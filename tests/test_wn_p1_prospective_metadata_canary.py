@@ -31,8 +31,7 @@ def specimen(ingestion_minutes: int = 480) -> dict[str, object]:
         "end_times": [
             (INIT + timedelta(hours=h)).isoformat().replace("+00:00", "Z") for h in hours
         ],
-        "ingestion_times": [(INIT + timedelta(minutes=ingestion_minutes)).timestamp()]
-        * len(hours),
+        "ingestion_times": [(INIT + timedelta(minutes=ingestion_minutes)).timestamp()] * len(hours),
         "band_names": sorted(REQUIRED_BANDS),
     }
 
@@ -80,11 +79,16 @@ def run(
 def test_plan_is_inert_and_writes_nothing(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    code = main([
-        "--target", TARGET.isoformat(),
-        "--project", "research-project",
-        "--receipt-root", str(tmp_path),
-    ])
+    code = main(
+        [
+            "--target",
+            TARGET.isoformat(),
+            "--project",
+            "research-project",
+            "--receipt-root",
+            str(tmp_path),
+        ]
+    )
     assert code == 0
     assert json.loads(capsys.readouterr().out)["mode"] == "PLAN_ONLY_NO_SOURCE_RPC"
     assert list(tmp_path.iterdir()) == []
@@ -181,9 +185,7 @@ def test_sdk_exception_is_sanitized_and_receipt_kept(tmp_path: Path) -> None:
 
 
 @pytest.mark.parametrize("fault", ["duplicate", "overflow", "bad_band", "nan_epoch"])
-def test_forged_metadata_does_not_generate_observed_status(
-    tmp_path: Path, fault: str
-) -> None:
+def test_forged_metadata_does_not_generate_observed_status(tmp_path: Path, fault: str) -> None:
     data = specimen()
     if fault == "duplicate":
         cast(list[object], data["forecast_hours"])[0] = 2
@@ -213,7 +215,7 @@ def test_clock_rollback_fails_closed(tmp_path: Path, reverse_monotonic: bool) ->
         receipt_root=tmp_path,
         getter=lambda _project, _target: specimen(),
         clock=clock(*times),
-        monotonic=ticks(*( (5, 4) if reverse_monotonic else (5, 6) )),
+        monotonic=ticks(*((5, 4) if reverse_monotonic else (5, 6))),
     )
     assert code == 2
     assert receipt["status"] == "FAIL_CLOSED_CLOCK_OR_DEADLINE"
