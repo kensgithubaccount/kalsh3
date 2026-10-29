@@ -3,12 +3,17 @@
 from __future__ import annotations
 
 from datetime import UTC, date, datetime, timedelta
+from types import ModuleType, SimpleNamespace
 from typing import cast
+import sys
 
 import pytest
 
 from scripts.audit_wn_p1_source_metadata import (
+    MAX_METADATA_IMAGES,
     REQUIRED_BANDS,
+    acquire_metadata,
+    main,
     SourceMetadataError,
     validate,
 )
@@ -134,3 +139,148 @@ def test_bad_metadata_fails_closed(mutation: str) -> None:
 def test_invalid_target_date_is_not_admitted() -> None:
     with pytest.raises(SourceMetadataError):
         validate(date(2026, 6, 1), specimen())
+
+
+class _MockEarthEngineFailure(Exception):
+    """Simulate the SDK's EEException (an Exception, not ValueError)."""
+
+
+def _install_fake_ee(
+    monkeypatch: pytest.MonkeyPatch,
+    *,
+    source: dict[str, object],
+    fail_at: str | None = None,
+) -> list[str]:
+    """No network. Require all arrays to flow through a 32-item server-side limit."""
+    calls: list[str] = []
+    fake = ModuleType("ee")
+
+    def initialize(*, project: str) -> None:
+        calls.append(f"initialize:{project}")
+        if fail_at == "initialize":
+            raise _MockEarthEngineFailure("unauthorized (test)")
+
+    class Image:
+        def bandNames(self) -> object:
+            return source["band_names"]
+
+    class Collection:
+        def __init__(self) -> None:
+            self.limit_value: int | None = None
+
+        def filter(self, _filter: object) -> Collection:
+            return self
+
+        def sort(self, field: str) -> Collection:
+            calls.append(f"sort:{field}")
+            return self
+
+        def limit(self, n: int) -> Collection:
+            calls.append(f"limit:{n}")
+            self.limit_value = n
+            return self
+
+        def aggregate_array(self, name: str) -> list[object]:
+            assert self.limit_value is not None, "unbounded metadata source query"
+            fields = {
+                "forecast_hour": "forecast_hours",
+                "start_time": "start_times",
+                "end_time": "end_times",
+                "ingestion_time_utc": "ingestion_times",
+            }
+            return cast(list[object], source[fields[name]])[: self.limit_value]
+
+        def first(self) -> Image:
+            if not source["forecast_hours"]:
+                raise _MockEarthEngineFailure("empty collection")
+            assert self.limit_value is not None
+            return Image()
+
+    class Dictionary:
+        def __init__(self, fields: dict[str, object]) -> None:
+            self.fields = fields
+
+        def getInfo(self) -> object:
+            calls.append("getInfo")
+            if fail_at == "getInfo":
+                raise _MockEarthEngineFailure("Earth Engine server error")
+            if fail_at == "malformed":
+                return ["not an EE dictionary"]
+            return self.fields
+
+    setattr(fake, "Initialize", initialize)
+    setattr(fake, "ImageCollection", lambda _asset: Collection())
+    setattr(
+        fake,
+        "Filter",
+        SimpleNamespace(
+            eq=lambda *_args: None,
+            gte=lambda *_args: None,
+            lte=lambda *_args: None,
+        ),
+    )
+    setattr(fake, "Image", lambda image: image)
+    setattr(fake, "Dictionary", Dictionary)
+    setattr(fake, "EEException", _MockEarthEngineFailure)
+    monkeypatch.setitem(sys.modules, "ee", fake)
+    return calls
+
+
+def test_source_request_is_bounded_and_one_rpc(monkeypatch: pytest.MonkeyPatch) -> None:
+    calls = _install_fake_ee(monkeypatch, source=specimen())
+    result = acquire_metadata("research-project", TARGET)
+    assert result == specimen()
+    assert calls.count("getInfo") == 1
+    assert calls.count(f"limit:{MAX_METADATA_IMAGES}") == 1
+    assert calls.index("sort:forecast_hour") < calls.index(f"limit:{MAX_METADATA_IMAGES}")
+    assert all(x["status"] == "HISTORICAL_METADATA_PASS_NOT_SOURCE_PROOF" for x in cities(validate(TARGET, result)).values())
+
+
+def test_oversized_server_response_cannot_pass(monkeypatch: pytest.MonkeyPatch) -> None:
+    data = specimen()
+    for key in ("forecast_hours", "start_times", "end_times", "ingestion_times"):
+        cast(list[object], data[key]).extend(cast(list[object], data[key])[:9])
+    calls = _install_fake_ee(monkeypatch, source=data)
+    bounded = acquire_metadata("research-project", TARGET)
+    assert len(cast(list[object], bounded["forecast_hours"])) == MAX_METADATA_IMAGES
+    assert calls.count(f"limit:{MAX_METADATA_IMAGES}") == 1
+    with pytest.raises(SourceMetadataError, match="exceeds 31-hour bound"):
+        validate(TARGET, bounded)
+
+
+@pytest.mark.parametrize("fail_at", ["initialize", "getInfo", "malformed", "empty"])
+def test_earth_engine_failures_exit_two_without_traceback(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    fail_at: str,
+) -> None:
+    data = specimen()
+    if fail_at == "empty":
+        for key in ("forecast_hours", "start_times", "end_times", "ingestion_times"):
+            cast(list[object], data[key]).clear()
+    calls = _install_fake_ee(
+        monkeypatch,
+        source=data,
+        fail_at=fail_at if fail_at != "empty" else None,
+    )
+    status = main(["--historical-target", TARGET.isoformat(), "--project", "research-project"])
+    captured = capsys.readouterr()
+    assert status == 2
+    assert captured.out == ""
+    assert "FAIL_CLOSED:" in captured.err
+    assert "Traceback" not in captured.err
+    if fail_at == "initialize":
+        assert "getInfo" not in calls
+    elif fail_at == "getInfo":
+        assert calls.count("getInfo") == 1
+
+
+def test_empty_raw_metadata_offline_never_returns_pass() -> None:
+    data = specimen()
+    for key in ("forecast_hours", "start_times", "end_times", "ingestion_times"):
+        cast(list[object], data[key]).clear()
+    report = validate(TARGET, data)
+    assert all(
+        row["status"] == "ABSTAIN_INCOMPLETE_OR_LATE"
+        for row in cities(report).values()
+    )
