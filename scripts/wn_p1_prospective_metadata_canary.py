@@ -146,9 +146,7 @@ def _reserve_claim(root_fd: int, slot_name: str) -> tuple[int, str]:
         os.fsync(root_fd)
         os.mkdir(slot_name, 0o700, dir_fd=root_fd)
         os.fsync(root_fd)
-        slot_fd = os.open(
-            slot_name, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=root_fd
-        )
+        slot_fd = os.open(slot_name, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=root_fd)
         return slot_fd, marker_name
     except OSError as exc:
         raise ProspectiveCanaryError("claim durability failed; slot permanently poisoned") from exc
@@ -178,7 +176,6 @@ def _receipt_write_once(
         os.fsync(root_fd)
     except (OSError, ValueError, TypeError) as exc:
         raise ProspectiveCanaryError("receipt incomplete; slot permanently poisoned") from exc
-
 
 
 def capture_one(
@@ -211,10 +208,13 @@ def capture_one(
     slot_name = target.isoformat()
     try:
         slot_fd, marker_name = _reserve_claim(root_fd, slot_name)
+    except BaseException:
+        os.close(root_fd)
+        raise
+    try:
         _assert_claim_binding(receipt_root, root_fd, slot_name, slot_fd, marker_name)
     except BaseException:
-        if "slot_fd" in locals():
-            os.close(slot_fd)
+        os.close(slot_fd)
         os.close(root_fd)
         raise
 
@@ -298,9 +298,7 @@ def capture_one(
         "production_influence": "0",
     }
     try:
-        _receipt_write_once(
-            receipt_root, root_fd, slot_name, slot_fd, marker_name, receipt
-        )
+        _receipt_write_once(receipt_root, root_fd, slot_name, slot_fd, marker_name, receipt)
     finally:
         os.close(slot_fd)
         os.close(root_fd)
