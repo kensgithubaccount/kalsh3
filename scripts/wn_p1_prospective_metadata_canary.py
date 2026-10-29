@@ -69,9 +69,7 @@ def policy() -> dict[str, object]:
 
 def _canonical_metadata(value: dict[str, object]) -> bytes:
     try:
-        encoded = json.dumps(
-            value, sort_keys=True, separators=(",", ":"), allow_nan=False
-        ).encode()
+        encoded = json.dumps(value, sort_keys=True, separators=(",", ":"), allow_nan=False).encode()
     except (TypeError, ValueError, OverflowError) as exc:
         raise ProspectiveCanaryError("noncanonical metadata") from exc
     if len(encoded) > MAX_METADATA_BYTES:
@@ -172,11 +170,7 @@ def capture_one(
             ended = started
             tick_end = -1
 
-    clock_ok = (
-        type(tick_end) is int
-        and tick_end >= tick_start
-        and started <= ended < deadline
-    )
+    clock_ok = type(tick_end) is int and tick_end >= tick_start and started <= ended < deadline
     if raw is not None and diagnostic is not None and clock_ok:
         ingestions = cast(list[float], raw["ingestion_times"])
         if any(ingested > ended.timestamp() for ingested in ingestions):
@@ -188,10 +182,7 @@ def capture_one(
             reason = "CLOCK_ROLLBACK_OR_DEADLINE"
     elif diagnostic is not None:
         cities = cast(dict[str, dict[str, object]], diagnostic["cities"])
-        if all(
-            c["status"] == "HISTORICAL_METADATA_PASS_NOT_SOURCE_PROOF"
-            for c in cities.values()
-        ):
+        if all(c["status"] == "HISTORICAL_METADATA_PASS_NOT_SOURCE_PROOF" for c in cities.values()):
             result = "METADATA_OBSERVED_IN_WINDOW_NOT_ATTESTED"
 
     fixed = policy()
@@ -225,8 +216,10 @@ def capture_one(
         "production_influence": "0",
     }
     _receipt_write_once(slot, receipt)
-    code = 0 if result == "METADATA_OBSERVED_IN_WINDOW_NOT_ATTESTED" else (
-        2 if result.startswith("FAIL_CLOSED") else 1
+    code = (
+        0
+        if result == "METADATA_OBSERVED_IN_WINDOW_NOT_ATTESTED"
+        else (2 if result.startswith("FAIL_CLOSED") else 1)
     )
     return code, receipt
 
