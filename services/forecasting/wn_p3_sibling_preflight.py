@@ -17,9 +17,7 @@ from datetime import date
 from decimal import Decimal, InvalidOperation
 from itertools import pairwise
 
-CITY_SERIES = frozenset(
-    {"KXHIGHTBOS", "KXHIGHMIA", "KXHIGHDEN", "KXHIGHLAX", "KXHIGHTSEA"}
-)
+CITY_SERIES = frozenset({"KXHIGHTBOS", "KXHIGHMIA", "KXHIGHDEN", "KXHIGHLAX", "KXHIGHTSEA"})
 FIRST_TARGET = date(2026, 11, 1)
 _POLICY = "wn-p3-untrusted-integer-fahrenheit-six-sibling-preflight-v1"
 _NUMBER = re.compile(r"\d+(?:\.\d+)?\Z")
@@ -51,9 +49,8 @@ def event_ticker_for(series_ticker: str, target_local_date: date) -> str:
     """Known date pattern, not proof the event exists at the exchange."""
     if series_ticker not in CITY_SERIES:
         raise PreflightError("series outside frozen five-city roster")
-    if (
-        type(target_local_date) is not date
-        or not FIRST_TARGET <= target_local_date <= date(2099, 12, 31)
+    if type(target_local_date) is not date or not FIRST_TARGET <= target_local_date <= date(
+        2099, 12, 31
     ):
         raise PreflightError("target local date outside frozen prospective scope")
     return f"{series_ticker}-{target_local_date.strftime('%y%b%d').upper()}"
