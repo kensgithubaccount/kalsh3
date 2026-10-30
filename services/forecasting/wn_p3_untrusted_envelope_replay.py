@@ -175,6 +175,4 @@ def replay_untrusted_six_sibling_bundle(
             raise ReplayError("retained orderbook ticker mismatch")
         receipts.append(receipt)
 
-    return UntrustedReplay(
-        roster=roster, evaluated_at_utc=decision, responses=tuple(receipts)
-    )
+    return UntrustedReplay(roster=roster, evaluated_at_utc=decision, responses=tuple(receipts))
