@@ -118,9 +118,7 @@ def inspect_untrusted_event_shape(
         )
 
     try:
-        payload, observed = validate_strict_untrusted_response(
-            response, expected_path=path
-        )
+        payload, observed = validate_strict_untrusted_response(response, expected_path=path)
     except public_read.PublicReadFailure:
         return abstain("INVALID_OR_FAILED_PUBLIC_RESPONSE")
 
