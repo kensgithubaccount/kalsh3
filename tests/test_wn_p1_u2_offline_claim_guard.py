@@ -273,7 +273,7 @@ def test_forged_receipt_never_published(bad: dict[str, object]) -> None:
 def test_bad_json_or_oversize_receipt_is_not_published() -> None:
     for blob in (b"{bad", b"", b"x" * 131073):
         store = MemoryCreateOnly()
-        result = execute(store, capture=lambda: blob)
+        result = execute(store, capture=lambda blob=blob: blob)
         assert result.status == "CAPTURE_OR_RECEIPT_FAILED_POISONED"
         assert CLAIM_KEY in store.objects and RECEIPT_KEY not in store.objects
 
