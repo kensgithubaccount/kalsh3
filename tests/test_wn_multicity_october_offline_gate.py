@@ -50,55 +50,68 @@ def write_capture(root: Path, city: str, target: date) -> None:
     }
     weather = encoded({"record_type": "WN-MULTICITY-C1-CLOUD-WEATHER-v1", **common})
     market = encoded({"record_type": "WN-MULTICITY-C1-CLOUD-MARKET-v1", **common})
-    forecast = encoded({
-        "record_type": "WN-MULTICITY-C1-CLOUD-FORECAST-RECEIPT-v1",
-        **common,
-        "forecast_status": "PRE_OUTCOME_FROZEN",
-        "outcome_not_consulted": True,
-        "no_probability": True,
-        "no_trade": True,
-        "no_bias_correction": True,
-        "no_city_specific_tuning": True,
-        "frozen_rule_identity": FROZEN_FORECAST_RULE_IDENTITY,
-        "forecast_p50_proxy_fahrenheit": "67.125",
-        "market_sha256": hashlib.sha256(market).hexdigest(),
-        "weather_sha256": hashlib.sha256(weather).hexdigest(),
-        "decision_at_utc": iso + "T09:00:08Z",
-    })
+    forecast = encoded(
+        {
+            "record_type": "WN-MULTICITY-C1-CLOUD-FORECAST-RECEIPT-v1",
+            **common,
+            "forecast_status": "PRE_OUTCOME_FROZEN",
+            "outcome_not_consulted": True,
+            "no_probability": True,
+            "no_trade": True,
+            "no_bias_correction": True,
+            "no_city_specific_tuning": True,
+            "frozen_rule_identity": FROZEN_FORECAST_RULE_IDENTITY,
+            "forecast_p50_proxy_fahrenheit": "67.125",
+            "market_sha256": hashlib.sha256(market).hexdigest(),
+            "weather_sha256": hashlib.sha256(weather).hexdigest(),
+            "decision_at_utc": iso + "T09:00:08Z",
+        }
+    )
     parts = {"forecast.json": forecast, "market.json": market, "weather.json": weather}
-    packet = encoded({
-        "record_type": "WN-MULTICITY-C1-CLOUD-PACKET-v1",
-        **common,
-        "no_trade": True,
-        "no_alert": True,
-        "no_probability_or_edge_calculation": True,
-        "weather_development_observation": "VALID_PRE_OUTCOME_SEALED",
-        "forecast_p50_proxy_fahrenheit": "67.125",
-        "decision_at_utc": iso + "T09:00:08Z",
-        "component_sha256": {
-            name: hashlib.sha256(blob).hexdigest() for name, blob in parts.items()
-        },
-    })
+    packet = encoded(
+        {
+            "record_type": "WN-MULTICITY-C1-CLOUD-PACKET-v1",
+            **common,
+            "no_trade": True,
+            "no_alert": True,
+            "no_probability_or_edge_calculation": True,
+            "weather_development_observation": "VALID_PRE_OUTCOME_SEALED",
+            "forecast_p50_proxy_fahrenheit": "67.125",
+            "decision_at_utc": iso + "T09:00:08Z",
+            "component_sha256": {
+                name: hashlib.sha256(blob).hexdigest() for name, blob in parts.items()
+            },
+        }
+    )
     parts["packet.json"] = packet
     for name, blob in parts.items():
         put(root, stem + "/" + name, blob)
-    put(root, stem + "/SHA256SUMS.json", encoded({
-        f"{stem}/{name}": hashlib.sha256(blob).hexdigest()
-        for name, blob in parts.items()
-    }))
+    put(
+        root,
+        stem + "/SHA256SUMS.json",
+        encoded(
+            {f"{stem}/{name}": hashlib.sha256(blob).hexdigest() for name, blob in parts.items()}
+        ),
+    )
 
 
 def write_failure(root: Path, city: str, target: date) -> None:
-    put(root, f"city_days/{city}/{target:%Y%m%d}/failure.json", encoded({
-        "record_type": "WN-MULTICITY-C1-CLOUD-FAILURE-v1",
-        "city_id": city,
-        "target_date_utc": target.isoformat(),
-        "status": "DATA_NOT_READY",
-        "error_code": "DATA_NOT_READY_IMAGE_COUNT",
-        "no_retry": True,
-        "no_backfill": True,
-        "no_trade": True,
-    }))
+    put(
+        root,
+        f"city_days/{city}/{target:%Y%m%d}/failure.json",
+        encoded(
+            {
+                "record_type": "WN-MULTICITY-C1-CLOUD-FAILURE-v1",
+                "city_id": city,
+                "target_date_utc": target.isoformat(),
+                "status": "DATA_NOT_READY",
+                "error_code": "DATA_NOT_READY_IMAGE_COUNT",
+                "no_retry": True,
+                "no_backfill": True,
+                "no_trade": True,
+            }
+        ),
+    )
 
 
 def complete_synthetic_october(root: Path) -> None:
