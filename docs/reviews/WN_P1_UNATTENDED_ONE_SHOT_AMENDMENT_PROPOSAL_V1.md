@@ -22,6 +22,52 @@ The operator cannot attend the approved Sunday 2026-11-01 manual source-metadata
 8. **Disarm after first attempt.** Delete/disable only the *future scheduler registration*, never remove the persisted claim or receipt artifacts. Investigate status read-only after the observation window. Do not re-arm November 1 if the job fails, does not run, or produces no receipt. A missed date is a documented missed opportunity; a subsequent date requires a **new frozen and independently reviewed** experiment.
 9. **Separate deployment authorization.** No scheduler can be installed merely because this amendment doc is merged. Require an independently reviewed executable wrapper and injected **fully offline synthetic tests** plus environment-specific arm/rollback audit, then an explicit user go/no-go after evidence of host/rights/cost. Only then may an operator *deliberately* arm one job. **This PR alone is not the requested unattended capture implementation.**
 
+
+## Recovered candidate Google Cloud host — NOT live-verified
+
+GitHub's frozen October C1 final report and `final_results.json` identify the *historic* research deployment:
+
+- GCP project `total-market-138523`, region `us-central1`.
+- Cloud Run **October collector** `wn-multicity-20261003-20261014-collector`, five tasks, five-way parallel, max task retries zero, October-specific container image `sha256:0ffe08df80315922d64f2313f160b053151744416ed03dacafe38fcc6e24bc08`.
+- Cloud Scheduler **October trigger** `wn-multicity-20261003-20261014`, UTC schedule `50 8 3-14 10 *`, previously recorded **PAUSED**, retry count zero. That record is dated 2026-10-01 and **cannot prove today's actual scheduler state**, EE credentials, current authorization or prior attempts.
+- Historical GCS evidence bucket `wn-multicity-c1-354269857197-20261001` had successfully tested conditional create-only writes. This is **not** advance authorization to store November metadata, read or reuse October artifacts, or expand historic service-account IAM.
+- The old container samples four station-head temperature bands, uses Kalshi public book endpoints, and enforces an **October 09:00Z** gate. It is NOT the November **metadata-only** source and must **never be resumed, rerun, repurposed in place, or have its frozen image/config edited** to achieve the new experiment.
+
+### Cloud Run filesystem mismatch — execution BLOCKER
+
+The merged November 1 canary uses POSIX `O_DIRECTORY|O_NOFOLLOW`, `O_EXCL` local claim marker, per-day directory, and `fsync` to enforce a cooperative **persistent-local-root** one-shot guarantee. An ordinary Cloud Run job's writable container filesystem is **ephemeral and scoped to each instance**: a second execution can start with a fresh empty directory, so calling the unchanged local canary *inside a Cloud Run container alone* would NOT provide durable exactly-once custody. A GCS FUSE mount cannot be assumed to implement the POSIX create-only/fsync guarantees either. A plain Cloud Scheduler trigger is also not an exactly-once execution guarantee.
+
+Before selecting Cloud Run, a **separate reviewed wrapper/transport boundary** must:
+1. Establish an independently permissioned durable *external* GCS **create-only one-date scheduler claim** with provider-enforced `if_generation_match=0` (no delete/overwrite on the runtime identity) **before any EE/source call**, and abort on precondition failure or ambiguous network error **without retry**. A second run must encounter the existing claim even if the first job/container died without output.
+2. Retain the original canary's local date-claim/receipt logic where applicable, but treat any local receipt as **ephemeral** until safely copied/committed into a separately reviewed create-only GCS evidence object, with explicit receipt byte SHA256, generation and failure custody. Never claim this is the original Earth Engine raw transport or strong provider timestamp attestation.
+3. Use a **new, isolated one-task Cloud Run Job**, not the five-task October collector. Require reviewed image/source SHA, frozen args/EE metadata asset/project, no Kalshi/GCS-member access, zero Cloud Run task retries, no concurrent invocations, no service/job auto-restart, process-level deadline/watchdog and exact UTC gate checks. A second source call after ambiguous process kill is forbidden.
+4. Use a **new, isolated, paused Cloud Scheduler registration**, with absolute-date UTC gate inside the runner rather than relying only on the cron expression. Disable any Cloud Scheduler automatic retry or retry duration, and assume duplicates/restarts are possible: only the persistent GCS claim can enforce no second EE call. No new schedule is armed by this document.
+5. Verify an approved, narrow read-only Earth Engine credential is actually available and valid in the **new** runtime, along with explicitly budgeted requests and a new private receipt destination. Do not copy prior October refresh tokens or assume the old Secret Manager mount is authorized for the new canary. Do not print credentials, token bytes or env secrets.
+
+### Owner/operator **read-only** host verification (no EE request and no scheduler changes)
+
+These commands are inspection only, not activation. Execute with an already authenticated local `gcloud` CLI; **do not share credentials, tokens, secret values or full environment dumps**. Historical names are *candidates*, not live-confirmed resources:
+
+```bash
+PROJECT=total-market-138523
+REGION=us-central1
+gcloud config get-value project
+gcloud run jobs describe wn-multicity-20261003-20261014-collector \
+  --project="$PROJECT" --region="$REGION" \
+  --format='yaml(name,template.template.taskCount,template.template.maxRetries)'
+gcloud scheduler jobs describe wn-multicity-20261003-20261014 \
+  --project="$PROJECT" --location="$REGION" \
+  --format='yaml(name,state,schedule,timeZone,retryConfig)'
+gcloud run jobs executions list \
+  --project="$PROJECT" --region="$REGION" \
+  --job=wn-multicity-20261003-20261014-collector --limit=5 \
+  --format='table(name,createTime,completionTime,conditions)'
+```
+
+Do **not** run `gcloud scheduler jobs resume`, `gcloud run jobs execute`, `gcloud scheduler jobs run`, deploy, IAM/secret mutation, or any source GET as part of this inspection. If these queries fail (permission denied or resource absent), report only the redacted error type and **stop**. The availability of a Google Cloud project in archived GitHub files does not confer our present ability to inspect/manage it from ChatGPT or certify it as safe.
+
+**Host go/no-go:** A credible existing Google Cloud *candidate* was recovered; no November-ready, durable exactly-once Cloud Run runner or independent current operational validation exists. Therefore **UNATTENDED NOVEMBER 1 STILL NOT ARMED**.
+
 ## Required independent review and evidence
 
 Before changing manual-only policy or arming anything, reviewer must:
