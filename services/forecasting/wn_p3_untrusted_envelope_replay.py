@@ -35,6 +35,7 @@ _COMPARE_FIELDS = frozenset(
         "status",
         "market_type",
         "strike_type",
+        "multivariate_contract",
         *RULE_FIELDS,
         *METADATA_FIELDS,
     )
@@ -171,8 +172,8 @@ def replay_untrusted_six_sibling_bundle(
         row = books[0]
         if not isinstance(row, dict) or not isinstance(row.get("orderbook_fp"), dict):
             raise ReplayError("retained book shape unsupported")
-        if row.get("ticker") is not None and row["ticker"] != ticker:
-            raise ReplayError("retained orderbook ticker mismatch")
+        if row.get("ticker") != ticker:
+            raise ReplayError("retained orderbook ticker missing or mismatched")
         receipts.append(receipt)
 
     return UntrustedReplay(roster=roster, evaluated_at_utc=decision, responses=tuple(receipts))
