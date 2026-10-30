@@ -97,6 +97,7 @@ def inspect_untrusted_event_shape(
     """
     ticker = event_ticker_for(series_ticker, target_local_date)
     path = event_shape_path(series_ticker, target_local_date)
+
     def abstain(reason: str) -> UntrustedEventShapeProbe:
         return UntrustedEventShapeProbe(
             series_ticker=series_ticker,
@@ -122,11 +123,7 @@ def inspect_untrusted_event_shape(
     body_b64 = response.get("raw_body_b64")
     digest = response.get("body_sha256")
     count = response.get("bytes")
-    if (
-        not isinstance(body_b64, str)
-        or not isinstance(digest, str)
-        or type(count) is not int
-    ):
+    if not isinstance(body_b64, str) or not isinstance(digest, str) or type(count) is not int:
         return abstain("INVALID_RETAINED_BODY")
 
     event = payload.get("event")
