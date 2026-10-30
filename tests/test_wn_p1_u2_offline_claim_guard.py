@@ -157,9 +157,21 @@ def test_exact_0805_is_allowed_and_08010_is_rejected() -> None:
         ((START, LAST_START_EXCLUSIVE), (1, 2), "CLOCK_OR_DEADLINE_AFTER_CLAIM"),
         ((START, START - timedelta(seconds=1)), (1, 2), "CLOCK_OR_DEADLINE_AFTER_CLAIM"),
         ((START, START + timedelta(seconds=1)), (2, 1), "MONOTONIC_ROLLBACK_AFTER_CLAIM"),
-        ((START, START + timedelta(seconds=1), WATCHDOG_DEADLINE_EXCLUSIVE), (1, 2, 3), "FINISHED_TOO_LATE_OR_CLOCK_INVALID_POISONED"),
-        ((START, START + timedelta(seconds=1), START), (1, 2, 3), "FINISHED_TOO_LATE_OR_CLOCK_INVALID_POISONED"),
-        ((START, START + timedelta(seconds=1), START + timedelta(seconds=2)), (1, 2, 1), "FINISHED_TOO_LATE_OR_CLOCK_INVALID_POISONED"),
+        (
+            (START, START + timedelta(seconds=1), WATCHDOG_DEADLINE_EXCLUSIVE),
+            (1, 2, 3),
+            "FINISHED_TOO_LATE_OR_CLOCK_INVALID_POISONED",
+        ),
+        (
+            (START, START + timedelta(seconds=1), START),
+            (1, 2, 3),
+            "FINISHED_TOO_LATE_OR_CLOCK_INVALID_POISONED",
+        ),
+        (
+            (START, START + timedelta(seconds=1), START + timedelta(seconds=2)),
+            (1, 2, 1),
+            "FINISHED_TOO_LATE_OR_CLOCK_INVALID_POISONED",
+        ),
     ],
 )
 def test_clock_failures_poison_one_shot_without_any_retry(
