@@ -456,3 +456,63 @@ def test_rejects_bad_status_and_bad_base64() -> None:
         bundle["series_response"][field] = value
         with pytest.raises(PublicReadFailure):
             run(bundle)
+
+
+def poison_rehashed_json_envelope(envelope: dict[str, Any], body: bytes) -> None:
+    """Rehash raw hostile JSON exactly; supply a self-consistent permissively parsed payload."""
+    envelope["payload"] = json.loads(body)
+    envelope["raw_body_b64"] = base64.b64encode(body).decode("ascii")
+    envelope["body_sha256"] = hashlib.sha256(body).hexdigest()
+    envelope["bytes"] = len(body)
+
+
+@pytest.mark.parametrize("series", sorted(CITY_SERIES))
+@pytest.mark.parametrize("position", range(14))
+@pytest.mark.parametrize(
+    "suffix",
+    (
+        b',"shadow":"first","shadow":"last"',
+        b',"shadow":Infinity',
+        b',"shadow":-Infinity',
+        b',"shadow":NaN',
+        b',"shadow":1e999',
+        b',"shadow":-1e999',
+    ),
+)
+def test_rehashed_duplicate_or_nonfinite_json_rejected_at_all_envelope_positions(
+    series: str, position: int, suffix: bytes
+) -> None:
+    bundle = documented_bundle(series)
+    envelopes = [
+        bundle["event_response"],
+        bundle["series_response"],
+        *bundle["market_responses"].values(),
+        *bundle["orderbook_responses"].values(),
+    ]
+    assert len(envelopes) == 14
+    envelope = envelopes[position]
+    raw = base64.b64decode(envelope["raw_body_b64"], validate=True)
+    assert raw.endswith(b"}")
+    poison_rehashed_json_envelope(envelope, raw[:-1] + suffix + b"}")
+    with pytest.raises(PublicReadFailure):
+        run(bundle)
+
+
+@pytest.mark.parametrize("series", sorted(CITY_SERIES))
+@pytest.mark.parametrize(
+    "old,new",
+    (
+        (b'"cap_strike":70', b'"cap_strike":70.0,"cap_strike":70'),
+        (b'"markets":[', b'"markets":null,"markets":['),
+    ),
+)
+def test_rehashed_nested_duplicate_key_rejected_without_last_key_wins(
+    series: str, old: bytes, new: bytes
+) -> None:
+    bundle = documented_bundle(series)
+    envelope = bundle["event_response"]
+    raw = base64.b64decode(envelope["raw_body_b64"], validate=True)
+    assert old in raw
+    poison_rehashed_json_envelope(envelope, raw.replace(old, new, 1))
+    with pytest.raises(PublicReadFailure, match="duplicate JSON"):
+        run(bundle)
