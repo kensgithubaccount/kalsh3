@@ -188,10 +188,17 @@ def main() -> int:
     try:
         report = audit_local_snapshot(args.root)
     except (OctoberAuditError, MulticityEvaluationSpecError) as exc:
-        print(json.dumps({"record_type": "WN-MULTICITY-OCTOBER-OFFLINE-GATE-FAILURE-v1",
-                          "status": "AUDIT_UNVERIFIED",
-                          "reason": type(exc).__name__,
-                          "paper_or_trading_authority": "NONE"}, sort_keys=True))
+        print(
+            json.dumps(
+                {
+                    "record_type": "WN-MULTICITY-OCTOBER-OFFLINE-GATE-FAILURE-v1",
+                    "status": "AUDIT_UNVERIFIED",
+                    "reason": type(exc).__name__,
+                    "paper_or_trading_authority": "NONE",
+                },
+                sort_keys=True,
+            )
+        )
         return 4
     print(json.dumps(report, sort_keys=True, separators=(",", ":")))
     return 0 if report["audit_structurally_complete"] else 4
