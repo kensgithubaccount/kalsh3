@@ -98,6 +98,90 @@ def repack(envelope: dict[str, Any], payload: dict[str, Any]) -> None:
     envelope.update(wrap(envelope["path"], payload))
 
 
+def documented_bundle(series: str = SERIES, *, both_shapes: bool = False) -> dict[str, Any]:
+    """Construct a rehashed synthetic documented payload; no live API assertion."""
+    bundle = sample(series)
+    env = bundle["event_response"]
+    payload = env["payload"]
+    markets = payload.pop("markets")
+    payload["event"]["markets"] = markets
+    if both_shapes:
+        payload["markets"] = deepcopy(markets)
+    repack(env, payload)
+    return bundle
+
+
+@pytest.mark.parametrize("series", sorted(CITY_SERIES))
+@pytest.mark.parametrize("both_shapes", [False, True])
+def test_documented_nested_event_replays_without_mutating_retained_evidence(
+    series: str, both_shapes: bool
+) -> None:
+    bundle = documented_bundle(series, both_shapes=both_shapes)
+    event_env = bundle["event_response"]
+    retained = deepcopy(event_env)
+    result = run(bundle)
+    assert event_env == retained
+    assert result.responses[0].raw_body_sha256 == retained["body_sha256"]
+    assert len(result.roster.market_tickers) == 6
+    assert len(result.responses) == 14
+    assert not result.input_source_attested
+    assert not result.rules_and_station_authorized
+    assert not result.fee_depth_authorized
+    assert not result.probability_authorized
+    assert not result.paper_authorized
+    assert result.trading_authority == "NONE"
+
+
+def test_rehashed_documented_legacy_sibling_disagreement_rejected() -> None:
+    bundle = documented_bundle(both_shapes=True)
+    env = bundle["event_response"]
+    payload = env["payload"]
+    payload["markets"][0]["rules_primary"] = "fake independent top-level rule"
+    repack(env, payload)
+    with pytest.raises(ReplayError, match="arrays conflict"):
+        run(bundle)
+
+
+@pytest.mark.parametrize("wrong_nested", [None, {}, [], "synthetic"])
+def test_malformed_documented_array_never_falls_back_to_valid_legacy(
+    wrong_nested: object,
+) -> None:
+    bundle = documented_bundle(both_shapes=True)
+    env = bundle["event_response"]
+    payload = env["payload"]
+    payload["event"]["markets"] = wrong_nested
+    repack(env, payload)
+    with pytest.raises((ReplayError, PreflightError)):
+        run(bundle)
+
+
+def test_documented_missing_and_legacy_missing_both_rejected() -> None:
+    bundle = documented_bundle()
+    env = bundle["event_response"]
+    payload = env["payload"]
+    payload["event"].pop("markets")
+    repack(env, payload)
+    with pytest.raises(ReplayError, match="array missing"):
+        run(bundle)
+
+
+@pytest.mark.parametrize("operation", ["missing", "duplicate", "extra"])
+def test_documented_sibling_malformed_roster_is_rejected(operation: str) -> None:
+    bundle = documented_bundle()
+    env = bundle["event_response"]
+    payload = env["payload"]
+    rows = payload["event"]["markets"]
+    if operation == "missing":
+        rows.pop()
+    elif operation == "duplicate":
+        rows[1] = deepcopy(rows[0])
+    else:
+        rows.append(deepcopy(rows[0]))
+    repack(env, payload)
+    with pytest.raises((ReplayError, PreflightError)):
+        run(bundle)
+
+
 @pytest.mark.parametrize("series", sorted(CITY_SERIES))
 def test_five_cities_full_roster_replays_without_authority(series: str) -> None:
     result = run(sample(series))
