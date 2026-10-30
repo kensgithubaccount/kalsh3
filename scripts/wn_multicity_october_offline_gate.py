@@ -216,9 +216,8 @@ def _inventory(
         if _stamp(os.fstat(city_fd)) != _stamp(expected):
             raise OctoberAuditError("city_days replaced during inventory")
         _walk_dir(city_fd, "city_days", result, signatures)
-        if (
-            _stamp(os.stat("city_days", dir_fd=root_fd, follow_symlinks=False))
-            != _stamp(os.fstat(city_fd))
+        if _stamp(os.stat("city_days", dir_fd=root_fd, follow_symlinks=False)) != _stamp(
+            os.fstat(city_fd)
         ):
             raise OctoberAuditError("city_days replaced during inventory")
     finally:
