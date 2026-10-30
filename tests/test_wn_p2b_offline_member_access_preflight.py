@@ -9,6 +9,7 @@ from typing import Any
 import pytest
 
 import scripts.wn_p2b_offline_member_access_preflight as preflight
+from scripts.audit_wn_p1_source_metadata import CITY_HOURS
 from scripts.wn_p2b_offline_member_access_preflight import (
     NO_GO,
     MemberAccessPreflightError,
@@ -114,7 +115,7 @@ def test_changed_source_layout_or_transfer_cap_fails_closed(
 def test_changed_fixed_standard_time_windows_fail_closed(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    altered = dict(preflight.CITY_HOURS)
+    altered = dict(CITY_HOURS)
     altered["denver"] = (8, 31)
     monkeypatch.setattr(preflight, "CITY_HOURS", altered)
     with pytest.raises(MemberAccessPreflightError, match="five-city windows"):
@@ -133,8 +134,10 @@ def test_no_constructible_positive_authority_fields() -> None:
         "decision",
     ):
         assert key not in stored
+    # This hostile runtime call must bypass mypy's static dataclass keyword check.
+    invalid_replace: Any = replace
     with pytest.raises(TypeError):
-        replace(report, source_access_demonstrated=True)
+        invalid_replace(report, source_access_demonstrated=True)
     with pytest.raises(AttributeError):
         object.__setattr__(report, "paper_authorized", True)
 
