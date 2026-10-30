@@ -5,6 +5,7 @@ from __future__ import annotations
 import base64
 import hashlib
 import json
+from copy import deepcopy
 from datetime import UTC, date, datetime
 from typing import Any
 
@@ -169,6 +170,32 @@ def test_no_silent_copy_from_nested_into_conflicting_top_level() -> None:
     payload = evidence["payload"]
     payload["markets"] = payload["markets"][:-1]
     assert inspect(wrap(evidence["path"], payload)).shape is EventShape.ABSTAIN
+
+
+@pytest.mark.parametrize("series", sorted(CITY_SERIES))
+def test_rehashed_false_zero_roster_does_not_match_both(series: str) -> None:
+    evidence = event_fixture(series, top_level=True)
+    payload = evidence["payload"]
+    payload["markets"] = deepcopy(payload["event"]["markets"])
+    payload["event"]["markets"][0]["multivariate_contract"] = False
+    payload["markets"][0]["multivariate_contract"] = 0
+    result = inspect(wrap(evidence["path"], payload), series=series)
+    assert result.shape is EventShape.ABSTAIN
+    assert result.raw_body_b64 is None
+    assert not result.source_attested
+
+
+def test_raw_float_strike_vs_int_payload_never_classifies() -> None:
+    evidence = event_fixture()
+    payload = evidence["payload"]
+    row = payload["event"]["markets"][0]
+    row["cap_strike"] = 70.0
+    retained = wrap(evidence["path"], payload)
+    row["cap_strike"] = 70
+    result = inspect(retained)
+    assert result.shape is EventShape.ABSTAIN
+    assert result.raw_body_b64 is None
+    assert not result.paper_authorized
 
 
 def test_rehashed_forgery_can_pass_but_never_attests_source() -> None:
