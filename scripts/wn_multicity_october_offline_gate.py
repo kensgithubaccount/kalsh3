@@ -209,6 +209,8 @@ def _inventory(
         if _stamp(os.fstat(root_fd)) != before_root:
             raise OctoberAuditError("snapshot root changed during inventory") from None
         return result, tuple(sorted(signatures.items()))
+    if stat.S_ISLNK(expected.st_mode):
+        raise OctoberAuditError("symlink in snapshot")
     if not stat.S_ISDIR(expected.st_mode):
         raise OctoberAuditError("city_days is not a real directory")
     city_fd = os.open("city_days", DIR_FLAGS, dir_fd=root_fd)
