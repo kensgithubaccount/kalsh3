@@ -52,17 +52,49 @@ class OfflineMemberAccessNoGo:
     decoded_bytes_per_global_chunk: int
     total_global_decoded_bytes: int
     inherited_reader_network_cap_bytes: int
-    measured_network_transfer_bytes: None = None
-    measured_network_request_count: None = None
-    observed_source_generation: None = None
-    observed_source_before_decision: bool = False
-    source_access_demonstrated: bool = False
-    model_probability_authorized: bool = False
-    settlement_station_authorized: bool = False
-    paper_authorized: bool = False
-    trading_authority: str = "NONE"
-    decision: str = NO_GO
-    policy: str = POLICY
+    @property
+    def measured_network_transfer_bytes(self) -> None:
+        return None
+
+    @property
+    def measured_network_request_count(self) -> None:
+        return None
+
+    @property
+    def observed_source_generation(self) -> None:
+        return None
+
+    @property
+    def observed_source_before_decision(self) -> bool:
+        return False
+
+    @property
+    def source_access_demonstrated(self) -> bool:
+        return False
+
+    @property
+    def model_probability_authorized(self) -> bool:
+        return False
+
+    @property
+    def settlement_station_authorized(self) -> bool:
+        return False
+
+    @property
+    def paper_authorized(self) -> bool:
+        return False
+
+    @property
+    def trading_authority(self) -> str:
+        return "NONE"
+
+    @property
+    def decision(self) -> str:
+        return NO_GO
+
+    @property
+    def policy(self) -> str:
+        return POLICY
 
     @property
     def research_only(self) -> bool:
