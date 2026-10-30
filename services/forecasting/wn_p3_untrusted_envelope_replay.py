@@ -5,9 +5,10 @@ This does NOT attest where response bytes came from: callers can manufacture a
 self-consistent raw body, timestamp and SHA256. Successful replay cannot issue
 a market-economics observation or upgrade any paper/model/trading permissions.
 
-One source event must include its complete nested market set; six standalone
-market envelopes and six book envelopes must match that exact roster. This is
-a synthetic schema contract, not proof the real endpoint supplies that shape.
+One source event must include its complete six-market set. Documented
+event.markets is preferred; legacy synthetic top-level markets is accepted
+only when event.markets is absent. Both fields must agree if present. Six
+standalone markets and books must match. This is NOT live source evidence.
 """
 
 from __future__ import annotations
@@ -27,7 +28,7 @@ from .wn_p3_sibling_preflight import (
 )
 
 MAX_AGE = timedelta(seconds=120)
-POLICY = "wn-p3b-untrusted-retained-envelope-replay-v1"
+POLICY = "wn-p3d-untrusted-retained-envelope-replay-shape-v2"
 _COMPARE_FIELDS = frozenset(
     (
         "ticker",
@@ -129,9 +130,21 @@ def replay_untrusted_six_sibling_bundle(
     event_path = BASE + "/events/" + expected_event + "?with_nested_markets=true"
     event_payload, event_receipt = _verify(event_response, event_path, decision)
     event = event_payload.get("event")
-    nested_markets = event_payload.get("markets")
-    if not isinstance(event, dict) or not isinstance(nested_markets, list):
-        raise ReplayError("complete nested-event six-sibling array required")
+    if not isinstance(event, dict):
+        raise ReplayError("event object missing")
+    top_level = event_payload.get("markets")
+    # Parse a validated in-memory view only: never change raw bytes, base64,
+    # SHA256, response payload, or the retained response evidence itself.
+    if "markets" in event:
+        nested_markets = event["markets"]
+        if not isinstance(nested_markets, list):
+            raise ReplayError("documented event.markets must be an array")
+        if "markets" in event_payload and top_level != nested_markets:
+            raise ReplayError("documented and legacy sibling arrays conflict")
+    else:
+        nested_markets = top_level
+        if not isinstance(nested_markets, list):
+            raise ReplayError("complete six-sibling event array missing")
     roster = validate_untrusted_roster(
         series_ticker=series_ticker,
         target_local_date=target_local_date,
