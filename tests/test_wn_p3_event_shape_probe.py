@@ -52,9 +52,7 @@ def wrap(path: str, payload: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def event_fixture(
-    series: str = SERIES, *, top_level: bool = False
-) -> dict[str, Any]:
+def event_fixture(series: str = SERIES, *, top_level: bool = False) -> dict[str, Any]:
     event = event_ticker_for(series, TARGET)
     markets: list[dict[str, Any]] = [
         {
@@ -89,16 +87,10 @@ def inspect(evidence: object, *, series: str = SERIES) -> UntrustedEventShapePro
 
 @pytest.mark.parametrize("series", sorted(CITY_SERIES))
 @pytest.mark.parametrize("top_level", [False, True])
-def test_five_city_documented_and_legacy_shapes(
-    series: str, top_level: bool
-) -> None:
+def test_five_city_documented_and_legacy_shapes(series: str, top_level: bool) -> None:
     evidence = event_fixture(series, top_level=top_level)
     result = inspect(evidence, series=series)
-    expected = (
-        EventShape.MATCHES_BOTH
-        if top_level
-        else EventShape.NESTED_ONLY_P3B_INCOMPATIBLE
-    )
+    expected = EventShape.MATCHES_BOTH if top_level else EventShape.NESTED_ONLY_P3B_INCOMPATIBLE
     assert result.shape is expected
     assert len(result.untrusted_sibling_tickers) == 6
     assert result.byte_count == evidence["bytes"]
