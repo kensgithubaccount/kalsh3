@@ -65,5 +65,5 @@ If each necessary full-grid chunk is fetched exactly once, **384 × 622,252,800 
 
 ## Explicit non-authority
 
-`record_type: WN-P2-PRE-NOV-DISTRIBUTION-SOURCE-FEASIBILITY-AUDIT-v1`  
+`record_type: WN-P2-PRE-NOV-DISTRIBUTION-SOURCE-FEASIBILITY-AUDIT-v1`
 `scientific_evidence_authorized: false`; `model_probability_authorized: false`; `paper_signal_authorized: false`; `trading_authority: NONE`; `production_influence: 0`.
