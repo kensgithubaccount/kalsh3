@@ -13,10 +13,10 @@ requires a separate, independently reviewed durable issuer and settlement path.
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass, replace
 from datetime import UTC, date, datetime
 from enum import StrEnum
-from typing import Mapping
 
 from .wn_p3_sibling_preflight import CITY_SERIES, StructuralRoster, event_ticker_for
 
