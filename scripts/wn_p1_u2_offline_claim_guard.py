@@ -12,9 +12,7 @@ invocation, credential scope, output custody and actual scheduler expiry.
 
 from __future__ import annotations
 
-import hashlib
 import json
-import time
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, date, datetime
@@ -130,15 +128,14 @@ def offline_once(
     Wall clocks and callback timeouts need separate independently tested
     runtime enforcement; this function cannot kill a blocked source call.
     """
-    no = lambda status, claimed=False, called=False: GuardResult(
-        status, claimed, claimed, called, False
-    )
+    def no(status: str, claimed: bool = False, called: bool = False) -> GuardResult:
+        return GuardResult(status, claimed, claimed, called, False)
 
     # Do not even attempt a provider claim outside the tighter launch window.
     try:
         started = _utc(clock())
         tick_start = _ticks(monotonic_ns())
-    except (GuardFailure, Exception):
+    except Exception:
         return no("INVALID_PRELAUNCH_CLOCK")
     if not EARLIEST <= started < LAST_START_EXCLUSIVE:
         return no("SKIP_OUTSIDE_FROZEN_LAUNCH_WINDOW")
@@ -176,7 +173,7 @@ def offline_once(
     # There is intentionally no GCP SDK and no direct EE read in this module.
     try:
         blob = _validate_canary_receipt(capture_receipt())
-    except BaseException:
+    except Exception:
         return no("CAPTURE_OR_RECEIPT_FAILED_POISONED", True, True)
 
     try:
