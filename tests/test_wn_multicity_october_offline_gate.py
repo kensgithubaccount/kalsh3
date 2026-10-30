@@ -6,12 +6,14 @@ import hashlib
 import json
 import os
 import sys
+import threading
 from datetime import date
 from pathlib import Path
 from typing import Any
 
 import pytest
 
+from scripts import wn_multicity_october_offline_gate as gate
 from scripts.wn_multicity_october_offline_gate import (
     OctoberAuditError,
     _object,
@@ -321,3 +323,111 @@ def test_absolute_symlink_ancestor_is_never_followed(
     link.symlink_to(tmp_path, target_is_directory=True)
     with pytest.raises(OctoberAuditError, match="symlink"):
         audit_local_snapshot(link)
+
+
+def test_two_actual_writers_after_inventory_cannot_get_false_pass(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    complete_synthetic_october(tmp_path)
+    staging = tmp_path.parent / (tmp_path.name + "-race-staging")
+    put(staging, "failure.json", b"{}")
+    put(staging, "chicago/20261003/packet.json", b"{}")
+    packet_conflict = tmp_path / "city_days/boston/20261003/failure.json"
+    unexpected_city = tmp_path / "city_days/chicago"
+    trigger = threading.Event()
+    failures: list[BaseException] = []
+
+    def write_conflict() -> None:
+        try:
+            assert trigger.wait(timeout=15)
+            os.replace(staging / "failure.json", packet_conflict)
+        except BaseException as exc:
+            failures.append(exc)
+
+    def write_unexpected() -> None:
+        try:
+            assert trigger.wait(timeout=15)
+            os.replace(staging / "chicago", unexpected_city)
+        except BaseException as exc:
+            failures.append(exc)
+
+    threads = [threading.Thread(target=write_conflict), threading.Thread(target=write_unexpected)]
+    for thread in threads:
+        thread.start()
+    actual_open = os.open
+    injected = False
+
+    def swap_before_first_packet(
+        path: str, flags: int, mode: int = 0o777, *, dir_fd: int | None = None
+    ) -> int:
+        nonlocal injected
+        if path == "packet.json" and dir_fd is not None and not injected:
+            injected = True
+            trigger.set()
+            for thread in threads:
+                thread.join(timeout=15)
+            assert not any(thread.is_alive() for thread in threads)
+            assert not failures
+            assert packet_conflict.is_file()
+            assert (unexpected_city / "20261003/packet.json").is_file()
+        return actual_open(path, flags, mode, dir_fd=dir_fd)
+
+    monkeypatch.setattr(os, "open", swap_before_first_packet)
+    monkeypatch.setattr(sys, "argv", ["wn-audit", "--root", str(tmp_path)])
+    assert main() == 4
+    assert injected
+    receipt = json.loads(capsys.readouterr().out)
+    assert receipt["status"] == "AUDIT_UNVERIFIED"
+    assert receipt["paper_or_trading_authority"] == "NONE"
+
+    monkeypatch.setattr(os, "open", actual_open)
+    rerun = audit_local_snapshot(tmp_path)
+    assert rerun["audit_structurally_complete"] is False
+    assert rerun["coverage"]["conflicted_city_days"] == 1
+    assert any("chicago" in path for path in rerun["coverage"]["unexpected_paths"])
+
+
+def test_transient_add_then_remove_is_detected_by_directory_metadata(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    complete_synthetic_october(tmp_path)
+    actual_open = os.open
+    injected = False
+    transient = tmp_path / "city_days/boston/20261003/transient.json"
+
+    def inject_then_open(
+        path: str, flags: int, mode: int = 0o777, *, dir_fd: int | None = None
+    ) -> int:
+        nonlocal injected
+        if path == "packet.json" and dir_fd is not None and not injected:
+            injected = True
+            transient.write_bytes(b"{}")
+            transient.unlink()
+        return actual_open(path, flags, mode, dir_fd=dir_fd)
+
+    monkeypatch.setattr(os, "open", inject_then_open)
+    with pytest.raises(OctoberAuditError, match="snapshot changed during audit"):
+        audit_local_snapshot(tmp_path)
+    assert injected
+
+
+def test_same_name_component_metadata_change_after_read_is_rejected(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    complete_synthetic_october(tmp_path)
+    original_read = gate._read
+    target = tmp_path / "city_days/boston/20261003/packet.json"
+    changed = False
+
+    def change_after_read(root_fd: int, name: str) -> bytes:
+        nonlocal changed
+        body = original_read(root_fd, name)
+        if name == "city_days/boston/20261003/packet.json" and not changed:
+            changed = True
+            os.utime(target, (1_500_000_000, 1_500_000_000))
+        return body
+
+    monkeypatch.setattr(gate, "_read", change_after_read)
+    with pytest.raises(OctoberAuditError, match="snapshot changed during audit"):
+        audit_local_snapshot(tmp_path)
+    assert changed
