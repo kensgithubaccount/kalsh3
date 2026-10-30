@@ -35,9 +35,7 @@ SPECS = (
 )
 
 
-def wrap(
-    path: str, payload: dict[str, Any], *, observed: datetime = NOW
-) -> dict[str, Any]:
+def wrap(path: str, payload: dict[str, Any], *, observed: datetime = NOW) -> dict[str, Any]:
     body = json.dumps(payload, separators=(",", ":"), sort_keys=True).encode()
     return {
         "path": path,
@@ -75,9 +73,7 @@ def sample(series: str = SERIES) -> dict[str, Any]:
             event_path,
             {"event": {"event_ticker": event, "series_ticker": series}, "markets": markets},
         ),
-        "series_response": wrap(
-            BASE + "/series/" + series, {"series": {"ticker": series}}
-        ),
+        "series_response": wrap(BASE + "/series/" + series, {"series": {"ticker": series}}),
         "market_responses": {},
         "orderbook_responses": {},
     }
@@ -182,11 +178,7 @@ def test_market_and_book_endpoint_path_mismatch(field: str) -> None:
 @pytest.mark.parametrize("field", ["event_response", "market_responses", "orderbook_responses"])
 def test_raw_body_hash_mismatch_rejected(field: str) -> None:
     bundle = sample()
-    env = (
-        bundle[field]
-        if field == "event_response"
-        else next(iter(bundle[field].values()))
-    )
+    env = bundle[field] if field == "event_response" else next(iter(bundle[field].values()))
     env["body_sha256"] = "0" * 64
     with pytest.raises(PublicReadFailure):
         run(bundle)
@@ -205,9 +197,7 @@ def test_future_or_stale_response_rejected(field: str) -> None:
     for offset in (-121, 1):
         bundle = sample()
         env = (
-            next(iter(bundle[field].values()))
-            if field == "orderbook_responses"
-            else bundle[field]
+            next(iter(bundle[field].values())) if field == "orderbook_responses" else bundle[field]
         )
         env["observed_at"] = (NOW + timedelta(seconds=offset)).isoformat()
         with pytest.raises(ReplayError):
@@ -216,9 +206,7 @@ def test_future_or_stale_response_rejected(field: str) -> None:
 
 def test_120_seconds_inclusive_and_timezone_normalized() -> None:
     bundle = sample()
-    bundle["event_response"]["observed_at"] = (
-        NOW - timedelta(seconds=120)
-    ).isoformat()
+    bundle["event_response"]["observed_at"] = (NOW - timedelta(seconds=120)).isoformat()
     assert run(bundle).evaluated_at_utc == NOW
 
 
