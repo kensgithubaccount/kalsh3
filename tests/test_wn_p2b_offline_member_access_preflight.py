@@ -8,8 +8,8 @@ from typing import Any
 
 import pytest
 
-import services.forecasting.wn_p2b_offline_member_access_preflight as preflight
-from services.forecasting.wn_p2b_offline_member_access_preflight import (
+import scripts.wn_p2b_offline_member_access_preflight as preflight
+from scripts.wn_p2b_offline_member_access_preflight import (
     NO_GO,
     MemberAccessPreflightError,
     plan_global_member_access_no_go,
