@@ -105,7 +105,8 @@ def _validate_canary_receipt(blob: bytes) -> bytes:
         or record.get("paper_signal_authorized") is not False
         or record.get("trading_authority") != "NONE"
         or record.get("production_influence") != "0"
-        or record.get("status") not in {
+        or record.get("status")
+        not in {
             "METADATA_OBSERVED_IN_WINDOW_NOT_ATTESTED",
             "ABSTAIN_INCOMPLETE_OR_LATE",
             "FAIL_CLOSED_NO_SOURCE_CLAIM",
@@ -130,6 +131,7 @@ def offline_once(
     Wall clocks and callback timeouts need separate independently tested
     runtime enforcement; this function cannot kill a blocked source call.
     """
+
     def no(status: str, claimed: bool = False, called: bool = False) -> GuardResult:
         return GuardResult(status, claimed, claimed, called, False)
 
