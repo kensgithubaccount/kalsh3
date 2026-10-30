@@ -46,9 +46,7 @@ def test_global_chunks_are_unique_cross_product_of_all_leads_and_64_members() ->
     keys = report.required_global_member_lead_keys
     assert len(keys) == 384
     assert len(set(keys)) == 384
-    assert set(keys) == {
-        (member, lead) for member in range(64) for lead in (6, 12, 18, 24, 30, 36)
-    }
+    assert set(keys) == {(member, lead) for member in range(64) for lead in (6, 12, 18, 24, 30, 36)}
     assert len({lead for _, lead in keys}) == 6
     assert len({member for member, _ in keys}) == 64
 
@@ -143,9 +141,7 @@ def test_no_constructible_positive_authority_fields() -> None:
 
 def test_constructible_fake_geometry_cannot_grant_authority() -> None:
     report = plan_global_member_access_no_go(TARGET)
-    forged: dict[str, Any] = {
-        field.name: getattr(report, field.name) for field in fields(report)
-    }
+    forged: dict[str, Any] = {field.name: getattr(report, field.name) for field in fields(report)}
     forged["total_global_decoded_bytes"] = 0
     fake = preflight.OfflineMemberAccessNoGo(**forged)
     assert fake.total_global_decoded_bytes == 0
