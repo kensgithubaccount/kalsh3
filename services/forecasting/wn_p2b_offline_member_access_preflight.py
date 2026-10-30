@@ -133,7 +133,7 @@ def plan_global_member_access_no_go(target_local_date: date) -> OfflineMemberAcc
         "los_angeles": (8, 31),
         "seattle": (8, 31),
     }
-    if CITY_HOURS != frozen_windows:
+    if frozen_windows != CITY_HOURS:
         raise MemberAccessPreflightError("frozen five-city windows changed")
 
     init = datetime.combine(target_local_date, datetime.min.time(), tzinfo=UTC)
