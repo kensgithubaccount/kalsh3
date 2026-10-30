@@ -97,16 +97,12 @@ def inspect_untrusted_event_shape(
     """
     ticker = event_ticker_for(series_ticker, target_local_date)
     path = event_shape_path(series_ticker, target_local_date)
-    base = {
-        "series_ticker": series_ticker,
-        "target_local_date": target_local_date,
-        "event_ticker": ticker,
-        "expected_path": path,
-    }
-
     def abstain(reason: str) -> UntrustedEventShapeProbe:
         return UntrustedEventShapeProbe(
-            **base,
+            series_ticker=series_ticker,
+            target_local_date=target_local_date,
+            event_ticker=ticker,
+            expected_path=path,
             shape=EventShape.ABSTAIN,
             reason=reason,
             observed_at_utc=None,
@@ -157,7 +153,10 @@ def inspect_untrusted_event_shape(
         else EventShape.NESTED_ONLY_P3B_INCOMPATIBLE
     )
     return UntrustedEventShapeProbe(
-        **base,
+        series_ticker=series_ticker,
+        target_local_date=target_local_date,
+        event_ticker=ticker,
+        expected_path=path,
         shape=shape,
         reason="STRUCTURAL_ONLY_NOT_SOURCE_ATTESTED",
         observed_at_utc=observed.astimezone(UTC),
