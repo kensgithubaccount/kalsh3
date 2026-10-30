@@ -285,10 +285,9 @@ def test_symlink_swap_exactly_before_file_open_cannot_escape_root(
         return original_open(path, flags, mode, dir_fd=dir_fd)
 
     monkeypatch.setattr(os, "open", replace_on_open)
-    report = audit_local_snapshot(tmp_path)
+    with pytest.raises(OctoberAuditError, match="symlink"):
+        audit_local_snapshot(tmp_path)
     assert swapped is True
-    assert report["audit_structurally_complete"] is False
-    assert any(x.startswith("boston/20261003:") for x in report["invalid_city_days"])
 
 
 def test_unreadable_component_emits_json_and_exit_four(
