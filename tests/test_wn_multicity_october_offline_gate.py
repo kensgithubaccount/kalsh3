@@ -104,8 +104,16 @@ def write_failure(root: Path, city: str, target: date) -> None:
                 "record_type": "WN-MULTICITY-C1-CLOUD-FAILURE-v1",
                 "city_id": city,
                 "target_date_utc": target.isoformat(),
+                "same_date_cluster": target.isoformat(),
+                "observational_unit": "CITY_DAY",
+                "city_days_independent": False,
+                "development_only": True,
+                "protocol_sha256": FROZEN_PROTOCOL_SHA256,
+                "pre_first_event_amendment_sha256": PRE_FIRST_EVENT_AMENDMENT_SHA256,
+                "d1_sha256sums_sha256": D1_SHA256SUMS_SHA256,
                 "status": "DATA_NOT_READY",
                 "error_code": "DATA_NOT_READY_IMAGE_COUNT",
+                "stage": "weather",
                 "no_retry": True,
                 "no_backfill": True,
                 "no_trade": True,
@@ -191,3 +199,34 @@ def test_symlink_is_rejected_before_reading(tmp_path: Path) -> None:
     (tmp_path / "city_days").symlink_to(tmp_path)
     with pytest.raises(OctoberAuditError, match="symlink"):
         audit_local_snapshot(tmp_path)
+
+
+def test_all_failure_export_is_not_structurally_accepted(tmp_path: Path) -> None:
+    for day in range(3, 15):
+        for city in EXPECTED_CITY_IDS:
+            write_failure(tmp_path, city, date(2026, 10, day))
+    report = audit_local_snapshot(tmp_path)
+    assert report["sealed_packets_validated"] == 0
+    assert report["audit_structurally_complete"] is False
+    assert report["coverage"]["failed_city_days"] == 60
+
+
+def test_october_four_capture_is_not_a_valid_frozen_profile(tmp_path: Path) -> None:
+    complete_synthetic_october(tmp_path)
+    path = tmp_path / "city_days/boston/20261004/failure.json"
+    path.unlink()
+    write_capture(tmp_path, "boston", date(2026, 10, 4))
+    report = audit_local_snapshot(tmp_path)
+    assert report["audit_structurally_complete"] is False
+    assert report["coverage"]["captured_city_days"] == 56
+    assert report["coverage"]["failed_city_days"] == 4
+
+
+def test_false_zero_frozen_identity_fails_closed(tmp_path: Path) -> None:
+    write_failure(tmp_path, "boston", date(2026, 10, 4))
+    path = tmp_path / "city_days/boston/20261004/failure.json"
+    data = json.loads(path.read_bytes())
+    data["city_days_independent"] = 0
+    path.write_bytes(encoded(data))
+    report = audit_local_snapshot(tmp_path)
+    assert "boston/20261004:OctoberAuditError" in report["invalid_city_days"]
