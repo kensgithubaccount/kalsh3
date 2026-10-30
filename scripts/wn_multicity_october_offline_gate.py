@@ -15,10 +15,11 @@ import json
 import math
 import os
 import stat
+from collections.abc import Iterator
 from contextlib import contextmanager
 from datetime import date
 from pathlib import Path
-from typing import Any, Iterator
+from typing import Any
 
 from services.forecasting.wn_multicity_evaluation_spec import (
     D1_SHA256SUMS_SHA256,
