@@ -17,6 +17,9 @@ from pathlib import Path
 from typing import Any
 
 from services.forecasting.wn_multicity_evaluation_spec import (
+    D1_SHA256SUMS_SHA256,
+    FROZEN_PROTOCOL_SHA256,
+    PRE_FIRST_EVENT_AMENDMENT_SHA256,
     PROSPECTIVE_END,
     CaptureState,
     MulticityEvaluationSpecError,
@@ -110,6 +113,21 @@ def _inventory(root: Path) -> list[str]:
     return sorted(result)
 
 
+def _check_frozen_common(record: dict[str, Any], city: str, target: date) -> None:
+    if (
+        record.get("city_id") != city
+        or record.get("target_date_utc") != target.isoformat()
+        or record.get("same_date_cluster") != target.isoformat()
+        or record.get("observational_unit") != "CITY_DAY"
+        or record.get("city_days_independent") is not False
+        or record.get("development_only") is not True
+        or record.get("protocol_sha256") != FROZEN_PROTOCOL_SHA256
+        or record.get("pre_first_event_amendment_sha256") != PRE_FIRST_EVENT_AMENDMENT_SHA256
+        or record.get("d1_sha256sums_sha256") != D1_SHA256SUMS_SHA256
+    ):
+        raise OctoberAuditError("frozen identity or Boolean mismatch")
+
+
 def audit_local_snapshot(root: Path) -> dict[str, Any]:
     """Validate frozen complete denominator and sealed bytes, without outcomes."""
     if not root.is_absolute() or not root.is_dir() or root.is_symlink():
@@ -127,20 +145,22 @@ def audit_local_snapshot(root: Path) -> dict[str, Any]:
         try:
             if state is CaptureState.FAILED:
                 failure = _object(_read(root, stem + "/failure.json"))
+                _check_frozen_common(failure, city, key.target_date)
                 if (
                     failure.get("record_type") != "WN-MULTICITY-C1-CLOUD-FAILURE-v1"
-                    or failure.get("city_id") != city
-                    or failure.get("target_date_utc") != key.target_date.isoformat()
+                    or failure.get("status") != "DATA_NOT_READY"
+                    or failure.get("error_code") != "DATA_NOT_READY_IMAGE_COUNT"
+                    or failure.get("stage") != "weather"
                     or failure.get("no_retry") is not True
                     or failure.get("no_backfill") is not True
                     or failure.get("no_trade") is not True
                 ):
-                    raise OctoberAuditError("invalid preserved failure receipt")
+                    raise OctoberAuditError("invalid preserved October 4 failure")
                 continue
 
             blobs = {name: _read(root, stem + "/" + name) for name in FILES}
             for blob in blobs.values():
-                _object(blob)  # Reject ambiguous/nonfinite JSON before frozen parser.
+                _check_frozen_common(_object(blob), city, key.target_date)
             manifest = _object(_read(root, stem + "/SHA256SUMS.json"))
             for name, blob in blobs.items():
                 if manifest.get(f"{stem}/{name}") != hashlib.sha256(blob).hexdigest():
@@ -158,8 +178,16 @@ def audit_local_snapshot(root: Path) -> dict[str, Any]:
             # No raw source bytes, forecasts, or market data in diagnostics.
             invalid.append(f"{city}/{day}:{type(exc).__name__}")
 
+    # Frozen retrospective profile, not a generic green light for all-failure exports.
+    expected_profile = all(
+        state is (CaptureState.FAILED if key.target_date.day == 4 else CaptureState.CAPTURED)
+        for key, state in coverage.states
+    )
     clean_audit = (
-        not invalid
+        expected_profile
+        and not invalid
+        and coverage.captured_city_days == 55
+        and coverage.failed_city_days == 5
         and coverage.missing_city_days == 0
         and coverage.conflicted_city_days == 0
         and not coverage.unexpected_paths
