@@ -127,11 +127,17 @@ def _read(root_fd: int, name: str) -> bytes:
                     raise OctoberAuditError("snapshot object exceeds research bound")
             after = os.fstat(file_fd)
             if (
-                before.st_dev, before.st_ino, before.st_size,
-                before.st_mtime_ns, before.st_ctime_ns,
+                before.st_dev,
+                before.st_ino,
+                before.st_size,
+                before.st_mtime_ns,
+                before.st_ctime_ns,
             ) != (
-                after.st_dev, after.st_ino, after.st_size,
-                after.st_mtime_ns, after.st_ctime_ns,
+                after.st_dev,
+                after.st_ino,
+                after.st_size,
+                after.st_mtime_ns,
+                after.st_ctime_ns,
             ) or count != after.st_size:
                 raise OctoberAuditError("snapshot object changed during audit read")
             return b"".join(chunks)
