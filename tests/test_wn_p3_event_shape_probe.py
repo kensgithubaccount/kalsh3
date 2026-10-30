@@ -247,5 +247,6 @@ def test_direct_construction_and_properties_are_not_authority() -> None:
     assert not original.source_attested
     with pytest.raises(AttributeError):
         object.__setattr__(original, "paper_authorized", True)
+    forged_fields: dict[str, Any] = {"source_attested": True}
     with pytest.raises(TypeError):
-        UntrustedEventShapeProbe(**{"source_attested": True})
+        UntrustedEventShapeProbe(**forged_fields)
