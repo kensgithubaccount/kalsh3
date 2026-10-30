@@ -18,6 +18,7 @@ from services.forecasting.wn_p3_sibling_preflight import (
 )
 from services.forecasting.wn_p3_untrusted_envelope_replay import (
     ReplayError,
+    UntrustedReplay,
     replay_untrusted_six_sibling_bundle,
 )
 from services.market_universe.public_read import BASE, PublicReadFailure
@@ -51,7 +52,7 @@ def wrap(path: str, payload: dict[str, Any], *, observed: datetime = NOW) -> dic
 
 def sample(series: str = SERIES) -> dict[str, Any]:
     event = event_ticker_for(series, DATE)
-    markets = [
+    markets: list[dict[str, Any]] = [
         {
             "ticker": f"{event}-{suffix}",
             "event_ticker": event,
@@ -89,7 +90,7 @@ def sample(series: str = SERIES) -> dict[str, Any]:
     return bundle
 
 
-def run(bundle: dict[str, Any]) -> Any:
+def run(bundle: dict[str, Any]) -> UntrustedReplay:
     return replay_untrusted_six_sibling_bundle(**bundle)
 
 
@@ -237,8 +238,50 @@ def test_book_ticker_conflict_rejected_even_when_rehashed() -> None:
         run(bundle)
 
 
+@pytest.mark.parametrize("flag", [True, False])
+def test_rehashed_standalone_multivariate_field_conflict_rejected(flag: bool) -> None:
+    bundle = sample()
+    env = next(iter(bundle["market_responses"].values()))
+    payload = env["payload"]
+    payload["market"]["multivariate_contract"] = flag
+    repack(env, payload)
+    with pytest.raises(ReplayError):
+        run(bundle)
+
+
+def test_rehashed_nested_multivariate_field_rejected_by_preflight() -> None:
+    bundle = sample()
+    env = bundle["event_response"]
+    payload = env["payload"]
+    payload["markets"][0]["multivariate_contract"] = True
+    repack(env, payload)
+    with pytest.raises(PreflightError):
+        run(bundle)
+
+
+@pytest.mark.parametrize("forged_ticker", [None, "", "OTHER"])
+def test_rehashed_book_row_must_identify_exact_sibling(
+    forged_ticker: str | None,
+) -> None:
+    bundle = sample()
+    env = next(iter(bundle["orderbook_responses"].values()))
+    payload = env["payload"]
+    row = payload["orderbooks"][0]
+    if forged_ticker is None:
+        row.pop("ticker")
+    else:
+        row["ticker"] = forged_ticker
+    repack(env, payload)
+    with pytest.raises(ReplayError):
+        run(bundle)
+
+
 def test_book_missing_or_multirow_rejected() -> None:
-    for rows in ([], [{"orderbook_fp": {}}, {"orderbook_fp": {}}]):
+    bad_rows: tuple[list[dict[str, Any]], ...] = (
+        [],
+        [{"orderbook_fp": {}}, {"orderbook_fp": {}}],
+    )
+    for rows in bad_rows:
         bundle = sample()
         env = next(iter(bundle["orderbook_responses"].values()))
         repack(env, {"orderbooks": rows})
