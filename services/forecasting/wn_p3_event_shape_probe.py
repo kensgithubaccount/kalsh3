@@ -7,8 +7,9 @@ attest source custody. Callable overrides are not offered at this boundary;
 unit tests replace the existing transport function with synthetic data.
 
 Kalshi documents with_nested_markets=true as placing markets in
-event.markets. The merged P3b synthetic replay expects top-level markets.
-Do not silently move/copy fields into retained evidence to bridge that gap.
+event.markets. The P3d untrusted replay accepts that documented shape
+without moving/copying fields into retained evidence. This is not proof
+that a future Kalshi API response will match.
 A schema mismatch is a negative result, never evidence of an exchange edge.
 """
 
@@ -29,7 +30,7 @@ MAX_TIMEOUT_SECONDS = 3.0
 
 class EventShape(StrEnum):
     MATCHES_BOTH = "MATCHES_BOTH"
-    NESTED_ONLY_P3B_INCOMPATIBLE = "NESTED_ONLY_P3B_INCOMPATIBLE"
+    DOCUMENTED_NESTED_ONLY = "DOCUMENTED_NESTED_ONLY"
     ABSTAIN = "ABSTAIN"
 
 
@@ -147,7 +148,7 @@ def inspect_untrusted_event_shape(
     shape = (
         EventShape.MATCHES_BOTH
         if isinstance(top_level, list)
-        else EventShape.NESTED_ONLY_P3B_INCOMPATIBLE
+        else EventShape.DOCUMENTED_NESTED_ONLY
     )
     return UntrustedEventShapeProbe(
         series_ticker=series_ticker,
