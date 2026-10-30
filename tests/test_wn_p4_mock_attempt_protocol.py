@@ -105,8 +105,9 @@ def test_two_date_clusters_are_independent_units_not_thirty_trials() -> None:
     assert subsequent.denominator_sibling_slots == 60
 
 
-@pytest.mark.parametrize("reason", sorted(
-    (s for s in AttemptState if s in {
+@pytest.mark.parametrize(
+    "reason",
+    (
         AttemptState.FORECAST_MISSING,
         AttemptState.FORECAST_LATE,
         AttemptState.MARKET_MISSING,
@@ -116,8 +117,8 @@ def test_two_date_clusters_are_independent_units_not_thirty_trials() -> None:
         AttemptState.NO_MODEL,
         AttemptState.NO_EDGE,
         AttemptState.COLLECTOR_FAILURE,
-    }), key=str
-))
+    ),
+)
 def test_each_negative_reason_preserves_denominator(reason: AttemptState) -> None:
     ledger = one()
     updated = classify_mock_abstention(
@@ -134,13 +135,16 @@ def test_each_negative_reason_preserves_denominator(reason: AttemptState) -> Non
     assert all(a.state is AttemptState.ATTEMPT_RESERVED for a in ledger.clusters[0].attempts)
 
 
-@pytest.mark.parametrize("blocked", [
-    AttemptState.ATTEMPT_RESERVED,
-    AttemptState.SETTLEMENT_NOT_FINAL,
-    AttemptState.PAPER_DIAGNOSTIC_ONLY,
-    AttemptState.FINALIZED,
-    AttemptState.CONFLICT,
-])
+@pytest.mark.parametrize(
+    "blocked",
+    (
+        AttemptState.ATTEMPT_RESERVED,
+        AttemptState.SETTLEMENT_NOT_FINAL,
+        AttemptState.PAPER_DIAGNOSTIC_ONLY,
+        AttemptState.FINALIZED,
+        AttemptState.CONFLICT,
+    ),
+)
 def test_no_positive_or_settlement_state_is_issuable(blocked: AttemptState) -> None:
     with pytest.raises(MockLedgerError):
         classify_mock_abstention(
@@ -181,10 +185,9 @@ def test_no_classification_before_reservation() -> None:
         )
 
 
-@pytest.mark.parametrize("bad_time", [
-    WHEN.replace(tzinfo=None),
-    WHEN - timedelta(minutes=1),
-])
+@pytest.mark.parametrize(
+    "bad_time", (WHEN.replace(tzinfo=None), WHEN - timedelta(minutes=1))
+)
 def test_bad_classification_clock_rejected(bad_time: datetime) -> None:
     with pytest.raises(MockLedgerError):
         classify_mock_abstention(
@@ -331,10 +334,8 @@ def test_constructor_does_not_grant_real_source_or_custody_authority() -> None:
     attempted: dict[str, Any] = {"paper_authorized": True}
     with pytest.raises(TypeError):
         MockLedger(**attempted)
-    manually_constructed = MockLedger(
-        clusters=(MockDateCluster(DATE, (MockAttempt(
-            DATE, "KXHIGHMIA", "synthetic", (), WHEN
-        ),)),)
-    )
+    invalid_attempt = MockAttempt(DATE, "KXHIGHMIA", "synthetic", (), WHEN)
+    invalid_cluster = MockDateCluster(DATE, (invalid_attempt,))
+    manually_constructed = MockLedger(clusters=(invalid_cluster,))
     assert not manually_constructed.paper_authorized
     assert manually_constructed.trading_authority == "NONE"
