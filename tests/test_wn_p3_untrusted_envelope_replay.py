@@ -260,9 +260,7 @@ def test_rehashed_nested_multivariate_field_rejected_by_preflight() -> None:
 
 
 @pytest.mark.parametrize("forged_ticker", [None, "", "OTHER"])
-def test_rehashed_book_row_must_identify_exact_sibling(
-    forged_ticker: str | None,
-) -> None:
+def test_rehashed_book_row_must_identify_exact_sibling(forged_ticker: str | None) -> None:
     bundle = sample()
     env = next(iter(bundle["orderbook_responses"].values()))
     payload = env["payload"]
