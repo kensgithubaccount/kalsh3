@@ -142,6 +142,61 @@ def test_rehashed_documented_legacy_sibling_disagreement_rejected() -> None:
         run(bundle)
 
 
+@pytest.mark.parametrize("series", sorted(CITY_SERIES))
+def test_rehashed_false_zero_between_documented_and_legacy_rejected(series: str) -> None:
+    """Python False == 0 cannot mask conflicting JSON source representations."""
+    bundle = documented_bundle(series, both_shapes=True)
+    envelope = bundle["event_response"]
+    payload = envelope["payload"]
+    payload["event"]["markets"][0]["multivariate_contract"] = False
+    payload["markets"][0]["multivariate_contract"] = 0
+    repack(envelope, payload)
+    with pytest.raises(ReplayError, match="arrays conflict"):
+        run(bundle)
+
+
+@pytest.mark.parametrize("location", ["event_response", "market_responses", "orderbook_responses"])
+def test_raw_float_strike_or_book_value_vs_caller_int_rejected(location: str) -> None:
+    """Retained 70.0 is not the same JSON type as a caller-authored integer 70."""
+    bundle = documented_bundle()
+    if location == "event_response":
+        envelope = bundle["event_response"]
+        payload = envelope["payload"]
+        row = payload["event"]["markets"][0]
+        row["cap_strike"] = 70.0
+        repack(envelope, payload)
+        row["cap_strike"] = 70
+    elif location == "market_responses":
+        envelope = next(iter(bundle["market_responses"].values()))
+        payload = envelope["payload"]
+        payload["market"]["cap_strike"] = 70.0
+        repack(envelope, payload)
+        payload["market"]["cap_strike"] = 70
+    else:
+        envelope = next(iter(bundle["orderbook_responses"].values()))
+        payload = envelope["payload"]
+        payload["orderbooks"][0]["orderbook_fp"] = {"yes": [[70.0, 1]]}
+        repack(envelope, payload)
+        payload["orderbooks"][0]["orderbook_fp"]["yes"][0][0] = 70
+    with pytest.raises(PublicReadFailure, match="types mismatch"):
+        run(bundle)
+
+
+def test_rehashed_standalone_market_false_zero_conflict_rejected() -> None:
+    """Nested/standalone market field comparison must also be type exact."""
+    bundle = documented_bundle()
+    event_env = bundle["event_response"]
+    event_payload = event_env["payload"]
+    event_payload["event"]["markets"][0]["multivariate_contract"] = False
+    repack(event_env, event_payload)
+    market_env = next(iter(bundle["market_responses"].values()))
+    market_payload = market_env["payload"]
+    market_payload["market"]["multivariate_contract"] = 0
+    repack(market_env, market_payload)
+    with pytest.raises(ReplayError, match="metadata or rules conflict"):
+        run(bundle)
+
+
 @pytest.mark.parametrize("wrong_nested", [None, {}, [], "synthetic"])
 def test_malformed_documented_array_never_falls_back_to_valid_legacy(
     wrong_nested: object,
