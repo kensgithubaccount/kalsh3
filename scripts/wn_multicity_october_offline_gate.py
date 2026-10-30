@@ -147,8 +147,27 @@ def _read(root_fd: int, name: str) -> bytes:
         os.close(parent_fd)
 
 
-def _walk_dir(dir_fd: int, prefix: str, paths: list[str]) -> None:
-    """Fail closed on every scandir/stat/open error; no skipped subdirectories."""
+def _stamp(metadata: os.stat_result) -> tuple[int, ...]:
+    """Detect namespace mutations and same-name replacements without reading bytes."""
+    return (
+        metadata.st_dev,
+        metadata.st_ino,
+        metadata.st_mode,
+        metadata.st_nlink,
+        metadata.st_size,
+        metadata.st_mtime_ns,
+        metadata.st_ctime_ns,
+    )
+
+
+def _walk_dir(
+    dir_fd: int,
+    prefix: str,
+    paths: list[str],
+    signatures: dict[str, tuple[int, ...]],
+) -> None:
+    """Every listed entry must remain stable while its directory is scanned."""
+    before = _stamp(os.fstat(dir_fd))
     with os.scandir(dir_fd) as entries:
         for entry in entries:
             if entry.name in ("", ".", "..") or "/" in entry.name:
@@ -159,30 +178,55 @@ def _walk_dir(dir_fd: int, prefix: str, paths: list[str]) -> None:
             if entry.is_dir(follow_symlinks=False):
                 sub_fd = os.open(entry.name, DIR_FLAGS, dir_fd=dir_fd)
                 try:
-                    _walk_dir(sub_fd, item, paths)
+                    _walk_dir(sub_fd, item, paths, signatures)
                 finally:
                     os.close(sub_fd)
             elif entry.is_file(follow_symlinks=False):
+                metadata = os.stat(entry.name, dir_fd=dir_fd, follow_symlinks=False)
+                if not stat.S_ISREG(metadata.st_mode):
+                    raise OctoberAuditError("nonregular snapshot entry")
+                signatures[item] = _stamp(metadata)
                 paths.append(item)
             else:
                 raise OctoberAuditError("nonregular snapshot entry")
+    after = _stamp(os.fstat(dir_fd))
+    if before != after:
+        raise OctoberAuditError("directory changed during inventory")
+    signatures[prefix] = after
 
 
-def _inventory(root_fd: int) -> list[str]:
-    """Inventory all city_days entries through dirfds; traversal errors abort."""
+def _inventory(
+    root_fd: int,
+) -> tuple[list[str], tuple[tuple[str, tuple[int, ...]], ...]]:
+    """Capture entire city-day namespace and metadata, rejecting concurrent changes."""
+    before_root = _stamp(os.fstat(root_fd))
+    signatures: dict[str, tuple[int, ...]] = {}
+    result: list[str] = []
     try:
-        metadata = os.stat("city_days", dir_fd=root_fd, follow_symlinks=False)
+        expected = os.stat("city_days", dir_fd=root_fd, follow_symlinks=False)
     except FileNotFoundError:
-        return []
-    if stat.S_ISLNK(metadata.st_mode):
-        raise OctoberAuditError("symlink in snapshot")
+        signatures["."] = before_root
+        if _stamp(os.fstat(root_fd)) != before_root:
+            raise OctoberAuditError("snapshot root changed during inventory")
+        return result, tuple(sorted(signatures.items()))
+    if not stat.S_ISDIR(expected.st_mode):
+        raise OctoberAuditError("city_days is not a real directory")
     city_fd = os.open("city_days", DIR_FLAGS, dir_fd=root_fd)
     try:
-        result: list[str] = []
-        _walk_dir(city_fd, "city_days", result)
-        return sorted(result)
+        if _stamp(os.fstat(city_fd)) != _stamp(expected):
+            raise OctoberAuditError("city_days replaced during inventory")
+        _walk_dir(city_fd, "city_days", result, signatures)
+        if (
+            _stamp(os.stat("city_days", dir_fd=root_fd, follow_symlinks=False))
+            != _stamp(os.fstat(city_fd))
+        ):
+            raise OctoberAuditError("city_days replaced during inventory")
     finally:
         os.close(city_fd)
+    if _stamp(os.fstat(root_fd)) != before_root:
+        raise OctoberAuditError("snapshot root changed during inventory")
+    signatures["."] = before_root
+    return sorted(result), tuple(sorted(signatures.items()))
 
 
 def _check_frozen_common(record: dict[str, Any], city: str, target: date) -> None:
@@ -202,7 +246,8 @@ def _check_frozen_common(record: dict[str, Any], city: str, target: date) -> Non
 
 def _audit_opened_snapshot(root_fd: int) -> dict[str, Any]:
     """Validate frozen complete denominator and sealed bytes, without outcomes."""
-    coverage = audit_inventory(_inventory(root_fd), as_of=PROSPECTIVE_END)
+    original_paths, original_metadata = _inventory(root_fd)
+    coverage = audit_inventory(original_paths, as_of=PROSPECTIVE_END)
     validated = 0
     invalid: list[str] = []
 
@@ -247,6 +292,12 @@ def _audit_opened_snapshot(root_fd: int) -> dict[str, Any]:
         except (OSError, OctoberAuditError, MulticityEvaluationSpecError) as exc:
             # No raw source bytes, forecasts, or market data in diagnostics.
             invalid.append(f"{city}/{day}:{type(exc).__name__}")
+
+    # Fail closed if writers added, removed, renamed or modified anything during
+    # validation, even if the cached denominator remained otherwise complete.
+    final_paths, final_metadata = _inventory(root_fd)
+    if original_paths != final_paths or original_metadata != final_metadata:
+        raise OctoberAuditError("snapshot changed during audit")
 
     # Frozen retrospective profile, not a generic green light for all-failure exports.
     expected_profile = all(
