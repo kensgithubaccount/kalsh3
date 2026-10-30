@@ -29,9 +29,15 @@ from .wn_p3_sibling_preflight import (
 MAX_AGE = timedelta(seconds=120)
 POLICY = "wn-p3b-untrusted-retained-envelope-replay-v1"
 _COMPARE_FIELDS = frozenset(
-    ("ticker", "event_ticker", "status", "market_type", "strike_type")
-    + RULE_FIELDS
-    + METADATA_FIELDS
+    (
+        "ticker",
+        "event_ticker",
+        "status",
+        "market_type",
+        "strike_type",
+        *RULE_FIELDS,
+        *METADATA_FIELDS,
+    )
 )
 
 
