@@ -170,17 +170,15 @@ def test_no_reclassifying_or_retries_on_same_value() -> None:
         )
 
 
-@pytest.mark.parametrize("status", [AttemptState.NO_MODEL, AttemptState.FINALIZED])
-def test_no_classification_before_reservation(status: AttemptState) -> None:
-    if status is AttemptState.NO_MODEL:
-        with pytest.raises(MockLedgerError):
-            classify_mock_abstention(
-                MockLedger(),
-                target_local_date=DATE,
-                series_ticker="KXHIGHMIA",
-                reason=status,
-                classified_at=WHEN,
-            )
+def test_no_classification_before_reservation() -> None:
+    with pytest.raises(MockLedgerError):
+        classify_mock_abstention(
+            MockLedger(),
+            target_local_date=DATE,
+            series_ticker="KXHIGHMIA",
+            reason=AttemptState.NO_MODEL,
+            classified_at=WHEN,
+        )
 
 
 @pytest.mark.parametrize("bad_time", [
@@ -242,7 +240,7 @@ def test_duplicate_or_out_of_order_date_rejected() -> None:
             ledger,
             target_local_date=DATE - timedelta(days=1),
             reserved_at=WHEN,
-            untrusted_rosters=synthetic_rosters(DATE - timedelta(days=1)),
+            untrusted_rosters=synthetic_rosters(),
         )
 
 
