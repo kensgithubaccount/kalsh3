@@ -29,6 +29,7 @@ GitHub's frozen October C1 final report and `final_results.json` identify the *h
 
 - GCP project `total-market-138523`, region `us-central1`.
 - Cloud Run **October collector** `wn-multicity-20261003-20261014-collector`, five tasks, five-way parallel, max task retries zero, October-specific container image `sha256:0ffe08df80315922d64f2313f160b053151744416ed03dacafe38fcc6e24bc08`.
+- An **earlier Chicago October job** is also identified in the frozen design: Cloud Run `wn-ee-20261001-20261014-collector` and Cloud Scheduler `wn-ee-20261001-20261014`. The user's reference to the previous failed test may refer to this older job rather than the later five-city deployment. Both are **historical identities only**; do not infer current running/paused state or reuse either frozen collector.
 - Cloud Scheduler **October trigger** `wn-multicity-20261003-20261014`, UTC schedule `50 8 3-14 10 *`, previously recorded **PAUSED**, retry count zero. That record is dated 2026-10-01 and **cannot prove today's actual scheduler state**, EE credentials, current authorization or prior attempts.
 - Historical GCS evidence bucket `wn-multicity-c1-354269857197-20261001` had successfully tested conditional create-only writes. This is **not** advance authorization to store November metadata, read or reuse October artifacts, or expand historic service-account IAM.
 - The old container samples four station-head temperature bands, uses Kalshi public book endpoints, and enforces an **October 09:00Z** gate. It is NOT the November **metadata-only** source and must **never be resumed, rerun, repurposed in place, or have its frozen image/config edited** to achieve the new experiment.
@@ -56,6 +57,12 @@ gcloud run jobs describe wn-multicity-20261003-20261014-collector \
   --project="$PROJECT" --region="$REGION" \
   --format='yaml(name,template.template.taskCount,template.template.maxRetries)'
 gcloud scheduler jobs describe wn-multicity-20261003-20261014 \
+  --project="$PROJECT" --location="$REGION" \
+  --format='yaml(name,state,schedule,timeZone,retryConfig)'
+gcloud run jobs describe wn-ee-20261001-20261014-collector \
+  --project="$PROJECT" --region="$REGION" \
+  --format='yaml(name,template.template.taskCount,template.template.maxRetries)'
+gcloud scheduler jobs describe wn-ee-20261001-20261014 \
   --project="$PROJECT" --location="$REGION" \
   --format='yaml(name,state,schedule,timeZone,retryConfig)'
 gcloud run jobs executions list \
