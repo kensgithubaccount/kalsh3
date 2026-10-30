@@ -185,9 +185,7 @@ def test_no_classification_before_reservation() -> None:
         )
 
 
-@pytest.mark.parametrize(
-    "bad_time", (WHEN.replace(tzinfo=None), WHEN - timedelta(minutes=1))
-)
+@pytest.mark.parametrize("bad_time", (WHEN.replace(tzinfo=None), WHEN - timedelta(minutes=1)))
 def test_bad_classification_clock_rejected(bad_time: datetime) -> None:
     with pytest.raises(MockLedgerError):
         classify_mock_abstention(
