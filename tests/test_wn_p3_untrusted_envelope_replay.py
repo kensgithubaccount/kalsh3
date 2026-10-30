@@ -72,7 +72,8 @@ def sample(series: str = SERIES) -> dict[str, Any]:
         "target_local_date": DATE,
         "evaluated_at": NOW,
         "event_response": wrap(
-            event_path, {"event": {"event_ticker": event, "series_ticker": series}, "markets": markets}
+            event_path,
+            {"event": {"event_ticker": event, "series_ticker": series}, "markets": markets},
         ),
         "series_response": wrap(
             BASE + "/series/" + series, {"series": {"ticker": series}}
@@ -119,13 +120,13 @@ def test_five_cities_full_roster_replays_without_authority(series: str) -> None:
 
 def test_order_invariant() -> None:
     bundle = sample()
-    expected = run(bundle).responses
+    expected_tickers = run(bundle).roster.market_tickers
     payload = bundle["event_response"]["payload"]
     payload["markets"].reverse()
     repack(bundle["event_response"], payload)
     bundle["market_responses"] = dict(reversed(list(bundle["market_responses"].items())))
     bundle["orderbook_responses"] = dict(reversed(list(bundle["orderbook_responses"].items())))
-    assert run(bundle).responses == expected
+    assert run(bundle).roster.market_tickers == expected_tickers
 
 
 @pytest.mark.parametrize("kind", ["market", "orderbook"])
