@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import base64
 import json
+import math
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, timedelta
 from typing import Any
@@ -109,6 +110,29 @@ def strict_json_value_equal(left: object, right: object) -> bool:
     return left == right
 
 
+def _unique_json_object(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
+    """Reject duplicate JSON keys rather than silently retaining the last value."""
+    result: dict[str, Any] = {}
+    for key, value in pairs:
+        if key in result:
+            raise PublicReadFailure("duplicate JSON object member")
+        result[key] = value
+    return result
+
+
+def _finite_json_float(token: str) -> float:
+    """Reject numeric overflow to infinity without rewriting retained number tokens."""
+    value = float(token)
+    if not math.isfinite(value):
+        raise PublicReadFailure("non-finite JSON numeric value")
+    return value
+
+
+def _reject_non_json_constant(token: str) -> None:
+    """JSON forbids NaN and signed Infinity, even when Python permits them."""
+    raise PublicReadFailure("non-finite JSON constant: " + token)
+
+
 def validate_strict_untrusted_response(
     response: object, *, expected_path: str
 ) -> tuple[dict[str, Any], datetime]:
@@ -124,7 +148,12 @@ def validate_strict_untrusted_response(
     encoded = response.get("raw_body_b64")
     if not isinstance(encoded, str):
         raise PublicReadFailure("retained raw body missing")
-    raw = json.loads(base64.b64decode(encoded, validate=True))
+    raw = json.loads(
+        base64.b64decode(encoded, validate=True),
+        object_pairs_hook=_unique_json_object,
+        parse_float=_finite_json_float,
+        parse_constant=_reject_non_json_constant,
+    )
     if not strict_json_value_equal(raw, payload):
         raise PublicReadFailure("retained JSON body/payload types mismatch")
     return payload, observed
