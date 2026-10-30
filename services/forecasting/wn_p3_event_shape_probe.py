@@ -20,12 +20,12 @@ from datetime import UTC, date, datetime
 from enum import StrEnum
 
 from services.market_universe import public_read
+
+from .wn_p3_sibling_preflight import PreflightError, event_ticker_for, validate_untrusted_roster
 from .wn_p3_untrusted_envelope_replay import (
     strict_json_value_equal,
     validate_strict_untrusted_response,
 )
-
-from .wn_p3_sibling_preflight import PreflightError, event_ticker_for, validate_untrusted_roster
 
 POLICY = "wn-p3c-one-call-untrusted-event-shape-probe-v1"
 MAX_TIMEOUT_SECONDS = 3.0
