@@ -132,19 +132,23 @@ def _utc(value: datetime) -> datetime:
 def _validate_cluster(cluster: MockDateCluster) -> None:
     if type(cluster) is not MockDateCluster or len(cluster.attempts) != len(CITY_SERIES):
         raise MockLedgerError("mock cluster must retain five city attempts")
+    if any(type(a) is not MockAttempt for a in cluster.attempts):
+        raise MockLedgerError("mock attempt malformed")
     if tuple(a.series_ticker for a in cluster.attempts) != tuple(sorted(CITY_SERIES)):
         raise MockLedgerError("mock cluster roster must be complete and canonical")
     for attempt in cluster.attempts:
-        if type(attempt) is not MockAttempt:
-            raise MockLedgerError("mock attempt malformed")
         expected = event_ticker_for(attempt.series_ticker, cluster.target_local_date)
-        if attempt.target_local_date != cluster.target_local_date or attempt.event_ticker != expected:
+        if (
+            attempt.target_local_date != cluster.target_local_date
+            or attempt.event_ticker != expected
+        ):
             raise MockLedgerError("mock event/date mismatch")
         siblings = attempt.untrusted_sibling_tickers
         if (
-            len(siblings) != 6
-            or len(set(siblings)) != 6
+            type(siblings) is not tuple
+            or len(siblings) != 6
             or any(not isinstance(t, str) or not t.startswith(expected + "-") for t in siblings)
+            or len(set(siblings)) != 6
         ):
             raise MockLedgerError("missing or duplicate synthetic sibling identity")
         _utc(attempt.reserved_at_utc)
@@ -250,9 +254,7 @@ def classify_mock_abstention(
     if when < current.reserved_at_utc:
         raise MockLedgerError("classification predates mock reservation")
     attempts = list(cluster.attempts)
-    attempts[attempt_index] = replace(
-        current, state=reason, classified_at_utc=when
-    )
+    attempts[attempt_index] = replace(current, state=reason, classified_at_utc=when)
     clusters = list(ledger.clusters)
     clusters[cluster_index] = replace(cluster, attempts=tuple(attempts))
     return replace(ledger, clusters=tuple(clusters))
