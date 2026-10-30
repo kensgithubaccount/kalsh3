@@ -101,8 +101,10 @@ def strict_json_value_equal(left: object, right: object) -> bool:
             return False
         return all(strict_json_value_equal(value, right[key]) for key, value in left.items())
     if isinstance(left, list):
-        return isinstance(right, list) and len(left) == len(right) and all(
-            strict_json_value_equal(a, b) for a, b in zip(left, right, strict=True)
+        return (
+            isinstance(right, list)
+            and len(left) == len(right)
+            and all(strict_json_value_equal(a, b) for a, b in zip(left, right, strict=True))
         )
     return left == right
 
@@ -131,9 +133,7 @@ def validate_strict_untrusted_response(
 def _verify(
     response: object, expected_path: str, evaluated_at_utc: datetime
 ) -> tuple[dict[str, Any], UntrustedResponseReceipt]:
-    payload, observed = validate_strict_untrusted_response(
-        response, expected_path=expected_path
-    )
+    payload, observed = validate_strict_untrusted_response(response, expected_path=expected_path)
     if observed > evaluated_at_utc or evaluated_at_utc - observed > MAX_AGE:
         raise ReplayError("retained response timestamp is future or older than 120 seconds")
     if not isinstance(response, dict):
@@ -179,9 +179,7 @@ def replay_untrusted_six_sibling_bundle(
         nested_markets = event["markets"]
         if not isinstance(nested_markets, list):
             raise ReplayError("documented event.markets must be an array")
-        if "markets" in event_payload and not strict_json_value_equal(
-            top_level, nested_markets
-        ):
+        if "markets" in event_payload and not strict_json_value_equal(top_level, nested_markets):
             raise ReplayError("documented and legacy sibling arrays conflict")
     else:
         nested_markets = top_level
