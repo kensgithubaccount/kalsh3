@@ -20,7 +20,10 @@ from datetime import UTC, date, datetime
 from enum import StrEnum
 
 from services.market_universe import public_read
-from services.market_universe.m27e_public_acceptance import validate_response_evidence
+from .wn_p3_untrusted_envelope_replay import (
+    strict_json_value_equal,
+    validate_strict_untrusted_response,
+)
 
 from .wn_p3_sibling_preflight import PreflightError, event_ticker_for, validate_untrusted_roster
 
@@ -115,7 +118,9 @@ def inspect_untrusted_event_shape(
         )
 
     try:
-        payload, observed = validate_response_evidence(response, expected_path=path)
+        payload, observed = validate_strict_untrusted_response(
+            response, expected_path=path
+        )
     except public_read.PublicReadFailure:
         return abstain("INVALID_OR_FAILED_PUBLIC_RESPONSE")
 
@@ -143,7 +148,7 @@ def inspect_untrusted_event_shape(
         return abstain("UNTRUSTED_SIX_SIBLING_PREFLIGHT_FAILED")
 
     top_level = payload.get("markets")
-    if "markets" in payload and top_level != nested:
+    if "markets" in payload and not strict_json_value_equal(top_level, nested):
         return abstain("NESTED_AND_TOP_LEVEL_ROSTERS_DISAGREE")
     shape = (
         EventShape.MATCHES_BOTH
