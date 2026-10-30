@@ -207,7 +207,7 @@ def _inventory(
     except FileNotFoundError:
         signatures["."] = before_root
         if _stamp(os.fstat(root_fd)) != before_root:
-            raise OctoberAuditError("snapshot root changed during inventory")
+            raise OctoberAuditError("snapshot root changed during inventory") from None
         return result, tuple(sorted(signatures.items()))
     if not stat.S_ISDIR(expected.st_mode):
         raise OctoberAuditError("city_days is not a real directory")
