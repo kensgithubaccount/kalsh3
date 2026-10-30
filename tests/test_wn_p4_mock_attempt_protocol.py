@@ -160,7 +160,7 @@ def test_no_reclassifying_or_retries_on_same_value() -> None:
     updated = classify_mock_abstention(
         one(),
         target_local_date=DATE,
-        series_ticker="KXHIGHBOS",
+        series_ticker="KXHIGHTBOS",
         reason=AttemptState.NO_MODEL,
         classified_at=WHEN,
     )
@@ -168,7 +168,7 @@ def test_no_reclassifying_or_retries_on_same_value() -> None:
         classify_mock_abstention(
             updated,
             target_local_date=DATE,
-            series_ticker="KXHIGHBOS",
+            series_ticker="KXHIGHTBOS",
             reason=AttemptState.NO_EDGE,
             classified_at=WHEN + timedelta(seconds=2),
         )
