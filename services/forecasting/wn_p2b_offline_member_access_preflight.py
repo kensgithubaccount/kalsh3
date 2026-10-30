@@ -52,6 +52,7 @@ class OfflineMemberAccessNoGo:
     decoded_bytes_per_global_chunk: int
     total_global_decoded_bytes: int
     inherited_reader_network_cap_bytes: int
+
     @property
     def measured_network_transfer_bytes(self) -> None:
         return None
@@ -137,9 +138,7 @@ def plan_global_member_access_no_go(target_local_date: date) -> OfflineMemberAcc
         raise MemberAccessPreflightError("frozen five-city windows changed")
 
     init = datetime.combine(target_local_date, datetime.min.time(), tzinfo=UTC)
-    source_object = (
-        SOURCE_ROOT + init.strftime("%Y%m%d") + "_00hr_XX_preds/predictions.zarr/"
-    )
+    source_object = SOURCE_ROOT + init.strftime("%Y%m%d") + "_00hr_XX_preds/predictions.zarr/"
     validate_source_object(source_object, init)
     cities: list[CityChunkRequirement] = []
     lead_union: set[int] = set()
