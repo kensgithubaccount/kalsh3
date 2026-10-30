@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
+import sys
 from datetime import date
 from pathlib import Path
 from typing import Any
@@ -14,6 +16,7 @@ from scripts.wn_multicity_october_offline_gate import (
     OctoberAuditError,
     _object,
     audit_local_snapshot,
+    main,
 )
 from services.forecasting.wn_multicity_evaluation_spec import (
     D1_SHA256SUMS_SHA256,
@@ -230,3 +233,91 @@ def test_false_zero_frozen_identity_fails_closed(tmp_path: Path) -> None:
     path.write_bytes(encoded(data))
     report = audit_local_snapshot(tmp_path)
     assert "boston/20261004:OctoberAuditError" in report["invalid_city_days"]
+
+
+def test_unreadable_unexpected_city_can_never_disappear_from_inventory(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    complete_synthetic_october(tmp_path)
+    put(tmp_path, "city_days/chicago/20261003/packet.json", b"{}")
+    visible = audit_local_snapshot(tmp_path)
+    assert visible["audit_structurally_complete"] is False
+    assert visible["coverage"]["unexpected_paths"]
+
+    blocked_ino = (tmp_path / "city_days/chicago").stat().st_ino
+    actual_scandir = os.scandir
+
+    def deny_scandir(fd: int) -> Any:
+        if isinstance(fd, int) and os.fstat(fd).st_ino == blocked_ino:
+            raise PermissionError("synthetic unreadable unexpected directory")
+        return actual_scandir(fd)
+
+    monkeypatch.setattr(os, "scandir", deny_scandir)
+    with pytest.raises(OctoberAuditError, match="filesystem"):
+        audit_local_snapshot(tmp_path)
+    monkeypatch.setattr(sys, "argv", ["wn-audit", "--root", str(tmp_path)])
+    assert main() == 4
+    receipt = json.loads(capsys.readouterr().out)
+    assert receipt["status"] == "AUDIT_UNVERIFIED"
+    assert receipt["paper_or_trading_authority"] == "NONE"
+
+
+def test_symlink_swap_exactly_before_file_open_cannot_escape_root(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    complete_synthetic_october(tmp_path)
+    target = tmp_path / "city_days/boston/20261003/weather.json"
+    outside = tmp_path.parent / (tmp_path.name + "-outside-weather.json")
+    outside.write_bytes(target.read_bytes())
+    original_open = os.open
+    swapped = False
+
+    def replace_on_open(
+        path: str, flags: int, mode: int = 0o777, *, dir_fd: int | None = None
+    ) -> int:
+        nonlocal swapped
+        if path == "weather.json" and dir_fd is not None and not swapped:
+            swapped = True
+            target.rename(target.with_name("weather.original"))
+            target.symlink_to(outside)
+        return original_open(path, flags, mode, dir_fd=dir_fd)
+
+    monkeypatch.setattr(os, "open", replace_on_open)
+    report = audit_local_snapshot(tmp_path)
+    assert swapped is True
+    assert report["audit_structurally_complete"] is False
+    assert any(x.startswith("boston/20261003:") for x in report["invalid_city_days"])
+
+
+def test_unreadable_component_emits_json_and_exit_four(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    complete_synthetic_october(tmp_path)
+    original_read = os.read
+    denied = False
+
+    def interrupted_read(fd: int, count: int) -> bytes:
+        nonlocal denied
+        if not denied:
+            denied = True
+            raise PermissionError("synthetic component read error")
+        return original_read(fd, count)
+
+    monkeypatch.setattr(os, "read", interrupted_read)
+    monkeypatch.setattr(sys, "argv", ["wn-audit", "--root", str(tmp_path)])
+    assert main() == 4
+    receipt = json.loads(capsys.readouterr().out)
+    assert receipt["status"] == "AUDIT_UNVERIFIED"
+    assert receipt["audit_structurally_complete"] is False
+    assert receipt["invalid_city_days"]
+    assert receipt["paper_or_trading_authority"] == "NONE"
+
+
+def test_absolute_symlink_ancestor_is_never_followed(
+    tmp_path: Path,
+) -> None:
+    complete_synthetic_october(tmp_path)
+    link = tmp_path.parent / (tmp_path.name + "-linked-root")
+    link.symlink_to(tmp_path, target_is_directory=True)
+    with pytest.raises(OctoberAuditError, match="symlink"):
+        audit_local_snapshot(link)
