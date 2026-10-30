@@ -90,7 +90,7 @@ def inspect(evidence: object, *, series: str = SERIES) -> UntrustedEventShapePro
 def test_five_city_documented_and_legacy_shapes(series: str, top_level: bool) -> None:
     evidence = event_fixture(series, top_level=top_level)
     result = inspect(evidence, series=series)
-    expected = EventShape.MATCHES_BOTH if top_level else EventShape.NESTED_ONLY_P3B_INCOMPATIBLE
+    expected = EventShape.MATCHES_BOTH if top_level else EventShape.DOCUMENTED_NESTED_ONLY
     assert result.shape is expected
     assert len(result.untrusted_sibling_tickers) == 6
     assert result.byte_count == evidence["bytes"]
@@ -194,7 +194,7 @@ def test_one_exact_bounded_public_get_and_no_retry(
     monkeypatch.setattr(public_read, "get_with_timeout", fake_get)
     result = acquire_one_event_shape_probe(series_ticker=SERIES, target_local_date=TARGET)
     assert calls == [(event_shape_path(SERIES, TARGET), MAX_TIMEOUT_SECONDS)]
-    assert result.shape is EventShape.NESTED_ONLY_P3B_INCOMPATIBLE
+    assert result.shape is EventShape.DOCUMENTED_NESTED_ONLY
     assert result.raw_body_b64 == evidence["raw_body_b64"]
     assert result.source_attested is False
 
