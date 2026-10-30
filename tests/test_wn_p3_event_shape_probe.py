@@ -5,6 +5,7 @@ from __future__ import annotations
 import base64
 import hashlib
 import json
+from copy import deepcopy
 from datetime import UTC, date, datetime
 from typing import Any
 
@@ -90,7 +91,7 @@ def inspect(evidence: object, *, series: str = SERIES) -> UntrustedEventShapePro
 def test_five_city_documented_and_legacy_shapes(series: str, top_level: bool) -> None:
     evidence = event_fixture(series, top_level=top_level)
     result = inspect(evidence, series=series)
-    expected = EventShape.MATCHES_BOTH if top_level else EventShape.NESTED_ONLY_P3B_INCOMPATIBLE
+    expected = EventShape.MATCHES_BOTH if top_level else EventShape.DOCUMENTED_NESTED_ONLY
     assert result.shape is expected
     assert len(result.untrusted_sibling_tickers) == 6
     assert result.byte_count == evidence["bytes"]
@@ -171,6 +172,32 @@ def test_no_silent_copy_from_nested_into_conflicting_top_level() -> None:
     assert inspect(wrap(evidence["path"], payload)).shape is EventShape.ABSTAIN
 
 
+@pytest.mark.parametrize("series", sorted(CITY_SERIES))
+def test_rehashed_false_zero_roster_does_not_match_both(series: str) -> None:
+    evidence = event_fixture(series, top_level=True)
+    payload = evidence["payload"]
+    payload["markets"] = deepcopy(payload["event"]["markets"])
+    payload["event"]["markets"][0]["multivariate_contract"] = False
+    payload["markets"][0]["multivariate_contract"] = 0
+    result = inspect(wrap(evidence["path"], payload), series=series)
+    assert result.shape is EventShape.ABSTAIN
+    assert result.raw_body_b64 is None
+    assert not result.source_attested
+
+
+def test_raw_float_strike_vs_int_payload_never_classifies() -> None:
+    evidence = event_fixture()
+    payload = evidence["payload"]
+    row = payload["event"]["markets"][0]
+    row["cap_strike"] = 70.0
+    retained = wrap(evidence["path"], payload)
+    row["cap_strike"] = 70
+    result = inspect(retained)
+    assert result.shape is EventShape.ABSTAIN
+    assert result.raw_body_b64 is None
+    assert not result.paper_authorized
+
+
 def test_rehashed_forgery_can_pass_but_never_attests_source() -> None:
     evidence = event_fixture(top_level=True)
     evidence["payload"]["event"]["title"] = "Caller-authored provenance is not attestation"
@@ -194,7 +221,7 @@ def test_one_exact_bounded_public_get_and_no_retry(
     monkeypatch.setattr(public_read, "get_with_timeout", fake_get)
     result = acquire_one_event_shape_probe(series_ticker=SERIES, target_local_date=TARGET)
     assert calls == [(event_shape_path(SERIES, TARGET), MAX_TIMEOUT_SECONDS)]
-    assert result.shape is EventShape.NESTED_ONLY_P3B_INCOMPATIBLE
+    assert result.shape is EventShape.DOCUMENTED_NESTED_ONLY
     assert result.raw_body_b64 == evidence["raw_body_b64"]
     assert result.source_attested is False
 
@@ -242,3 +269,47 @@ def test_direct_construction_and_properties_are_not_authority() -> None:
     forged_fields: dict[str, Any] = {"source_attested": True}
     with pytest.raises(TypeError):
         UntrustedEventShapeProbe(**forged_fields)
+
+
+@pytest.mark.parametrize("series", sorted(CITY_SERIES))
+@pytest.mark.parametrize(
+    "suffix",
+    (
+        b',"shadow":"first","shadow":"last"',
+        b',"shadow":Infinity',
+        b',"shadow":-Infinity',
+        b',"shadow":NaN',
+        b',"shadow":1e999',
+        b',"shadow":-1e999',
+    ),
+)
+def test_rehashed_duplicate_and_nonfinite_json_abstains(series: str, suffix: bytes) -> None:
+    evidence = event_fixture(series)
+    raw = base64.b64decode(evidence["raw_body_b64"], validate=True)
+    assert raw.endswith(b"}")
+    poisoned = raw[:-1] + suffix + b"}"
+    evidence["payload"] = json.loads(poisoned)
+    evidence["raw_body_b64"] = base64.b64encode(poisoned).decode("ascii")
+    evidence["body_sha256"] = hashlib.sha256(poisoned).hexdigest()
+    evidence["bytes"] = len(poisoned)
+    result = inspect(evidence, series=series)
+    assert result.shape is EventShape.ABSTAIN
+    assert result.raw_body_b64 is None
+    assert result.body_sha256 is None
+    assert result.trading_authority == "NONE"
+
+
+@pytest.mark.parametrize("series", sorted(CITY_SERIES))
+def test_rehashed_nested_duplicate_strike_never_classifies(series: str) -> None:
+    evidence = event_fixture(series)
+    raw = base64.b64decode(evidence["raw_body_b64"], validate=True)
+    original = b'"cap_strike":70'
+    assert original in raw
+    poisoned = raw.replace(original, b'"cap_strike":70.0,"cap_strike":70', 1)
+    evidence["payload"] = json.loads(poisoned)
+    evidence["raw_body_b64"] = base64.b64encode(poisoned).decode("ascii")
+    evidence["body_sha256"] = hashlib.sha256(poisoned).hexdigest()
+    evidence["bytes"] = len(poisoned)
+    result = inspect(evidence, series=series)
+    assert result.shape is EventShape.ABSTAIN
+    assert result.raw_body_b64 is None

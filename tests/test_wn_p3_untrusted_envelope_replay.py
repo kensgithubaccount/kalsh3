@@ -98,6 +98,145 @@ def repack(envelope: dict[str, Any], payload: dict[str, Any]) -> None:
     envelope.update(wrap(envelope["path"], payload))
 
 
+def documented_bundle(series: str = SERIES, *, both_shapes: bool = False) -> dict[str, Any]:
+    """Construct a rehashed synthetic documented payload; no live API assertion."""
+    bundle = sample(series)
+    env = bundle["event_response"]
+    payload = env["payload"]
+    markets = payload.pop("markets")
+    payload["event"]["markets"] = markets
+    if both_shapes:
+        payload["markets"] = deepcopy(markets)
+    repack(env, payload)
+    return bundle
+
+
+@pytest.mark.parametrize("series", sorted(CITY_SERIES))
+@pytest.mark.parametrize("both_shapes", [False, True])
+def test_documented_nested_event_replays_without_mutating_retained_evidence(
+    series: str, both_shapes: bool
+) -> None:
+    bundle = documented_bundle(series, both_shapes=both_shapes)
+    event_env = bundle["event_response"]
+    retained = deepcopy(event_env)
+    result = run(bundle)
+    assert event_env == retained
+    assert result.responses[0].raw_body_sha256 == retained["body_sha256"]
+    assert len(result.roster.market_tickers) == 6
+    assert len(result.responses) == 14
+    assert not result.input_source_attested
+    assert not result.rules_and_station_authorized
+    assert not result.fee_depth_authorized
+    assert not result.probability_authorized
+    assert not result.paper_authorized
+    assert result.trading_authority == "NONE"
+
+
+def test_rehashed_documented_legacy_sibling_disagreement_rejected() -> None:
+    bundle = documented_bundle(both_shapes=True)
+    env = bundle["event_response"]
+    payload = env["payload"]
+    payload["markets"][0]["rules_primary"] = "fake independent top-level rule"
+    repack(env, payload)
+    with pytest.raises(ReplayError, match="arrays conflict"):
+        run(bundle)
+
+
+@pytest.mark.parametrize("series", sorted(CITY_SERIES))
+def test_rehashed_false_zero_between_documented_and_legacy_rejected(series: str) -> None:
+    """Python False == 0 cannot mask conflicting JSON source representations."""
+    bundle = documented_bundle(series, both_shapes=True)
+    envelope = bundle["event_response"]
+    payload = envelope["payload"]
+    payload["event"]["markets"][0]["multivariate_contract"] = False
+    payload["markets"][0]["multivariate_contract"] = 0
+    repack(envelope, payload)
+    with pytest.raises(ReplayError, match="arrays conflict"):
+        run(bundle)
+
+
+@pytest.mark.parametrize("location", ["event_response", "market_responses", "orderbook_responses"])
+def test_raw_float_strike_or_book_value_vs_caller_int_rejected(location: str) -> None:
+    """Retained 70.0 is not the same JSON type as a caller-authored integer 70."""
+    bundle = documented_bundle()
+    if location == "event_response":
+        envelope = bundle["event_response"]
+        payload = envelope["payload"]
+        row = payload["event"]["markets"][0]
+        row["cap_strike"] = 70.0
+        repack(envelope, payload)
+        row["cap_strike"] = 70
+    elif location == "market_responses":
+        envelope = next(iter(bundle["market_responses"].values()))
+        payload = envelope["payload"]
+        payload["market"]["cap_strike"] = 70.0
+        repack(envelope, payload)
+        payload["market"]["cap_strike"] = 70
+    else:
+        envelope = next(iter(bundle["orderbook_responses"].values()))
+        payload = envelope["payload"]
+        payload["orderbooks"][0]["orderbook_fp"] = {"yes": [[70.0, 1]]}
+        repack(envelope, payload)
+        payload["orderbooks"][0]["orderbook_fp"]["yes"][0][0] = 70
+    with pytest.raises(PublicReadFailure, match="types mismatch"):
+        run(bundle)
+
+
+def test_rehashed_standalone_market_false_zero_conflict_rejected() -> None:
+    """Nested/standalone market field comparison must also be type exact."""
+    bundle = documented_bundle()
+    event_env = bundle["event_response"]
+    event_payload = event_env["payload"]
+    event_payload["event"]["markets"][0]["multivariate_contract"] = False
+    repack(event_env, event_payload)
+    market_env = next(iter(bundle["market_responses"].values()))
+    market_payload = market_env["payload"]
+    market_payload["market"]["multivariate_contract"] = 0
+    repack(market_env, market_payload)
+    with pytest.raises(ReplayError, match="metadata or rules conflict"):
+        run(bundle)
+
+
+@pytest.mark.parametrize("wrong_nested", [None, {}, [], "synthetic"])
+def test_malformed_documented_array_never_falls_back_to_valid_legacy(
+    wrong_nested: object,
+) -> None:
+    bundle = documented_bundle(both_shapes=True)
+    env = bundle["event_response"]
+    payload = env["payload"]
+    payload["event"]["markets"] = wrong_nested
+    repack(env, payload)
+    with pytest.raises((ReplayError, PreflightError)):
+        run(bundle)
+
+
+def test_documented_missing_and_legacy_missing_both_rejected() -> None:
+    bundle = documented_bundle()
+    env = bundle["event_response"]
+    payload = env["payload"]
+    payload["event"].pop("markets")
+    repack(env, payload)
+    with pytest.raises(ReplayError, match="array missing"):
+        run(bundle)
+
+
+@pytest.mark.parametrize("operation", ["missing", "duplicate", "extra"])
+def test_documented_sibling_malformed_roster_is_rejected(operation: str) -> None:
+    bundle = documented_bundle()
+    env = bundle["event_response"]
+    payload = env["payload"]
+    rows = payload["event"]["markets"]
+    if operation == "missing":
+        rows.pop()
+    elif operation == "duplicate":
+        rows[1] = deepcopy(rows[0])
+    else:
+        rows.append(deepcopy(rows[0]))
+    repack(env, payload)
+    with pytest.raises((ReplayError, PreflightError)):
+        run(bundle)
+
+
 @pytest.mark.parametrize("series", sorted(CITY_SERIES))
 def test_five_cities_full_roster_replays_without_authority(series: str) -> None:
     result = run(sample(series))
@@ -317,3 +456,63 @@ def test_rejects_bad_status_and_bad_base64() -> None:
         bundle["series_response"][field] = value
         with pytest.raises(PublicReadFailure):
             run(bundle)
+
+
+def poison_rehashed_json_envelope(envelope: dict[str, Any], body: bytes) -> None:
+    """Rehash raw hostile JSON exactly; supply a self-consistent permissively parsed payload."""
+    envelope["payload"] = json.loads(body)
+    envelope["raw_body_b64"] = base64.b64encode(body).decode("ascii")
+    envelope["body_sha256"] = hashlib.sha256(body).hexdigest()
+    envelope["bytes"] = len(body)
+
+
+@pytest.mark.parametrize("series", sorted(CITY_SERIES))
+@pytest.mark.parametrize("position", range(14))
+@pytest.mark.parametrize(
+    "suffix",
+    (
+        b',"shadow":"first","shadow":"last"',
+        b',"shadow":Infinity',
+        b',"shadow":-Infinity',
+        b',"shadow":NaN',
+        b',"shadow":1e999',
+        b',"shadow":-1e999',
+    ),
+)
+def test_rehashed_duplicate_or_nonfinite_json_rejected_at_all_envelope_positions(
+    series: str, position: int, suffix: bytes
+) -> None:
+    bundle = documented_bundle(series)
+    envelopes = [
+        bundle["event_response"],
+        bundle["series_response"],
+        *bundle["market_responses"].values(),
+        *bundle["orderbook_responses"].values(),
+    ]
+    assert len(envelopes) == 14
+    envelope = envelopes[position]
+    raw = base64.b64decode(envelope["raw_body_b64"], validate=True)
+    assert raw.endswith(b"}")
+    poison_rehashed_json_envelope(envelope, raw[:-1] + suffix + b"}")
+    with pytest.raises(PublicReadFailure):
+        run(bundle)
+
+
+@pytest.mark.parametrize("series", sorted(CITY_SERIES))
+@pytest.mark.parametrize(
+    "old,new",
+    (
+        (b'"cap_strike":70', b'"cap_strike":70.0,"cap_strike":70'),
+        (b'"markets":[', b'"markets":null,"markets":['),
+    ),
+)
+def test_rehashed_nested_duplicate_key_rejected_without_last_key_wins(
+    series: str, old: bytes, new: bytes
+) -> None:
+    bundle = documented_bundle(series)
+    envelope = bundle["event_response"]
+    raw = base64.b64decode(envelope["raw_body_b64"], validate=True)
+    assert old in raw
+    poison_rehashed_json_envelope(envelope, raw.replace(old, new, 1))
+    with pytest.raises(PublicReadFailure, match="duplicate JSON"):
+        run(bundle)

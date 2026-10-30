@@ -7,8 +7,9 @@ attest source custody. Callable overrides are not offered at this boundary;
 unit tests replace the existing transport function with synthetic data.
 
 Kalshi documents with_nested_markets=true as placing markets in
-event.markets. The merged P3b synthetic replay expects top-level markets.
-Do not silently move/copy fields into retained evidence to bridge that gap.
+event.markets. The P3d untrusted replay accepts that documented shape
+without moving/copying fields into retained evidence. This is not proof
+that a future Kalshi API response will match.
 A schema mismatch is a negative result, never evidence of an exchange edge.
 """
 
@@ -19,9 +20,12 @@ from datetime import UTC, date, datetime
 from enum import StrEnum
 
 from services.market_universe import public_read
-from services.market_universe.m27e_public_acceptance import validate_response_evidence
 
 from .wn_p3_sibling_preflight import PreflightError, event_ticker_for, validate_untrusted_roster
+from .wn_p3_untrusted_envelope_replay import (
+    strict_json_value_equal,
+    validate_strict_untrusted_response,
+)
 
 POLICY = "wn-p3c-one-call-untrusted-event-shape-probe-v1"
 MAX_TIMEOUT_SECONDS = 3.0
@@ -29,7 +33,7 @@ MAX_TIMEOUT_SECONDS = 3.0
 
 class EventShape(StrEnum):
     MATCHES_BOTH = "MATCHES_BOTH"
-    NESTED_ONLY_P3B_INCOMPATIBLE = "NESTED_ONLY_P3B_INCOMPATIBLE"
+    DOCUMENTED_NESTED_ONLY = "DOCUMENTED_NESTED_ONLY"
     ABSTAIN = "ABSTAIN"
 
 
@@ -114,7 +118,7 @@ def inspect_untrusted_event_shape(
         )
 
     try:
-        payload, observed = validate_response_evidence(response, expected_path=path)
+        payload, observed = validate_strict_untrusted_response(response, expected_path=path)
     except public_read.PublicReadFailure:
         return abstain("INVALID_OR_FAILED_PUBLIC_RESPONSE")
 
@@ -142,12 +146,12 @@ def inspect_untrusted_event_shape(
         return abstain("UNTRUSTED_SIX_SIBLING_PREFLIGHT_FAILED")
 
     top_level = payload.get("markets")
-    if "markets" in payload and top_level != nested:
+    if "markets" in payload and not strict_json_value_equal(top_level, nested):
         return abstain("NESTED_AND_TOP_LEVEL_ROSTERS_DISAGREE")
     shape = (
         EventShape.MATCHES_BOTH
         if isinstance(top_level, list)
-        else EventShape.NESTED_ONLY_P3B_INCOMPATIBLE
+        else EventShape.DOCUMENTED_NESTED_ONLY
     )
     return UntrustedEventShapeProbe(
         series_ticker=series_ticker,

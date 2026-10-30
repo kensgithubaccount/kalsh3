@@ -5,20 +5,24 @@ This does NOT attest where response bytes came from: callers can manufacture a
 self-consistent raw body, timestamp and SHA256. Successful replay cannot issue
 a market-economics observation or upgrade any paper/model/trading permissions.
 
-One source event must include its complete nested market set; six standalone
-market envelopes and six book envelopes must match that exact roster. This is
-a synthetic schema contract, not proof the real endpoint supplies that shape.
+One source event must include its complete six-market set. Documented
+event.markets is preferred; legacy synthetic top-level markets is accepted
+only when event.markets is absent. Both fields must agree if present. Six
+standalone markets and books must match. This is NOT live source evidence.
 """
 
 from __future__ import annotations
 
+import base64
+import json
+import math
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, timedelta
 from typing import Any
 
 from services.market_universe.domain import METADATA_FIELDS, RULE_FIELDS
 from services.market_universe.m27e_public_acceptance import validate_response_evidence
-from services.market_universe.public_read import BASE
+from services.market_universe.public_read import BASE, PublicReadFailure
 
 from .wn_p3_sibling_preflight import (
     StructuralRoster,
@@ -27,7 +31,7 @@ from .wn_p3_sibling_preflight import (
 )
 
 MAX_AGE = timedelta(seconds=120)
-POLICY = "wn-p3b-untrusted-retained-envelope-replay-v1"
+POLICY = "wn-p3d-untrusted-retained-envelope-replay-shape-v2"
 _COMPARE_FIELDS = frozenset(
     (
         "ticker",
@@ -89,10 +93,76 @@ class UntrustedReplay:
         return True
 
 
+def strict_json_value_equal(left: object, right: object) -> bool:
+    """Compare JSON structures without Python bool/int or float/int coercion."""
+    if type(left) is not type(right):
+        return False
+    if isinstance(left, dict):
+        if not isinstance(right, dict) or left.keys() != right.keys():
+            return False
+        return all(strict_json_value_equal(value, right[key]) for key, value in left.items())
+    if isinstance(left, list):
+        return (
+            isinstance(right, list)
+            and len(left) == len(right)
+            and all(strict_json_value_equal(a, b) for a, b in zip(left, right, strict=True))
+        )
+    return left == right
+
+
+def _unique_json_object(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
+    """Reject duplicate JSON keys rather than silently retaining the last value."""
+    result: dict[str, Any] = {}
+    for key, value in pairs:
+        if key in result:
+            raise PublicReadFailure("duplicate JSON object member")
+        result[key] = value
+    return result
+
+
+def _finite_json_float(token: str) -> float:
+    """Reject numeric overflow to infinity without rewriting retained number tokens."""
+    value = float(token)
+    if not math.isfinite(value):
+        raise PublicReadFailure("non-finite JSON numeric value")
+    return value
+
+
+def _reject_non_json_constant(token: str) -> None:
+    """JSON forbids NaN and signed Infinity, even when Python permits them."""
+    raise PublicReadFailure("non-finite JSON constant: " + token)
+
+
+def validate_strict_untrusted_response(
+    response: object, *, expected_path: str
+) -> tuple[dict[str, Any], datetime]:
+    """Add type-exact body/payload identity to inherited raw-hash verification.
+
+    The shared M27E validator uses Python equality, which treats 70 == 70.0
+    and False == 0 as true. This offline research consumer re-parses retained
+    bytes and rejects those JSON-type mismatches without changing M27E.
+    """
+    payload, observed = validate_response_evidence(response, expected_path=expected_path)
+    if not isinstance(response, dict):
+        raise PublicReadFailure("retained response envelope missing")
+    encoded = response.get("raw_body_b64")
+    if not isinstance(encoded, str):
+        raise PublicReadFailure("retained raw body missing")
+    raw = json.loads(
+        base64.b64decode(encoded, validate=True),
+        object_pairs_hook=_unique_json_object,
+        parse_float=_finite_json_float,
+        parse_constant=_reject_non_json_constant,
+    )
+    if not strict_json_value_equal(raw, payload):
+        raise PublicReadFailure("retained JSON body/payload types mismatch")
+    return payload, observed
+
+
 def _verify(
     response: object, expected_path: str, evaluated_at_utc: datetime
 ) -> tuple[dict[str, Any], UntrustedResponseReceipt]:
-    payload, observed = validate_response_evidence(response, expected_path=expected_path)
+    payload, observed = validate_strict_untrusted_response(response, expected_path=expected_path)
     if observed > evaluated_at_utc or evaluated_at_utc - observed > MAX_AGE:
         raise ReplayError("retained response timestamp is future or older than 120 seconds")
     if not isinstance(response, dict):
@@ -129,9 +199,21 @@ def replay_untrusted_six_sibling_bundle(
     event_path = BASE + "/events/" + expected_event + "?with_nested_markets=true"
     event_payload, event_receipt = _verify(event_response, event_path, decision)
     event = event_payload.get("event")
-    nested_markets = event_payload.get("markets")
-    if not isinstance(event, dict) or not isinstance(nested_markets, list):
-        raise ReplayError("complete nested-event six-sibling array required")
+    if not isinstance(event, dict):
+        raise ReplayError("event object missing")
+    top_level = event_payload.get("markets")
+    # Parse a validated in-memory view only: never change raw bytes, base64,
+    # SHA256, response payload, or the retained response evidence itself.
+    if "markets" in event:
+        nested_markets = event["markets"]
+        if not isinstance(nested_markets, list):
+            raise ReplayError("documented event.markets must be an array")
+        if "markets" in event_payload and not strict_json_value_equal(top_level, nested_markets):
+            raise ReplayError("documented and legacy sibling arrays conflict")
+    else:
+        nested_markets = top_level
+        if not isinstance(nested_markets, list):
+            raise ReplayError("complete six-sibling event array missing")
     roster = validate_untrusted_roster(
         series_ticker=series_ticker,
         target_local_date=target_local_date,
@@ -159,7 +241,10 @@ def replay_untrusted_six_sibling_bundle(
         if not isinstance(raw_market, dict) or raw_market.get("ticker") != ticker:
             raise ReplayError("standalone market ticker mismatch")
         nested = nested_by_ticker[ticker]
-        if any(raw_market.get(field) != nested.get(field) for field in _COMPARE_FIELDS):
+        if any(
+            not strict_json_value_equal(raw_market.get(field), nested.get(field))
+            for field in _COMPARE_FIELDS
+        ):
             raise ReplayError("nested and single-market metadata or rules conflict")
         receipts.append(receipt)
 
