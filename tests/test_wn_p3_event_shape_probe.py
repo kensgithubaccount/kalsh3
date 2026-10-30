@@ -283,9 +283,7 @@ def test_direct_construction_and_properties_are_not_authority() -> None:
         b',"shadow":-1e999',
     ),
 )
-def test_rehashed_duplicate_and_nonfinite_json_abstains(
-    series: str, suffix: bytes
-) -> None:
+def test_rehashed_duplicate_and_nonfinite_json_abstains(series: str, suffix: bytes) -> None:
     evidence = event_fixture(series)
     raw = base64.b64decode(evidence["raw_body_b64"], validate=True)
     assert raw.endswith(b"}")
@@ -307,9 +305,7 @@ def test_rehashed_nested_duplicate_strike_never_classifies(series: str) -> None:
     raw = base64.b64decode(evidence["raw_body_b64"], validate=True)
     original = b'"cap_strike":70'
     assert original in raw
-    poisoned = raw.replace(
-        original, b'"cap_strike":70.0,"cap_strike":70', 1
-    )
+    poisoned = raw.replace(original, b'"cap_strike":70.0,"cap_strike":70', 1)
     evidence["payload"] = json.loads(poisoned)
     evidence["raw_body_b64"] = base64.b64encode(poisoned).decode("ascii")
     evidence["body_sha256"] = hashlib.sha256(poisoned).hexdigest()
