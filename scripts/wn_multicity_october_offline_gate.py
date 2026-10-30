@@ -9,13 +9,16 @@ objects; it is NOT evidence provenance, weather skill or execution authority.
 from __future__ import annotations
 
 import argparse
+import errno
 import hashlib
 import json
 import math
 import os
+import stat
+from contextlib import contextmanager
 from datetime import date
 from pathlib import Path
-from typing import Any
+from typing import Any, Iterator
 
 from services.forecasting.wn_multicity_evaluation_spec import (
     D1_SHA256SUMS_SHA256,
@@ -71,47 +74,108 @@ def _object(raw: bytes) -> dict[str, Any]:
     return value
 
 
-def _no_links(root: Path, path: Path) -> None:
-    if not path.is_relative_to(root):
-        raise OctoberAuditError("path outside supplied snapshot")
-    cursor = path
-    while True:
-        if cursor.is_symlink():
-            raise OctoberAuditError("symlink in snapshot")
-        if cursor == root:
-            return
-        cursor = cursor.parent
+# Linux/macOS dirfd and no-follow semantics are required; never silently
+# downgrade to path-based checks or open a symlink outside the supplied export.
+DIR_FLAGS = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC
+FILE_FLAGS = os.O_RDONLY | os.O_NOFOLLOW | os.O_CLOEXEC | os.O_NONBLOCK
 
 
-def _read(root: Path, name: str) -> bytes:
-    path = root / name
-    _no_links(root, path)
-    if not path.is_file():
-        raise OctoberAuditError("required snapshot file missing")
-    if path.stat().st_size > MAX_COMPONENT_BYTES:
-        raise OctoberAuditError("snapshot object exceeds research bound")
-    raw = path.read_bytes()
-    if len(raw) > MAX_COMPONENT_BYTES:
-        raise OctoberAuditError("snapshot object exceeds research bound")
-    return raw
+@contextmanager
+def _open_root(root: Path) -> Iterator[int]:
+    """Open every absolute ancestor without following symlinks; pin the root fd."""
+    if not root.is_absolute() or ".." in root.parts:
+        raise OctoberAuditError("snapshot root must be absolute without traversal")
+    fd = os.open("/", DIR_FLAGS)
+    try:
+        for segment in root.parts[1:]:
+            child = os.open(segment, DIR_FLAGS, dir_fd=fd)
+            os.close(fd)
+            fd = child
+        yield fd
+    finally:
+        os.close(fd)
 
 
-def _inventory(root: Path) -> list[str]:
-    result: list[str] = []
-    city_days = root / "city_days"
-    _no_links(root, city_days)
-    if not city_days.exists():
-        return result
-    for directory, folders, files in os.walk(city_days, followlinks=False):
-        parent = Path(directory)
-        _no_links(root, parent)
-        for name in folders:
-            _no_links(root, parent / name)
-        for name in files:
-            path = parent / name
-            _no_links(root, path)
-            result.append(path.relative_to(root).as_posix())
-    return sorted(result)
+def _read(root_fd: int, name: str) -> bytes:
+    """Open each relative component beneath a pinned root, then read its regular fd."""
+    parts = name.split("/")
+    if not parts or any(part in ("", ".", "..") for part in parts):
+        raise OctoberAuditError("invalid relative snapshot component")
+    parent_fd = os.dup(root_fd)
+    try:
+        for component in parts[:-1]:
+            child_fd = os.open(component, DIR_FLAGS, dir_fd=parent_fd)
+            os.close(parent_fd)
+            parent_fd = child_fd
+        file_fd = os.open(parts[-1], FILE_FLAGS, dir_fd=parent_fd)
+        try:
+            before = os.fstat(file_fd)
+            if not stat.S_ISREG(before.st_mode):
+                raise OctoberAuditError("snapshot component is not a regular file")
+            if before.st_size > MAX_COMPONENT_BYTES:
+                raise OctoberAuditError("snapshot object exceeds research bound")
+            chunks: list[bytes] = []
+            count = 0
+            while True:
+                blob = os.read(file_fd, min(65536, MAX_COMPONENT_BYTES + 1 - count))
+                if not blob:
+                    break
+                chunks.append(blob)
+                count += len(blob)
+                if count > MAX_COMPONENT_BYTES:
+                    raise OctoberAuditError("snapshot object exceeds research bound")
+            after = os.fstat(file_fd)
+            if (
+                before.st_dev, before.st_ino, before.st_size,
+                before.st_mtime_ns, before.st_ctime_ns,
+            ) != (
+                after.st_dev, after.st_ino, after.st_size,
+                after.st_mtime_ns, after.st_ctime_ns,
+            ) or count != after.st_size:
+                raise OctoberAuditError("snapshot object changed during audit read")
+            return b"".join(chunks)
+        finally:
+            os.close(file_fd)
+    finally:
+        os.close(parent_fd)
+
+
+def _walk_dir(dir_fd: int, prefix: str, paths: list[str]) -> None:
+    """Fail closed on every scandir/stat/open error; no skipped subdirectories."""
+    with os.scandir(dir_fd) as entries:
+        for entry in entries:
+            if entry.name in ("", ".", "..") or "/" in entry.name:
+                raise OctoberAuditError("invalid snapshot directory name")
+            if entry.is_symlink():
+                raise OctoberAuditError("symlink in snapshot")
+            item = prefix + "/" + entry.name
+            if entry.is_dir(follow_symlinks=False):
+                sub_fd = os.open(entry.name, DIR_FLAGS, dir_fd=dir_fd)
+                try:
+                    _walk_dir(sub_fd, item, paths)
+                finally:
+                    os.close(sub_fd)
+            elif entry.is_file(follow_symlinks=False):
+                paths.append(item)
+            else:
+                raise OctoberAuditError("nonregular snapshot entry")
+
+
+def _inventory(root_fd: int) -> list[str]:
+    """Inventory all city_days entries through dirfds; traversal errors abort."""
+    try:
+        metadata = os.stat("city_days", dir_fd=root_fd, follow_symlinks=False)
+    except FileNotFoundError:
+        return []
+    if stat.S_ISLNK(metadata.st_mode):
+        raise OctoberAuditError("symlink in snapshot")
+    city_fd = os.open("city_days", DIR_FLAGS, dir_fd=root_fd)
+    try:
+        result: list[str] = []
+        _walk_dir(city_fd, "city_days", result)
+        return sorted(result)
+    finally:
+        os.close(city_fd)
 
 
 def _check_frozen_common(record: dict[str, Any], city: str, target: date) -> None:
@@ -129,11 +193,9 @@ def _check_frozen_common(record: dict[str, Any], city: str, target: date) -> Non
         raise OctoberAuditError("frozen identity or Boolean mismatch")
 
 
-def audit_local_snapshot(root: Path) -> dict[str, Any]:
+def _audit_opened_snapshot(root_fd: int) -> dict[str, Any]:
     """Validate frozen complete denominator and sealed bytes, without outcomes."""
-    if not root.is_absolute() or not root.is_dir() or root.is_symlink():
-        raise OctoberAuditError("local snapshot root must be a real absolute directory")
-    coverage = audit_inventory(_inventory(root), as_of=PROSPECTIVE_END)
+    coverage = audit_inventory(_inventory(root_fd), as_of=PROSPECTIVE_END)
     validated = 0
     invalid: list[str] = []
 
@@ -145,7 +207,7 @@ def audit_local_snapshot(root: Path) -> dict[str, Any]:
             continue
         try:
             if state is CaptureState.FAILED:
-                failure = _object(_read(root, stem + "/failure.json"))
+                failure = _object(_read(root_fd, stem + "/failure.json"))
                 _check_frozen_common(failure, city, key.target_date)
                 if (
                     failure.get("record_type") != "WN-MULTICITY-C1-CLOUD-FAILURE-v1"
@@ -159,10 +221,10 @@ def audit_local_snapshot(root: Path) -> dict[str, Any]:
                     raise OctoberAuditError("invalid preserved October 4 failure")
                 continue
 
-            blobs = {name: _read(root, stem + "/" + name) for name in FILES}
+            blobs = {name: _read(root_fd, stem + "/" + name) for name in FILES}
             for blob in blobs.values():
                 _check_frozen_common(_object(blob), city, key.target_date)
-            manifest = _object(_read(root, stem + "/SHA256SUMS.json"))
+            manifest = _object(_read(root_fd, stem + "/SHA256SUMS.json"))
             for name, blob in blobs.items():
                 if manifest.get(f"{stem}/{name}") != hashlib.sha256(blob).hexdigest():
                     raise OctoberAuditError("manifest/component hash mismatch")
@@ -175,7 +237,7 @@ def audit_local_snapshot(root: Path) -> dict[str, Any]:
             if sealed.city_id != city or sealed.target_date != key.target_date:
                 raise OctoberAuditError("sealed identity mismatch")
             validated += 1
-        except (OctoberAuditError, MulticityEvaluationSpecError) as exc:
+        except (OSError, OctoberAuditError, MulticityEvaluationSpecError) as exc:
             # No raw source bytes, forecasts, or market data in diagnostics.
             invalid.append(f"{city}/{day}:{type(exc).__name__}")
 
@@ -210,13 +272,24 @@ def audit_local_snapshot(root: Path) -> dict[str, Any]:
     }
 
 
+def audit_local_snapshot(root: Path) -> dict[str, Any]:
+    """Pin a local snapshot directory and perform a strictly read-only audit."""
+    try:
+        with _open_root(root) as root_fd:
+            return _audit_opened_snapshot(root_fd)
+    except OSError as exc:
+        if exc.errno in (errno.ELOOP, errno.ENOTDIR):
+            raise OctoberAuditError("snapshot symlink or invalid directory") from exc
+        raise OctoberAuditError("snapshot filesystem I/O failure") from exc
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--root", required=True, type=Path, help="absolute local export root")
     args = parser.parse_args()
     try:
         report = audit_local_snapshot(args.root)
-    except (OctoberAuditError, MulticityEvaluationSpecError) as exc:
+    except (OSError, OctoberAuditError, MulticityEvaluationSpecError) as exc:
         print(
             json.dumps(
                 {
@@ -229,6 +302,11 @@ def main() -> int:
             )
         )
         return 4
+    report["status"] = (
+        "STRUCTURAL_PASS_NOT_ATTESTED"
+        if report["audit_structurally_complete"]
+        else "AUDIT_UNVERIFIED"
+    )
     print(json.dumps(report, sort_keys=True, separators=(",", ":")))
     return 0 if report["audit_structurally_complete"] else 4
 
