@@ -82,7 +82,9 @@ def _ticks(value: int) -> int:
 
 
 def _json_bytes(payload: dict[str, object]) -> bytes:
-    return (json.dumps(payload, sort_keys=True, separators=(",", ":"), allow_nan=False) + "\n").encode()
+    return (
+        json.dumps(payload, sort_keys=True, separators=(",", ":"), allow_nan=False) + "\n"
+    ).encode()
 
 
 def _validate_canary_receipt(blob: bytes) -> bytes:
