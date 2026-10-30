@@ -13,12 +13,10 @@ import hashlib
 import json
 import math
 import os
-from datetime import date
 from pathlib import Path
 from typing import Any
 
 from services.forecasting.wn_multicity_evaluation_spec import (
-    EXPECTED_CITY_IDS,
     PROSPECTIVE_END,
     CaptureState,
     MulticityEvaluationSpecError,
