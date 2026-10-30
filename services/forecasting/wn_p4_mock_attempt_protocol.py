@@ -159,11 +159,11 @@ def _validate_cluster(cluster: MockDateCluster) -> None:
                 raise MockLedgerError("unclassified mock attempt has completion time")
         elif attempt.state not in _MOCK_ABSTENTIONS:
             raise MockLedgerError("paper, outcome, and settlement state not issuable")
-        elif (
-            attempt.classified_at_utc is None
-            or _utc(attempt.classified_at_utc) < _utc(attempt.reserved_at_utc)
-        ):
-            raise MockLedgerError("abstention lacks a valid post-reservation timestamp")
+        else:
+            if attempt.classified_at_utc is None:
+                raise MockLedgerError("abstention lacks completion time")
+            if _utc(attempt.classified_at_utc) < _utc(attempt.reserved_at_utc):
+                raise MockLedgerError("abstention predates reservation")
 
 
 def _validate_ledger(ledger: MockLedger) -> None:
