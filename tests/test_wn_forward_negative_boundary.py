@@ -144,13 +144,16 @@ def test_sqlite_update_delete_triggers_refuse_mutation(tmp_path: Path) -> None:
     reserve_date(path, TARGET, stamped_at=NOW)
     classify_negative(path, TARGET, SERIES, reason="NO_MODEL", stamped_at=NOW)
     with sqlite3.connect(path) as connection:
-        for table in ("dates", "attempts", "negatives"):
-            for statement in (
-                f"UPDATE {table} SET rowid = rowid",  # noqa: S608
-                f"DELETE FROM {table}",  # noqa: S608
-            ):
-                with pytest.raises(sqlite3.DatabaseError, match="append-only"):
-                    connection.execute(statement)
+        for statement in (
+            "UPDATE dates SET rowid = rowid",
+            "DELETE FROM dates",
+            "UPDATE attempts SET rowid = rowid",
+            "DELETE FROM attempts",
+            "UPDATE negatives SET rowid = rowid",
+            "DELETE FROM negatives",
+        ):
+            with pytest.raises(sqlite3.DatabaseError, match="append-only"):
+                connection.execute(statement)
     assert read_negative_date(path, TARGET)["denominator_city_attempts"] == 5
 
 
