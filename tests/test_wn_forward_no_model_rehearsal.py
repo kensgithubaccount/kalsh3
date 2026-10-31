@@ -223,3 +223,150 @@ def test_invalid_cli_produces_only_negative_failure(
     assert receipt["paper_authorized"] is False
     assert receipt["trading_authority"] == "NONE"
     assert "Traceback" not in output.out
+
+
+def test_replaced_ledger_policy_and_duplicate_cities_fail_before_receipt() -> None:
+    result = run()
+    cluster = result.mock_ledger.clusters[0]
+    forged_policy = replace(result.mock_ledger, policy="FORGED_POSITIVE_POLICY")
+    duplicate_cities = replace(
+        cluster,
+        attempts=(cluster.attempts[0], cluster.attempts[0], *cluster.attempts[2:]),
+    )
+    fake_cities = replace(result.mock_ledger, clusters=(duplicate_cities,))
+    for ledger in (forged_policy, fake_cities):
+        assert ledger.denominator_city_attempts == 5
+        assert ledger.denominator_sibling_slots == 30
+        with pytest.raises(ValueError):
+            replace(result, mock_ledger=ledger).receipt()
+
+
+def test_replaced_duplicate_siblings_fail_with_unchanged_5_by_30_counts() -> None:
+    result = run()
+    cluster = result.mock_ledger.clusters[0]
+    original = cluster.attempts[0]
+    duplicated = replace(
+        original,
+        untrusted_sibling_tickers=(
+            original.untrusted_sibling_tickers[0],
+            original.untrusted_sibling_tickers[0],
+            *original.untrusted_sibling_tickers[2:],
+        ),
+    )
+    forged_cluster = replace(cluster, attempts=(duplicated, *cluster.attempts[1:]))
+    forged = replace(result.mock_ledger, clusters=(forged_cluster,))
+    assert forged.denominator_city_attempts == 5
+    assert forged.denominator_sibling_slots == 30
+    with pytest.raises(ValueError):
+        replace(result, mock_ledger=forged).receipt()
+
+
+def test_replaced_five_and_seven_siblings_fail_despite_total_30() -> None:
+    result = run()
+    cluster = result.mock_ledger.clusters[0]
+    first, second = cluster.attempts[:2]
+    short = replace(
+        first,
+        untrusted_sibling_tickers=first.untrusted_sibling_tickers[:-1],
+    )
+    long = replace(
+        second,
+        untrusted_sibling_tickers=(
+            *second.untrusted_sibling_tickers,
+            second.event_ticker + "-INVENTED_EXTRA",
+        ),
+    )
+    forged_cluster = replace(
+        cluster,
+        attempts=(short, long, *cluster.attempts[2:]),
+    )
+    forged = replace(result.mock_ledger, clusters=(forged_cluster,))
+    assert forged.denominator_city_attempts == 5
+    assert forged.denominator_sibling_slots == 30
+    with pytest.raises(ValueError):
+        replace(result, mock_ledger=forged).receipt()
+
+
+def test_replaced_six_unique_but_noncanonical_invented_siblings_fail() -> None:
+    result = run()
+    cluster = result.mock_ledger.clusters[0]
+    first = cluster.attempts[0]
+    forged = replace(
+        first,
+        untrusted_sibling_tickers=(
+            *first.untrusted_sibling_tickers[:-1],
+            first.event_ticker + "-INVENTED_DIFFERENT",
+        ),
+    )
+    ledger = replace(
+        result.mock_ledger,
+        clusters=(replace(cluster, attempts=(forged, *cluster.attempts[1:])),),
+    )
+    assert ledger.denominator_sibling_slots == 30
+    assert len(set(forged.untrusted_sibling_tickers)) == 6
+    with pytest.raises(ValueError, match="sibling identities"):
+        replace(result, mock_ledger=ledger).receipt()
+
+
+@pytest.mark.parametrize(
+    "clock_change",
+    ("naive_reservation", "naive_classification", "early_classification", "unequal_clock"),
+)
+def test_replaced_invalid_or_inconsistent_clocks_fail(clock_change: str) -> None:
+    result = run()
+    cluster = result.mock_ledger.clusters[0]
+    original = cluster.attempts[0]
+    if clock_change == "naive_reservation":
+        altered = replace(original, reserved_at_utc=RESERVED.replace(tzinfo=None))
+    elif clock_change == "naive_classification":
+        altered = replace(original, classified_at_utc=CLASSIFIED.replace(tzinfo=None))
+    elif clock_change == "early_classification":
+        altered = replace(original, classified_at_utc=RESERVED - timedelta(seconds=1))
+    else:
+        altered = replace(original, classified_at_utc=CLASSIFIED + timedelta(seconds=1))
+    ledger = replace(
+        result.mock_ledger,
+        clusters=(replace(cluster, attempts=(altered, *cluster.attempts[1:])),),
+    )
+    assert ledger.denominator_city_attempts == 5
+    assert ledger.denominator_sibling_slots == 30
+    with pytest.raises(ValueError):
+        replace(result, mock_ledger=ledger).receipt()
+
+
+def test_replaced_global_geometry_zero_chunks_one_byte_fails_closed() -> None:
+    result = run()
+    forged = replace(
+        result.source_geometry,
+        required_global_member_lead_keys=(),
+        total_global_decoded_bytes=1,
+    )
+    with pytest.raises(ValueError, match="source geometry"):
+        replace(result, source_geometry=forged).receipt()
+
+
+def test_replaced_global_geometry_with_same_counts_but_wrong_identity_fails() -> None:
+    result = run()
+    forged = replace(
+        result.source_geometry,
+        required_global_member_lead_keys=tuple(
+            reversed(result.source_geometry.required_global_member_lead_keys)
+        ),
+    )
+    assert len(forged.required_global_member_lead_keys) == 384
+    assert forged.total_global_decoded_bytes == 238_945_075_200
+    with pytest.raises(ValueError, match="source geometry"):
+        replace(result, source_geometry=forged).receipt()
+
+
+def test_replaced_snapshot_with_wrong_geometry_date_and_policy_is_rejected() -> None:
+    result = run()
+    future_geometry = replace(
+        result.source_geometry,
+        target_local_date=TARGET + timedelta(days=1),
+    )
+    with pytest.raises(ValueError):
+        replace(result, source_geometry=future_geometry).receipt()
+
+    with pytest.raises(ValueError):
+        replace(result, mock_ledger=replace(result.mock_ledger, clusters=())).receipt()
