@@ -370,3 +370,77 @@ def test_replaced_snapshot_with_wrong_geometry_date_and_policy_is_rejected() -> 
 
     with pytest.raises(ValueError):
         replace(result, mock_ledger=replace(result.mock_ledger, clusters=())).receipt()
+
+
+@pytest.mark.parametrize(
+    ("reservation", "classification"),
+    [
+        ("0001-01-01T00:00:00+14:00", "2026-11-10T09:00:05Z"),
+        ("2026-11-10T09:00:00Z", "0001-01-01T00:00:00+14:00"),
+        ("9999-12-31T23:59:59-12:00", "2026-11-10T09:00:05Z"),
+        ("2026-11-10T09:00:00Z", "9999-12-31T23:59:59-12:00"),
+    ],
+)
+def test_cli_utc_conversion_underflow_and_overflow_fail_as_single_json(
+    reservation: str,
+    classification: str,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """A parsed aware datetime can still overflow when normalized to UTC."""
+    code = main(
+        [
+            "--target-local-date",
+            "2026-11-10",
+            "--simulated-reserved-at",
+            reservation,
+            "--simulated-classified-at",
+            classification,
+        ]
+    )
+    captured = capsys.readouterr()
+    assert code == 4
+    assert captured.err == ""
+    assert len(captured.out.splitlines()) == 1
+    receipt = json.loads(captured.out)
+    assert receipt == {
+        "record_type": "WN-P4B-OFFLINE-NO-MODEL-REHEARSAL-FAILURE-v1",
+        "status": "MOCK_REHEARSAL_UNVERIFIED",
+        "simulated_only": True,
+        "paper_authorized": False,
+        "trading_authority": "NONE",
+        "production_influence": "0",
+    }
+    assert "Traceback" not in captured.out
+
+
+def test_cli_overflow_during_final_receipt_revalidation_fails_closed(
+    capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The final receipt check must also be inside the CLI's error boundary."""
+    class SyntheticBrokenReceipt:
+        def receipt(self) -> dict[str, object]:
+            raise OverflowError("simulated UTC conversion overflow during receipt")
+
+    monkeypatch.setattr(
+        rehearsal,
+        "rehearse_all_no_model",
+        lambda *args, **kwargs: SyntheticBrokenReceipt(),
+    )
+    code = main(
+        [
+            "--target-local-date",
+            "2026-11-10",
+            "--simulated-reserved-at",
+            "2026-11-10T09:00:00Z",
+            "--simulated-classified-at",
+            "2026-11-10T09:00:05Z",
+        ]
+    )
+    output = capsys.readouterr()
+    assert code == 4
+    assert output.err == ""
+    assert len(output.out.splitlines()) == 1
+    receipt = json.loads(output.out)
+    assert receipt["status"] == "MOCK_REHEARSAL_UNVERIFIED"
+    assert receipt["paper_authorized"] is False
+    assert receipt["trading_authority"] == "NONE"
