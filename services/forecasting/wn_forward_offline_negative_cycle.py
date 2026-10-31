@@ -52,14 +52,14 @@ def _plain_json_copy(value: object, *, depth: int, budget: list[int]) -> object:
         for key, member in source.items():
             if type(key) is not str:
                 raise OfflineCycleError("synthetic JSON keys must be exact strings")
-            plain[cast("str", key)] = _plain_json_copy(member, depth=depth + 1, budget=budget)
+            plain[key] = _plain_json_copy(member, depth=depth + 1, budget=budget)
         return plain
     if type(value) is list:
         items = cast("list[object]", value)
         return [_plain_json_copy(item, depth=depth + 1, budget=budget) for item in items]
     if value is None or type(value) in (str, int, bool):
         return value
-    if type(value) is float and isfinite(cast("float", value)):
+    if type(value) is float and isfinite(value):
         return value
     raise OfflineCycleError("synthetic value must be a finite, exact builtin JSON value")
 
