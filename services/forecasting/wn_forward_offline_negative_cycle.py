@@ -13,7 +13,9 @@ caller-selected and do NOT independently prove prospective observation.
 from __future__ import annotations
 
 from datetime import date, datetime
+from math import isfinite
 from pathlib import Path
+from typing import cast
 
 from .wn_forward_negative_ledger import (
     classify_negative,
@@ -30,23 +32,66 @@ class OfflineCycleError(ValueError):
     """Invalid synthetic inputs or inconsistent completed negative record."""
 
 
+_MAX_SYNTHETIC_NODES = 100_000
+_MAX_SYNTHETIC_DEPTH = 48
+
+
+def _plain_json_copy(value: object, *, depth: int, budget: list[int]) -> object:
+    """Reject executable/subclass JSON objects before invoking any hooks.
+
+    No serialization, dict/list subclass iteration, custom coercion, copying
+    protocol or synthetic getter is permitted. Work only with exact builtin
+    JSON scalar, dict and list types. Also detach from caller-owned objects.
+    """
+    budget[0] += 1
+    if budget[0] > _MAX_SYNTHETIC_NODES or depth > _MAX_SYNTHETIC_DEPTH:
+        raise OfflineCycleError("synthetic response exceeds bounded JSON size/depth")
+    if type(value) is dict:
+        source = cast("dict[object, object]", value)
+        plain: dict[str, object] = {}
+        for key, member in source.items():
+            if type(key) is not str:
+                raise OfflineCycleError("synthetic JSON keys must be exact strings")
+            plain[cast("str", key)] = _plain_json_copy(
+                member, depth=depth + 1, budget=budget
+            )
+        return plain
+    if type(value) is list:
+        items = cast("list[object]", value)
+        return [_plain_json_copy(item, depth=depth + 1, budget=budget) for item in items]
+    if value is None or type(value) in (str, int, bool):
+        return value
+    if type(value) is float and isfinite(cast("float", value)):
+        return value
+    raise OfflineCycleError("synthetic value must be a finite, exact builtin JSON value")
+
+
 def _validate_synthetic_input(
     envelopes: dict[str, dict[str, dict[str, object]]] | None,
-) -> None:
-    """Concrete dictionaries only: never accept a callable or live GET handle."""
-    if envelopes is None:
-        return
-    if type(envelopes) is not dict or not set(envelopes).issubset(CITY_SERIES):
-        raise OfflineCycleError("only five named synthetic city bundles may be supplied")
-    for city, responses in envelopes.items():
-        if type(city) is not str or type(responses) is not dict:
-            raise OfflineCycleError("synthetic city evidence must be a concrete dictionary")
-        if any(
-            type(path) is not str or type(response) is not dict
-            for path, response in responses.items()
-        ):
-            raise OfflineCycleError("synthetic response envelopes must be concrete dictionaries")
+) -> dict[str, dict[str, dict[str, object]]] | None:
+    """Validate/deep-copy the entire input tree BEFORE any SQLite reservation.
 
+    A nested subclass can override iteration, indexing or serialization to
+    execute arbitrary code. Never hand any caller-owned value to the capture
+    serializer, and never clone an object before verifying its concrete type.
+    """
+    if envelopes is None:
+        return None
+    if type(envelopes) is not dict:
+        raise OfflineCycleError("synthetic input must be an exact built-in dictionary")
+    detached: dict[str, dict[str, dict[str, object]]] = {}
+    budget = [0]
+    for city, responses in envelopes.items():
+        if type(city) is not str or city not in CITY_SERIES or type(responses) is not dict:
+            raise OfflineCycleError("synthetic city must have an exact dictionary of responses")
+        plain_responses: dict[str, dict[str, object]] = {}
+        for path, response in responses.items():
+            if type(path) is not str or type(response) is not dict:
+                raise OfflineCycleError("synthetic path and envelope must have exact builtin types")
+            copied = _plain_json_copy(response, depth=0, budget=budget)
+            plain_responses[path] = cast("dict[str, object]", copied)
+        detached[city] = plain_responses
+    return detached
 
 def run_offline_negative_cycle(
     journal_path: Path,
@@ -68,7 +113,7 @@ def run_offline_negative_cycle(
     RESERVED records visible. No rollback of the durable reservation, no
     second read, no retries, no auto-resume, no positive outcomes.
     """
-    _validate_synthetic_input(synthetic_envelopes)
+    detached_envelopes = _validate_synthetic_input(synthetic_envelopes)
     # This is the *only* date reservation. It atomically creates all 5 rows.
     # Duplicate dates fail before looking at any simulated market responses.
     reserve_date(journal_path, target_local_date, stamped_at=reserved_at)
@@ -77,8 +122,8 @@ def run_offline_negative_cycle(
     invalid_or_missing_synthetic_bundles = 0
     for series in sorted(CITY_SERIES):
         reason = "NO_MODEL"
-        if synthetic_envelopes is not None:
-            city_responses = synthetic_envelopes.get(series)
+        if detached_envelopes is not None:
+            city_responses = detached_envelopes.get(series)
             if city_responses is None:
                 reason = "MARKET_MISSING"
                 invalid_or_missing_synthetic_bundles += 1
