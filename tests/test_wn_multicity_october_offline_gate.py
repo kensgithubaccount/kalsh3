@@ -446,6 +446,16 @@ def test_deeply_nested_json_fails_with_audit_error_not_recursion(
         _object(raw)
 
 
+def test_parser_recursion_is_wrapped_as_audit_error(monkeypatch: pytest.MonkeyPatch) -> None:
+    def exhausted_parser(*args: Any, **kwargs: Any) -> Any:
+        raise RecursionError("synthetic exhausted JSON parser")
+
+    monkeypatch.setattr(json, "loads", exhausted_parser)
+    with pytest.raises(OctoberAuditError, match="invalid JSON") as caught:
+        _object(b'{"payload":[]}')
+    assert isinstance(caught.value.__cause__, RecursionError)
+
+
 @pytest.mark.parametrize(
     "name",
     ("packet.json", "forecast.json", "SHA256SUMS.json", "failure.json"),
@@ -466,6 +476,18 @@ def test_deep_json_cli_emits_single_structured_failure_and_exit_four(
     output = capsys.readouterr()
     receipt = json.loads(output.out)
     assert receipt["status"] == "AUDIT_UNVERIFIED"
+    assert receipt["audit_structurally_complete"] is False
+    assert receipt["coverage"]["expected_city_days"] == 60
+    assert receipt["coverage"]["captured_city_days"] == 55
+    assert receipt["coverage"]["failed_city_days"] == 5
+    assert receipt["sealed_packets_validated"] == (55 if name == "failure.json" else 54)
+    assert receipt["invalid_city_days"] == [f"boston/{day}:OctoberAuditError"]
+    assert receipt["outcome_data_read"] is False
+    assert receipt["probability_or_edge_calculated"] is False
+    assert receipt["source_provenance_attested"] is False
+    assert receipt["historical_immutability_attested"] is False
+    assert receipt["research_only"] is True
+    assert receipt["production_influence"] == "0"
     assert receipt["paper_or_trading_authority"] == "NONE"
     assert "RecursionError" not in output.err
     assert "Traceback" not in output.err
@@ -481,6 +503,8 @@ def test_directory_recursion_failure_is_structured(
         raise RecursionError("synthetic excessive directory nesting")
 
     monkeypatch.setattr(gate, "_inventory", poisoned_inventory)
+    with pytest.raises(OctoberAuditError, match="snapshot exceeds supported nesting depth"):
+        audit_local_snapshot(tmp_path)
     monkeypatch.setattr(sys, "argv", ["wn-audit", "--root", str(tmp_path)])
     assert main() == 4
     output = capsys.readouterr()
