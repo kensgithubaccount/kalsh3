@@ -68,7 +68,7 @@ def _object(raw: bytes) -> dict[str, Any]:
             parse_float=_finite_float,
             parse_constant=_no_nonjson_constant,
         )
-    except (UnicodeError, json.JSONDecodeError, OverflowError, ValueError) as exc:
+    except (UnicodeError, json.JSONDecodeError, OverflowError, ValueError, RecursionError) as exc:
         raise OctoberAuditError("invalid JSON") from exc
     if not isinstance(value, dict):
         raise OctoberAuditError("JSON root must be an object")
@@ -340,6 +340,8 @@ def audit_local_snapshot(root: Path) -> dict[str, Any]:
         if exc.errno in (errno.ELOOP, errno.ENOTDIR):
             raise OctoberAuditError("snapshot symlink or invalid directory") from exc
         raise OctoberAuditError("snapshot filesystem I/O failure") from exc
+    except RecursionError:
+        raise OctoberAuditError("snapshot exceeds supported nesting depth") from None
 
 
 def main() -> int:
