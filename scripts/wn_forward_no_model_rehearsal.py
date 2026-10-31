@@ -30,6 +30,7 @@ from services.forecasting.wn_p3_sibling_preflight import (
 from services.forecasting.wn_p4_mock_attempt_protocol import (
     AttemptState,
     MockLedger,
+    _validate_ledger,
     classify_mock_abstention,
     reserve_mock_date,
 )
@@ -106,17 +107,42 @@ class NoModelRehearsal:
         return True
 
     def receipt(self) -> dict[str, object]:
+        """Revalidate replaced mock inputs; aggregate counters are never sufficient."""
+        # Frozen dataclasses may be constructed or replaced by callers. Reapply
+        # the P4 policy, unique city/sibling roster and UTC chronology checks
+        # at the final receipt boundary, rather than trusting a stored count.
+        _validate_ledger(self.mock_ledger)
         if len(self.mock_ledger.clusters) != 1:
             raise ValueError("rehearsal requires exactly one synthetic date cluster")
         cluster = self.mock_ledger.clusters[0]
+
+        # Recompute the P2b geometry from the approved offline policy. A caller
+        # can replace a dataclass with plausible-looking counters or a fake
+        # source size; no asserted source/cost figure may pass unvalidated.
+        expected_geometry = plan_global_member_access_no_go(cluster.target_local_date)
+        if (
+            type(self.source_geometry) is not OfflineMemberAccessNoGo
+            or self.source_geometry != expected_geometry
+            or self.source_geometry.decision != NO_GO
+        ):
+            raise ValueError("rehearsal source geometry does not match offline policy")
+
         if (
             cluster.denominator_city_attempts != len(CITY_SERIES)
             or cluster.denominator_sibling_slots != 30
             or any(item.state is not AttemptState.NO_MODEL for item in cluster.attempts)
-            or self.source_geometry.decision != NO_GO
-            or self.source_geometry.target_local_date != cluster.target_local_date
+            or len({item.reserved_at_utc for item in cluster.attempts}) != 1
+            or len({item.classified_at_utc for item in cluster.attempts}) != 1
         ):
             raise ValueError("rehearsal cannot issue inconsistent or positive state")
+
+        # A structurally valid caller-authored six-sibling list can still be
+        # substituted by dataclasses.replace. Match the *exact* invented
+        # rehearsal identities, not only six distinct strings per city.
+        for item in cluster.attempts:
+            expected = _invented_roster(item.series_ticker, cluster.target_local_date)
+            if item.untrusted_sibling_tickers != expected.market_tickers:
+                raise ValueError("rehearsal sibling identities are not canonical mock data")
 
         return {
             "record_type": "WN-P4B-OFFLINE-NO-MODEL-REHEARSAL-v1",
