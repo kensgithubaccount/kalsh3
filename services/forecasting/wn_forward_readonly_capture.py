@@ -15,7 +15,6 @@ from __future__ import annotations
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, date, datetime
-from typing import Any
 
 from services.market_universe import public_read
 
