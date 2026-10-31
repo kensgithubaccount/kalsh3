@@ -193,7 +193,7 @@ def read_negative_date(path: Path, target: date) -> dict[str, object]:
             "LEFT JOIN negatives n ON n.target_date = a.target_date "
             "AND n.city_series = a.city_series WHERE a.target_date = ? "
             "ORDER BY a.city_series",
-            (key,)
+            (key,),
         ).fetchall()
         if len(dates) != 1 or dates[0][1] != POLICY or len(rows) != 5:
             raise NegativeJournalError("local journal incomplete or policy mismatch")
