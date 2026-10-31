@@ -49,6 +49,34 @@ def _restore(snapshot: bytes) -> dict[str, object]:
     return parsed
 
 
+def _unique_snapshot_envelopes(
+    rows: tuple[tuple[str, bytes], ...], *, label: str
+) -> dict[str, dict[str, object]]:
+    """Never silently discard a retained row via dict key overwrite.
+
+    All six originally captured siblings must remain independently present,
+    even after a caller uses dataclasses.replace on the frozen container.
+    """
+    if type(rows) is not tuple or len(rows) != 6:
+        raise CaptureError(f"{label} snapshot family must contain exactly six entries")
+    result: dict[str, dict[str, object]] = {}
+    for row in rows:
+        if (
+            type(row) is not tuple
+            or len(row) != 2
+            or type(row[0]) is not str
+            or type(row[1]) is not bytes
+        ):
+            raise CaptureError(f"{label} snapshot row has invalid types")
+        ticker, raw = row
+        if ticker in result:
+            raise CaptureError(f"{label} snapshot family contains a duplicate ticker")
+        result[ticker] = _restore(raw)
+    if len(result) != 6:
+        raise CaptureError(f"{label} snapshot family is incomplete")
+    return result
+
+
 @dataclass(frozen=True, slots=True)
 class ReadOnlyUntrustedBundle:
     """Immutable owned snapshots; caller mutations cannot invalidate saved replay.
@@ -74,8 +102,12 @@ class ReadOnlyUntrustedBundle:
             evaluated_at=self.evaluated_at_utc,
             event_response=_restore(self._event_snapshot),
             series_response=_restore(self._series_snapshot),
-            market_responses={ticker: _restore(raw) for ticker, raw in self._market_snapshots},
-            orderbook_responses={ticker: _restore(raw) for ticker, raw in self._book_snapshots},
+            market_responses=_unique_snapshot_envelopes(
+                self._market_snapshots, label="market"
+            ),
+            orderbook_responses=_unique_snapshot_envelopes(
+                self._book_snapshots, label="book"
+            ),
         )
 
     @property
