@@ -14,6 +14,7 @@ import pytest
 from services.forecasting import wn_forward_offline_negative_cycle as cycle
 from services.forecasting.wn_forward_negative_ledger import (
     NegativeJournalError,
+    classify_negative,
     read_negative_date,
 )
 from services.forecasting.wn_forward_offline_negative_cycle import (
@@ -257,7 +258,7 @@ def test_interrupted_classification_does_not_claim_complete_or_auto_retry(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     path = _path(tmp_path)
-    original = cycle.classify_negative
+    original = classify_negative
     attempted: list[str] = []
 
     def partial(
@@ -282,3 +283,117 @@ def test_interrupted_classification_does_not_claim_complete_or_auto_retry(
     assert sum(row["status"] == "ATTEMPT_RESERVED" for row in rows) == 4
     with pytest.raises(NegativeJournalError):
         run_offline_negative_cycle(path, TARGET, reserved_at=RESERVED, classified_at=CLASSIFIED)
+
+
+@pytest.mark.parametrize("family", ("event_dict", "market_list", "book_list"))
+def test_nested_executable_container_rejected_before_reservation_without_hooks(
+    tmp_path: Path, family: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Nested dict/list subclasses must never reach JSON encoding or a getter."""
+    city = sorted(CITY_SERIES)[0]
+    source = _synthetic_city(city)
+    event_path = next(path for path in source if "/events/" in path)
+    book_path = next(path for path in source if "/markets/orderbooks?" in path)
+    hooks: list[str] = []
+
+    class GetterDict(dict[str, object]):
+        def __iter__(self) -> Any:
+            hooks.append("dict-iter-exchange-getter")
+            return super().__iter__()
+
+        def items(self) -> Any:
+            hooks.append("dict-items-exchange-getter")
+            return super().items()
+
+    class GetterList(list[object]):
+        def __iter__(self) -> Any:
+            hooks.append("list-iter-exchange-getter")
+            return super().__iter__()
+
+        def __getitem__(self, item: Any) -> Any:
+            hooks.append("list-index-exchange-getter")
+            return super().__getitem__(item)
+
+    if family == "event_dict":
+        # This payload passes the old top-level dict check.
+        source[event_path]["payload"] = GetterDict(
+            cast("dict[str, object]", source[event_path]["payload"])
+        )
+    elif family == "market_list":
+        payload = cast("dict[str, Any]", source[event_path]["payload"])
+        event = cast("dict[str, Any]", payload["event"])
+        event["markets"] = GetterList(event["markets"])
+    else:
+        payload = cast("dict[str, Any]", source[book_path]["payload"])
+        payload["orderbooks"] = GetterList(payload["orderbooks"])
+
+    def forbidden(*args: Any, **kwargs: Any) -> Any:
+        hooks.append("real-transport")
+        raise AssertionError("network must never be selected")
+
+    monkeypatch.setattr(public_read, "get_with_timeout", forbidden)
+    path = _path(tmp_path)
+    with pytest.raises(OfflineCycleError):
+        run_offline_negative_cycle(
+            path, TARGET, reserved_at=RESERVED, classified_at=CLASSIFIED,
+            synthetic_envelopes={city: source},
+        )
+    assert hooks == []
+    assert not path.exists()
+
+
+def test_deep_plain_snapshot_is_detached_before_reservation(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A caller mutating the original *after* admission cannot change the replay."""
+    city = sorted(CITY_SERIES)[0]
+    source = _synthetic_city(city)
+    event_path = next(path for path in source if "/events/" in path)
+    original_reserve = cycle.reserve_date
+    observed: list[str] = []
+
+    def reserve_then_mutate(path: Path, target: date, *, stamped_at: datetime) -> None:
+        original_reserve(path, target, stamped_at=stamped_at)
+        observed.append("reserved")
+        # Mutation after the runner's pre-reservation deep snapshot must not
+        # taint its local P3 replays or create any network fallback.
+        source[event_path]["body_sha256"] = "CORRUPTED_AFTER_ADMISSION"
+        cast("dict[str, Any]", source[event_path]["payload"])["event"]["markets"].clear()
+
+    monkeypatch.setattr(cycle, "reserve_date", reserve_then_mutate)
+    result = run_offline_negative_cycle(
+        _path(tmp_path), TARGET, reserved_at=RESERVED, classified_at=CLASSIFIED,
+        synthetic_envelopes={city: source},
+    )
+    assert observed == ["reserved"]
+    assert result["synthetic_bundle_validation_count"] == 1
+    assert result["synthetic_missing_or_invalid_bundle_count"] == 4
+    assert result["real_source_attested"] is False
+    assert result["paper_authorized"] is False
+
+
+@pytest.mark.parametrize("invalid", ("nested_str_subclass", "nested_cycle", "nested_nan"))
+def test_recursive_non_plain_json_rejected_before_reservation(
+    tmp_path: Path, invalid: str
+) -> None:
+    city = sorted(CITY_SERIES)[0]
+    source = _synthetic_city(city)
+    event_path = next(path for path in source if "/events/" in path)
+    if invalid == "nested_str_subclass":
+        class SubclassText(str):
+            pass
+
+        source[event_path]["body_sha256"] = SubclassText("0" * 64)
+    elif invalid == "nested_cycle":
+        circular: list[object] = []
+        circular.append(circular)
+        source[event_path]["unknown_nested"] = circular
+    else:
+        source[event_path]["unexpected_float"] = float("nan")
+    path = _path(tmp_path)
+    with pytest.raises(OfflineCycleError):
+        run_offline_negative_cycle(
+            path, TARGET, reserved_at=RESERVED, classified_at=CLASSIFIED,
+            synthetic_envelopes={city: source},
+        )
+    assert not path.exists()
