@@ -33,6 +33,7 @@ from services.forecasting.wn_multicity_evaluation_spec import (
 )
 
 MAX_COMPONENT_BYTES = 2_000_000
+MAX_JSON_DEPTH = 256
 FILES = ("packet.json", "forecast.json", "market.json", "weather.json")
 
 
@@ -60,7 +61,35 @@ def _no_nonjson_constant(value: str) -> None:
     raise OctoberAuditError("nonfinite JSON constant: " + value)
 
 
+def _check_json_nesting(raw: bytes) -> None:
+    """Bound untrusted JSON nesting before parser recursion; ignore quoted delimiters."""
+    depth = 0
+    quoted = False
+    escaped = False
+    for byte in raw:
+        if quoted:
+            if escaped:
+                escaped = False
+            elif byte == 92:  # Backslash
+                escaped = True
+            elif byte == 34:  # Double quote
+                quoted = False
+        elif byte == 34:
+            quoted = True
+        elif byte in (91, 123):  # [ or {
+            depth += 1
+            if depth > MAX_JSON_DEPTH:
+                raise OctoberAuditError("JSON nesting exceeds audit bound")
+        elif byte in (93, 125):  # ] or }
+            depth -= 1
+            if depth < 0:
+                raise OctoberAuditError("malformed JSON nesting")
+    if depth or quoted:
+        raise OctoberAuditError("incomplete JSON nesting")
+
+
 def _object(raw: bytes) -> dict[str, Any]:
+    _check_json_nesting(raw)
     try:
         value = json.loads(
             raw,
