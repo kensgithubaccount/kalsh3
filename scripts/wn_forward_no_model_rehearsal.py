@@ -237,7 +237,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             simulated_reserved_at=reserved,
             simulated_classified_at=classified,
         )
-    except (ValueError, TypeError):
+        receipt = result.receipt()
+    except (ValueError, TypeError, OverflowError):
         print(
             json.dumps(
                 {
@@ -252,7 +253,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             )
         )
         return 4
-    print(json.dumps(result.receipt(), sort_keys=True, separators=(",", ":")))
+    print(json.dumps(receipt, sort_keys=True, separators=(",", ":")))
     return 0
 
 
