@@ -338,7 +338,9 @@ def test_caller_mutations_do_not_change_returned_capture_or_replay() -> None:
     event_payload = cast("dict[str, Any]", responses[event_path]["payload"])
     event_payload["event"]["markets"][0]["rules_primary"] = "FORGED_AFTER_CAPTURE"
     responses[event_path]["body_sha256"] = "0" * 64
-    first_market_path = next(path for path in responses if "/markets/" in path and "orderbooks" not in path)
+    first_market_path = next(
+        path for path in responses if "/markets/" in path and "orderbooks" not in path
+    )
     responses[first_market_path]["raw_body_b64"] = "CORRUPTED_AFTER_CAPTURE"
     assert result.event == original_event
     assert result.markets[0][1] == original_market
