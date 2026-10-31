@@ -146,8 +146,8 @@ def test_sqlite_update_delete_triggers_refuse_mutation(tmp_path: Path) -> None:
     with sqlite3.connect(path) as connection:
         for table in ("dates", "attempts", "negatives"):
             for statement in (
-                f"UPDATE {table} SET rowid = rowid",
-                f"DELETE FROM {table}",
+                f"UPDATE {table} SET rowid = rowid",  # noqa: S608
+                f"DELETE FROM {table}",  # noqa: S608
             ):
                 with pytest.raises(sqlite3.DatabaseError, match="append-only"):
                     connection.execute(statement)
@@ -270,7 +270,7 @@ def test_missing_book_abstains_without_retry_or_fabrication() -> None:
         requested.append(path)
         return responses[path]
 
-    with pytest.raises(KeyError):
+    with pytest.raises(CaptureError):
         capture_untrusted_six_sibling_bundle(
             series=SERIES, target=TARGET, evaluated_at=NOW, get=fake_get
         )
