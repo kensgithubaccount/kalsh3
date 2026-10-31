@@ -51,6 +51,24 @@ def _date(value: date) -> str:
     return value.isoformat()
 
 
+def _validated_reservation_utc(target: date, stamped_at: datetime) -> datetime:
+    """Reapply the original admission window to *stored* as well as new clocks."""
+    utc = _utc(stamped_at)
+    cutoff = datetime.combine(target, time(9, 5), tzinfo=UTC)
+    if utc >= cutoff or utc < cutoff - timedelta(days=2):
+        raise NegativeJournalError("reservation outside bounded prospective intake")
+    return utc
+
+
+def _stored_reservation_utc(target: date, raw: object) -> datetime:
+    if type(raw) is not str:
+        raise NegativeJournalError("stored reservation timestamp malformed")
+    try:
+        return _validated_reservation_utc(target, datetime.fromisoformat(raw))
+    except (ValueError, OverflowError) as exc:
+        raise NegativeJournalError("stored reservation timestamp invalid or late") from exc
+
+
 def _db(path: Path, *, read_only: bool = False) -> sqlite3.Connection:
     if not isinstance(path, Path) or path.is_symlink() or not path.parent.is_dir():
         raise NegativeJournalError("local journal path must have an existing parent")
@@ -114,10 +132,7 @@ def reserve_date(path: Path, target: date, *, stamped_at: datetime) -> None:
     duplicate leaves previous rows intact, never retries or updates them.
     """
     key = _date(target)
-    utc = _utc(stamped_at)
-    cutoff = datetime.combine(target, time(9, 5), tzinfo=UTC)
-    if utc >= cutoff or utc < cutoff - timedelta(days=2):
-        raise NegativeJournalError("reservation outside bounded prospective intake")
+    utc = _validated_reservation_utc(target, stamped_at)
     connection = _db(path)
     try:
         connection.execute("BEGIN IMMEDIATE")
@@ -163,7 +178,7 @@ def classify_negative(
         ).fetchone()
         if row is None or row[1] != event_ticker_for(series, target) or row[2] != 6:
             raise NegativeJournalError("missing or invalid original reservation")
-        if when < _utc(datetime.fromisoformat(row[0])):
+        if when < _stored_reservation_utc(target, row[0]):
             raise NegativeJournalError("classification predates local reservation")
         connection.execute(
             "INSERT INTO negatives "
@@ -195,9 +210,35 @@ def read_negative_date(path: Path, target: date) -> dict[str, object]:
             "ORDER BY a.city_series",
             (key,),
         ).fetchall()
+        # A LEFT JOIN from attempts silently hides terminal rows inserted with
+        # foreign_keys=OFF. Independently inspect *all* child rows for this date.
+        # This is an integrity check, not external tamper-proof custody.
+        negatives = connection.execute(
+            "SELECT city_series, reason, classified_utc FROM negatives "
+            "WHERE target_date = ? ORDER BY city_series",
+            (key,),
+        ).fetchall()
         if len(dates) != 1 or dates[0][1] != POLICY or len(rows) != 5:
             raise NegativeJournalError("local journal incomplete or policy mismatch")
-        _utc(datetime.fromisoformat(dates[0][0]))
+        reserved_utc = _stored_reservation_utc(target, dates[0][0])
+        expected_cities = tuple(sorted(CITY_SERIES))
+        if (
+            len(negatives) > len(expected_cities)
+            or any(
+                type(city) is not str
+                or city not in CITY_SERIES
+                or reason not in REASONS
+                or type(classified) is not str
+                for city, reason, classified in negatives
+            )
+        ):
+            raise NegativeJournalError("orphan or invalid terminal state detected")
+        # Every terminal row must match exactly one canonical reservation row.
+        terminal_cities = tuple(row[0] for row in negatives)
+        if len(set(terminal_cities)) != len(terminal_cities):
+            raise NegativeJournalError("duplicate terminal state detected")
+        if any(city not in {row[0] for row in rows} for city in terminal_cities):
+            raise NegativeJournalError("orphan terminal city detected")
         if tuple(row[0] for row in rows) != tuple(sorted(CITY_SERIES)):
             raise NegativeJournalError("local journal city roster inconsistent")
         for city, ticker, slots, reason, classified in rows:
@@ -207,10 +248,13 @@ def read_negative_date(path: Path, target: date) -> dict[str, object]:
                 reason is not None and reason not in REASONS
             ):
                 raise NegativeJournalError("local journal terminal state invalid")
-            if classified is not None and _utc(datetime.fromisoformat(classified)) < _utc(
-                datetime.fromisoformat(dates[0][0])
-            ):
-                raise NegativeJournalError("local journal clock inconsistent")
+            if classified is not None:
+                try:
+                    completed = _utc(datetime.fromisoformat(classified))
+                except (ValueError, OverflowError) as exc:
+                    raise NegativeJournalError("local journal completion clock invalid") from exc
+                if completed < reserved_utc:
+                    raise NegativeJournalError("local journal clock inconsistent")
         return {
             "record_type": "WN-P4C-LOCAL-NEGATIVE-LEDGER-v1",
             "policy": POLICY,
