@@ -361,7 +361,7 @@ def test_replaced_immutable_snapshot_cannot_keep_old_replay_success() -> None:
         series=SERIES, target=TARGET, evaluated_at=NOW, get=_envelopes().__getitem__
     )
     corrupted = replace(result, _event_snapshot=b'{"path":"forged"}')
-    with pytest.raises((ValueError, CaptureError)):
+    with pytest.raises((ValueError, public_read.PublicReadFailure)):
         _ = corrupted.replay
 
 
