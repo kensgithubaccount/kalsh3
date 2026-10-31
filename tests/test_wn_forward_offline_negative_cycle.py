@@ -201,7 +201,10 @@ def test_invalid_synthetic_input_refused_before_reservation(
     if kind == "unknown_city":
         source: Any = {"FORGED": {}}
     elif kind == "callable":
-        source = lambda url: {"path": url}
+        def synthetic_callable(url: str) -> dict[str, str]:
+            return {"path": url}
+
+        source = synthetic_callable
     elif kind == "dict_subclass":
         class NetworkLikeDict(dict[str, dict[str, dict[str, object]]]):
             pass
