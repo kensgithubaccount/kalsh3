@@ -14,6 +14,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import dataclass
+import json
 from datetime import UTC, date, datetime
 
 from services.market_universe import public_read
@@ -34,17 +35,72 @@ class CaptureError(ValueError):
     """One missing, inaccessible, invalid or late source element abstains."""
 
 
+def _snapshot(envelope: dict[str, object]) -> bytes:
+    """Copy an entire JSON envelope into owned immutable bytes, rejecting exotic values."""
+    return json.dumps(
+        envelope, sort_keys=True, allow_nan=False, separators=(",", ":")
+    ).encode("utf-8")
+
+
+def _restore(snapshot: bytes) -> dict[str, object]:
+    parsed = json.loads(snapshot)
+    if not isinstance(parsed, dict):
+        raise CaptureError("immutable envelope snapshot is not a JSON object")
+    return parsed
+
+
 @dataclass(frozen=True, slots=True)
 class ReadOnlyUntrustedBundle:
-    """Raw byte envelopes retained, but not independently attested source custody."""
+    """Immutable owned snapshots; caller mutations cannot invalidate saved replay.
+
+    The only public views are fresh decoded copies, and the replay is
+    regenerated from these *same* bytes. Direct dataclass substitution cannot
+    preserve an outdated PASS replay against changed source/rules/book bytes.
+    """
 
     series: str
     target: date
-    event: dict[str, object]
-    series_response: dict[str, object]
-    markets: tuple[tuple[str, dict[str, object]], ...]
-    books: tuple[tuple[str, dict[str, object]], ...]
-    replay: UntrustedReplay
+    evaluated_at_utc: datetime
+    _event_snapshot: bytes
+    _series_snapshot: bytes
+    _market_snapshots: tuple[tuple[str, bytes], ...]
+    _book_snapshots: tuple[tuple[str, bytes], ...]
+
+    @property
+    def replay(self) -> UntrustedReplay:
+        return replay_untrusted_six_sibling_bundle(
+            series_ticker=self.series,
+            target_local_date=self.target,
+            evaluated_at=self.evaluated_at_utc,
+            event_response=_restore(self._event_snapshot),
+            series_response=_restore(self._series_snapshot),
+            market_responses={
+                ticker: _restore(raw) for ticker, raw in self._market_snapshots
+            },
+            orderbook_responses={
+                ticker: _restore(raw) for ticker, raw in self._book_snapshots
+            },
+        )
+
+    @property
+    def event(self) -> dict[str, object]:
+        self.replay
+        return _restore(self._event_snapshot)
+
+    @property
+    def series_response(self) -> dict[str, object]:
+        self.replay
+        return _restore(self._series_snapshot)
+
+    @property
+    def markets(self) -> tuple[tuple[str, dict[str, object]], ...]:
+        self.replay
+        return tuple((ticker, _restore(raw)) for ticker, raw in self._market_snapshots)
+
+    @property
+    def books(self) -> tuple[tuple[str, dict[str, object]], ...]:
+        self.replay
+        return tuple((ticker, _restore(raw)) for ticker, raw in self._book_snapshots)
 
     @property
     def source_attested(self) -> bool:
@@ -100,8 +156,14 @@ def capture_untrusted_six_sibling_bundle(
     def request(path: str) -> dict[str, object]:
         # One attempt only; never refetch on rejected/raw/stale data.
         if get is not None:
-            return get(path)
-        return public_read.get_with_timeout(path, timeout_seconds=TIMEOUT_SECONDS)
+            response = get(path)
+        else:
+            response = public_read.get_with_timeout(path, timeout_seconds=TIMEOUT_SECONDS)
+        # Snapshot each response immediately: getter-owned dictionaries may be
+        # mutated after this call. Never retain an alias to caller input.
+        if not isinstance(response, dict):
+            raise CaptureError("public response envelope is not an object")
+        return _restore(_snapshot(response))
 
     try:
         event_path = public_read.BASE + "/events/" + event_ticker + "?with_nested_markets=true"
@@ -129,7 +191,7 @@ def capture_untrusted_six_sibling_bundle(
             )
         if 2 + len(market_rows) + len(book_rows) != MAX_CALLS:
             raise CaptureError("incomplete one-shot public response family")
-        replay = replay_untrusted_six_sibling_bundle(
+        replay_untrusted_six_sibling_bundle(
             series_ticker=series,
             target_local_date=target,
             evaluated_at=decision,
@@ -141,6 +203,15 @@ def capture_untrusted_six_sibling_bundle(
     except (ValueError, TypeError, KeyError, OverflowError, public_read.PublicReadFailure) as exc:
         raise CaptureError("Kalshi research bundle invalid or unavailable; abstain") from exc
 
-    return ReadOnlyUntrustedBundle(
-        series, target, event, series_response, tuple(market_rows), tuple(book_rows), replay
+    result = ReadOnlyUntrustedBundle(
+        series=series,
+        target=target,
+        evaluated_at_utc=decision,
+        _event_snapshot=_snapshot(event),
+        _series_snapshot=_snapshot(series_response),
+        _market_snapshots=tuple((ticker, _snapshot(row)) for ticker, row in market_rows),
+        _book_snapshots=tuple((ticker, _snapshot(row)) for ticker, row in book_rows),
     )
+    # Reject any disagreement between the returned owned bytes and replay.
+    result.replay
+    return result
