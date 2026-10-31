@@ -430,3 +430,62 @@ def test_same_name_component_metadata_change_after_read_is_rejected(
     with pytest.raises(OctoberAuditError, match="snapshot changed during audit"):
         audit_local_snapshot(tmp_path)
     assert changed
+
+
+@pytest.mark.parametrize(
+    "raw",
+    (
+        b'{"payload":' + b"[" * 20000 + b"0" + b"]" * 20000 + b"}",
+        b'{"payload":' + b'{"x":' * 20000 + b"0" + b"}" * 20000 + b"}",
+    ),
+)
+def test_deeply_nested_json_fails_with_audit_error_not_recursion(
+    raw: bytes,
+) -> None:
+    with pytest.raises(OctoberAuditError, match="invalid JSON"):
+        _object(raw)
+
+
+@pytest.mark.parametrize(
+    "name",
+    ("packet.json", "forecast.json", "SHA256SUMS.json", "failure.json"),
+)
+def test_deep_json_cli_emits_single_structured_failure_and_exit_four(
+    name: str,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    complete_synthetic_october(tmp_path)
+    day = "20261004" if name == "failure.json" else "20261003"
+    malformed = b'{"deep":' + b"[" * 20000 + b"0" + b"]" * 20000 + b"}"
+    destination = tmp_path / "city_days" / "boston" / day / name
+    destination.write_bytes(malformed)
+    monkeypatch.setattr(sys, "argv", ["wn-audit", "--root", str(tmp_path)])
+    assert main() == 4
+    output = capsys.readouterr()
+    receipt = json.loads(output.out)
+    assert receipt["status"] == "AUDIT_UNVERIFIED"
+    assert receipt["paper_or_trading_authority"] == "NONE"
+    assert "RecursionError" not in output.err
+    assert "Traceback" not in output.err
+    assert "STRUCTURAL_PASS_NOT_ATTESTED" not in output.out
+
+
+def test_directory_recursion_failure_is_structured(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    def poisoned_inventory(_: int) -> tuple[list[str], tuple[tuple[str, tuple[int, ...]], ...]]:
+        raise RecursionError("synthetic excessive directory nesting")
+
+    monkeypatch.setattr(gate, "_inventory", poisoned_inventory)
+    monkeypatch.setattr(sys, "argv", ["wn-audit", "--root", str(tmp_path)])
+    assert main() == 4
+    output = capsys.readouterr()
+    receipt = json.loads(output.out)
+    assert receipt["status"] == "AUDIT_UNVERIFIED"
+    assert receipt["reason"] == "OctoberAuditError"
+    assert receipt["paper_or_trading_authority"] == "NONE"
+    assert output.err == ""
