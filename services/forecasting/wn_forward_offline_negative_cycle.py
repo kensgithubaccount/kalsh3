@@ -116,8 +116,7 @@ def run_offline_negative_cycle(
         or tuple(item.get("series") for item in rows if isinstance(item, dict))
         != tuple(sorted(CITY_SERIES))
         or any(
-            not isinstance(item, dict)
-            or item.get("status") not in {"NO_MODEL", "MARKET_MISSING"}
+            not isinstance(item, dict) or item.get("status") not in {"NO_MODEL", "MARKET_MISSING"}
             for item in rows
         )
         or persisted["denominator_city_attempts"] != 5
