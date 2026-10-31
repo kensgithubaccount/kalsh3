@@ -152,7 +152,7 @@ def test_missing_or_corrupt_synthetic_city_abstains_without_refetch(tmp_path: Pa
     )
     assert result["synthetic_bundle_validation_count"] == 0
     assert result["synthetic_missing_or_invalid_bundle_count"] == 5
-    rows = cast("list[dict[str, object]]", result["journal"]["rows"])
+    rows = cast("list[dict[str, object]]", cast("dict[str, object]", result["journal"])["rows"])
     assert all(row["status"] == "MARKET_MISSING" for row in rows)
     assert all(row["local_classification_utc"] == CLASSIFIED.isoformat() for row in rows)
 
@@ -168,7 +168,7 @@ def test_partial_valid_synthetic_family_keeps_full_denominator(tmp_path: Path) -
     )
     assert result["synthetic_bundle_validation_count"] == 1
     assert result["synthetic_missing_or_invalid_bundle_count"] == 4
-    rows = cast("list[dict[str, object]]", result["journal"]["rows"])
+    rows = cast("list[dict[str, object]]", cast("dict[str, object]", result["journal"])["rows"])
     assert len(rows) == 5
     assert sum(r["status"] == "NO_MODEL" for r in rows) == 1
     assert sum(r["status"] == "MARKET_MISSING" for r in rows) == 4
