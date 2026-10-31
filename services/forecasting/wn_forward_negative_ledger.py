@@ -222,15 +222,12 @@ def read_negative_date(path: Path, target: date) -> dict[str, object]:
             raise NegativeJournalError("local journal incomplete or policy mismatch")
         reserved_utc = _stored_reservation_utc(target, dates[0][0])
         expected_cities = tuple(sorted(CITY_SERIES))
-        if (
-            len(negatives) > len(expected_cities)
-            or any(
-                type(city) is not str
-                or city not in CITY_SERIES
-                or reason not in REASONS
-                or type(classified) is not str
-                for city, reason, classified in negatives
-            )
+        if len(negatives) > len(expected_cities) or any(
+            type(city) is not str
+            or city not in CITY_SERIES
+            or reason not in REASONS
+            or type(classified) is not str
+            for city, reason, classified in negatives
         ):
             raise NegativeJournalError("orphan or invalid terminal state detected")
         # Every terminal row must match exactly one canonical reservation row.
