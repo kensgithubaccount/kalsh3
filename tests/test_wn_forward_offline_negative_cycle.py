@@ -16,6 +16,7 @@ from services.forecasting.wn_forward_negative_ledger import (
     NegativeJournalError,
     classify_negative,
     read_negative_date,
+    reserve_date,
 )
 from services.forecasting.wn_forward_offline_negative_cycle import (
     OfflineCycleError,
@@ -352,7 +353,7 @@ def test_deep_plain_snapshot_is_detached_before_reservation(
     city = sorted(CITY_SERIES)[0]
     source = _synthetic_city(city)
     event_path = next(path for path in source if "/events/" in path)
-    original_reserve = cycle.reserve_date
+    original_reserve = reserve_date
     observed: list[str] = []
 
     def reserve_then_mutate(path: Path, target: date, *, stamped_at: datetime) -> None:
