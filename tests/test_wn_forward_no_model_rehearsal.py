@@ -84,8 +84,13 @@ def test_all_authority_negative_even_for_successful_rehearsal() -> None:
 
 @pytest.mark.parametrize(
     "attribute",
-    ("source_access_demonstrated", "market_source_attested", "probability_authorized",
-     "paper_authorized", "trading_authority"),
+    (
+        "source_access_demonstrated",
+        "market_source_attested",
+        "probability_authorized",
+        "paper_authorized",
+        "trading_authority",
+    ),
 )
 def test_positive_authority_cannot_be_overridden(attribute: str) -> None:
     result = run()
@@ -163,11 +168,15 @@ def test_source_and_exchange_transport_never_invoked(monkeypatch: pytest.MonkeyP
 def test_cli_prints_one_parseable_json_and_returns_zero_for_mock_only(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    assert main([
-        "--target-local-date", "2026-11-10",
-        "--simulated-reserved-at", "2026-11-10T09:00:00Z",
-        "--simulated-classified-at", "2026-11-10T09:00:05Z",
-    ]) == 0
+    argv = [
+        "--target-local-date",
+        "2026-11-10",
+        "--simulated-reserved-at",
+        "2026-11-10T09:00:00Z",
+        "--simulated-classified-at",
+        "2026-11-10T09:00:05Z",
+    ]
+    assert main(argv) == 0
     captured = capsys.readouterr()
     assert captured.err == ""
     assert len(captured.out.splitlines()) == 1
@@ -197,11 +206,15 @@ def test_invalid_cli_produces_only_negative_failure(
     classified: str,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    assert main([
-        "--target-local-date", target,
-        "--simulated-reserved-at", reserved,
-        "--simulated-classified-at", classified,
-    ]) == 4
+    argv = [
+        "--target-local-date",
+        target,
+        "--simulated-reserved-at",
+        reserved,
+        "--simulated-classified-at",
+        classified,
+    ]
+    assert main(argv) == 4
     output = capsys.readouterr()
     assert output.err == ""
     receipt = json.loads(output.out)
