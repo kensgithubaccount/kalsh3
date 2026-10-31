@@ -71,7 +71,8 @@ def _db(path: Path, *, read_only: bool = False) -> sqlite3.Connection:
             CREATE TABLE IF NOT EXISTS dates (
                 target_date TEXT PRIMARY KEY,
                 reserved_utc TEXT NOT NULL,
-                policy TEXT NOT NULL CHECK (policy = 'wn-forward-negative-sqlite-journal-local-only-v1')
+                policy TEXT NOT NULL
+                    CHECK (policy = 'wn-forward-negative-sqlite-journal-local-only-v1')
             );
             CREATE TABLE IF NOT EXISTS attempts (
                 target_date TEXT NOT NULL,
@@ -95,7 +96,7 @@ def _db(path: Path, *, read_only: bool = False) -> sqlite3.Connection:
         for table in ("dates", "attempts", "negatives"):
             for operation in ("UPDATE", "DELETE"):
                 connection.execute(
-                    f"CREATE TRIGGER IF NOT EXISTS no_{operation.lower()}_{table} "  # noqa: S608
+                    f"CREATE TRIGGER IF NOT EXISTS no_{operation.lower()}_{table} "
                     f"BEFORE {operation} ON {table} BEGIN "
                     "SELECT RAISE(ABORT, 'append-only journal'); END"
                 )
