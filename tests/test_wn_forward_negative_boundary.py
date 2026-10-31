@@ -87,9 +87,7 @@ def test_replayed_abstention_cannot_overwrite_record(tmp_path: Path) -> None:
     classify_negative(path, TARGET, SERIES, reason="NO_MODEL", stamped_at=NOW)
     old = read_negative_date(path, TARGET)
     with pytest.raises(NegativeJournalError):
-        classify_negative(
-            path, TARGET, SERIES, reason="COLLECTOR_FAILURE", stamped_at=NOW
-        )
+        classify_negative(path, TARGET, SERIES, reason="COLLECTOR_FAILURE", stamped_at=NOW)
     assert read_negative_date(path, TARGET) == old
 
 
@@ -284,13 +282,9 @@ def test_missing_book_abstains_without_retry_or_fabrication() -> None:
 def test_forged_standalone_rule_and_stale_clock_fail_closed() -> None:
     for stale in (False, True):
         responses = _envelopes()
-        market_path = next(
-            p for p in responses if "/markets/" in p and "/orderbooks" not in p
-        )
+        market_path = next(p for p in responses if "/markets/" in p and "/orderbooks" not in p)
         if stale:
-            responses[market_path]["observed_at"] = (
-                NOW - timedelta(seconds=121)
-            ).isoformat()
+            responses[market_path]["observed_at"] = (NOW - timedelta(seconds=121)).isoformat()
         else:
             responses[market_path]["body_sha256"] = "0" * 64
         with pytest.raises(CaptureError):
