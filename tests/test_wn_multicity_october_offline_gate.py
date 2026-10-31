@@ -442,7 +442,7 @@ def test_same_name_component_metadata_change_after_read_is_rejected(
 def test_deeply_nested_json_fails_with_audit_error_not_recursion(
     raw: bytes,
 ) -> None:
-    with pytest.raises(OctoberAuditError, match="invalid JSON"):
+    with pytest.raises(OctoberAuditError, match="JSON nesting exceeds audit bound"):
         _object(raw)
 
 
@@ -489,3 +489,17 @@ def test_directory_recursion_failure_is_structured(
     assert receipt["reason"] == "OctoberAuditError"
     assert receipt["paper_or_trading_authority"] == "NONE"
     assert output.err == ""
+
+
+def test_json_nesting_limit_ignores_quoted_brackets_and_escaped_quotes() -> None:
+    raw = encoded({"quoted": "[{]}" * 25000, "escaped_quote": '\\"' * 100})
+    decoded = _object(raw)
+    assert decoded["quoted"] == "[{]}" * 25000
+
+
+def test_json_depth_boundary_accepts_at_limit_and_rejects_above() -> None:
+    inside = b"[" * 255 + b"0" + b"]" * 255
+    assert isinstance(_object(b'{"safe":' + inside + b"}"), dict)
+    too_deep = b'{"unsafe":' + b"[" * 256 + b"0" + b"]" * 256 + b"}"
+    with pytest.raises(OctoberAuditError, match="JSON nesting exceeds audit bound"):
+        _object(too_deep)
