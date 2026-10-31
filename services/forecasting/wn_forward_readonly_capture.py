@@ -102,12 +102,8 @@ class ReadOnlyUntrustedBundle:
             evaluated_at=self.evaluated_at_utc,
             event_response=_restore(self._event_snapshot),
             series_response=_restore(self._series_snapshot),
-            market_responses=_unique_snapshot_envelopes(
-                self._market_snapshots, label="market"
-            ),
-            orderbook_responses=_unique_snapshot_envelopes(
-                self._book_snapshots, label="book"
-            ),
+            market_responses=_unique_snapshot_envelopes(self._market_snapshots, label="market"),
+            orderbook_responses=_unique_snapshot_envelopes(self._book_snapshots, label="book"),
         )
 
     @property
