@@ -51,9 +51,16 @@ def _date(value: date) -> str:
     return value.isoformat()
 
 
-def _db(path: Path) -> sqlite3.Connection:
-    if type(path) is not Path or path.is_symlink() or not path.parent.is_dir():
+def _db(path: Path, *, read_only: bool = False) -> sqlite3.Connection:
+    if not isinstance(path, Path) or path.is_symlink() or not path.parent.is_dir():
         raise NegativeJournalError("local journal path must have an existing parent")
+    if read_only and not path.is_file():
+        raise NegativeJournalError("unreserved local journal does not exist")
+    if read_only:
+        connection = sqlite3.connect(
+            path.resolve().as_uri() + "?mode=ro", uri=True, timeout=1, isolation_level=None
+        )
+        return connection
     connection = sqlite3.connect(path, timeout=1, isolation_level=None)
     try:
         connection.execute("PRAGMA foreign_keys = ON")
@@ -174,7 +181,7 @@ def classify_negative(
 def read_negative_date(path: Path, target: date) -> dict[str, object]:
     """Read the full expected denominator; no successful source/market authority."""
     key = _date(target)
-    connection = _db(path)
+    connection = _db(path, read_only=True)
     try:
         dates = connection.execute(
             "SELECT reserved_utc, policy FROM dates WHERE target_date = ?", (key,)
