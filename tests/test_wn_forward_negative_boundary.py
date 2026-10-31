@@ -428,15 +428,18 @@ def test_replaced_snapshot_family_never_drops_duplicate_or_exposes_unreplayed_ro
         get=_envelopes().__getitem__,
     )
     assert len(result.replay.responses) == 14
-    field = "_market_snapshots" if kind == "market" else "_book_snapshots"
     original = result._market_snapshots if kind == "market" else result._book_snapshots
+    changed: tuple[tuple[str, bytes], ...]
     if attack == "duplicate-replacement":
         changed = (*original[:5], original[0])
     elif attack == "duplicate-extra":
         changed = (*original, original[0])
     else:
         changed = original[:-1]
-    forged = replace(result, **{field: changed})
+    if kind == "market":
+        forged = replace(result, _market_snapshots=changed)
+    else:
+        forged = replace(result, _book_snapshots=changed)
     with pytest.raises(CaptureError, match="snapshot family"):
         _ = forged.replay
     for property_name in ("event", "series_response", "markets", "books"):
@@ -452,9 +455,14 @@ def test_replaced_six_unique_snapshot_keys_cannot_fake_unchanged_replay(kind: st
         evaluated_at=NOW,
         get=_envelopes().__getitem__,
     )
-    field = "_market_snapshots" if kind == "market" else "_book_snapshots"
     original = result._market_snapshots if kind == "market" else result._book_snapshots
-    changed = ((*original[0][:1], original[1][1]), *original[1:])
-    forged = replace(result, **{field: changed})
+    changed: tuple[tuple[str, bytes], ...] = (
+        (original[0][0], original[1][1]),
+        *original[1:],
+    )
+    if kind == "market":
+        forged = replace(result, _market_snapshots=changed)
+    else:
+        forged = replace(result, _book_snapshots=changed)
     with pytest.raises((ValueError, public_read.PublicReadFailure)):
         _ = forged.replay
