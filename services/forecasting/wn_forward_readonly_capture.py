@@ -104,13 +104,9 @@ def capture_untrusted_six_sibling_bundle(
         return public_read.get_with_timeout(path, timeout_seconds=TIMEOUT_SECONDS)
 
     try:
-        event_path = (
-            public_read.BASE + "/events/" + event_ticker + "?with_nested_markets=true"
-        )
+        event_path = public_read.BASE + "/events/" + event_ticker + "?with_nested_markets=true"
         event = request(event_path)
-        payload, _ = validate_strict_untrusted_response(
-            event, expected_path=event_path
-        )
+        payload, _ = validate_strict_untrusted_response(event, expected_path=event_path)
         event_value = payload.get("event")
         if not isinstance(event_value, dict):
             raise CaptureError("event response lacks event object")
