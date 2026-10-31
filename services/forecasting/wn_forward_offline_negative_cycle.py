@@ -16,7 +16,6 @@ from datetime import date, datetime
 from pathlib import Path
 
 from .wn_forward_negative_ledger import (
-    NegativeJournalError,
     classify_negative,
     read_negative_date,
     reserve_date,
@@ -42,7 +41,10 @@ def _validate_synthetic_input(
     for city, responses in envelopes.items():
         if type(city) is not str or type(responses) is not dict:
             raise OfflineCycleError("synthetic city evidence must be a concrete dictionary")
-        if any(type(path) is not str or type(response) is not dict for path, response in responses.items()):
+        if any(
+            type(path) is not str or type(response) is not dict
+            for path, response in responses.items()
+        ):
             raise OfflineCycleError("synthetic response envelopes must be concrete dictionaries")
 
 
