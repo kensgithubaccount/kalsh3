@@ -142,7 +142,7 @@ def capture_untrusted_six_sibling_bundle(
             market_responses=dict(market_rows),
             orderbook_responses=dict(book_rows),
         )
-    except (ValueError, TypeError, OverflowError, public_read.PublicReadFailure) as exc:
+    except (ValueError, TypeError, KeyError, OverflowError, public_read.PublicReadFailure) as exc:
         raise CaptureError("Kalshi research bundle invalid or unavailable; abstain") from exc
 
     return ReadOnlyUntrustedBundle(
