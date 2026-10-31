@@ -89,17 +89,17 @@ class ReadOnlyUntrustedBundle:
 
     @property
     def series_response(self) -> dict[str, object]:
-        self.replay
+        _ = self.replay
         return _restore(self._series_snapshot)
 
     @property
     def markets(self) -> tuple[tuple[str, dict[str, object]], ...]:
-        self.replay
+        _ = self.replay
         return tuple((ticker, _restore(raw)) for ticker, raw in self._market_snapshots)
 
     @property
     def books(self) -> tuple[tuple[str, dict[str, object]], ...]:
-        self.replay
+        _ = self.replay
         return tuple((ticker, _restore(raw)) for ticker, raw in self._book_snapshots)
 
     @property
