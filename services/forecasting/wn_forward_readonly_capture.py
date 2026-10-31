@@ -12,9 +12,9 @@ retry, without fabricated missing siblings, and without order authority.
 
 from __future__ import annotations
 
+import json
 from collections.abc import Callable
 from dataclasses import dataclass
-import json
 from datetime import UTC, date, datetime
 
 from services.market_universe import public_read
@@ -84,7 +84,7 @@ class ReadOnlyUntrustedBundle:
 
     @property
     def event(self) -> dict[str, object]:
-        self.replay
+        _ = self.replay
         return _restore(self._event_snapshot)
 
     @property
@@ -213,5 +213,5 @@ def capture_untrusted_six_sibling_bundle(
         _book_snapshots=tuple((ticker, _snapshot(row)) for ticker, row in book_rows),
     )
     # Reject any disagreement between the returned owned bytes and replay.
-    result.replay
+    _ = result.replay
     return result
