@@ -6,9 +6,10 @@ import base64
 import hashlib
 import json
 import sqlite3
+from dataclasses import replace
 from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import pytest
 
@@ -49,13 +50,15 @@ def test_atomic_five_city_reservation_and_one_terminal_per_city(tmp_path: Path) 
     assert initial["denominator_date_clusters"] == 1
     assert initial["denominator_city_attempts"] == 5
     assert initial["denominator_sibling_slots"] == 30
-    assert all(r["status"] == "ATTEMPT_RESERVED" for r in initial["rows"])
+    initial_rows = cast("list[dict[str, object]]", initial["rows"])
+    assert all(r["status"] == "ATTEMPT_RESERVED" for r in initial_rows)
     for city in sorted(CITY_SERIES):
         classify_negative(
             path, TARGET, city, reason="NO_MODEL", stamped_at=NOW + timedelta(seconds=1)
         )
     final = read_negative_date(path, TARGET)
-    assert all(r["status"] == "NO_MODEL" for r in final["rows"])
+    final_rows = cast("list[dict[str, object]]", final["rows"])
+    assert all(r["status"] == "NO_MODEL" for r in final_rows)
     assert final["source_attested"] is False
     assert final["market_economics_issued"] is False
     assert final["model_probability_authorized"] is False
@@ -134,7 +137,8 @@ def test_early_and_naive_classification_fail_without_replacing_claim(tmp_path: P
     for stamp in (NOW - timedelta(seconds=1), NOW.replace(tzinfo=None)):
         with pytest.raises(NegativeJournalError):
             classify_negative(path, TARGET, SERIES, reason="NO_MODEL", stamped_at=stamp)
-    assert read_negative_date(path, TARGET)["rows"][0]["status"] == "ATTEMPT_RESERVED"
+    rows = cast("list[dict[str, object]]", read_negative_date(path, TARGET)["rows"])
+    assert rows[0]["status"] == "ATTEMPT_RESERVED"
 
 
 def test_sqlite_update_delete_triggers_refuse_mutation(tmp_path: Path) -> None:
@@ -208,7 +212,7 @@ def _envelopes() -> dict[str, dict[str, object]]:
         ),
     }
     for market in markets:
-        ticker = market["ticker"]
+        ticker = str(market["ticker"])
         market_path = public_read.BASE + "/markets/" + ticker
         book_path = public_read.BASE + "/markets/orderbooks?tickers=" + ticker
         responses[market_path] = _wrap(market_path, {"market": market})
@@ -319,3 +323,91 @@ def test_invented_market_family_stops_before_books() -> None:
             series=SERIES, target=TARGET, evaluated_at=NOW, get=fake_get
         )
     assert len(calls) == 1
+
+
+def test_caller_mutations_do_not_change_returned_capture_or_replay() -> None:
+    """Every returned view must be fresh; no alias to getter-owned nested dictionaries."""
+    responses = _envelopes()
+    result = capture_untrusted_six_sibling_bundle(
+        series=SERIES, target=TARGET, evaluated_at=NOW, get=responses.__getitem__
+    )
+    original_replay = result.replay
+    original_event = result.event
+    original_market = result.markets[0][1]
+    event_path = next(path for path in responses if "/events/" in path)
+    event_payload = cast("dict[str, Any]", responses[event_path]["payload"])
+    event_payload["event"]["markets"][0]["rules_primary"] = "FORGED_AFTER_CAPTURE"
+    responses[event_path]["body_sha256"] = "0" * 64
+    first_market_path = next(path for path in responses if "/markets/" in path and "orderbooks" not in path)
+    responses[first_market_path]["raw_body_b64"] = "CORRUPTED_AFTER_CAPTURE"
+    assert result.event == original_event
+    assert result.markets[0][1] == original_market
+    assert result.replay == original_replay
+    # Even mutating a public, freshly decoded view must leave owned bytes untouched.
+    presented = result.event
+    presented["body_sha256"] = "MUTATED_VIEW"
+    cast("dict[str, Any]", presented["payload"])["event"]["markets"].clear()
+    returned_market = result.markets[0][1]
+    returned_market["body_sha256"] = "MUTATED_VIEW"
+    assert result.event == original_event
+    assert result.markets[0][1] == original_market
+    assert result.replay == original_replay
+
+
+def test_replaced_immutable_snapshot_cannot_keep_old_replay_success() -> None:
+    result = capture_untrusted_six_sibling_bundle(
+        series=SERIES, target=TARGET, evaluated_at=NOW, get=_envelopes().__getitem__
+    )
+    corrupted = replace(result, _event_snapshot=b'{"path":"forged"}')
+    with pytest.raises((ValueError, CaptureError)):
+        _ = corrupted.replay
+
+
+def test_orphan_negative_with_positive_state_is_not_hidden_by_join(tmp_path: Path) -> None:
+    path = db_path(tmp_path)
+    reserve_date(path, TARGET, stamped_at=NOW)
+    with sqlite3.connect(path) as connection:
+        connection.execute("PRAGMA foreign_keys = OFF")
+        connection.execute(
+            "INSERT INTO negatives (target_date, city_series, reason, classified_utc) "
+            "VALUES (?, 'FORGED', 'TRADE', ?)",
+            (TARGET.isoformat(), NOW.isoformat()),
+        )
+    with pytest.raises(NegativeJournalError, match="orphan or invalid terminal"):
+        read_negative_date(path, TARGET)
+
+
+@pytest.mark.parametrize(
+    "tampered_at",
+    (
+        NOW + timedelta(minutes=5),
+        NOW + timedelta(days=1),
+        NOW - timedelta(days=3),
+    ),
+)
+def test_tampered_reservation_clock_outside_cutoff_rejected_on_read(
+    tmp_path: Path, tampered_at: datetime
+) -> None:
+    path = db_path(tmp_path)
+    reserve_date(path, TARGET, stamped_at=NOW)
+    with sqlite3.connect(path) as connection:
+        connection.execute("DROP TRIGGER no_update_dates")
+        connection.execute(
+            "UPDATE dates SET reserved_utc = ? WHERE target_date = ?",
+            (tampered_at.isoformat(), TARGET.isoformat()),
+        )
+    with pytest.raises(NegativeJournalError, match="stored reservation timestamp"):
+        read_negative_date(path, TARGET)
+
+
+def test_tampered_late_reservation_clock_rejected_on_classification(tmp_path: Path) -> None:
+    path = db_path(tmp_path)
+    reserve_date(path, TARGET, stamped_at=NOW)
+    with sqlite3.connect(path) as connection:
+        connection.execute("DROP TRIGGER no_update_dates")
+        connection.execute(
+            "UPDATE dates SET reserved_utc = ? WHERE target_date = ?",
+            ((NOW + timedelta(minutes=10)).isoformat(), TARGET.isoformat()),
+        )
+    with pytest.raises(NegativeJournalError):
+        classify_negative(path, TARGET, SERIES, reason="NO_MODEL", stamped_at=NOW)
