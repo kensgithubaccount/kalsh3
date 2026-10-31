@@ -194,18 +194,18 @@ def test_no_network_transport_even_with_all_synthetic_bundles(
 
 
 @pytest.mark.parametrize("kind", ("unknown_city", "callable", "dict_subclass", "non_dict_city"))
-def test_invalid_synthetic_input_refused_before_reservation(
-    tmp_path: Path, kind: str
-) -> None:
+def test_invalid_synthetic_input_refused_before_reservation(tmp_path: Path, kind: str) -> None:
     path = _path(tmp_path)
     if kind == "unknown_city":
         source: Any = {"FORGED": {}}
     elif kind == "callable":
+
         def synthetic_callable(url: str) -> dict[str, str]:
             return {"path": url}
 
         source = synthetic_callable
     elif kind == "dict_subclass":
+
         class NetworkLikeDict(dict[str, dict[str, dict[str, object]]]):
             pass
 
@@ -275,14 +275,10 @@ def test_interrupted_classification_does_not_claim_complete_or_auto_retry(
 
     monkeypatch.setattr(cycle, "classify_negative", partial)
     with pytest.raises(NegativeJournalError, match="mid-cycle crash"):
-        run_offline_negative_cycle(
-            path, TARGET, reserved_at=RESERVED, classified_at=CLASSIFIED
-        )
+        run_offline_negative_cycle(path, TARGET, reserved_at=RESERVED, classified_at=CLASSIFIED)
     assert len(attempted) == 2
     rows = cast("list[dict[str, object]]", read_negative_date(path, TARGET)["rows"])
     assert sum(row["status"] == "NO_MODEL" for row in rows) == 1
     assert sum(row["status"] == "ATTEMPT_RESERVED" for row in rows) == 4
     with pytest.raises(NegativeJournalError):
-        run_offline_negative_cycle(
-            path, TARGET, reserved_at=RESERVED, classified_at=CLASSIFIED
-        )
+        run_offline_negative_cycle(path, TARGET, reserved_at=RESERVED, classified_at=CLASSIFIED)
