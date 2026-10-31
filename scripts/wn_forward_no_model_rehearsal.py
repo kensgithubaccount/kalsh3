@@ -12,9 +12,9 @@ from __future__ import annotations
 
 import argparse
 import json
+from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import UTC, date, datetime
-from typing import Sequence
 
 from scripts.wn_p2b_offline_member_access_preflight import (
     NO_GO,
@@ -205,9 +205,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     try:
         target = date.fromisoformat(args.target_local_date)
         reserved = datetime.fromisoformat(args.simulated_reserved_at.replace("Z", "+00:00"))
-        classified = datetime.fromisoformat(
-            args.simulated_classified_at.replace("Z", "+00:00")
-        )
+        classified = datetime.fromisoformat(args.simulated_classified_at.replace("Z", "+00:00"))
         result = rehearse_all_no_model(
             target,
             simulated_reserved_at=reserved,
