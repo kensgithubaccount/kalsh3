@@ -413,3 +413,48 @@ def test_tampered_late_reservation_clock_rejected_on_classification(tmp_path: Pa
         )
     with pytest.raises(NegativeJournalError):
         classify_negative(path, TARGET, SERIES, reason="NO_MODEL", stamped_at=NOW)
+
+
+@pytest.mark.parametrize("kind", ("market", "book"))
+@pytest.mark.parametrize("attack", ("duplicate-replacement", "duplicate-extra", "missing"))
+def test_replaced_snapshot_family_never_drops_duplicate_or_exposes_unreplayed_rows(
+    kind: str, attack: str
+) -> None:
+    """Reviewer replay: dictionary conversion must never silently discard raw rows."""
+    result = capture_untrusted_six_sibling_bundle(
+        series=SERIES,
+        target=TARGET,
+        evaluated_at=NOW,
+        get=_envelopes().__getitem__,
+    )
+    assert len(result.replay.responses) == 14
+    field = "_market_snapshots" if kind == "market" else "_book_snapshots"
+    original = result._market_snapshots if kind == "market" else result._book_snapshots
+    if attack == "duplicate-replacement":
+        changed = (*original[:5], original[0])
+    elif attack == "duplicate-extra":
+        changed = (*original, original[0])
+    else:
+        changed = original[:-1]
+    forged = replace(result, **{field: changed})
+    with pytest.raises(CaptureError, match="snapshot family"):
+        _ = forged.replay
+    for property_name in ("event", "series_response", "markets", "books"):
+        with pytest.raises(CaptureError, match="snapshot family"):
+            _ = getattr(forged, property_name)
+
+
+@pytest.mark.parametrize("kind", ("market", "book"))
+def test_replaced_six_unique_snapshot_keys_cannot_fake_unchanged_replay(kind: str) -> None:
+    result = capture_untrusted_six_sibling_bundle(
+        series=SERIES,
+        target=TARGET,
+        evaluated_at=NOW,
+        get=_envelopes().__getitem__,
+    )
+    field = "_market_snapshots" if kind == "market" else "_book_snapshots"
+    original = result._market_snapshots if kind == "market" else result._book_snapshots
+    changed = ((*original[0][:1], original[1][1]), *original[1:])
+    forged = replace(result, **{field: changed})
+    with pytest.raises((ValueError, public_read.PublicReadFailure)):
+        _ = forged.replay
