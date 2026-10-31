@@ -335,7 +335,10 @@ def test_nested_executable_container_rejected_before_reservation_without_hooks(
     path = _path(tmp_path)
     with pytest.raises(OfflineCycleError):
         run_offline_negative_cycle(
-            path, TARGET, reserved_at=RESERVED, classified_at=CLASSIFIED,
+            path,
+            TARGET,
+            reserved_at=RESERVED,
+            classified_at=CLASSIFIED,
             synthetic_envelopes={city: source},
         )
     assert hooks == []
@@ -362,7 +365,10 @@ def test_deep_plain_snapshot_is_detached_before_reservation(
 
     monkeypatch.setattr(cycle, "reserve_date", reserve_then_mutate)
     result = run_offline_negative_cycle(
-        _path(tmp_path), TARGET, reserved_at=RESERVED, classified_at=CLASSIFIED,
+        _path(tmp_path),
+        TARGET,
+        reserved_at=RESERVED,
+        classified_at=CLASSIFIED,
         synthetic_envelopes={city: source},
     )
     assert observed == ["reserved"]
@@ -373,13 +379,12 @@ def test_deep_plain_snapshot_is_detached_before_reservation(
 
 
 @pytest.mark.parametrize("invalid", ("nested_str_subclass", "nested_cycle", "nested_nan"))
-def test_recursive_non_plain_json_rejected_before_reservation(
-    tmp_path: Path, invalid: str
-) -> None:
+def test_recursive_non_plain_json_rejected_before_reservation(tmp_path: Path, invalid: str) -> None:
     city = sorted(CITY_SERIES)[0]
     source = _synthetic_city(city)
     event_path = next(path for path in source if "/events/" in path)
     if invalid == "nested_str_subclass":
+
         class SubclassText(str):
             pass
 
@@ -393,7 +398,10 @@ def test_recursive_non_plain_json_rejected_before_reservation(
     path = _path(tmp_path)
     with pytest.raises(OfflineCycleError):
         run_offline_negative_cycle(
-            path, TARGET, reserved_at=RESERVED, classified_at=CLASSIFIED,
+            path,
+            TARGET,
+            reserved_at=RESERVED,
+            classified_at=CLASSIFIED,
             synthetic_envelopes={city: source},
         )
     assert not path.exists()
