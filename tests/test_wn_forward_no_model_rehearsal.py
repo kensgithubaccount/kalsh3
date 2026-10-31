@@ -417,6 +417,7 @@ def test_cli_overflow_during_final_receipt_revalidation_fails_closed(
     capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """The final receipt check must also be inside the CLI's error boundary."""
+
     class SyntheticBrokenReceipt:
         def receipt(self) -> dict[str, object]:
             raise OverflowError("simulated UTC conversion overflow during receipt")
