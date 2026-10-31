@@ -37,9 +37,9 @@ class CaptureError(ValueError):
 
 def _snapshot(envelope: dict[str, object]) -> bytes:
     """Copy an entire JSON envelope into owned immutable bytes, rejecting exotic values."""
-    return json.dumps(
-        envelope, sort_keys=True, allow_nan=False, separators=(",", ":")
-    ).encode("utf-8")
+    return json.dumps(envelope, sort_keys=True, allow_nan=False, separators=(",", ":")).encode(
+        "utf-8"
+    )
 
 
 def _restore(snapshot: bytes) -> dict[str, object]:
@@ -74,12 +74,8 @@ class ReadOnlyUntrustedBundle:
             evaluated_at=self.evaluated_at_utc,
             event_response=_restore(self._event_snapshot),
             series_response=_restore(self._series_snapshot),
-            market_responses={
-                ticker: _restore(raw) for ticker, raw in self._market_snapshots
-            },
-            orderbook_responses={
-                ticker: _restore(raw) for ticker, raw in self._book_snapshots
-            },
+            market_responses={ticker: _restore(raw) for ticker, raw in self._market_snapshots},
+            orderbook_responses={ticker: _restore(raw) for ticker, raw in self._book_snapshots},
         )
 
     @property
