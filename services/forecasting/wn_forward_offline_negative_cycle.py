@@ -52,9 +52,7 @@ def _plain_json_copy(value: object, *, depth: int, budget: list[int]) -> object:
         for key, member in source.items():
             if type(key) is not str:
                 raise OfflineCycleError("synthetic JSON keys must be exact strings")
-            plain[cast("str", key)] = _plain_json_copy(
-                member, depth=depth + 1, budget=budget
-            )
+            plain[cast("str", key)] = _plain_json_copy(member, depth=depth + 1, budget=budget)
         return plain
     if type(value) is list:
         items = cast("list[object]", value)
@@ -92,6 +90,7 @@ def _validate_synthetic_input(
             plain_responses[path] = cast("dict[str, object]", copied)
         detached[city] = plain_responses
     return detached
+
 
 def run_offline_negative_cycle(
     journal_path: Path,
