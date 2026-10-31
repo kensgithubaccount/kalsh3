@@ -14,7 +14,7 @@ import argparse
 import json
 from collections.abc import Sequence
 from dataclasses import dataclass
-from datetime import UTC, date, datetime
+from datetime import date, datetime
 
 from scripts.wn_p2b_offline_member_access_preflight import (
     NO_GO,
