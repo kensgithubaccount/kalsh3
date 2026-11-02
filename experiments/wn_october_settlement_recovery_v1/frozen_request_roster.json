@@ -1,0 +1,1894 @@
+{
+  "base_commit": "30fb7d0a8c9c1a9bbf9f38bf496582b75c208195",
+  "families": [
+    {
+      "city_id": "miami",
+      "cli_product": "CLIMIA",
+      "contracts": [
+        {
+          "cap_strike": "88",
+          "floor_strike": "87",
+          "routing_hint_response_sha256": "97c7c2acfb54113e14ede9ef89f448f47469087a8c9b111a0c075781c49f0172",
+          "rules_primary": "If the maximum temperature recorded at Miami (CLIMIA) for Oct 10, 2026, is between 87-88\u00b0 fahrenheit according to The Weather Company, then the market resolves to Yes.",
+          "rules_secondary": "Not all weather data is the same. While checking a source like AccuWeather or Google Weather may help guide your decision, the official and final value used to determine this market is the maximum/minimum temperature as reported by the Weather Company.\n\nReading weather data\nPreliminary Weather Company data may be subject to rounding and conversion differences from the final reported value.\nUse caution when interpreting preliminary Weather Company readings.\n\nIf it is determined in the sole discretion of the Exchange that there is a material error in the initial non-preliminary publication, Expiration may be held until the publication of a non-materially-erroneous data revision or until the Expiration Date, whichever comes first. If no data is available at the end of this period, all markets will resolve to the last fair price determined by Kalshi. Please note, a status of \"Final\" on weather.com/kalshi is provided for convenience only, and does not guarantee data to be error-free and thus exempt from the above.",
+          "settlement_ts_routing_hint": "2026-10-11T11:09:13.651049Z",
+          "strike_type": "between",
+          "ticker": "KXHIGHMIA-26OCT10-B87.5"
+        },
+        {
+          "cap_strike": "90",
+          "floor_strike": "89",
+          "routing_hint_response_sha256": "39b845dc007b4815f8d976da69b7bc67cf7f5bbee8968f428bfb81f5b81f994c",
+          "rules_primary": "If the maximum temperature recorded at Miami (CLIMIA) for Oct 10, 2026, is between 89-90\u00b0 fahrenheit according to The Weather Company, then the market resolves to Yes.",
+          "rules_secondary": "Not all weather data is the same. While checking a source like AccuWeather or Google Weather may help guide your decision, the official and final value used to determine this market is the maximum/minimum temperature as reported by the Weather Company.\n\nReading weather data\nPreliminary Weather Company data may be subject to rounding and conversion differences from the final reported value.\nUse caution when interpreting preliminary Weather Company readings.\n\nIf it is determined in the sole discretion of the Exchange that there is a material error in the initial non-preliminary publication, Expiration may be held until the publication of a non-materially-erroneous data revision or until the Expiration Date, whichever comes first. If no data is available at the end of this period, all markets will resolve to the last fair price determined by Kalshi. Please note, a status of \"Final\" on weather.com/kalshi is provided for convenience only, and does not guarantee data to be error-free and thus exempt from the above.",
+          "settlement_ts_routing_hint": "2026-10-11T11:09:13.651049Z",
+          "strike_type": "between",
+          "ticker": "KXHIGHMIA-26OCT10-B89.5"
+        },
+        {
+          "cap_strike": "92",
+          "floor_strike": "91",
+          "routing_hint_response_sha256": "6500fc2100be9ea2c6420958175b865b4572740304207a86a4a2048687833ce2",
+          "rules_primary": "If the maximum temperature recorded at Miami (CLIMIA) for Oct 10, 2026, is between 91-92\u00b0 fahrenheit according to The Weather Company, then the market resolves to Yes.",
+          "rules_secondary": "Not all weather data is the same. While checking a source like AccuWeather or Google Weather may help guide your decision, the official and final value used to determine this market is the maximum/minimum temperature as reported by the Weather Company.\n\nReading weather data\nPreliminary Weather Company data may be subject to rounding and conversion differences from the final reported value.\nUse caution when interpreting preliminary Weather Company readings.\n\nIf it is determined in the sole discretion of the Exchange that there is a material error in the initial non-preliminary publication, Expiration may be held until the publication of a non-materially-erroneous data revision or until the Expiration Date, whichever comes first. If no data is available at the end of this period, all markets will resolve to the last fair price determined by Kalshi. Please note, a status of \"Final\" on weather.com/kalshi is provided for convenience only, and does not guarantee data to be error-free and thus exempt from the above.",
+          "settlement_ts_routing_hint": "2026-10-11T11:09:13.651049Z",
+          "strike_type": "between",
+          "ticker": "KXHIGHMIA-26OCT10-B91.5"
+        },
+        {
+          "cap_strike": "94",
+          "floor_strike": "93",
+          "routing_hint_response_sha256": "c0aa2784d2510a792e5f8dc70da39b4deae81e59ededd9e7c50eaccda6d2976b",
+          "rules_primary": "If the maximum temperature recorded at Miami (CLIMIA) for Oct 10, 2026, is between 93-94\u00b0 fahrenheit according to The Weather Company, then the market resolves to Yes.",
+          "rules_secondary": "Not all weather data is the same. While checking a source like AccuWeather or Google Weather may help guide your decision, the official and final value used to determine this market is the maximum/minimum temperature as reported by the Weather Company.\n\nReading weather data\nPreliminary Weather Company data may be subject to rounding and conversion differences from the final reported value.\nUse caution when interpreting preliminary Weather Company readings.\n\nIf it is determined in the sole discretion of the Exchange that there is a material error in the initial non-preliminary publication, Expiration may be held until the publication of a non-materially-erroneous data revision or until the Expiration Date, whichever comes first. If no data is available at the end of this period, all markets will resolve to the last fair price determined by Kalshi. Please note, a status of \"Final\" on weather.com/kalshi is provided for convenience only, and does not guarantee data to be error-free and thus exempt from the above.",
+          "settlement_ts_routing_hint": "2026-10-11T11:09:13.651049Z",
+          "strike_type": "between",
+          "ticker": "KXHIGHMIA-26OCT10-B93.5"
+        },
+        {
+          "cap_strike": "87",
+          "floor_strike": null,
+          "routing_hint_response_sha256": "f2c74d8abca5e80c269be427c39219fb2f82b98b9b7abdb50ec341d202d7d222",
+          "rules_primary": "If the maximum temperature recorded at Miami (CLIMIA) for Oct 10, 2026, is less than 87\u00b0 fahrenheit according to The Weather Company, then the market resolves to Yes.",
+          "rules_secondary": "Not all weather data is the same. While checking a source like AccuWeather or Google Weather may help guide your decision, the official and final value used to determine this market is the maximum/minimum temperature as reported by the Weather Company.\n\nReading weather data\nPreliminary Weather Company data may be subject to rounding and conversion differences from the final reported value.\nUse caution when interpreting preliminary Weather Company readings.\n\nIf it is determined in the sole discretion of the Exchange that there is a material error in the initial non-preliminary publication, Expiration may be held until the publication of a non-materially-erroneous data revision or until the Expiration Date, whichever comes first. If no data is available at the end of this period, all markets will resolve to the last fair price determined by Kalshi. Please note, a status of \"Final\" on weather.com/kalshi is provided for convenience only, and does not guarantee data to be error-free and thus exempt from the above.",
+          "settlement_ts_routing_hint": "2026-10-11T11:09:13.651049Z",
+          "strike_type": "less",
+          "ticker": "KXHIGHMIA-26OCT10-T87"
+        },
+        {
+          "cap_strike": null,
+          "floor_strike": "94",
+          "routing_hint_response_sha256": "11dd5d115905e678bb2b17f54b1d8c7d0240af41f169ad3f2327c51e0aa662cb",
+          "rules_primary": "If the maximum temperature recorded at Miami (CLIMIA) for Oct 10, 2026, is greater than 94\u00b0 fahrenheit according to The Weather Company, then the market resolves to Yes.",
+          "rules_secondary": "Not all weather data is the same. While checking a source like AccuWeather or Google Weather may help guide your decision, the official and final value used to determine this market is the maximum/minimum temperature as reported by the Weather Company.\n\nReading weather data\nPreliminary Weather Company data may be subject to rounding and conversion differences from the final reported value.\nUse caution when interpreting preliminary Weather Company readings.\n\nIf it is determined in the sole discretion of the Exchange that there is a material error in the initial non-preliminary publication, Expiration may be held until the publication of a non-materially-erroneous data revision or until the Expiration Date, whichever comes first. If no data is available at the end of this period, all markets will resolve to the last fair price determined by Kalshi. Please note, a status of \"Final\" on weather.com/kalshi is provided for convenience only, and does not guarantee data to be error-free and thus exempt from the above.",
+          "settlement_ts_routing_hint": "2026-10-11T11:09:13.651049Z",
+          "strike_type": "greater",
+          "ticker": "KXHIGHMIA-26OCT10-T94"
+        }
+      ],
+      "event_ticker": "KXHIGHMIA-26OCT10",
+      "forecast_packet_sha256": "752e3762be0642b42c9bafca4561ad2a82f135af384179b9bb15205b588d3fe0",
+      "frozen_market_sha256": "82429faa994728b3cd781ce10328f82998f9094ef43740922ceefb0845870a36",
+      "missingness_reasons": [
+        "KXHIGHMIA-26OCT10-B91.5:HTTP_429",
+        "INCOMPLETE_INDEPENDENT_SIBLING_GETS"
+      ],
+      "series_ticker": "KXHIGHMIA",
+      "station_icao": "KMIA",
+      "target_date": "2026-10-10"
+    },
+    {
+      "city_id": "denver",
+      "cli_product": "CLIDEN",
+      "contracts": [
+        {
+          "cap_strike": "81",
+          "floor_strike": "80",
+          "routing_hint_response_sha256": "731f8a229ee033a11fb9209b29255cfd7b474832f45c85702ca3630cb5edeb70",
+          "rules_primary": "If the maximum temperature recorded at Denver (CLIDEN) for Oct 10, 2026, is between 80-81\u00b0 fahrenheit according to The Weather Company, then the market resolves to Yes.",
+          "rules_secondary": "Not all weather data is the same. While checking a source like AccuWeather or Google Weather may help guide your decision, the official and final value used to determine this market is the maximum/minimum temperature as reported by the Weather Company.\n\nReading weather data\nPreliminary Weather Company data may be subject to rounding and conversion differences from the final reported value.\nUse caution when interpreting preliminary Weather Company readings.\n\nIf it is determined in the sole discretion of the Exchange that there is a material error in the initial non-preliminary publication, Expiration may be held until the publication of a non-materially-erroneous data revision or until the Expiration Date, whichever comes first. If no data is available at the end of this period, all markets will resolve to the last fair price determined by Kalshi. Please note, a status of \"Final\" on weather.com/kalshi is provided for convenience only, and does not guarantee data to be error-free and thus exempt from the above.",
+          "settlement_ts_routing_hint": "2026-10-11T13:07:53.648093Z",
+          "strike_type": "between",
+          "ticker": "KXHIGHDEN-26OCT10-B80.5"
+        },
+        {
+          "cap_strike": "83",
+          "floor_strike": "82",
+          "routing_hint_response_sha256": "3aa49450573a6570e4a6be92b5175ffb29a693a931c74bff7d27a514b027970f",
+          "rules_primary": "If the maximum temperature recorded at Denver (CLIDEN) for Oct 10, 2026, is between 82-83\u00b0 fahrenheit according to The Weather Company, then the market resolves to Yes.",
+          "rules_secondary": "Not all weather data is the same. While checking a source like AccuWeather or Google Weather may help guide your decision, the official and final value used to determine this market is the maximum/minimum temperature as reported by the Weather Company.\n\nReading weather data\nPreliminary Weather Company data may be subject to rounding and conversion differences from the final reported value.\nUse caution when interpreting preliminary Weather Company readings.\n\nIf it is determined in the sole discretion of the Exchange that there is a material error in the initial non-preliminary publication, Expiration may be held until the publication of a non-materially-erroneous data revision or until the Expiration Date, whichever comes first. If no data is available at the end of this period, all markets will resolve to the last fair price determined by Kalshi. Please note, a status of \"Final\" on weather.com/kalshi is provided for convenience only, and does not guarantee data to be error-free and thus exempt from the above.",
+          "settlement_ts_routing_hint": "2026-10-11T13:07:53.648093Z",
+          "strike_type": "between",
+          "ticker": "KXHIGHDEN-26OCT10-B82.5"
+        },
+        {
+          "cap_strike": "85",
+          "floor_strike": "84",
+          "routing_hint_response_sha256": "a49bef0b1b0a72ca9c55029b8170f115b4a59cdd917c98882d336a1cb9f979c2",
+          "rules_primary": "If the maximum temperature recorded at Denver (CLIDEN) for Oct 10, 2026, is between 84-85\u00b0 fahrenheit according to The Weather Company, then the market resolves to Yes.",
+          "rules_secondary": "Not all weather data is the same. While checking a source like AccuWeather or Google Weather may help guide your decision, the official and final value used to determine this market is the maximum/minimum temperature as reported by the Weather Company.\n\nReading weather data\nPreliminary Weather Company data may be subject to rounding and conversion differences from the final reported value.\nUse caution when interpreting preliminary Weather Company readings.\n\nIf it is determined in the sole discretion of the Exchange that there is a material error in the initial non-preliminary publication, Expiration may be held until the publication of a non-materially-erroneous data revision or until the Expiration Date, whichever comes first. If no data is available at the end of this period, all markets will resolve to the last fair price determined by Kalshi. Please note, a status of \"Final\" on weather.com/kalshi is provided for convenience only, and does not guarantee data to be error-free and thus exempt from the above.",
+          "settlement_ts_routing_hint": "2026-10-11T13:07:53.648093Z",
+          "strike_type": "between",
+          "ticker": "KXHIGHDEN-26OCT10-B84.5"
+        },
+        {
+          "cap_strike": "87",
+          "floor_strike": "86",
+          "routing_hint_response_sha256": "d5e74f507ce8e0d5a9bb65b90c594464acb94706d5afe37e3df85bcb5b32de44",
+          "rules_primary": "If the maximum temperature recorded at Denver (CLIDEN) for Oct 10, 2026, is between 86-87\u00b0 fahrenheit according to The Weather Company, then the market resolves to Yes.",
+          "rules_secondary": "Not all weather data is the same. While checking a source like AccuWeather or Google Weather may help guide your decision, the official and final value used to determine this market is the maximum/minimum temperature as reported by the Weather Company.\n\nReading weather data\nPreliminary Weather Company data may be subject to rounding and conversion differences from the final reported value.\nUse caution when interpreting preliminary Weather Company readings.\n\nIf it is determined in the sole discretion of the Exchange that there is a material error in the initial non-preliminary publication, Expiration may be held until the publication of a non-materially-erroneous data revision or until the Expiration Date, whichever comes first. If no data is available at the end of this period, all markets will resolve to the last fair price determined by Kalshi. Please note, a status of \"Final\" on weather.com/kalshi is provided for convenience only, and does not guarantee data to be error-free and thus exempt from the above.",
+          "settlement_ts_routing_hint": "2026-10-11T13:07:53.648093Z",
+          "strike_type": "between",
+          "ticker": "KXHIGHDEN-26OCT10-B86.5"
+        },
+        {
+          "cap_strike": "80",
+          "floor_strike": null,
+          "routing_hint_response_sha256": "adc7d8935467727b27c8f884d057b483a4b370c3da9abf45a6c4e024704eff94",
+          "rules_primary": "If the maximum temperature recorded at Denver (CLIDEN) for Oct 10, 2026, is less than 80\u00b0 fahrenheit according to The Weather Company, then the market resolves to Yes.",
+          "rules_secondary": "Not all weather data is the same. While checking a source like AccuWeather or Google Weather may help guide your decision, the official and final value used to determine this market is the maximum/minimum temperature as reported by the Weather Company.\n\nReading weather data\nPreliminary Weather Company data may be subject to rounding and conversion differences from the final reported value.\nUse caution when interpreting preliminary Weather Company readings.\n\nIf it is determined in the sole discretion of the Exchange that there is a material error in the initial non-preliminary publication, Expiration may be held until the publication of a non-materially-erroneous data revision or until the Expiration Date, whichever comes first. If no data is available at the end of this period, all markets will resolve to the last fair price determined by Kalshi. Please note, a status of \"Final\" on weather.com/kalshi is provided for convenience only, and does not guarantee data to be error-free and thus exempt from the above.",
+          "settlement_ts_routing_hint": "2026-10-11T13:07:53.648093Z",
+          "strike_type": "less",
+          "ticker": "KXHIGHDEN-26OCT10-T80"
+        },
+        {
+          "cap_strike": null,
+          "floor_strike": "87",
+          "routing_hint_response_sha256": "314d1f7fcfe53200385d9b43d18ea491a1af38c8eed3d5ad7c86d344e8584f30",
+          "rules_primary": "If the maximum temperature recorded at Denver (CLIDEN) for Oct 10, 2026, is greater than 87\u00b0 fahrenheit according to The Weather Company, then the market resolves to Yes.",
+          "rules_secondary": "Not all weather data is the same. While checking a source like AccuWeather or Google Weather may help guide your decision, the official and final value used to determine this market is the maximum/minimum temperature as reported by the Weather Company.\n\nReading weather data\nPreliminary Weather Company data may be subject to rounding and conversion differences from the final reported value.\nUse caution when interpreting preliminary Weather Company readings.\n\nIf it is determined in the sole discretion of the Exchange that there is a material error in the initial non-preliminary publication, Expiration may be held until the publication of a non-materially-erroneous data revision or until the Expiration Date, whichever comes first. If no data is available at the end of this period, all markets will resolve to the last fair price determined by Kalshi. Please note, a status of \"Final\" on weather.com/kalshi is provided for convenience only, and does not guarantee data to be error-free and thus exempt from the above.",
+          "settlement_ts_routing_hint": "2026-10-11T13:07:53.648093Z",
+          "strike_type": "greater",
+          "ticker": "KXHIGHDEN-26OCT10-T87"
+        }
+      ],
+      "event_ticker": "KXHIGHDEN-26OCT10",
+      "forecast_packet_sha256": "ee211900914ed854738573a64035ff670e81b46b7a29e64112ca38e7a5f4d524",
+      "frozen_market_sha256": "b91aceaa45cfe6761e9fcf97624f9b17601f56743a5802abf4816bd292a2fa0c",
+      "missingness_reasons": [
+        "KXHIGHDEN-26OCT10-B84.5:HTTP_429",
+        "INCOMPLETE_INDEPENDENT_SIBLING_GETS"
+      ],
+      "series_ticker": "KXHIGHDEN",
+      "station_icao": "KDEN",
+      "target_date": "2026-10-10"
+    },
+    {
+      "city_id": "denver",
+      "cli_product": "CLIDEN",
+      "contracts": [
+        {
+          "cap_strike": "79",
+          "floor_strike": "78",
+          "routing_hint_response_sha256": "3989c5c2205e754787e80d9fbf55fa4b6c6ba4279ad53b2f46c304ede0e9ed17",
+          "rules_primary": "If the maximum temperature recorded at Denver (CLIDEN) for Oct 11, 2026, is between 78-79\u00b0 fahrenheit according to The Weather Company, then the market resolves to Yes.",
+          "rules_secondary": "Not all weather data is the same. While checking a source like AccuWeather or Google Weather may help guide your decision, the official and final value used to determine this market is the maximum/minimum temperature as reported by the Weather Company.\n\nReading weather data\nPreliminary Weather Company data may be subject to rounding and conversion differences from the final reported value.\nUse caution when interpreting preliminary Weather Company readings.\n\nIf it is determined in the sole discretion of the Exchange that there is a material error in the initial non-preliminary publication, Expiration may be held until the publication of a non-materially-erroneous data revision or until the Expiration Date, whichever comes first. If no data is available at the end of this period, all markets will resolve to the last fair price determined by Kalshi. Please note, a status of \"Final\" on weather.com/kalshi is provided for convenience only, and does not guarantee data to be error-free and thus exempt from the above.",
+          "settlement_ts_routing_hint": "2026-10-12T13:12:38.645455Z",
+          "strike_type": "between",
+          "ticker": "KXHIGHDEN-26OCT11-B78.5"
+        },
+        {
+          "cap_strike": "81",
+          "floor_strike": "80",
+          "routing_hint_response_sha256": "eb9623aeeff85e1f3b948404ecc612f94e5084febf66349dc556ecd8afd1a711",
+          "rules_primary": "If the maximum temperature recorded at Denver (CLIDEN) for Oct 11, 2026, is between 80-81\u00b0 fahrenheit according to The Weather Company, then the market resolves to Yes.",
+          "rules_secondary": "Not all weather data is the same. While checking a source like AccuWeather or Google Weather may help guide your decision, the official and final value used to determine this market is the maximum/minimum temperature as reported by the Weather Company.\n\nReading weather data\nPreliminary Weather Company data may be subject to rounding and conversion differences from the final reported value.\nUse caution when interpreting preliminary Weather Company readings.\n\nIf it is determined in the sole discretion of the Exchange that there is a material error in the initial non-preliminary publication, Expiration may be held until the publication of a non-materially-erroneous data revision or until the Expiration Date, whichever comes first. If no data is available at the end of this period, all markets will resolve to the last fair price determined by Kalshi. Please note, a status of \"Final\" on weather.com/kalshi is provided for convenience only, and does not guarantee data to be error-free and thus exempt from the above.",
+          "settlement_ts_routing_hint": "2026-10-12T13:12:38.645455Z",
+          "strike_type": "between",
+          "ticker": "KXHIGHDEN-26OCT11-B80.5"
+        },
+        {
+          "cap_strike": "83",
+          "floor_strike": "82",
+          "routing_hint_response_sha256": "d30cd2b6dd832508057aa7b7e0e4d6b5a3b97e5e5dfae3e70d9df27511ef827c",
+          "rules_primary": "If the maximum temperature recorded at Denver (CLIDEN) for Oct 11, 2026, is between 82-83\u00b0 fahrenheit according to The Weather Company, then the market resolves to Yes.",
+          "rules_secondary": "Not all weather data is the same. While checking a source like AccuWeather or Google Weather may help guide your decision, the official and final value used to determine this market is the maximum/minimum temperature as reported by the Weather Company.\n\nReading weather data\nPreliminary Weather Company data may be subject to rounding and conversion differences from the final reported value.\nUse caution when interpreting preliminary Weather Company readings.\n\nIf it is determined in the sole discretion of the Exchange that there is a material error in the initial non-preliminary publication, Expiration may be held until the publication of a non-materially-erroneous data revision or until the Expiration Date, whichever comes first. If no data is available at the end of this period, all markets will resolve to the last fair price determined by Kalshi. Please note, a status of \"Final\" on weather.com/kalshi is provided for convenience only, and does not guarantee data to be error-free and thus exempt from the above.",
+          "settlement_ts_routing_hint": "2026-10-12T13:12:38.645455Z",
+          "strike_type": "between",
+          "ticker": "KXHIGHDEN-26OCT11-B82.5"
+        },
+        {
+          "cap_strike": "85",
+          "floor_strike": "84",
+          "routing_hint_response_sha256": "7680d48ed5a1693ff8f42511f4842b25ecde8d67d3aa221d76e776a27865dc9f",
+          "rules_primary": "If the maximum temperature recorded at Denver (CLIDEN) for Oct 11, 2026, is between 84-85\u00b0 fahrenheit according to The Weather Company, then the market resolves to Yes.",
+          "rules_secondary": "Not all weather data is the same. While checking a source like AccuWeather or Google Weather may help guide your decision, the official and final value used to determine this market is the maximum/minimum temperature as reported by the Weather Company.\n\nReading weather data\nPreliminary Weather Company data may be subject to rounding and conversion differences from the final reported value.\nUse caution when interpreting preliminary Weather Company readings.\n\nIf it is determined in the sole discretion of the Exchange that there is a material error in the initial non-preliminary publication, Expiration may be held until the publication of a non-materially-erroneous data revision or until the Expiration Date, whichever comes first. If no data is available at the end of this period, all markets will resolve to the last fair price determined by Kalshi. Please note, a status of \"Final\" on weather.com/kalshi is provided for convenience only, and does not guarantee data to be error-free and thus exempt from the above.",
+          "settlement_ts_routing_hint": "2026-10-12T13:12:38.645455Z",
+          "strike_type": "between",
+          "ticker": "KXHIGHDEN-26OCT11-B84.5"
+        },
+        {
+          "cap_strike": "78",
+          "floor_strike": null,
+          "routing_hint_response_sha256": "02bf6e0a247c00deb2024eb6b899e0f272dbe7a71710b3f5a03069c3ceb33e72",
+          "rules_primary": "If the maximum temperature recorded at Denver (CLIDEN) for Oct 11, 2026, is less than 78\u00b0 fahrenheit according to The Weather Company, then the market resolves to Yes.",
+          "rules_secondary": "Not all weather data is the same. While checking a source like AccuWeather or Google Weather may help guide your decision, the official and final value used to determine this market is the maximum/minimum temperature as reported by the Weather Company.\n\nReading weather data\nPreliminary Weather Company data may be subject to rounding and conversion differences from the final reported value.\nUse caution when interpreting preliminary Weather Company readings.\n\nIf it is determined in the sole discretion of the Exchange that there is a material error in the initial non-preliminary publication, Expiration may be held until the publication of a non-materially-erroneous data revision or until the Expiration Date, whichever comes first. If no data is available at the end of this period, all markets will resolve to the last fair price determined by Kalshi. Please note, a status of \"Final\" on weather.com/kalshi is provided for convenience only, and does not guarantee data to be error-free and thus exempt from the above.",
+          "settlement_ts_routing_hint": "2026-10-12T13:12:38.645455Z",
+          "strike_type": "less",
+          "ticker": "KXHIGHDEN-26OCT11-T78"
+        },
+        {
+          "cap_strike": null,
+          "floor_strike": "85",
+          "routing_hint_response_sha256": "372914eb841049a0e8b91a61ae810406134a445a7f9cfe37ca92df3d11beaeb5",
+          "rules_primary": "If the maximum temperature recorded at Denver (CLIDEN) for Oct 11, 2026, is greater than 85\u00b0 fahrenheit according to The Weather Company, then the market resolves to Yes.",
+          "rules_secondary": "Not all weather data is the same. While checking a source like AccuWeather or Google Weather may help guide your decision, the official and final value used to determine this market is the maximum/minimum temperature as reported by the Weather Company.\n\nReading weather data\nPreliminary Weather Company data may be subject to rounding and conversion differences from the final reported value.\nUse caution when interpreting preliminary Weather Company readings.\n\nIf it is determined in the sole discretion of the Exchange that there is a material error in the initial non-preliminary publication, Expiration may be held until the publication of a non-materially-erroneous data revision or until the Expiration Date, whichever comes first. If no data is available at the end of this period, all markets will resolve to the last fair price determined by Kalshi. Please note, a status of \"Final\" on weather.com/kalshi is provided for convenience only, and does not guarantee data to be error-free and thus exempt from the above.",
+          "settlement_ts_routing_hint": "2026-10-12T13:12:38.645455Z",
+          "strike_type": "greater",
+          "ticker": "KXHIGHDEN-26OCT11-T85"
+        }
+      ],
+      "event_ticker": "KXHIGHDEN-26OCT11",
+      "forecast_packet_sha256": "d0016df94c913448dcc0696eb63a10cb335369a6762f9eb69f99d8d5c1dc919b",
+      "frozen_market_sha256": "3439ffea2ef97516fc93d6396393e12ed7c85ce07946cfd9c0f5c73a6d11b2e3",
+      "missingness_reasons": [
+        "KXHIGHDEN-26OCT11-B84.5:HTTP_429",
+        "INCOMPLETE_INDEPENDENT_SIBLING_GETS"
+      ],
+      "series_ticker": "KXHIGHDEN",
+      "station_icao": "KDEN",
+      "target_date": "2026-10-11"
+    },
+    {
+      "city_id": "los_angeles",
+      "cli_product": "CLILAX",
+      "contracts": [
+        {
+          "cap_strike": "71",
+          "floor_strike": "70",
+          "routing_hint_response_sha256": "230a6f9a51fad42c1eeefbe8a8701ebfd4ded1b958fe6ca487a382c33ef462ba",
+          "rules_primary": "If the maximum temperature recorded at Los Angeles (CLILAX) for Oct 11, 2026, is between 70-71\u00b0 fahrenheit according to The Weather Company, then the market resolves to Yes.",
+          "rules_secondary": "Not all weather data is the same. While checking a source like AccuWeather or Google Weather may help guide your decision, the official and final value used to determine this market is the maximum/minimum temperature as reported by the Weather Company.\n\nReading weather data\nPreliminary Weather Company data may be subject to rounding and conversion differences from the final reported value.\nUse caution when interpreting preliminary Weather Company readings.\n\nIf it is determined in the sole discretion of the Exchange that there is a material error in the initial non-preliminary publication, Expiration may be held until the publication of a non-materially-erroneous data revision or until the Expiration Date, whichever comes first. If no data is available at the end of this period, all markets will resolve to the last fair price determined by Kalshi. Please note, a status of \"Final\" on weather.com/kalshi is provided for convenience only, and does not guarantee data to be error-free and thus exempt from the above.",
+          "settlement_ts_routing_hint": "2026-10-12T14:08:33.655391Z",
+          "strike_type": "between",
+          "ticker": "KXHIGHLAX-26OCT11-B70.5"
+        },
+        {
+          "cap_strike": "73",
+          "floor_strike": "72",
+          "routing_hint_response_sha256": "9b6ed7f3f62c6b4d691a662767707ae967f2e2ab97fc0be61a27d31428ceaaa7",
+          "rules_primary": "If the maximum temperature recorded at Los Angeles (CLILAX) for Oct 11, 2026, is between 72-73\u00b0 fahrenheit according to The Weather Company, then the market resolves to Yes.",
+          "rules_secondary": "Not all weather data is the same. While checking a source like AccuWeather or Google Weather may help guide your decision, the official and final value used to determine this market is the maximum/minimum temperature as reported by the Weather Company.\n\nReading weather data\nPreliminary Weather Company data may be subject to rounding and conversion differences from the final reported value.\nUse caution when interpreting preliminary Weather Company readings.\n\nIf it is determined in the sole discretion of the Exchange that there is a material error in the initial non-preliminary publication, Expiration may be held until the publication of a non-materially-erroneous data revision or until the Expiration Date, whichever comes first. If no data is available at the end of this period, all markets will resolve to the last fair price determined by Kalshi. Please note, a status of \"Final\" on weather.com/kalshi is provided for convenience only, and does not guarantee data to be error-free and thus exempt from the above.",
+          "settlement_ts_routing_hint": "2026-10-12T14:08:33.655391Z",
+          "strike_type": "between",
+          "ticker": "KXHIGHLAX-26OCT11-B72.5"
+        },
+        {
+          "cap_strike": "75",
+          "floor_strike": "74",
+          "routing_hint_response_sha256": "ad67f4cb0177da138d1bff78d625da34d5be8202be04375daa145f06d4f5aee8",
+          "rules_primary": "If the maximum temperature recorded at Los Angeles (CLILAX) for Oct 11, 2026, is between 74-75\u00b0 fahrenheit according to The Weather Company, then the market resolves to Yes.",
+          "rules_secondary": "Not all weather data is the same. While checking a source like AccuWeather or Google Weather may help guide your decision, the official and final value used to determine this market is the maximum/minimum temperature as reported by the Weather Company.\n\nReading weather data\nPreliminary Weather Company data may be subject to rounding and conversion differences from the final reported value.\nUse caution when interpreting preliminary Weather Company readings.\n\nIf it is determined in the sole discretion of the Exchange that there is a material error in the initial non-preliminary publication, Expiration may be held until the publication of a non-materially-erroneous data revision or until the Expiration Date, whichever comes first. If no data is available at the end of this period, all markets will resolve to the last fair price determined by Kalshi. Please note, a status of \"Final\" on weather.com/kalshi is provided for convenience only, and does not guarantee data to be error-free and thus exempt from the above.",
+          "settlement_ts_routing_hint": "2026-10-12T14:08:33.655391Z",
+          "strike_type": "between",
+          "ticker": "KXHIGHLAX-26OCT11-B74.5"
+        },
+        {
+          "cap_strike": "77",
+          "floor_strike": "76",
+          "routing_hint_response_sha256": "5152f270d004d28b9a7580b33d96279ae16d7c7f6ae96dbf57a95aa124855912",
+          "rules_primary": "If the maximum temperature recorded at Los Angeles (CLILAX) for Oct 11, 2026, is between 76-77\u00b0 fahrenheit according to The Weather Company, then the market resolves to Yes.",
+          "rules_secondary": "Not all weather data is the same. While checking a source like AccuWeather or Google Weather may help guide your decision, the official and final value used to determine this market is the maximum/minimum temperature as reported by the Weather Company.\n\nReading weather data\nPreliminary Weather Company data may be subject to rounding and conversion differences from the final reported value.\nUse caution when interpreting preliminary Weather Company readings.\n\nIf it is determined in the sole discretion of the Exchange that there is a material error in the initial non-preliminary publication, Expiration may be held until the publication of a non-materially-erroneous data revision or until the Expiration Date, whichever comes first. If no data is available at the end of this period, all markets will resolve to the last fair price determined by Kalshi. Please note, a status of \"Final\" on weather.com/kalshi is provided for convenience only, and does not guarantee data to be error-free and thus exempt from the above.",
+          "settlement_ts_routing_hint": "2026-10-12T14:08:33.655391Z",
+          "strike_type": "between",
+          "ticker": "KXHIGHLAX-26OCT11-B76.5"
+        },
+        {
+          "cap_strike": "70",
+          "floor_strike": null,
+          "routing_hint_response_sha256": "076b2a0d893a11d6dc09dbe9002e5a366d95a9c7220a4616099c1a61b42f17af",
+          "rules_primary": "If the maximum temperature recorded at Los Angeles (CLILAX) for Oct 11, 2026, is less than 70\u00b0 fahrenheit according to The Weather Company, then the market resolves to Yes.",
+          "rules_secondary": "Not all weather data is the same. While checking a source like AccuWeather or Google Weather may help guide your decision, the official and final value used to determine this market is the maximum/minimum temperature as reported by the Weather Company.\n\nReading weather data\nPreliminary Weather Company data may be subject to rounding and conversion differences from the final reported value.\nUse caution when interpreting preliminary Weather Company readings.\n\nIf it is determined in the sole discretion of the Exchange that there is a material error in the initial non-preliminary publication, Expiration may be held until the publication of a non-materially-erroneous data revision or until the Expiration Date, whichever comes first. If no data is available at the end of this period, all markets will resolve to the last fair price determined by Kalshi. Please note, a status of \"Final\" on weather.com/kalshi is provided for convenience only, and does not guarantee data to be error-free and thus exempt from the above.",
+          "settlement_ts_routing_hint": "2026-10-12T14:08:33.655391Z",
+          "strike_type": "less",
+          "ticker": "KXHIGHLAX-26OCT11-T70"
+        },
+        {
+          "cap_strike": null,
+          "floor_strike": "77",
+          "routing_hint_response_sha256": "94fd1fe59c0ba0bf8a7b93fb17ac299b261b2ee969ec24c9d3c9a32a923bda54",
+          "rules_primary": "If the maximum temperature recorded at Los Angeles (CLILAX) for Oct 11, 2026, is greater than 77\u00b0 fahrenheit according to The Weather Company, then the market resolves to Yes.",
+          "rules_secondary": "Not all weather data is the same. While checking a source like AccuWeather or Google Weather may help guide your decision, the official and final value used to determine this market is the maximum/minimum temperature as reported by the Weather Company.\n\nReading weather data\nPreliminary Weather Company data may be subject to rounding and conversion differences from the final reported value.\nUse caution when interpreting preliminary Weather Company readings.\n\nIf it is determined in the sole discretion of the Exchange that there is a material error in the initial non-preliminary publication, Expiration may be held until the publication of a non-materially-erroneous data revision or until the Expiration Date, whichever comes first. If no data is available at the end of this period, all markets will resolve to the last fair price determined by Kalshi. Please note, a status of \"Final\" on weather.com/kalshi is provided for convenience only, and does not guarantee data to be error-free and thus exempt from the above.",
+          "settlement_ts_routing_hint": "2026-10-12T14:08:33.655391Z",
+          "strike_type": "greater",
+          "ticker": "KXHIGHLAX-26OCT11-T77"
+        }
+      ],
+      "event_ticker": "KXHIGHLAX-26OCT11",
+      "forecast_packet_sha256": "d648b3f3b575c2f4f86a685bbf83e989483ca129321927f4bac75560eb70486f",
+      "frozen_market_sha256": "8c4fbf5d0940704fdb935386db8e43a943889c5038e0e334069aa688ee6e75fa",
+      "missingness_reasons": [
+        "KXHIGHLAX-26OCT11-B76.5:HTTP_429",
+        "INCOMPLETE_INDEPENDENT_SIBLING_GETS"
+      ],
+      "series_ticker": "KXHIGHLAX",
+      "station_icao": "KLAX",
+      "target_date": "2026-10-11"
+    },
+    {
+      "city_id": "seattle",
+      "cli_product": "CLISEA",
+      "contracts": [
+        {
+          "cap_strike": "61",
+          "floor_strike": "60",
+          "routing_hint_response_sha256": "8e11274d9200c050476702c2360711b0c42512baf56f808cfa14b41695251501",
+          "rules_primary": "If the maximum temperature recorded at Seattle (CLISEA) for Oct 12, 2026, is between 60-61\u00b0 fahrenheit according to The Weather Company, then the market resolves to Yes.",
+          "rules_secondary": "Not all weather data is the same. While checking a source like AccuWeather or Google Weather may help guide your decision, the official and final value used to determine this market is the maximum/minimum temperature as reported by the Weather Company.\n\nReading weather data\nPreliminary Weather Company data may be subject to rounding and conversion differences from the final reported value.\nUse caution when interpreting preliminary Weather Company readings.\n\nIf it is determined in the sole discretion of the Exchange that there is a material error in the initial non-preliminary publication, Expiration may be held until the publication of a non-materially-erroneous data revision or until the Expiration Date, whichever comes first. If no data is available at the end of this period, all markets will resolve to the last fair price determined by Kalshi. Please note, a status of \"Final\" on weather.com/kalshi is provided for convenience only, and does not guarantee data to be error-free and thus exempt from the above.",
+          "settlement_ts_routing_hint": "2026-10-13T14:10:49.599166Z",
+          "strike_type": "between",
+          "ticker": "KXHIGHTSEA-26OCT12-B60.5"
+        },
+        {
+          "cap_strike": "63",
+          "floor_strike": "62",
+          "routing_hint_response_sha256": "8e61eae622a3959cbe957e0ed78c7dca4ebffffea1180c9a8ab900571af367bf",
+          "rules_primary": "If the maximum temperature recorded at Seattle (CLISEA) for Oct 12, 2026, is between 62-63\u00b0 fahrenheit according to The Weather Company, then the market resolves to Yes.",
+          "rules_secondary": "Not all weather data is the same. While checking a source like AccuWeather or Google Weather may help guide your decision, the official and final value used to determine this market is the maximum/minimum temperature as reported by the Weather Company.\n\nReading weather data\nPreliminary Weather Company data may be subject to rounding and conversion differences from the final reported value.\nUse caution when interpreting preliminary Weather Company readings.\n\nIf it is determined in the sole discretion of the Exchange that there is a material error in the initial non-preliminary publication, Expiration may be held until the publication of a non-materially-erroneous data revision or until the Expiration Date, whichever comes first. If no data is available at the end of this period, all markets will resolve to the last fair price determined by Kalshi. Please note, a status of \"Final\" on weather.com/kalshi is provided for convenience only, and does not guarantee data to be error-free and thus exempt from the above.",
+          "settlement_ts_routing_hint": "2026-10-13T14:10:49.599166Z",
+          "strike_type": "between",
+          "ticker": "KXHIGHTSEA-26OCT12-B62.5"
+        },
+        {
+          "cap_strike": "65",
+          "floor_strike": "64",
+          "routing_hint_response_sha256": "1f555c501037ef24791c9bf456383aaebaf9041e65188de718f4ff22cc0c3edb",
+          "rules_primary": "If the maximum temperature recorded at Seattle (CLISEA) for Oct 12, 2026, is between 64-65\u00b0 fahrenheit according to The Weather Company, then the market resolves to Yes.",
+          "rules_secondary": "Not all weather data is the same. While checking a source like AccuWeather or Google Weather may help guide your decision, the official and final value used to determine this market is the maximum/minimum temperature as reported by the Weather Company.\n\nReading weather data\nPreliminary Weather Company data may be subject to rounding and conversion differences from the final reported value.\nUse caution when interpreting preliminary Weather Company readings.\n\nIf it is determined in the sole discretion of the Exchange that there is a material error in the initial non-preliminary publication, Expiration may be held until the publication of a non-materially-erroneous data revision or until the Expiration Date, whichever comes first. If no data is available at the end of this period, all markets will resolve to the last fair price determined by Kalshi. Please note, a status of \"Final\" on weather.com/kalshi is provided for convenience only, and does not guarantee data to be error-free and thus exempt from the above.",
+          "settlement_ts_routing_hint": "2026-10-13T14:10:49.599166Z",
+          "strike_type": "between",
+          "ticker": "KXHIGHTSEA-26OCT12-B64.5"
+        },
+        {
+          "cap_strike": "67",
+          "floor_strike": "66",
+          "routing_hint_response_sha256": "0c5183520e8881d410cddadec498405dc04146b972d4a34d8d1874695bef8763",
+          "rules_primary": "If the maximum temperature recorded at Seattle (CLISEA) for Oct 12, 2026, is between 66-67\u00b0 fahrenheit according to The Weather Company, then the market resolves to Yes.",
+          "rules_secondary": "Not all weather data is the same. While checking a source like AccuWeather or Google Weather may help guide your decision, the official and final value used to determine this market is the maximum/minimum temperature as reported by the Weather Company.\n\nReading weather data\nPreliminary Weather Company data may be subject to rounding and conversion differences from the final reported value.\nUse caution when interpreting preliminary Weather Company readings.\n\nIf it is determined in the sole discretion of the Exchange that there is a material error in the initial non-preliminary publication, Expiration may be held until the publication of a non-materially-erroneous data revision or until the Expiration Date, whichever comes first. If no data is available at the end of this period, all markets will resolve to the last fair price determined by Kalshi. Please note, a status of \"Final\" on weather.com/kalshi is provided for convenience only, and does not guarantee data to be error-free and thus exempt from the above.",
+          "settlement_ts_routing_hint": "2026-10-13T14:10:49.599166Z",
+          "strike_type": "between",
+          "ticker": "KXHIGHTSEA-26OCT12-B66.5"
+        },
+        {
+          "cap_strike": "60",
+          "floor_strike": null,
+          "routing_hint_response_sha256": "4696e915462f94abccd8e49d9bdd72ba3ca5e82f6d3f1961142bb3842d479d70",
+          "rules_primary": "If the maximum temperature recorded at Seattle (CLISEA) for Oct 12, 2026, is less than 60\u00b0 fahrenheit according to The Weather Company, then the market resolves to Yes.",
+          "rules_secondary": "Not all weather data is the same. While checking a source like AccuWeather or Google Weather may help guide your decision, the official and final value used to determine this market is the maximum/minimum temperature as reported by the Weather Company.\n\nReading weather data\nPreliminary Weather Company data may be subject to rounding and conversion differences from the final reported value.\nUse caution when interpreting preliminary Weather Company readings.\n\nIf it is determined in the sole discretion of the Exchange that there is a material error in the initial non-preliminary publication, Expiration may be held until the publication of a non-materially-erroneous data revision or until the Expiration Date, whichever comes first. If no data is available at the end of this period, all markets will resolve to the last fair price determined by Kalshi. Please note, a status of \"Final\" on weather.com/kalshi is provided for convenience only, and does not guarantee data to be error-free and thus exempt from the above.",
+          "settlement_ts_routing_hint": "2026-10-13T14:10:49.599166Z",
+          "strike_type": "less",
+          "ticker": "KXHIGHTSEA-26OCT12-T60"
+        },
+        {
+          "cap_strike": null,
+          "floor_strike": "67",
+          "routing_hint_response_sha256": "45b5b2466695941c4fb8c52b6176b8cf363f6a0e7180c0e1da357c02bb718d2d",
+          "rules_primary": "If the maximum temperature recorded at Seattle (CLISEA) for Oct 12, 2026, is greater than 67\u00b0 fahrenheit according to The Weather Company, then the market resolves to Yes.",
+          "rules_secondary": "Not all weather data is the same. While checking a source like AccuWeather or Google Weather may help guide your decision, the official and final value used to determine this market is the maximum/minimum temperature as reported by the Weather Company.\n\nReading weather data\nPreliminary Weather Company data may be subject to rounding and conversion differences from the final reported value.\nUse caution when interpreting preliminary Weather Company readings.\n\nIf it is determined in the sole discretion of the Exchange that there is a material error in the initial non-preliminary publication, Expiration may be held until the publication of a non-materially-erroneous data revision or until the Expiration Date, whichever comes first. If no data is available at the end of this period, all markets will resolve to the last fair price determined by Kalshi. Please note, a status of \"Final\" on weather.com/kalshi is provided for convenience only, and does not guarantee data to be error-free and thus exempt from the above.",
+          "settlement_ts_routing_hint": "2026-10-13T14:10:49.599166Z",
+          "strike_type": "greater",
+          "ticker": "KXHIGHTSEA-26OCT12-T67"
+        }
+      ],
+      "event_ticker": "KXHIGHTSEA-26OCT12",
+      "forecast_packet_sha256": "0a1990b05d7cb025753a968d0b35e9ef33df95a5a0e04fc8a9e7237f376a0295",
+      "frozen_market_sha256": "0fb7271a8719a961aa3ffb5d95476226772925c7d33734cf1c138706982806a4",
+      "missingness_reasons": [
+        "KXHIGHTSEA-26OCT12-B62.5:HTTP_429",
+        "INCOMPLETE_INDEPENDENT_SIBLING_GETS"
+      ],
+      "series_ticker": "KXHIGHTSEA",
+      "station_icao": "KSEA",
+      "target_date": "2026-10-12"
+    },
+    {
+      "city_id": "boston",
+      "cli_product": "CLIBOS",
+      "contracts": [
+        {
+          "cap_strike": "61",
+          "floor_strike": "60",
+          "routing_hint_response_sha256": "fc0b8f603ac0bb3b84feb24deb62c8a2af2f4bedbdde333adf55e2b7684a457b",
+          "rules_primary": "If the maximum temperature recorded at Boston (CLIBOS) for Oct 13, 2026, is between 60-61\u00b0 fahrenheit according to The Weather Company, then the market resolves to Yes.",
+          "rules_secondary": "Not all weather data is the same. While checking a source like AccuWeather or Google Weather may help guide your decision, the official and final value used to determine this market is the maximum/minimum temperature as reported by the Weather Company.\n\nReading weather data\nPreliminary Weather Company data may be subject to rounding and conversion differences from the final reported value.\nUse caution when interpreting preliminary Weather Company readings.\n\nIf it is determined in the sole discretion of the Exchange that there is a material error in the initial non-preliminary publication, Expiration may be held until the publication of a non-materially-erroneous data revision or until the Expiration Date, whichever comes first. If no data is available at the end of this period, all markets will resolve to the last fair price determined by Kalshi. Please note, a status of \"Final\" on weather.com/kalshi is provided for convenience only, and does not guarantee data to be error-free and thus exempt from the above.",
+          "settlement_ts_routing_hint": "2026-10-14T11:10:24.103272Z",
+          "strike_type": "between",
+          "ticker": "KXHIGHTBOS-26OCT13-B60.5"
+        },
+        {
+          "cap_strike": "63",
+          "floor_strike": "62",
+          "routing_hint_response_sha256": "de037b8346f306889489b77b7be7b4876813782b6c9d8a8f950cd44886c02fc3",
+          "rules_primary": "If the maximum temperature recorded at Boston (CLIBOS) for Oct 13, 2026, is between 62-63\u00b0 fahrenheit according to The Weather Company, then the market resolves to Yes.",
+          "rules_secondary": "Not all weather data is the same. While checking a source like AccuWeather or Google Weather may help guide your decision, the official and final value used to determine this market is the maximum/minimum temperature as reported by the Weather Company.\n\nReading weather data\nPreliminary Weather Company data may be subject to rounding and conversion differences from the final reported value.\nUse caution when interpreting preliminary Weather Company readings.\n\nIf it is determined in the sole discretion of the Exchange that there is a material error in the initial non-preliminary publication, Expiration may be held until the publication of a non-materially-erroneous data revision or until the Expiration Date, whichever comes first. If no data is available at the end of this period, all markets will resolve to the last fair price determined by Kalshi. Please note, a status of \"Final\" on weather.com/kalshi is provided for convenience only, and does not guarantee data to be error-free and thus exempt from the above.",
+          "settlement_ts_routing_hint": "2026-10-14T11:10:24.103272Z",
+          "strike_type": "between",
+          "ticker": "KXHIGHTBOS-26OCT13-B62.5"
+        },
+        {
+          "cap_strike": "65",
+          "floor_strike": "64",
+          "routing_hint_response_sha256": "48e64d35ac288ce5caad645e39f80d10cb4970b197f8527073debe868360de88",
+          "rules_primary": "If the maximum temperature recorded at Boston (CLIBOS) for Oct 13, 2026, is between 64-65\u00b0 fahrenheit according to The Weather Company, then the market resolves to Yes.",
+          "rules_secondary": "Not all weather data is the same. While checking a source like AccuWeather or Google Weather may help guide your decision, the official and final value used to determine this market is the maximum/minimum temperature as reported by the Weather Company.\n\nReading weather data\nPreliminary Weather Company data may be subject to rounding and conversion differences from the final reported value.\nUse caution when interpreting preliminary Weather Company readings.\n\nIf it is determined in the sole discretion of the Exchange that there is a material error in the initial non-preliminary publication, Expiration may be held until the publication of a non-materially-erroneous data revision or until the Expiration Date, whichever comes first. If no data is available at the end of this period, all markets will resolve to the last fair price determined by Kalshi. Please note, a status of \"Final\" on weather.com/kalshi is provided for convenience only, and does not guarantee data to be error-free and thus exempt from the above.",
+          "settlement_ts_routing_hint": "2026-10-14T11:10:24.103272Z",
+          "strike_type": "between",
+          "ticker": "KXHIGHTBOS-26OCT13-B64.5"
+        },
+        {
+          "cap_strike": "67",
+          "floor_strike": "66",
+          "routing_hint_response_sha256": "1d5c79df38bf851db175e3cbf1189e47452978ac32be6b9a76d93a54f8d6fc32",
+          "rules_primary": "If the maximum temperature recorded at Boston (CLIBOS) for Oct 13, 2026, is between 66-67\u00b0 fahrenheit according to The Weather Company, then the market resolves to Yes.",
+          "rules_secondary": "Not all weather data is the same. While checking a source like AccuWeather or Google Weather may help guide your decision, the official and final value used to determine this market is the maximum/minimum temperature as reported by the Weather Company.\n\nReading weather data\nPreliminary Weather Company data may be subject to rounding and conversion differences from the final reported value.\nUse caution when interpreting preliminary Weather Company readings.\n\nIf it is determined in the sole discretion of the Exchange that there is a material error in the initial non-preliminary publication, Expiration may be held until the publication of a non-materially-erroneous data revision or until the Expiration Date, whichever comes first. If no data is available at the end of this period, all markets will resolve to the last fair price determined by Kalshi. Please note, a status of \"Final\" on weather.com/kalshi is provided for convenience only, and does not guarantee data to be error-free and thus exempt from the above.",
+          "settlement_ts_routing_hint": "2026-10-14T11:10:24.103272Z",
+          "strike_type": "between",
+          "ticker": "KXHIGHTBOS-26OCT13-B66.5"
+        },
+        {
+          "cap_strike": "60",
+          "floor_strike": null,
+          "routing_hint_response_sha256": "d5eb250348079fcf8c3bb68550e17896ea104f9d49e028df4c8ea9b106c0ea8d",
+          "rules_primary": "If the maximum temperature recorded at Boston (CLIBOS) for Oct 13, 2026, is less than 60\u00b0 fahrenheit according to The Weather Company, then the market resolves to Yes.",
+          "rules_secondary": "Not all weather data is the same. While checking a source like AccuWeather or Google Weather may help guide your decision, the official and final value used to determine this market is the maximum/minimum temperature as reported by the Weather Company.\n\nReading weather data\nPreliminary Weather Company data may be subject to rounding and conversion differences from the final reported value.\nUse caution when interpreting preliminary Weather Company readings.\n\nIf it is determined in the sole discretion of the Exchange that there is a material error in the initial non-preliminary publication, Expiration may be held until the publication of a non-materially-erroneous data revision or until the Expiration Date, whichever comes first. If no data is available at the end of this period, all markets will resolve to the last fair price determined by Kalshi. Please note, a status of \"Final\" on weather.com/kalshi is provided for convenience only, and does not guarantee data to be error-free and thus exempt from the above.",
+          "settlement_ts_routing_hint": "2026-10-14T11:10:24.103272Z",
+          "strike_type": "less",
+          "ticker": "KXHIGHTBOS-26OCT13-T60"
+        },
+        {
+          "cap_strike": null,
+          "floor_strike": "67",
+          "routing_hint_response_sha256": "389cd68e7334f7936d41b4c5bdf652b92b81c8f7c3d1e7f26987bcab05af4abf",
+          "rules_primary": "If the maximum temperature recorded at Boston (CLIBOS) for Oct 13, 2026, is greater than 67\u00b0 fahrenheit according to The Weather Company, then the market resolves to Yes.",
+          "rules_secondary": "Not all weather data is the same. While checking a source like AccuWeather or Google Weather may help guide your decision, the official and final value used to determine this market is the maximum/minimum temperature as reported by the Weather Company.\n\nReading weather data\nPreliminary Weather Company data may be subject to rounding and conversion differences from the final reported value.\nUse caution when interpreting preliminary Weather Company readings.\n\nIf it is determined in the sole discretion of the Exchange that there is a material error in the initial non-preliminary publication, Expiration may be held until the publication of a non-materially-erroneous data revision or until the Expiration Date, whichever comes first. If no data is available at the end of this period, all markets will resolve to the last fair price determined by Kalshi. Please note, a status of \"Final\" on weather.com/kalshi is provided for convenience only, and does not guarantee data to be error-free and thus exempt from the above.",
+          "settlement_ts_routing_hint": "2026-10-14T11:10:24.103272Z",
+          "strike_type": "greater",
+          "ticker": "KXHIGHTBOS-26OCT13-T67"
+        }
+      ],
+      "event_ticker": "KXHIGHTBOS-26OCT13",
+      "forecast_packet_sha256": "aa9f19ed195e1739c2d17e56819c365ce87c9c055e467a686229d5ebd56e3ca6",
+      "frozen_market_sha256": "1f96a4ebd5da1a74ad253e4fdff322912848b112c0ab1c2a06035cdadf2fbe2f",
+      "missingness_reasons": [
+        "KXHIGHTBOS-26OCT13-B60.5:HTTP_429",
+        "KXHIGHTBOS-26OCT13-B62.5:HTTP_429",
+        "KXHIGHTBOS-26OCT13-T67:HTTP_429",
+        "INCOMPLETE_INDEPENDENT_SIBLING_GETS"
+      ],
+      "series_ticker": "KXHIGHTBOS",
+      "station_icao": "KBOS",
+      "target_date": "2026-10-13"
+    },
+    {
+      "city_id": "miami",
+      "cli_product": "CLIMIA",
+      "contracts": [
+        {
+          "cap_strike": "86",
+          "floor_strike": "85",
+          "routing_hint_response_sha256": "5e63cb425a600a2343440bec0f215a8e5301f765122141d892df0f3ab21c3d30",
+          "rules_primary": "If the maximum temperature recorded at Miami (CLIMIA) for Oct 13, 2026, is between 85-86\u00b0 fahrenheit according to The Weather Company, then the market resolves to Yes.",
+          "rules_secondary": "Not all weather data is the same. While checking a source like AccuWeather or Google Weather may help guide your decision, the official and final value used to determine this market is the maximum/minimum temperature as reported by the Weather Company.\n\nReading weather data\nPreliminary Weather Company data may be subject to rounding and conversion differences from the final reported value.\nUse caution when interpreting preliminary Weather Company readings.\n\nIf it is determined in the sole discretion of the Exchange that there is a material error in the initial non-preliminary publication, Expiration may be held until the publication of a non-materially-erroneous data revision or until the Expiration Date, whichever comes first. If no data is available at the end of this period, all markets will resolve to the last fair price determined by Kalshi. Please note, a status of \"Final\" on weather.com/kalshi is provided for convenience only, and does not guarantee data to be error-free and thus exempt from the above.",
+          "settlement_ts_routing_hint": "2026-10-14T11:09:24.149982Z",
+          "strike_type": "between",
+          "ticker": "KXHIGHMIA-26OCT13-B85.5"
+        },
+        {
+          "cap_strike": "88",
+          "floor_strike": "87",
+          "routing_hint_response_sha256": "57e2f330ea810a75dcf46506ac450826d4800aaaff1e272485754065838d6abf",
+          "rules_primary": "If the maximum temperature recorded at Miami (CLIMIA) for Oct 13, 2026, is between 87-88\u00b0 fahrenheit according to The Weather Company, then the market resolves to Yes.",
+          "rules_secondary": "Not all weather data is the same. While checking a source like AccuWeather or Google Weather may help guide your decision, the official and final value used to determine this market is the maximum/minimum temperature as reported by the Weather Company.\n\nReading weather data\nPreliminary Weather Company data may be subject to rounding and conversion differences from the final reported value.\nUse caution when interpreting preliminary Weather Company readings.\n\nIf it is determined in the sole discretion of the Exchange that there is a material error in the initial non-preliminary publication, Expiration may be held until the publication of a non-materially-erroneous data revision or until the Expiration Date, whichever comes first. If no data is available at the end of this period, all markets will resolve to the last fair price determined by Kalshi. Please note, a status of \"Final\" on weather.com/kalshi is provided for convenience only, and does not guarantee data to be error-free and thus exempt from the above.",
+          "settlement_ts_routing_hint": "2026-10-14T11:09:24.149982Z",
+          "strike_type": "between",
+          "ticker": "KXHIGHMIA-26OCT13-B87.5"
+        },
+        {
+          "cap_strike": "90",
+          "floor_strike": "89",
+          "routing_hint_response_sha256": "4a0015a201527bf972f651e8ff6f1bb57e8a08c148498cdf442ac84a1928363e",
+          "rules_primary": "If the maximum temperature recorded at Miami (CLIMIA) for Oct 13, 2026, is between 89-90\u00b0 fahrenheit according to The Weather Company, then the market resolves to Yes.",
+          "rules_secondary": "Not all weather data is the same. While checking a source like AccuWeather or Google Weather may help guide your decision, the official and final value used to determine this market is the maximum/minimum temperature as reported by the Weather Company.\n\nReading weather data\nPreliminary Weather Company data may be subject to rounding and conversion differences from the final reported value.\nUse caution when interpreting preliminary Weather Company readings.\n\nIf it is determined in the sole discretion of the Exchange that there is a material error in the initial non-preliminary publication, Expiration may be held until the publication of a non-materially-erroneous data revision or until the Expiration Date, whichever comes first. If no data is available at the end of this period, all markets will resolve to the last fair price determined by Kalshi. Please note, a status of \"Final\" on weather.com/kalshi is provided for convenience only, and does not guarantee data to be error-free and thus exempt from the above.",
+          "settlement_ts_routing_hint": "2026-10-14T11:09:24.149982Z",
+          "strike_type": "between",
+          "ticker": "KXHIGHMIA-26OCT13-B89.5"
+        },
+        {
+          "cap_strike": "92",
+          "floor_strike": "91",
+          "routing_hint_response_sha256": "3223bc9330238b2e98553f2a45db6cb5754748f0c030e07ff57ee18e90ac187e",
+          "rules_primary": "If the maximum temperature recorded at Miami (CLIMIA) for Oct 13, 2026, is between 91-92\u00b0 fahrenheit according to The Weather Company, then the market resolves to Yes.",
+          "rules_secondary": "Not all weather data is the same. While checking a source like AccuWeather or Google Weather may help guide your decision, the official and final value used to determine this market is the maximum/minimum temperature as reported by the Weather Company.\n\nReading weather data\nPreliminary Weather Company data may be subject to rounding and conversion differences from the final reported value.\nUse caution when interpreting preliminary Weather Company readings.\n\nIf it is determined in the sole discretion of the Exchange that there is a material error in the initial non-preliminary publication, Expiration may be held until the publication of a non-materially-erroneous data revision or until the Expiration Date, whichever comes first. If no data is available at the end of this period, all markets will resolve to the last fair price determined by Kalshi. Please note, a status of \"Final\" on weather.com/kalshi is provided for convenience only, and does not guarantee data to be error-free and thus exempt from the above.",
+          "settlement_ts_routing_hint": "2026-10-14T11:09:24.149982Z",
+          "strike_type": "between",
+          "ticker": "KXHIGHMIA-26OCT13-B91.5"
+        },
+        {
+          "cap_strike": "85",
+          "floor_strike": null,
+          "routing_hint_response_sha256": "3b9286adf0af3bb2f12677feae59995bc52d2b2850034b4b2a0a197a17744d68",
+          "rules_primary": "If the maximum temperature recorded at Miami (CLIMIA) for Oct 13, 2026, is less than 85\u00b0 fahrenheit according to The Weather Company, then the market resolves to Yes.",
+          "rules_secondary": "Not all weather data is the same. While checking a source like AccuWeather or Google Weather may help guide your decision, the official and final value used to determine this market is the maximum/minimum temperature as reported by the Weather Company.\n\nReading weather data\nPreliminary Weather Company data may be subject to rounding and conversion differences from the final reported value.\nUse caution when interpreting preliminary Weather Company readings.\n\nIf it is determined in the sole discretion of the Exchange that there is a material error in the initial non-preliminary publication, Expiration may be held until the publication of a non-materially-erroneous data revision or until the Expiration Date, whichever comes first. If no data is available at the end of this period, all markets will resolve to the last fair price determined by Kalshi. Please note, a status of \"Final\" on weather.com/kalshi is provided for convenience only, and does not guarantee data to be error-free and thus exempt from the above.",
+          "settlement_ts_routing_hint": "2026-10-14T11:09:24.149982Z",
+          "strike_type": "less",
+          "ticker": "KXHIGHMIA-26OCT13-T85"
+        },
+        {
+          "cap_strike": null,
+          "floor_strike": "92",
+          "routing_hint_response_sha256": "e7da69cd7c7080b5c25d74e336ef06ca595bfb48567d78754a0d37fe6973db22",
+          "rules_primary": "If the maximum temperature recorded at Miami (CLIMIA) for Oct 13, 2026, is greater than 92\u00b0 fahrenheit according to The Weather Company, then the market resolves to Yes.",
+          "rules_secondary": "Not all weather data is the same. While checking a source like AccuWeather or Google Weather may help guide your decision, the official and final value used to determine this market is the maximum/minimum temperature as reported by the Weather Company.\n\nReading weather data\nPreliminary Weather Company data may be subject to rounding and conversion differences from the final reported value.\nUse caution when interpreting preliminary Weather Company readings.\n\nIf it is determined in the sole discretion of the Exchange that there is a material error in the initial non-preliminary publication, Expiration may be held until the publication of a non-materially-erroneous data revision or until the Expiration Date, whichever comes first. If no data is available at the end of this period, all markets will resolve to the last fair price determined by Kalshi. Please note, a status of \"Final\" on weather.com/kalshi is provided for convenience only, and does not guarantee data to be error-free and thus exempt from the above.",
+          "settlement_ts_routing_hint": "2026-10-14T11:09:24.149982Z",
+          "strike_type": "greater",
+          "ticker": "KXHIGHMIA-26OCT13-T92"
+        }
+      ],
+      "event_ticker": "KXHIGHMIA-26OCT13",
+      "forecast_packet_sha256": "2f33f845ed8d6b825f84de2075a415d08ae0fc0139ef2d5042fa65f8de038c12",
+      "frozen_market_sha256": "630f37b9612bb0dd07a0df824c05caf1b98cf634fd69d6785dde51b202891ef7",
+      "missingness_reasons": [
+        "KXHIGHMIA-26OCT13-B87.5:HTTP_429",
+        "KXHIGHMIA-26OCT13-B91.5:HTTP_429",
+        "KXHIGHMIA-26OCT13-T85:HTTP_429",
+        "INCOMPLETE_INDEPENDENT_SIBLING_GETS"
+      ],
+      "series_ticker": "KXHIGHMIA",
+      "station_icao": "KMIA",
+      "target_date": "2026-10-13"
+    },
+    {
+      "city_id": "denver",
+      "cli_product": "CLIDEN",
+      "contracts": [
+        {
+          "cap_strike": "63",
+          "floor_strike": "62",
+          "routing_hint_response_sha256": "2dc49196bf24c38f631859fcec47f4fc60cac747accc581646f73254bc03fd3a",
+          "rules_primary": "If the maximum temperature recorded at Denver (CLIDEN) for Oct 13, 2026, is between 62-63\u00b0 fahrenheit according to The Weather Company, then the market resolves to Yes.",
+          "rules_secondary": "Not all weather data is the same. While checking a source like AccuWeather or Google Weather may help guide your decision, the official and final value used to determine this market is the maximum/minimum temperature as reported by the Weather Company.\n\nReading weather data\nPreliminary Weather Company data may be subject to rounding and conversion differences from the final reported value.\nUse caution when interpreting preliminary Weather Company readings.\n\nIf it is determined in the sole discretion of the Exchange that there is a material error in the initial non-preliminary publication, Expiration may be held until the publication of a non-materially-erroneous data revision or until the Expiration Date, whichever comes first. If no data is available at the end of this period, all markets will resolve to the last fair price determined by Kalshi. Please note, a status of \"Final\" on weather.com/kalshi is provided for convenience only, and does not guarantee data to be error-free and thus exempt from the above.",
+          "settlement_ts_routing_hint": "2026-10-14T13:08:04.098581Z",
+          "strike_type": "between",
+          "ticker": "KXHIGHDEN-26OCT13-B62.5"
+        },
+        {
+          "cap_strike": "65",
+          "floor_strike": "64",
+          "routing_hint_response_sha256": "9f0b896368b69a839935909b757a7b63b6acd1219bfab5fac1bbc6d5e21d5e89",
+          "rules_primary": "If the maximum temperature recorded at Denver (CLIDEN) for Oct 13, 2026, is between 64-65\u00b0 fahrenheit according to The Weather Company, then the market resolves to Yes.",
+          "rules_secondary": "Not all weather data is the same. While checking a source like AccuWeather or Google Weather may help guide your decision, the official and final value used to determine this market is the maximum/minimum temperature as reported by the Weather Company.\n\nReading weather data\nPreliminary Weather Company data may be subject to rounding and conversion differences from the final reported value.\nUse caution when interpreting preliminary Weather Company readings.\n\nIf it is determined in the sole discretion of the Exchange that there is a material error in the initial non-preliminary publication, Expiration may be held until the publication of a non-materially-erroneous data revision or until the Expiration Date, whichever comes first. If no data is available at the end of this period, all markets will resolve to the last fair price determined by Kalshi. Please note, a status of \"Final\" on weather.com/kalshi is provided for convenience only, and does not guarantee data to be error-free and thus exempt from the above.",
+          "settlement_ts_routing_hint": "2026-10-14T13:08:04.098581Z",
+          "strike_type": "between",
+          "ticker": "KXHIGHDEN-26OCT13-B64.5"
+        },
+        {
+          "cap_strike": "67",
+          "floor_strike": "66",
+          "routing_hint_response_sha256": "b1a798c376c6817ea6cd9492cb044b8b9a1c5992670a53dc58cb52ec08fd8841",
+          "rules_primary": "If the maximum temperature recorded at Denver (CLIDEN) for Oct 13, 2026, is between 66-67\u00b0 fahrenheit according to The Weather Company, then the market resolves to Yes.",
+          "rules_secondary": "Not all weather data is the same. While checking a source like AccuWeather or Google Weather may help guide your decision, the official and final value used to determine this market is the maximum/minimum temperature as reported by the Weather Company.\n\nReading weather data\nPreliminary Weather Company data may be subject to rounding and conversion differences from the final reported value.\nUse caution when interpreting preliminary Weather Company readings.\n\nIf it is determined in the sole discretion of the Exchange that there is a material error in the initial non-preliminary publication, Expiration may be held until the publication of a non-materially-erroneous data revision or until the Expiration Date, whichever comes first. If no data is available at the end of this period, all markets will resolve to the last fair price determined by Kalshi. Please note, a status of \"Final\" on weather.com/kalshi is provided for convenience only, and does not guarantee data to be error-free and thus exempt from the above.",
+          "settlement_ts_routing_hint": "2026-10-14T13:08:04.098581Z",
+          "strike_type": "between",
+          "ticker": "KXHIGHDEN-26OCT13-B66.5"
+        },
+        {
+          "cap_strike": "69",
+          "floor_strike": "68",
+          "routing_hint_response_sha256": "92412e5621c849f69dea968aa7d02bccaab632629902c0951038d777afa936db",
+          "rules_primary": "If the maximum temperature recorded at Denver (CLIDEN) for Oct 13, 2026, is between 68-69\u00b0 fahrenheit according to The Weather Company, then the market resolves to Yes.",
+          "rules_secondary": "Not all weather data is the same. While checking a source like AccuWeather or Google Weather may help guide your decision, the official and final value used to determine this market is the maximum/minimum temperature as reported by the Weather Company.\n\nReading weather data\nPreliminary Weather Company data may be subject to rounding and conversion differences from the final reported value.\nUse caution when interpreting preliminary Weather Company readings.\n\nIf it is determined in the sole discretion of the Exchange that there is a material error in the initial non-preliminary publication, Expiration may be held until the publication of a non-materially-erroneous data revision or until the Expiration Date, whichever comes first. If no data is available at the end of this period, all markets will resolve to the last fair price determined by Kalshi. Please note, a status of \"Final\" on weather.com/kalshi is provided for convenience only, and does not guarantee data to be error-free and thus exempt from the above.",
+          "settlement_ts_routing_hint": "2026-10-14T13:08:04.098581Z",
+          "strike_type": "between",
+          "ticker": "KXHIGHDEN-26OCT13-B68.5"
+        },
+        {
+          "cap_strike": "62",
+          "floor_strike": null,
+          "routing_hint_response_sha256": "32b8d41aa62c1c719f8972aa08d44de07e3d41ed89788af216c7c2a132269cbc",
+          "rules_primary": "If the maximum temperature recorded at Denver (CLIDEN) for Oct 13, 2026, is less than 62\u00b0 fahrenheit according to The Weather Company, then the market resolves to Yes.",
+          "rules_secondary": "Not all weather data is the same. While checking a source like AccuWeather or Google Weather may help guide your decision, the official and final value used to determine this market is the maximum/minimum temperature as reported by the Weather Company.\n\nReading weather data\nPreliminary Weather Company data may be subject to rounding and conversion differences from the final reported value.\nUse caution when interpreting preliminary Weather Company readings.\n\nIf it is determined in the sole discretion of the Exchange that there is a material error in the initial non-preliminary publication, Expiration may be held until the publication of a non-materially-erroneous data revision or until the Expiration Date, whichever comes first. If no data is available at the end of this period, all markets will resolve to the last fair price determined by Kalshi. Please note, a status of \"Final\" on weather.com/kalshi is provided for convenience only, and does not guarantee data to be error-free and thus exempt from the above.",
+          "settlement_ts_routing_hint": "2026-10-14T13:08:04.098581Z",
+          "strike_type": "less",
+          "ticker": "KXHIGHDEN-26OCT13-T62"
+        },
+        {
+          "cap_strike": null,
+          "floor_strike": "69",
+          "routing_hint_response_sha256": "527b2acc6cfa2895975f8cc3c158ba50c1263db7c58336915e984513ef838ced",
+          "rules_primary": "If the maximum temperature recorded at Denver (CLIDEN) for Oct 13, 2026, is greater than 69\u00b0 fahrenheit according to The Weather Company, then the market resolves to Yes.",
+          "rules_secondary": "Not all weather data is the same. While checking a source like AccuWeather or Google Weather may help guide your decision, the official and final value used to determine this market is the maximum/minimum temperature as reported by the Weather Company.\n\nReading weather data\nPreliminary Weather Company data may be subject to rounding and conversion differences from the final reported value.\nUse caution when interpreting preliminary Weather Company readings.\n\nIf it is determined in the sole discretion of the Exchange that there is a material error in the initial non-preliminary publication, Expiration may be held until the publication of a non-materially-erroneous data revision or until the Expiration Date, whichever comes first. If no data is available at the end of this period, all markets will resolve to the last fair price determined by Kalshi. Please note, a status of \"Final\" on weather.com/kalshi is provided for convenience only, and does not guarantee data to be error-free and thus exempt from the above.",
+          "settlement_ts_routing_hint": "2026-10-14T13:08:04.098581Z",
+          "strike_type": "greater",
+          "ticker": "KXHIGHDEN-26OCT13-T69"
+        }
+      ],
+      "event_ticker": "KXHIGHDEN-26OCT13",
+      "forecast_packet_sha256": "52f37b79a786d0e7cc954f6503d7db49e57b95fb51ad4de61a1e627a5fa1fd20",
+      "frozen_market_sha256": "15d08c39c821f3d3f05a6a1f6ea8e00c3187562a944425546f4dcbee97f7fb2d",
+      "missingness_reasons": [
+        "EVENT_HTTP_429",
+        "KXHIGHDEN-26OCT13-B62.5:NOT_REQUESTED",
+        "KXHIGHDEN-26OCT13-B64.5:NOT_REQUESTED",
+        "KXHIGHDEN-26OCT13-B66.5:NOT_REQUESTED",
+        "KXHIGHDEN-26OCT13-B68.5:NOT_REQUESTED",
+        "KXHIGHDEN-26OCT13-T62:NOT_REQUESTED",
+        "KXHIGHDEN-26OCT13-T69:NOT_REQUESTED",
+        "INCOMPLETE_INDEPENDENT_SIBLING_GETS"
+      ],
+      "series_ticker": "KXHIGHDEN",
+      "station_icao": "KDEN",
+      "target_date": "2026-10-13"
+    },
+    {
+      "city_id": "los_angeles",
+      "cli_product": "CLILAX",
+      "contracts": [
+        {
+          "cap_strike": "69",
+          "floor_strike": "68",
+          "routing_hint_response_sha256": "3e1fcc688f3dc9f03d90813a034434bc9e88aee6254c03887d8453d18b0e6ed4",
+          "rules_primary": "If the maximum temperature recorded at Los Angeles (CLILAX) for Oct 13, 2026, is between 68-69\u00b0 fahrenheit according to The Weather Company, then the market resolves to Yes.",
+          "rules_secondary": "Not all weather data is the same. While checking a source like AccuWeather or Google Weather may help guide your decision, the official and final value used to determine this market is the maximum/minimum temperature as reported by the Weather Company.\n\nReading weather data\nPreliminary Weather Company data may be subject to rounding and conversion differences from the final reported value.\nUse caution when interpreting preliminary Weather Company readings.\n\nIf it is determined in the sole discretion of the Exchange that there is a material error in the initial non-preliminary publication, Expiration may be held until the publication of a non-materially-erroneous data revision or until the Expiration Date, whichever comes first. If no data is available at the end of this period, all markets will resolve to the last fair price determined by Kalshi. Please note, a status of \"Final\" on weather.com/kalshi is provided for convenience only, and does not guarantee data to be error-free and thus exempt from the above.",
+          "settlement_ts_routing_hint": "2026-10-14T14:10:34.10812Z",
+          "strike_type": "between",
+          "ticker": "KXHIGHLAX-26OCT13-B68.5"
+        },
+        {
+          "cap_strike": "71",
+          "floor_strike": "70",
+          "routing_hint_response_sha256": "7231ee44ce003e2af8998af9fd151048718db3a5e93f1145ff4935d3519ed144",
+          "rules_primary": "If the maximum temperature recorded at Los Angeles (CLILAX) for Oct 13, 2026, is between 70-71\u00b0 fahrenheit according to The Weather Company, then the market resolves to Yes.",
+          "rules_secondary": "Not all weather data is the same. While checking a source like AccuWeather or Google Weather may help guide your decision, the official and final value used to determine this market is the maximum/minimum temperature as reported by the Weather Company.\n\nReading weather data\nPreliminary Weather Company data may be subject to rounding and conversion differences from the final reported value.\nUse caution when interpreting preliminary Weather Company readings.\n\nIf it is determined in the sole discretion of the Exchange that there is a material error in the initial non-preliminary publication, Expiration may be held until the publication of a non-materially-erroneous data revision or until the Expiration Date, whichever comes first. If no data is available at the end of this period, all markets will resolve to the last fair price determined by Kalshi. Please note, a status of \"Final\" on weather.com/kalshi is provided for convenience only, and does not guarantee data to be error-free and thus exempt from the above.",
+          "settlement_ts_routing_hint": "2026-10-14T14:10:34.10812Z",
+          "strike_type": "between",
+          "ticker": "KXHIGHLAX-26OCT13-B70.5"
+        },
+        {
+          "cap_strike": "73",
+          "floor_strike": "72",
+          "routing_hint_response_sha256": "1ecad58832f415315dc136dc2015aae788a40387b1438ff0e1b656a126a3b0ea",
+          "rules_primary": "If the maximum temperature recorded at Los Angeles (CLILAX) for Oct 13, 2026, is between 72-73\u00b0 fahrenheit according to The Weather Company, then the market resolves to Yes.",
+          "rules_secondary": "Not all weather data is the same. While checking a source like AccuWeather or Google Weather may help guide your decision, the official and final value used to determine this market is the maximum/minimum temperature as reported by the Weather Company.\n\nReading weather data\nPreliminary Weather Company data may be subject to rounding and conversion differences from the final reported value.\nUse caution when interpreting preliminary Weather Company readings.\n\nIf it is determined in the sole discretion of the Exchange that there is a material error in the initial non-preliminary publication, Expiration may be held until the publication of a non-materially-erroneous data revision or until the Expiration Date, whichever comes first. If no data is available at the end of this period, all markets will resolve to the last fair price determined by Kalshi. Please note, a status of \"Final\" on weather.com/kalshi is provided for convenience only, and does not guarantee data to be error-free and thus exempt from the above.",
+          "settlement_ts_routing_hint": "2026-10-14T14:10:34.10812Z",
+          "strike_type": "between",
+          "ticker": "KXHIGHLAX-26OCT13-B72.5"
+        },
+        {
+          "cap_strike": "75",
+          "floor_strike": "74",
+          "routing_hint_response_sha256": "987efe2f063f55d2d140e2abb079f80cd150a55f87f524a14d874821ba292e19",
+          "rules_primary": "If the maximum temperature recorded at Los Angeles (CLILAX) for Oct 13, 2026, is between 74-75\u00b0 fahrenheit according to The Weather Company, then the market resolves to Yes.",
+          "rules_secondary": "Not all weather data is the same. While checking a source like AccuWeather or Google Weather may help guide your decision, the official and final value used to determine this market is the maximum/minimum temperature as reported by the Weather Company.\n\nReading weather data\nPreliminary Weather Company data may be subject to rounding and conversion differences from the final reported value.\nUse caution when interpreting preliminary Weather Company readings.\n\nIf it is determined in the sole discretion of the Exchange that there is a material error in the initial non-preliminary publication, Expiration may be held until the publication of a non-materially-erroneous data revision or until the Expiration Date, whichever comes first. If no data is available at the end of this period, all markets will resolve to the last fair price determined by Kalshi. Please note, a status of \"Final\" on weather.com/kalshi is provided for convenience only, and does not guarantee data to be error-free and thus exempt from the above.",
+          "settlement_ts_routing_hint": "2026-10-14T14:10:34.10812Z",
+          "strike_type": "between",
+          "ticker": "KXHIGHLAX-26OCT13-B74.5"
+        },
+        {
+          "cap_strike": "68",
+          "floor_strike": null,
+          "routing_hint_response_sha256": "b05eebb15b728e5362c45e2e617a153f2fa16338028e34838df2c273447e8e00",
+          "rules_primary": "If the maximum temperature recorded at Los Angeles (CLILAX) for Oct 13, 2026, is less than 68\u00b0 fahrenheit according to The Weather Company, then the market resolves to Yes.",
+          "rules_secondary": "Not all weather data is the same. While checking a source like AccuWeather or Google Weather may help guide your decision, the official and final value used to determine this market is the maximum/minimum temperature as reported by the Weather Company.\n\nReading weather data\nPreliminary Weather Company data may be subject to rounding and conversion differences from the final reported value.\nUse caution when interpreting preliminary Weather Company readings.\n\nIf it is determined in the sole discretion of the Exchange that there is a material error in the initial non-preliminary publication, Expiration may be held until the publication of a non-materially-erroneous data revision or until the Expiration Date, whichever comes first. If no data is available at the end of this period, all markets will resolve to the last fair price determined by Kalshi. Please note, a status of \"Final\" on weather.com/kalshi is provided for convenience only, and does not guarantee data to be error-free and thus exempt from the above.",
+          "settlement_ts_routing_hint": "2026-10-14T14:10:34.10812Z",
+          "strike_type": "less",
+          "ticker": "KXHIGHLAX-26OCT13-T68"
+        },
+        {
+          "cap_strike": null,
+          "floor_strike": "75",
+          "routing_hint_response_sha256": "ea61232e1ad16ab84ff078d0638e590e4f0be7381052f4b9b159eed8afa42543",
+          "rules_primary": "If the maximum temperature recorded at Los Angeles (CLILAX) for Oct 13, 2026, is greater than 75\u00b0 fahrenheit according to The Weather Company, then the market resolves to Yes.",
+          "rules_secondary": "Not all weather data is the same. While checking a source like AccuWeather or Google Weather may help guide your decision, the official and final value used to determine this market is the maximum/minimum temperature as reported by the Weather Company.\n\nReading weather data\nPreliminary Weather Company data may be subject to rounding and conversion differences from the final reported value.\nUse caution when interpreting preliminary Weather Company readings.\n\nIf it is determined in the sole discretion of the Exchange that there is a material error in the initial non-preliminary publication, Expiration may be held until the publication of a non-materially-erroneous data revision or until the Expiration Date, whichever comes first. If no data is available at the end of this period, all markets will resolve to the last fair price determined by Kalshi. Please note, a status of \"Final\" on weather.com/kalshi is provided for convenience only, and does not guarantee data to be error-free and thus exempt from the above.",
+          "settlement_ts_routing_hint": "2026-10-14T14:10:34.10812Z",
+          "strike_type": "greater",
+          "ticker": "KXHIGHLAX-26OCT13-T75"
+        }
+      ],
+      "event_ticker": "KXHIGHLAX-26OCT13",
+      "forecast_packet_sha256": "08bfd86a2127ce827407d987c175d43302eff35b22017af62aa52e8a41d021ac",
+      "frozen_market_sha256": "0d21c6dce50c9e450789dff0136efd3886b37da279078187fa64d899365dcc9b",
+      "missingness_reasons": [
+        "KXHIGHLAX-26OCT13-B72.5:HTTP_429",
+        "KXHIGHLAX-26OCT13-T68:HTTP_429",
+        "INCOMPLETE_INDEPENDENT_SIBLING_GETS"
+      ],
+      "series_ticker": "KXHIGHLAX",
+      "station_icao": "KLAX",
+      "target_date": "2026-10-13"
+    },
+    {
+      "city_id": "seattle",
+      "cli_product": "CLISEA",
+      "contracts": [
+        {
+          "cap_strike": "61",
+          "floor_strike": "60",
+          "routing_hint_response_sha256": "382132f0ce5a1e937888a377bc7d3444d2920c8733c7958dfa6ff816b0b8dda2",
+          "rules_primary": "If the maximum temperature recorded at Seattle (CLISEA) for Oct 13, 2026, is between 60-61\u00b0 fahrenheit according to The Weather Company, then the market resolves to Yes.",
+          "rules_secondary": "Not all weather data is the same. While checking a source like AccuWeather or Google Weather may help guide your decision, the official and final value used to determine this market is the maximum/minimum temperature as reported by the Weather Company.\n\nReading weather data\nPreliminary Weather Company data may be subject to rounding and conversion differences from the final reported value.\nUse caution when interpreting preliminary Weather Company readings.\n\nIf it is determined in the sole discretion of the Exchange that there is a material error in the initial non-preliminary publication, Expiration may be held until the publication of a non-materially-erroneous data revision or until the Expiration Date, whichever comes first. If no data is available at the end of this period, all markets will resolve to the last fair price determined by Kalshi. Please note, a status of \"Final\" on weather.com/kalshi is provided for convenience only, and does not guarantee data to be error-free and thus exempt from the above.",
+          "settlement_ts_routing_hint": "2026-10-14T14:11:19.102302Z",
+          "strike_type": "between",
+          "ticker": "KXHIGHTSEA-26OCT13-B60.5"
+        },
+        {
+          "cap_strike": "63",
+          "floor_strike": "62",
+          "routing_hint_response_sha256": "6cf365ce899eab64420268bf114ee92dae5fdd30bda691867aa020b9754f8369",
+          "rules_primary": "If the maximum temperature recorded at Seattle (CLISEA) for Oct 13, 2026, is between 62-63\u00b0 fahrenheit according to The Weather Company, then the market resolves to Yes.",
+          "rules_secondary": "Not all weather data is the same. While checking a source like AccuWeather or Google Weather may help guide your decision, the official and final value used to determine this market is the maximum/minimum temperature as reported by the Weather Company.\n\nReading weather data\nPreliminary Weather Company data may be subject to rounding and conversion differences from the final reported value.\nUse caution when interpreting preliminary Weather Company readings.\n\nIf it is determined in the sole discretion of the Exchange that there is a material error in the initial non-preliminary publication, Expiration may be held until the publication of a non-materially-erroneous data revision or until the Expiration Date, whichever comes first. If no data is available at the end of this period, all markets will resolve to the last fair price determined by Kalshi. Please note, a status of \"Final\" on weather.com/kalshi is provided for convenience only, and does not guarantee data to be error-free and thus exempt from the above.",
+          "settlement_ts_routing_hint": "2026-10-14T14:11:19.102302Z",
+          "strike_type": "between",
+          "ticker": "KXHIGHTSEA-26OCT13-B62.5"
+        },
+        {
+          "cap_strike": "65",
+          "floor_strike": "64",
+          "routing_hint_response_sha256": "728415a6697bca54bf96c608e66c40ffdd50320a06891d26c8fc8879ab1763fc",
+          "rules_primary": "If the maximum temperature recorded at Seattle (CLISEA) for Oct 13, 2026, is between 64-65\u00b0 fahrenheit according to The Weather Company, then the market resolves to Yes.",
+          "rules_secondary": "Not all weather data is the same. While checking a source like AccuWeather or Google Weather may help guide your decision, the official and final value used to determine this market is the maximum/minimum temperature as reported by the Weather Company.\n\nReading weather data\nPreliminary Weather Company data may be subject to rounding and conversion differences from the final reported value.\nUse caution when interpreting preliminary Weather Company readings.\n\nIf it is determined in the sole discretion of the Exchange that there is a material error in the initial non-preliminary publication, Expiration may be held until the publication of a non-materially-erroneous data revision or until the Expiration Date, whichever comes first. If no data is available at the end of this period, all markets will resolve to the last fair price determined by Kalshi. Please note, a status of \"Final\" on weather.com/kalshi is provided for convenience only, and does not guarantee data to be error-free and thus exempt from the above.",
+          "settlement_ts_routing_hint": "2026-10-14T14:11:19.102302Z",
+          "strike_type": "between",
+          "ticker": "KXHIGHTSEA-26OCT13-B64.5"
+        },
+        {
+          "cap_strike": "67",
+          "floor_strike": "66",
+          "routing_hint_response_sha256": "cc3f49c79095c8bbb93b2f86bb9c91e234450c927a57ae200cb9ac3b13a762e0",
+          "rules_primary": "If the maximum temperature recorded at Seattle (CLISEA) for Oct 13, 2026, is between 66-67\u00b0 fahrenheit according to The Weather Company, then the market resolves to Yes.",
+          "rules_secondary": "Not all weather data is the same. While checking a source like AccuWeather or Google Weather may help guide your decision, the official and final value used to determine this market is the maximum/minimum temperature as reported by the Weather Company.\n\nReading weather data\nPreliminary Weather Company data may be subject to rounding and conversion differences from the final reported value.\nUse caution when interpreting preliminary Weather Company readings.\n\nIf it is determined in the sole discretion of the Exchange that there is a material error in the initial non-preliminary publication, Expiration may be held until the publication of a non-materially-erroneous data revision or until the Expiration Date, whichever comes first. If no data is available at the end of this period, all markets will resolve to the last fair price determined by Kalshi. Please note, a status of \"Final\" on weather.com/kalshi is provided for convenience only, and does not guarantee data to be error-free and thus exempt from the above.",
+          "settlement_ts_routing_hint": "2026-10-14T14:11:19.102302Z",
+          "strike_type": "between",
+          "ticker": "KXHIGHTSEA-26OCT13-B66.5"
+        },
+        {
+          "cap_strike": "60",
+          "floor_strike": null,
+          "routing_hint_response_sha256": "2e305638b76e16b63f168d345e060118c2b112a16235e161ba04c30e25c9ac80",
+          "rules_primary": "If the maximum temperature recorded at Seattle (CLISEA) for Oct 13, 2026, is less than 60\u00b0 fahrenheit according to The Weather Company, then the market resolves to Yes.",
+          "rules_secondary": "Not all weather data is the same. While checking a source like AccuWeather or Google Weather may help guide your decision, the official and final value used to determine this market is the maximum/minimum temperature as reported by the Weather Company.\n\nReading weather data\nPreliminary Weather Company data may be subject to rounding and conversion differences from the final reported value.\nUse caution when interpreting preliminary Weather Company readings.\n\nIf it is determined in the sole discretion of the Exchange that there is a material error in the initial non-preliminary publication, Expiration may be held until the publication of a non-materially-erroneous data revision or until the Expiration Date, whichever comes first. If no data is available at the end of this period, all markets will resolve to the last fair price determined by Kalshi. Please note, a status of \"Final\" on weather.com/kalshi is provided for convenience only, and does not guarantee data to be error-free and thus exempt from the above.",
+          "settlement_ts_routing_hint": "2026-10-14T14:11:19.102302Z",
+          "strike_type": "less",
+          "ticker": "KXHIGHTSEA-26OCT13-T60"
+        },
+        {
+          "cap_strike": null,
+          "floor_strike": "67",
+          "routing_hint_response_sha256": "e02db44c76ae865c7902d1a2322ad10e87631f2146bb0cf8e7571160973b5c63",
+          "rules_primary": "If the maximum temperature recorded at Seattle (CLISEA) for Oct 13, 2026, is greater than 67\u00b0 fahrenheit according to The Weather Company, then the market resolves to Yes.",
+          "rules_secondary": "Not all weather data is the same. While checking a source like AccuWeather or Google Weather may help guide your decision, the official and final value used to determine this market is the maximum/minimum temperature as reported by the Weather Company.\n\nReading weather data\nPreliminary Weather Company data may be subject to rounding and conversion differences from the final reported value.\nUse caution when interpreting preliminary Weather Company readings.\n\nIf it is determined in the sole discretion of the Exchange that there is a material error in the initial non-preliminary publication, Expiration may be held until the publication of a non-materially-erroneous data revision or until the Expiration Date, whichever comes first. If no data is available at the end of this period, all markets will resolve to the last fair price determined by Kalshi. Please note, a status of \"Final\" on weather.com/kalshi is provided for convenience only, and does not guarantee data to be error-free and thus exempt from the above.",
+          "settlement_ts_routing_hint": "2026-10-14T14:11:19.102302Z",
+          "strike_type": "greater",
+          "ticker": "KXHIGHTSEA-26OCT13-T67"
+        }
+      ],
+      "event_ticker": "KXHIGHTSEA-26OCT13",
+      "forecast_packet_sha256": "3fead0870d07249c4a221daed1c8f21e9b57fa77041b5a06b67001f258090c85",
+      "frozen_market_sha256": "e9680ac794e76dcaaf2daa638c55781358a47f72110d0e5f1cd1e1274f5816d8",
+      "missingness_reasons": [
+        "EVENT_HTTP_429",
+        "KXHIGHTSEA-26OCT13-B60.5:NOT_REQUESTED",
+        "KXHIGHTSEA-26OCT13-B62.5:NOT_REQUESTED",
+        "KXHIGHTSEA-26OCT13-B64.5:NOT_REQUESTED",
+        "KXHIGHTSEA-26OCT13-B66.5:NOT_REQUESTED",
+        "KXHIGHTSEA-26OCT13-T60:NOT_REQUESTED",
+        "KXHIGHTSEA-26OCT13-T67:NOT_REQUESTED",
+        "INCOMPLETE_INDEPENDENT_SIBLING_GETS"
+      ],
+      "series_ticker": "KXHIGHTSEA",
+      "station_icao": "KSEA",
+      "target_date": "2026-10-13"
+    },
+    {
+      "city_id": "boston",
+      "cli_product": "CLIBOS",
+      "contracts": [
+        {
+          "cap_strike": "74",
+          "floor_strike": "73",
+          "routing_hint_response_sha256": "11015a9b6bfe56b12151485efd42315662b887c1eca5e2d083a31abeb98408ce",
+          "rules_primary": "If the maximum temperature recorded at Boston (CLIBOS) for Oct 14, 2026, is between 73-74\u00b0 fahrenheit according to The Weather Company, then the market resolves to Yes.",
+          "rules_secondary": "Not all weather data is the same. While checking a source like AccuWeather or Google Weather may help guide your decision, the official and final value used to determine this market is the maximum/minimum temperature as reported by the Weather Company.\n\nReading weather data\nPreliminary Weather Company data may be subject to rounding and conversion differences from the final reported value.\nUse caution when interpreting preliminary Weather Company readings.\n\nIf it is determined in the sole discretion of the Exchange that there is a material error in the initial non-preliminary publication, Expiration may be held until the publication of a non-materially-erroneous data revision or until the Expiration Date, whichever comes first. If no data is available at the end of this period, all markets will resolve to the last fair price determined by Kalshi. Please note, a status of \"Final\" on weather.com/kalshi is provided for convenience only, and does not guarantee data to be error-free and thus exempt from the above.",
+          "settlement_ts_routing_hint": "2026-10-15T11:10:06.77741Z",
+          "strike_type": "between",
+          "ticker": "KXHIGHTBOS-26OCT14-B73.5"
+        },
+        {
+          "cap_strike": "76",
+          "floor_strike": "75",
+          "routing_hint_response_sha256": "451a773e9bac90a281af305caf64ce227e8a99c1569bee684e4d0587d2b521d4",
+          "rules_primary": "If the maximum temperature recorded at Boston (CLIBOS) for Oct 14, 2026, is between 75-76\u00b0 fahrenheit according to The Weather Company, then the market resolves to Yes.",
+          "rules_secondary": "Not all weather data is the same. While checking a source like AccuWeather or Google Weather may help guide your decision, the official and final value used to determine this market is the maximum/minimum temperature as reported by the Weather Company.\n\nReading weather data\nPreliminary Weather Company data may be subject to rounding and conversion differences from the final reported value.\nUse caution when interpreting preliminary Weather Company readings.\n\nIf it is determined in the sole discretion of the Exchange that there is a material error in the initial non-preliminary publication, Expiration may be held until the publication of a non-materially-erroneous data revision or until the Expiration Date, whichever comes first. If no data is available at the end of this period, all markets will resolve to the last fair price determined by Kalshi. Please note, a status of \"Final\" on weather.com/kalshi is provided for convenience only, and does not guarantee data to be error-free and thus exempt from the above.",
+          "settlement_ts_routing_hint": "2026-10-15T11:10:06.77741Z",
+          "strike_type": "between",
+          "ticker": "KXHIGHTBOS-26OCT14-B75.5"
+        },
+        {
+          "cap_strike": "78",
+          "floor_strike": "77",
+          "routing_hint_response_sha256": "33648a318d3d0e84b8617ade4771d3a1fc699cfbda6d8dedfe5d75be89c3cca5",
+          "rules_primary": "If the maximum temperature recorded at Boston (CLIBOS) for Oct 14, 2026, is between 77-78\u00b0 fahrenheit according to The Weather Company, then the market resolves to Yes.",
+          "rules_secondary": "Not all weather data is the same. While checking a source like AccuWeather or Google Weather may help guide your decision, the official and final value used to determine this market is the maximum/minimum temperature as reported by the Weather Company.\n\nReading weather data\nPreliminary Weather Company data may be subject to rounding and conversion differences from the final reported value.\nUse caution when interpreting preliminary Weather Company readings.\n\nIf it is determined in the sole discretion of the Exchange that there is a material error in the initial non-preliminary publication, Expiration may be held until the publication of a non-materially-erroneous data revision or until the Expiration Date, whichever comes first. If no data is available at the end of this period, all markets will resolve to the last fair price determined by Kalshi. Please note, a status of \"Final\" on weather.com/kalshi is provided for convenience only, and does not guarantee data to be error-free and thus exempt from the above.",
+          "settlement_ts_routing_hint": "2026-10-15T11:10:06.77741Z",
+          "strike_type": "between",
+          "ticker": "KXHIGHTBOS-26OCT14-B77.5"
+        },
+        {
+          "cap_strike": "80",
+          "floor_strike": "79",
+          "routing_hint_response_sha256": "5f9501d2f7337fdd049a26f421e3253bfc303c400d65bb4df62c3e3f3a7fdc6c",
+          "rules_primary": "If the maximum temperature recorded at Boston (CLIBOS) for Oct 14, 2026, is between 79-80\u00b0 fahrenheit according to The Weather Company, then the market resolves to Yes.",
+          "rules_secondary": "Not all weather data is the same. While checking a source like AccuWeather or Google Weather may help guide your decision, the official and final value used to determine this market is the maximum/minimum temperature as reported by the Weather Company.\n\nReading weather data\nPreliminary Weather Company data may be subject to rounding and conversion differences from the final reported value.\nUse caution when interpreting preliminary Weather Company readings.\n\nIf it is determined in the sole discretion of the Exchange that there is a material error in the initial non-preliminary publication, Expiration may be held until the publication of a non-materially-erroneous data revision or until the Expiration Date, whichever comes first. If no data is available at the end of this period, all markets will resolve to the last fair price determined by Kalshi. Please note, a status of \"Final\" on weather.com/kalshi is provided for convenience only, and does not guarantee data to be error-free and thus exempt from the above.",
+          "settlement_ts_routing_hint": "2026-10-15T11:10:06.77741Z",
+          "strike_type": "between",
+          "ticker": "KXHIGHTBOS-26OCT14-B79.5"
+        },
+        {
+          "cap_strike": "73",
+          "floor_strike": null,
+          "routing_hint_response_sha256": "94b00586bff80fb71363c9a7d3387c26ff15d5788e041e1646856f1c105a4722",
+          "rules_primary": "If the maximum temperature recorded at Boston (CLIBOS) for Oct 14, 2026, is less than 73\u00b0 fahrenheit according to The Weather Company, then the market resolves to Yes.",
+          "rules_secondary": "Not all weather data is the same. While checking a source like AccuWeather or Google Weather may help guide your decision, the official and final value used to determine this market is the maximum/minimum temperature as reported by the Weather Company.\n\nReading weather data\nPreliminary Weather Company data may be subject to rounding and conversion differences from the final reported value.\nUse caution when interpreting preliminary Weather Company readings.\n\nIf it is determined in the sole discretion of the Exchange that there is a material error in the initial non-preliminary publication, Expiration may be held until the publication of a non-materially-erroneous data revision or until the Expiration Date, whichever comes first. If no data is available at the end of this period, all markets will resolve to the last fair price determined by Kalshi. Please note, a status of \"Final\" on weather.com/kalshi is provided for convenience only, and does not guarantee data to be error-free and thus exempt from the above.",
+          "settlement_ts_routing_hint": "2026-10-15T11:10:06.77741Z",
+          "strike_type": "less",
+          "ticker": "KXHIGHTBOS-26OCT14-T73"
+        },
+        {
+          "cap_strike": null,
+          "floor_strike": "80",
+          "routing_hint_response_sha256": "a1d1e180aea018ea5806bc18ecc9b7020119d6bf517e0c6a5842f9440db50df5",
+          "rules_primary": "If the maximum temperature recorded at Boston (CLIBOS) for Oct 14, 2026, is greater than 80\u00b0 fahrenheit according to The Weather Company, then the market resolves to Yes.",
+          "rules_secondary": "Not all weather data is the same. While checking a source like AccuWeather or Google Weather may help guide your decision, the official and final value used to determine this market is the maximum/minimum temperature as reported by the Weather Company.\n\nReading weather data\nPreliminary Weather Company data may be subject to rounding and conversion differences from the final reported value.\nUse caution when interpreting preliminary Weather Company readings.\n\nIf it is determined in the sole discretion of the Exchange that there is a material error in the initial non-preliminary publication, Expiration may be held until the publication of a non-materially-erroneous data revision or until the Expiration Date, whichever comes first. If no data is available at the end of this period, all markets will resolve to the last fair price determined by Kalshi. Please note, a status of \"Final\" on weather.com/kalshi is provided for convenience only, and does not guarantee data to be error-free and thus exempt from the above.",
+          "settlement_ts_routing_hint": "2026-10-15T11:10:06.77741Z",
+          "strike_type": "greater",
+          "ticker": "KXHIGHTBOS-26OCT14-T80"
+        }
+      ],
+      "event_ticker": "KXHIGHTBOS-26OCT14",
+      "forecast_packet_sha256": "6f8fbd2074c3bab4657871454d09166d04fc2d0a3f591c33b58070f265a50a05",
+      "frozen_market_sha256": "bf715115d080f3837082b03988e1895f4c270f54e93cd04c9ccd6d0e8cba02b1",
+      "missingness_reasons": [
+        "KXHIGHTBOS-26OCT14-T73:HTTP_429",
+        "INCOMPLETE_INDEPENDENT_SIBLING_GETS"
+      ],
+      "series_ticker": "KXHIGHTBOS",
+      "station_icao": "KBOS",
+      "target_date": "2026-10-14"
+    },
+    {
+      "city_id": "miami",
+      "cli_product": "CLIMIA",
+      "contracts": [
+        {
+          "cap_strike": "85",
+          "floor_strike": "84",
+          "routing_hint_response_sha256": "12d7a8762ea60a468f64bbec1d7115d5e3ea3e3abbc08ac83a43924c46a8ca5b",
+          "rules_primary": "If the maximum temperature recorded at Miami (CLIMIA) for Oct 14, 2026, is between 84-85\u00b0 fahrenheit according to The Weather Company, then the market resolves to Yes.",
+          "rules_secondary": "Not all weather data is the same. While checking a source like AccuWeather or Google Weather may help guide your decision, the official and final value used to determine this market is the maximum/minimum temperature as reported by the Weather Company.\n\nReading weather data\nPreliminary Weather Company data may be subject to rounding and conversion differences from the final reported value.\nUse caution when interpreting preliminary Weather Company readings.\n\nIf it is determined in the sole discretion of the Exchange that there is a material error in the initial non-preliminary publication, Expiration may be held until the publication of a non-materially-erroneous data revision or until the Expiration Date, whichever comes first. If no data is available at the end of this period, all markets will resolve to the last fair price determined by Kalshi. Please note, a status of \"Final\" on weather.com/kalshi is provided for convenience only, and does not guarantee data to be error-free and thus exempt from the above.",
+          "settlement_ts_routing_hint": "2026-10-15T11:09:01.788442Z",
+          "strike_type": "between",
+          "ticker": "KXHIGHMIA-26OCT14-B84.5"
+        },
+        {
+          "cap_strike": "87",
+          "floor_strike": "86",
+          "routing_hint_response_sha256": "3a09cb89d5d9d330d8ab5d7cafdc85fa4e985b2d8d5dd984c8564bbb0acc506e",
+          "rules_primary": "If the maximum temperature recorded at Miami (CLIMIA) for Oct 14, 2026, is between 86-87\u00b0 fahrenheit according to The Weather Company, then the market resolves to Yes.",
+          "rules_secondary": "Not all weather data is the same. While checking a source like AccuWeather or Google Weather may help guide your decision, the official and final value used to determine this market is the maximum/minimum temperature as reported by the Weather Company.\n\nReading weather data\nPreliminary Weather Company data may be subject to rounding and conversion differences from the final reported value.\nUse caution when interpreting preliminary Weather Company readings.\n\nIf it is determined in the sole discretion of the Exchange that there is a material error in the initial non-preliminary publication, Expiration may be held until the publication of a non-materially-erroneous data revision or until the Expiration Date, whichever comes first. If no data is available at the end of this period, all markets will resolve to the last fair price determined by Kalshi. Please note, a status of \"Final\" on weather.com/kalshi is provided for convenience only, and does not guarantee data to be error-free and thus exempt from the above.",
+          "settlement_ts_routing_hint": "2026-10-15T11:09:01.788442Z",
+          "strike_type": "between",
+          "ticker": "KXHIGHMIA-26OCT14-B86.5"
+        },
+        {
+          "cap_strike": "89",
+          "floor_strike": "88",
+          "routing_hint_response_sha256": "87df19330c25e0beef5f128b445639e7a0f0eb7af4ab1fe60ef5bf1e1a3dcb42",
+          "rules_primary": "If the maximum temperature recorded at Miami (CLIMIA) for Oct 14, 2026, is between 88-89\u00b0 fahrenheit according to The Weather Company, then the market resolves to Yes.",
+          "rules_secondary": "Not all weather data is the same. While checking a source like AccuWeather or Google Weather may help guide your decision, the official and final value used to determine this market is the maximum/minimum temperature as reported by the Weather Company.\n\nReading weather data\nPreliminary Weather Company data may be subject to rounding and conversion differences from the final reported value.\nUse caution when interpreting preliminary Weather Company readings.\n\nIf it is determined in the sole discretion of the Exchange that there is a material error in the initial non-preliminary publication, Expiration may be held until the publication of a non-materially-erroneous data revision or until the Expiration Date, whichever comes first. If no data is available at the end of this period, all markets will resolve to the last fair price determined by Kalshi. Please note, a status of \"Final\" on weather.com/kalshi is provided for convenience only, and does not guarantee data to be error-free and thus exempt from the above.",
+          "settlement_ts_routing_hint": "2026-10-15T11:09:01.788442Z",
+          "strike_type": "between",
+          "ticker": "KXHIGHMIA-26OCT14-B88.5"
+        },
+        {
+          "cap_strike": "91",
+          "floor_strike": "90",
+          "routing_hint_response_sha256": "567487a38ffdb1f359bce8e032c54c9f91ec136e8627e99e29f4be64938bc581",
+          "rules_primary": "If the maximum temperature recorded at Miami (CLIMIA) for Oct 14, 2026, is between 90-91\u00b0 fahrenheit according to The Weather Company, then the market resolves to Yes.",
+          "rules_secondary": "Not all weather data is the same. While checking a source like AccuWeather or Google Weather may help guide your decision, the official and final value used to determine this market is the maximum/minimum temperature as reported by the Weather Company.\n\nReading weather data\nPreliminary Weather Company data may be subject to rounding and conversion differences from the final reported value.\nUse caution when interpreting preliminary Weather Company readings.\n\nIf it is determined in the sole discretion of the Exchange that there is a material error in the initial non-preliminary publication, Expiration may be held until the publication of a non-materially-erroneous data revision or until the Expiration Date, whichever comes first. If no data is available at the end of this period, all markets will resolve to the last fair price determined by Kalshi. Please note, a status of \"Final\" on weather.com/kalshi is provided for convenience only, and does not guarantee data to be error-free and thus exempt from the above.",
+          "settlement_ts_routing_hint": "2026-10-15T11:09:01.788442Z",
+          "strike_type": "between",
+          "ticker": "KXHIGHMIA-26OCT14-B90.5"
+        },
+        {
+          "cap_strike": "84",
+          "floor_strike": null,
+          "routing_hint_response_sha256": "43c9f0372726271d192d50abd7e3c84133108f2542967337d5a79e71e7586d60",
+          "rules_primary": "If the maximum temperature recorded at Miami (CLIMIA) for Oct 14, 2026, is less than 84\u00b0 fahrenheit according to The Weather Company, then the market resolves to Yes.",
+          "rules_secondary": "Not all weather data is the same. While checking a source like AccuWeather or Google Weather may help guide your decision, the official and final value used to determine this market is the maximum/minimum temperature as reported by the Weather Company.\n\nReading weather data\nPreliminary Weather Company data may be subject to rounding and conversion differences from the final reported value.\nUse caution when interpreting preliminary Weather Company readings.\n\nIf it is determined in the sole discretion of the Exchange that there is a material error in the initial non-preliminary publication, Expiration may be held until the publication of a non-materially-erroneous data revision or until the Expiration Date, whichever comes first. If no data is available at the end of this period, all markets will resolve to the last fair price determined by Kalshi. Please note, a status of \"Final\" on weather.com/kalshi is provided for convenience only, and does not guarantee data to be error-free and thus exempt from the above.",
+          "settlement_ts_routing_hint": "2026-10-15T11:09:01.788442Z",
+          "strike_type": "less",
+          "ticker": "KXHIGHMIA-26OCT14-T84"
+        },
+        {
+          "cap_strike": null,
+          "floor_strike": "91",
+          "routing_hint_response_sha256": "61802d6229040449d531229884802e2a31d6a878e66e1a8fc028ec2de3ee5870",
+          "rules_primary": "If the maximum temperature recorded at Miami (CLIMIA) for Oct 14, 2026, is greater than 91\u00b0 fahrenheit according to The Weather Company, then the market resolves to Yes.",
+          "rules_secondary": "Not all weather data is the same. While checking a source like AccuWeather or Google Weather may help guide your decision, the official and final value used to determine this market is the maximum/minimum temperature as reported by the Weather Company.\n\nReading weather data\nPreliminary Weather Company data may be subject to rounding and conversion differences from the final reported value.\nUse caution when interpreting preliminary Weather Company readings.\n\nIf it is determined in the sole discretion of the Exchange that there is a material error in the initial non-preliminary publication, Expiration may be held until the publication of a non-materially-erroneous data revision or until the Expiration Date, whichever comes first. If no data is available at the end of this period, all markets will resolve to the last fair price determined by Kalshi. Please note, a status of \"Final\" on weather.com/kalshi is provided for convenience only, and does not guarantee data to be error-free and thus exempt from the above.",
+          "settlement_ts_routing_hint": "2026-10-15T11:09:01.788442Z",
+          "strike_type": "greater",
+          "ticker": "KXHIGHMIA-26OCT14-T91"
+        }
+      ],
+      "event_ticker": "KXHIGHMIA-26OCT14",
+      "forecast_packet_sha256": "2320a734a1519464ecda58096c7708f5f3ae0165b29224ea841379e31c144821",
+      "frozen_market_sha256": "ef53359588fd70069d779944ba2e8856f1160e5fd83f37d09868c582c1b70dc9",
+      "missingness_reasons": [
+        "KXHIGHMIA-26OCT14-B90.5:HTTP_429",
+        "INCOMPLETE_INDEPENDENT_SIBLING_GETS"
+      ],
+      "series_ticker": "KXHIGHMIA",
+      "station_icao": "KMIA",
+      "target_date": "2026-10-14"
+    },
+    {
+      "city_id": "denver",
+      "cli_product": "CLIDEN",
+      "contracts": [
+        {
+          "cap_strike": "49",
+          "floor_strike": "48",
+          "routing_hint_response_sha256": "a4d4a8f813eedfc1c68eea17fc02525e67bf72eed7a567d0eb20f962afaba5ac",
+          "rules_primary": "If the maximum temperature recorded at Denver (CLIDEN) for Oct 14, 2026, is between 48-49\u00b0 fahrenheit according to The Weather Company, then the market resolves to Yes.",
+          "rules_secondary": "Not all weather data is the same. While checking a source like AccuWeather or Google Weather may help guide your decision, the official and final value used to determine this market is the maximum/minimum temperature as reported by the Weather Company.\n\nReading weather data\nPreliminary Weather Company data may be subject to rounding and conversion differences from the final reported value.\nUse caution when interpreting preliminary Weather Company readings.\n\nIf it is determined in the sole discretion of the Exchange that there is a material error in the initial non-preliminary publication, Expiration may be held until the publication of a non-materially-erroneous data revision or until the Expiration Date, whichever comes first. If no data is available at the end of this period, all markets will resolve to the last fair price determined by Kalshi. Please note, a status of \"Final\" on weather.com/kalshi is provided for convenience only, and does not guarantee data to be error-free and thus exempt from the above.",
+          "settlement_ts_routing_hint": "2026-10-15T13:08:26.781298Z",
+          "strike_type": "between",
+          "ticker": "KXHIGHDEN-26OCT14-B48.5"
+        },
+        {
+          "cap_strike": "51",
+          "floor_strike": "50",
+          "routing_hint_response_sha256": "d9c4fef00d9c80166f703de74c6d781b10ea5f7ae2130b0df3a10d04fa10213a",
+          "rules_primary": "If the maximum temperature recorded at Denver (CLIDEN) for Oct 14, 2026, is between 50-51\u00b0 fahrenheit according to The Weather Company, then the market resolves to Yes.",
+          "rules_secondary": "Not all weather data is the same. While checking a source like AccuWeather or Google Weather may help guide your decision, the official and final value used to determine this market is the maximum/minimum temperature as reported by the Weather Company.\n\nReading weather data\nPreliminary Weather Company data may be subject to rounding and conversion differences from the final reported value.\nUse caution when interpreting preliminary Weather Company readings.\n\nIf it is determined in the sole discretion of the Exchange that there is a material error in the initial non-preliminary publication, Expiration may be held until the publication of a non-materially-erroneous data revision or until the Expiration Date, whichever comes first. If no data is available at the end of this period, all markets will resolve to the last fair price determined by Kalshi. Please note, a status of \"Final\" on weather.com/kalshi is provided for convenience only, and does not guarantee data to be error-free and thus exempt from the above.",
+          "settlement_ts_routing_hint": "2026-10-15T13:08:26.781298Z",
+          "strike_type": "between",
+          "ticker": "KXHIGHDEN-26OCT14-B50.5"
+        },
+        {
+          "cap_strike": "53",
+          "floor_strike": "52",
+          "routing_hint_response_sha256": "c9352d2ed99ec9f0b2eed5f3ca8c21b2127fe0dbe4e81d796e47724ef6253a3b",
+          "rules_primary": "If the maximum temperature recorded at Denver (CLIDEN) for Oct 14, 2026, is between 52-53\u00b0 fahrenheit according to The Weather Company, then the market resolves to Yes.",
+          "rules_secondary": "Not all weather data is the same. While checking a source like AccuWeather or Google Weather may help guide your decision, the official and final value used to determine this market is the maximum/minimum temperature as reported by the Weather Company.\n\nReading weather data\nPreliminary Weather Company data may be subject to rounding and conversion differences from the final reported value.\nUse caution when interpreting preliminary Weather Company readings.\n\nIf it is determined in the sole discretion of the Exchange that there is a material error in the initial non-preliminary publication, Expiration may be held until the publication of a non-materially-erroneous data revision or until the Expiration Date, whichever comes first. If no data is available at the end of this period, all markets will resolve to the last fair price determined by Kalshi. Please note, a status of \"Final\" on weather.com/kalshi is provided for convenience only, and does not guarantee data to be error-free and thus exempt from the above.",
+          "settlement_ts_routing_hint": "2026-10-15T13:08:26.781298Z",
+          "strike_type": "between",
+          "ticker": "KXHIGHDEN-26OCT14-B52.5"
+        },
+        {
+          "cap_strike": "55",
+          "floor_strike": "54",
+          "routing_hint_response_sha256": "a886771349b29a874ee9b1c4c0d30582ba27d1ad2eac5678e4e100aa81212090",
+          "rules_primary": "If the maximum temperature recorded at Denver (CLIDEN) for Oct 14, 2026, is between 54-55\u00b0 fahrenheit according to The Weather Company, then the market resolves to Yes.",
+          "rules_secondary": "Not all weather data is the same. While checking a source like AccuWeather or Google Weather may help guide your decision, the official and final value used to determine this market is the maximum/minimum temperature as reported by the Weather Company.\n\nReading weather data\nPreliminary Weather Company data may be subject to rounding and conversion differences from the final reported value.\nUse caution when interpreting preliminary Weather Company readings.\n\nIf it is determined in the sole discretion of the Exchange that there is a material error in the initial non-preliminary publication, Expiration may be held until the publication of a non-materially-erroneous data revision or until the Expiration Date, whichever comes first. If no data is available at the end of this period, all markets will resolve to the last fair price determined by Kalshi. Please note, a status of \"Final\" on weather.com/kalshi is provided for convenience only, and does not guarantee data to be error-free and thus exempt from the above.",
+          "settlement_ts_routing_hint": "2026-10-15T13:08:26.781298Z",
+          "strike_type": "between",
+          "ticker": "KXHIGHDEN-26OCT14-B54.5"
+        },
+        {
+          "cap_strike": "48",
+          "floor_strike": null,
+          "routing_hint_response_sha256": "1ecb8b06b077bfabab544425a67232a3ca664378ed422e1696764b8f71aeeece",
+          "rules_primary": "If the maximum temperature recorded at Denver (CLIDEN) for Oct 14, 2026, is less than 48\u00b0 fahrenheit according to The Weather Company, then the market resolves to Yes.",
+          "rules_secondary": "Not all weather data is the same. While checking a source like AccuWeather or Google Weather may help guide your decision, the official and final value used to determine this market is the maximum/minimum temperature as reported by the Weather Company.\n\nReading weather data\nPreliminary Weather Company data may be subject to rounding and conversion differences from the final reported value.\nUse caution when interpreting preliminary Weather Company readings.\n\nIf it is determined in the sole discretion of the Exchange that there is a material error in the initial non-preliminary publication, Expiration may be held until the publication of a non-materially-erroneous data revision or until the Expiration Date, whichever comes first. If no data is available at the end of this period, all markets will resolve to the last fair price determined by Kalshi. Please note, a status of \"Final\" on weather.com/kalshi is provided for convenience only, and does not guarantee data to be error-free and thus exempt from the above.",
+          "settlement_ts_routing_hint": "2026-10-15T13:08:26.781298Z",
+          "strike_type": "less",
+          "ticker": "KXHIGHDEN-26OCT14-T48"
+        },
+        {
+          "cap_strike": null,
+          "floor_strike": "55",
+          "routing_hint_response_sha256": "58d966bee9f9bfc181d65359c1a748dc7e2f951c42819bd01d86130cc2acd953",
+          "rules_primary": "If the maximum temperature recorded at Denver (CLIDEN) for Oct 14, 2026, is greater than 55\u00b0 fahrenheit according to The Weather Company, then the market resolves to Yes.",
+          "rules_secondary": "Not all weather data is the same. While checking a source like AccuWeather or Google Weather may help guide your decision, the official and final value used to determine this market is the maximum/minimum temperature as reported by the Weather Company.\n\nReading weather data\nPreliminary Weather Company data may be subject to rounding and conversion differences from the final reported value.\nUse caution when interpreting preliminary Weather Company readings.\n\nIf it is determined in the sole discretion of the Exchange that there is a material error in the initial non-preliminary publication, Expiration may be held until the publication of a non-materially-erroneous data revision or until the Expiration Date, whichever comes first. If no data is available at the end of this period, all markets will resolve to the last fair price determined by Kalshi. Please note, a status of \"Final\" on weather.com/kalshi is provided for convenience only, and does not guarantee data to be error-free and thus exempt from the above.",
+          "settlement_ts_routing_hint": "2026-10-15T13:08:26.781298Z",
+          "strike_type": "greater",
+          "ticker": "KXHIGHDEN-26OCT14-T55"
+        }
+      ],
+      "event_ticker": "KXHIGHDEN-26OCT14",
+      "forecast_packet_sha256": "c2828ae079cbd98de79d7a674d1904fc1d41e953bb517da109fbfcbbe1c65fed",
+      "frozen_market_sha256": "9fe7ab0dafefc22d467517506e88a0514141fc350fbf63481a35112f1a0a5448",
+      "missingness_reasons": [
+        "KXHIGHDEN-26OCT14-B54.5:HTTP_429",
+        "INCOMPLETE_INDEPENDENT_SIBLING_GETS"
+      ],
+      "series_ticker": "KXHIGHDEN",
+      "station_icao": "KDEN",
+      "target_date": "2026-10-14"
+    },
+    {
+      "city_id": "seattle",
+      "cli_product": "CLISEA",
+      "contracts": [
+        {
+          "cap_strike": "63",
+          "floor_strike": "62",
+          "routing_hint_response_sha256": "91dd5ec8cc22595a77ebcc8c7aee03c5cc716dc90376a1adf5b7c796a599b42d",
+          "rules_primary": "If the maximum temperature recorded at Seattle (CLISEA) for Oct 14, 2026, is between 62-63\u00b0 fahrenheit according to The Weather Company, then the market resolves to Yes.",
+          "rules_secondary": "Not all weather data is the same. While checking a source like AccuWeather or Google Weather may help guide your decision, the official and final value used to determine this market is the maximum/minimum temperature as reported by the Weather Company.\n\nReading weather data\nPreliminary Weather Company data may be subject to rounding and conversion differences from the final reported value.\nUse caution when interpreting preliminary Weather Company readings.\n\nIf it is determined in the sole discretion of the Exchange that there is a material error in the initial non-preliminary publication, Expiration may be held until the publication of a non-materially-erroneous data revision or until the Expiration Date, whichever comes first. If no data is available at the end of this period, all markets will resolve to the last fair price determined by Kalshi. Please note, a status of \"Final\" on weather.com/kalshi is provided for convenience only, and does not guarantee data to be error-free and thus exempt from the above.",
+          "settlement_ts_routing_hint": "2026-10-15T14:10:41.777608Z",
+          "strike_type": "between",
+          "ticker": "KXHIGHTSEA-26OCT14-B62.5"
+        },
+        {
+          "cap_strike": "65",
+          "floor_strike": "64",
+          "routing_hint_response_sha256": "b64e79fb4e5177fbd0456fbbf77a7e1c24769a047c41be82032708a6e7338e33",
+          "rules_primary": "If the maximum temperature recorded at Seattle (CLISEA) for Oct 14, 2026, is between 64-65\u00b0 fahrenheit according to The Weather Company, then the market resolves to Yes.",
+          "rules_secondary": "Not all weather data is the same. While checking a source like AccuWeather or Google Weather may help guide your decision, the official and final value used to determine this market is the maximum/minimum temperature as reported by the Weather Company.\n\nReading weather data\nPreliminary Weather Company data may be subject to rounding and conversion differences from the final reported value.\nUse caution when interpreting preliminary Weather Company readings.\n\nIf it is determined in the sole discretion of the Exchange that there is a material error in the initial non-preliminary publication, Expiration may be held until the publication of a non-materially-erroneous data revision or until the Expiration Date, whichever comes first. If no data is available at the end of this period, all markets will resolve to the last fair price determined by Kalshi. Please note, a status of \"Final\" on weather.com/kalshi is provided for convenience only, and does not guarantee data to be error-free and thus exempt from the above.",
+          "settlement_ts_routing_hint": "2026-10-15T14:10:41.777608Z",
+          "strike_type": "between",
+          "ticker": "KXHIGHTSEA-26OCT14-B64.5"
+        },
+        {
+          "cap_strike": "67",
+          "floor_strike": "66",
+          "routing_hint_response_sha256": "9f88c369758d25e0a8e06925b58f4c0aa26b3203d22e17ea4d20b3f689743afc",
+          "rules_primary": "If the maximum temperature recorded at Seattle (CLISEA) for Oct 14, 2026, is between 66-67\u00b0 fahrenheit according to The Weather Company, then the market resolves to Yes.",
+          "rules_secondary": "Not all weather data is the same. While checking a source like AccuWeather or Google Weather may help guide your decision, the official and final value used to determine this market is the maximum/minimum temperature as reported by the Weather Company.\n\nReading weather data\nPreliminary Weather Company data may be subject to rounding and conversion differences from the final reported value.\nUse caution when interpreting preliminary Weather Company readings.\n\nIf it is determined in the sole discretion of the Exchange that there is a material error in the initial non-preliminary publication, Expiration may be held until the publication of a non-materially-erroneous data revision or until the Expiration Date, whichever comes first. If no data is available at the end of this period, all markets will resolve to the last fair price determined by Kalshi. Please note, a status of \"Final\" on weather.com/kalshi is provided for convenience only, and does not guarantee data to be error-free and thus exempt from the above.",
+          "settlement_ts_routing_hint": "2026-10-15T14:10:41.777608Z",
+          "strike_type": "between",
+          "ticker": "KXHIGHTSEA-26OCT14-B66.5"
+        },
+        {
+          "cap_strike": "69",
+          "floor_strike": "68",
+          "routing_hint_response_sha256": "08ab3430ca0a9ccea6038b377628b2b455d86d9d6495a591e256c6bc42f97448",
+          "rules_primary": "If the maximum temperature recorded at Seattle (CLISEA) for Oct 14, 2026, is between 68-69\u00b0 fahrenheit according to The Weather Company, then the market resolves to Yes.",
+          "rules_secondary": "Not all weather data is the same. While checking a source like AccuWeather or Google Weather may help guide your decision, the official and final value used to determine this market is the maximum/minimum temperature as reported by the Weather Company.\n\nReading weather data\nPreliminary Weather Company data may be subject to rounding and conversion differences from the final reported value.\nUse caution when interpreting preliminary Weather Company readings.\n\nIf it is determined in the sole discretion of the Exchange that there is a material error in the initial non-preliminary publication, Expiration may be held until the publication of a non-materially-erroneous data revision or until the Expiration Date, whichever comes first. If no data is available at the end of this period, all markets will resolve to the last fair price determined by Kalshi. Please note, a status of \"Final\" on weather.com/kalshi is provided for convenience only, and does not guarantee data to be error-free and thus exempt from the above.",
+          "settlement_ts_routing_hint": "2026-10-15T14:10:41.777608Z",
+          "strike_type": "between",
+          "ticker": "KXHIGHTSEA-26OCT14-B68.5"
+        },
+        {
+          "cap_strike": "62",
+          "floor_strike": null,
+          "routing_hint_response_sha256": "63ddf344da188065d04edaf4cddbf6b9366f63314de3849b8eb49ae64b18272d",
+          "rules_primary": "If the maximum temperature recorded at Seattle (CLISEA) for Oct 14, 2026, is less than 62\u00b0 fahrenheit according to The Weather Company, then the market resolves to Yes.",
+          "rules_secondary": "Not all weather data is the same. While checking a source like AccuWeather or Google Weather may help guide your decision, the official and final value used to determine this market is the maximum/minimum temperature as reported by the Weather Company.\n\nReading weather data\nPreliminary Weather Company data may be subject to rounding and conversion differences from the final reported value.\nUse caution when interpreting preliminary Weather Company readings.\n\nIf it is determined in the sole discretion of the Exchange that there is a material error in the initial non-preliminary publication, Expiration may be held until the publication of a non-materially-erroneous data revision or until the Expiration Date, whichever comes first. If no data is available at the end of this period, all markets will resolve to the last fair price determined by Kalshi. Please note, a status of \"Final\" on weather.com/kalshi is provided for convenience only, and does not guarantee data to be error-free and thus exempt from the above.",
+          "settlement_ts_routing_hint": "2026-10-15T14:10:41.777608Z",
+          "strike_type": "less",
+          "ticker": "KXHIGHTSEA-26OCT14-T62"
+        },
+        {
+          "cap_strike": null,
+          "floor_strike": "69",
+          "routing_hint_response_sha256": "b71ffc6c5087badab2f115ada1d0c0ed95d864e07ce1380b6df0e019c97b244a",
+          "rules_primary": "If the maximum temperature recorded at Seattle (CLISEA) for Oct 14, 2026, is greater than 69\u00b0 fahrenheit according to The Weather Company, then the market resolves to Yes.",
+          "rules_secondary": "Not all weather data is the same. While checking a source like AccuWeather or Google Weather may help guide your decision, the official and final value used to determine this market is the maximum/minimum temperature as reported by the Weather Company.\n\nReading weather data\nPreliminary Weather Company data may be subject to rounding and conversion differences from the final reported value.\nUse caution when interpreting preliminary Weather Company readings.\n\nIf it is determined in the sole discretion of the Exchange that there is a material error in the initial non-preliminary publication, Expiration may be held until the publication of a non-materially-erroneous data revision or until the Expiration Date, whichever comes first. If no data is available at the end of this period, all markets will resolve to the last fair price determined by Kalshi. Please note, a status of \"Final\" on weather.com/kalshi is provided for convenience only, and does not guarantee data to be error-free and thus exempt from the above.",
+          "settlement_ts_routing_hint": "2026-10-15T14:10:41.777608Z",
+          "strike_type": "greater",
+          "ticker": "KXHIGHTSEA-26OCT14-T69"
+        }
+      ],
+      "event_ticker": "KXHIGHTSEA-26OCT14",
+      "forecast_packet_sha256": "bc240b699b55858dbabd69fba89aa392cc7a9303738da2bd41c280ccdf84dd84",
+      "frozen_market_sha256": "f2633ee7c1a5ba419f5c176a24bfa234aa084d95a6ef9ffd015bf5da7e9f9351",
+      "missingness_reasons": [
+        "EVENT_HTTP_429",
+        "KXHIGHTSEA-26OCT14-B62.5:NOT_REQUESTED",
+        "KXHIGHTSEA-26OCT14-B64.5:NOT_REQUESTED",
+        "KXHIGHTSEA-26OCT14-B66.5:NOT_REQUESTED",
+        "KXHIGHTSEA-26OCT14-B68.5:NOT_REQUESTED",
+        "KXHIGHTSEA-26OCT14-T62:NOT_REQUESTED",
+        "KXHIGHTSEA-26OCT14-T69:NOT_REQUESTED",
+        "INCOMPLETE_INDEPENDENT_SIBLING_GETS"
+      ],
+      "series_ticker": "KXHIGHTSEA",
+      "station_icao": "KSEA",
+      "target_date": "2026-10-14"
+    }
+  ],
+  "full_city_day_roster": [
+    {
+      "capture_state": "CAPTURED",
+      "city_id": "boston",
+      "depth_abstentions": 2,
+      "historical_reference_conflict": false,
+      "outcome_evidence_status": "ADMISSIBLE_RESEARCH_METADATA",
+      "point_score_authorized": false,
+      "same_date_cluster": "2026-10-03",
+      "target_date": "2026-10-03"
+    },
+    {
+      "capture_state": "CAPTURED",
+      "city_id": "miami",
+      "depth_abstentions": 2,
+      "historical_reference_conflict": false,
+      "outcome_evidence_status": "ADMISSIBLE_RESEARCH_METADATA",
+      "point_score_authorized": false,
+      "same_date_cluster": "2026-10-03",
+      "target_date": "2026-10-03"
+    },
+    {
+      "capture_state": "CAPTURED",
+      "city_id": "denver",
+      "depth_abstentions": 1,
+      "historical_reference_conflict": false,
+      "outcome_evidence_status": "ADMISSIBLE_RESEARCH_METADATA",
+      "point_score_authorized": false,
+      "same_date_cluster": "2026-10-03",
+      "target_date": "2026-10-03"
+    },
+    {
+      "capture_state": "CAPTURED",
+      "city_id": "los_angeles",
+      "depth_abstentions": 0,
+      "historical_reference_conflict": false,
+      "outcome_evidence_status": "ADMISSIBLE_RESEARCH_METADATA",
+      "point_score_authorized": false,
+      "same_date_cluster": "2026-10-03",
+      "target_date": "2026-10-03"
+    },
+    {
+      "capture_state": "CAPTURED",
+      "city_id": "seattle",
+      "depth_abstentions": 0,
+      "historical_reference_conflict": false,
+      "outcome_evidence_status": "ADMISSIBLE_RESEARCH_METADATA",
+      "point_score_authorized": false,
+      "same_date_cluster": "2026-10-03",
+      "target_date": "2026-10-03"
+    },
+    {
+      "capture_state": "FAILED",
+      "city_id": "boston",
+      "depth_abstentions": 0,
+      "historical_reference_conflict": false,
+      "outcome_evidence_status": "ADMISSIBLE_RESEARCH_METADATA",
+      "point_score_authorized": false,
+      "same_date_cluster": "2026-10-04",
+      "target_date": "2026-10-04"
+    },
+    {
+      "capture_state": "FAILED",
+      "city_id": "miami",
+      "depth_abstentions": 0,
+      "historical_reference_conflict": true,
+      "outcome_evidence_status": "ADMISSIBLE_RESEARCH_METADATA",
+      "point_score_authorized": false,
+      "same_date_cluster": "2026-10-04",
+      "target_date": "2026-10-04"
+    },
+    {
+      "capture_state": "FAILED",
+      "city_id": "denver",
+      "depth_abstentions": 0,
+      "historical_reference_conflict": false,
+      "outcome_evidence_status": "ADMISSIBLE_RESEARCH_METADATA",
+      "point_score_authorized": false,
+      "same_date_cluster": "2026-10-04",
+      "target_date": "2026-10-04"
+    },
+    {
+      "capture_state": "FAILED",
+      "city_id": "los_angeles",
+      "depth_abstentions": 0,
+      "historical_reference_conflict": false,
+      "outcome_evidence_status": "ADMISSIBLE_RESEARCH_METADATA",
+      "point_score_authorized": false,
+      "same_date_cluster": "2026-10-04",
+      "target_date": "2026-10-04"
+    },
+    {
+      "capture_state": "FAILED",
+      "city_id": "seattle",
+      "depth_abstentions": 0,
+      "historical_reference_conflict": false,
+      "outcome_evidence_status": "ADMISSIBLE_RESEARCH_METADATA",
+      "point_score_authorized": false,
+      "same_date_cluster": "2026-10-04",
+      "target_date": "2026-10-04"
+    },
+    {
+      "capture_state": "CAPTURED",
+      "city_id": "boston",
+      "depth_abstentions": 1,
+      "historical_reference_conflict": false,
+      "outcome_evidence_status": "ADMISSIBLE_RESEARCH_METADATA",
+      "point_score_authorized": false,
+      "same_date_cluster": "2026-10-05",
+      "target_date": "2026-10-05"
+    },
+    {
+      "capture_state": "CAPTURED",
+      "city_id": "miami",
+      "depth_abstentions": 1,
+      "historical_reference_conflict": false,
+      "outcome_evidence_status": "ADMISSIBLE_RESEARCH_METADATA",
+      "point_score_authorized": false,
+      "same_date_cluster": "2026-10-05",
+      "target_date": "2026-10-05"
+    },
+    {
+      "capture_state": "CAPTURED",
+      "city_id": "denver",
+      "depth_abstentions": 1,
+      "historical_reference_conflict": false,
+      "outcome_evidence_status": "ADMISSIBLE_RESEARCH_METADATA",
+      "point_score_authorized": false,
+      "same_date_cluster": "2026-10-05",
+      "target_date": "2026-10-05"
+    },
+    {
+      "capture_state": "CAPTURED",
+      "city_id": "los_angeles",
+      "depth_abstentions": 1,
+      "historical_reference_conflict": false,
+      "outcome_evidence_status": "ADMISSIBLE_RESEARCH_METADATA",
+      "point_score_authorized": false,
+      "same_date_cluster": "2026-10-05",
+      "target_date": "2026-10-05"
+    },
+    {
+      "capture_state": "CAPTURED",
+      "city_id": "seattle",
+      "depth_abstentions": 1,
+      "historical_reference_conflict": false,
+      "outcome_evidence_status": "ADMISSIBLE_RESEARCH_METADATA",
+      "point_score_authorized": false,
+      "same_date_cluster": "2026-10-05",
+      "target_date": "2026-10-05"
+    },
+    {
+      "capture_state": "CAPTURED",
+      "city_id": "boston",
+      "depth_abstentions": 0,
+      "historical_reference_conflict": false,
+      "outcome_evidence_status": "ADMISSIBLE_RESEARCH_METADATA",
+      "point_score_authorized": false,
+      "same_date_cluster": "2026-10-06",
+      "target_date": "2026-10-06"
+    },
+    {
+      "capture_state": "CAPTURED",
+      "city_id": "miami",
+      "depth_abstentions": 1,
+      "historical_reference_conflict": false,
+      "outcome_evidence_status": "ADMISSIBLE_RESEARCH_METADATA",
+      "point_score_authorized": false,
+      "same_date_cluster": "2026-10-06",
+      "target_date": "2026-10-06"
+    },
+    {
+      "capture_state": "CAPTURED",
+      "city_id": "denver",
+      "depth_abstentions": 1,
+      "historical_reference_conflict": false,
+      "outcome_evidence_status": "ADMISSIBLE_RESEARCH_METADATA",
+      "point_score_authorized": false,
+      "same_date_cluster": "2026-10-06",
+      "target_date": "2026-10-06"
+    },
+    {
+      "capture_state": "CAPTURED",
+      "city_id": "los_angeles",
+      "depth_abstentions": 0,
+      "historical_reference_conflict": false,
+      "outcome_evidence_status": "ADMISSIBLE_RESEARCH_METADATA",
+      "point_score_authorized": false,
+      "same_date_cluster": "2026-10-06",
+      "target_date": "2026-10-06"
+    },
+    {
+      "capture_state": "CAPTURED",
+      "city_id": "seattle",
+      "depth_abstentions": 1,
+      "historical_reference_conflict": false,
+      "outcome_evidence_status": "ADMISSIBLE_RESEARCH_METADATA",
+      "point_score_authorized": false,
+      "same_date_cluster": "2026-10-06",
+      "target_date": "2026-10-06"
+    },
+    {
+      "capture_state": "CAPTURED",
+      "city_id": "boston",
+      "depth_abstentions": 2,
+      "historical_reference_conflict": false,
+      "outcome_evidence_status": "ADMISSIBLE_RESEARCH_METADATA",
+      "point_score_authorized": false,
+      "same_date_cluster": "2026-10-07",
+      "target_date": "2026-10-07"
+    },
+    {
+      "capture_state": "CAPTURED",
+      "city_id": "miami",
+      "depth_abstentions": 1,
+      "historical_reference_conflict": false,
+      "outcome_evidence_status": "ADMISSIBLE_RESEARCH_METADATA",
+      "point_score_authorized": false,
+      "same_date_cluster": "2026-10-07",
+      "target_date": "2026-10-07"
+    },
+    {
+      "capture_state": "CAPTURED",
+      "city_id": "denver",
+      "depth_abstentions": 1,
+      "historical_reference_conflict": false,
+      "outcome_evidence_status": "ADMISSIBLE_RESEARCH_METADATA",
+      "point_score_authorized": false,
+      "same_date_cluster": "2026-10-07",
+      "target_date": "2026-10-07"
+    },
+    {
+      "capture_state": "CAPTURED",
+      "city_id": "los_angeles",
+      "depth_abstentions": 1,
+      "historical_reference_conflict": false,
+      "outcome_evidence_status": "ADMISSIBLE_RESEARCH_METADATA",
+      "point_score_authorized": false,
+      "same_date_cluster": "2026-10-07",
+      "target_date": "2026-10-07"
+    },
+    {
+      "capture_state": "CAPTURED",
+      "city_id": "seattle",
+      "depth_abstentions": 0,
+      "historical_reference_conflict": false,
+      "outcome_evidence_status": "ADMISSIBLE_RESEARCH_METADATA",
+      "point_score_authorized": false,
+      "same_date_cluster": "2026-10-07",
+      "target_date": "2026-10-07"
+    },
+    {
+      "capture_state": "CAPTURED",
+      "city_id": "boston",
+      "depth_abstentions": 1,
+      "historical_reference_conflict": false,
+      "outcome_evidence_status": "ADMISSIBLE_RESEARCH_METADATA",
+      "point_score_authorized": false,
+      "same_date_cluster": "2026-10-08",
+      "target_date": "2026-10-08"
+    },
+    {
+      "capture_state": "CAPTURED",
+      "city_id": "miami",
+      "depth_abstentions": 1,
+      "historical_reference_conflict": false,
+      "outcome_evidence_status": "ADMISSIBLE_RESEARCH_METADATA",
+      "point_score_authorized": false,
+      "same_date_cluster": "2026-10-08",
+      "target_date": "2026-10-08"
+    },
+    {
+      "capture_state": "CAPTURED",
+      "city_id": "denver",
+      "depth_abstentions": 0,
+      "historical_reference_conflict": false,
+      "outcome_evidence_status": "ADMISSIBLE_RESEARCH_METADATA",
+      "point_score_authorized": false,
+      "same_date_cluster": "2026-10-08",
+      "target_date": "2026-10-08"
+    },
+    {
+      "capture_state": "CAPTURED",
+      "city_id": "los_angeles",
+      "depth_abstentions": 0,
+      "historical_reference_conflict": false,
+      "outcome_evidence_status": "ADMISSIBLE_RESEARCH_METADATA",
+      "point_score_authorized": false,
+      "same_date_cluster": "2026-10-08",
+      "target_date": "2026-10-08"
+    },
+    {
+      "capture_state": "CAPTURED",
+      "city_id": "seattle",
+      "depth_abstentions": 1,
+      "historical_reference_conflict": false,
+      "outcome_evidence_status": "ADMISSIBLE_RESEARCH_METADATA",
+      "point_score_authorized": false,
+      "same_date_cluster": "2026-10-08",
+      "target_date": "2026-10-08"
+    },
+    {
+      "capture_state": "CAPTURED",
+      "city_id": "boston",
+      "depth_abstentions": 0,
+      "historical_reference_conflict": false,
+      "outcome_evidence_status": "ADMISSIBLE_RESEARCH_METADATA",
+      "point_score_authorized": false,
+      "same_date_cluster": "2026-10-09",
+      "target_date": "2026-10-09"
+    },
+    {
+      "capture_state": "CAPTURED",
+      "city_id": "miami",
+      "depth_abstentions": 2,
+      "historical_reference_conflict": false,
+      "outcome_evidence_status": "ADMISSIBLE_RESEARCH_METADATA",
+      "point_score_authorized": false,
+      "same_date_cluster": "2026-10-09",
+      "target_date": "2026-10-09"
+    },
+    {
+      "capture_state": "CAPTURED",
+      "city_id": "denver",
+      "depth_abstentions": 1,
+      "historical_reference_conflict": false,
+      "outcome_evidence_status": "ADMISSIBLE_RESEARCH_METADATA",
+      "point_score_authorized": false,
+      "same_date_cluster": "2026-10-09",
+      "target_date": "2026-10-09"
+    },
+    {
+      "capture_state": "CAPTURED",
+      "city_id": "los_angeles",
+      "depth_abstentions": 2,
+      "historical_reference_conflict": false,
+      "outcome_evidence_status": "ADMISSIBLE_RESEARCH_METADATA",
+      "point_score_authorized": false,
+      "same_date_cluster": "2026-10-09",
+      "target_date": "2026-10-09"
+    },
+    {
+      "capture_state": "CAPTURED",
+      "city_id": "seattle",
+      "depth_abstentions": 1,
+      "historical_reference_conflict": false,
+      "outcome_evidence_status": "ADMISSIBLE_RESEARCH_METADATA",
+      "point_score_authorized": false,
+      "same_date_cluster": "2026-10-09",
+      "target_date": "2026-10-09"
+    },
+    {
+      "capture_state": "CAPTURED",
+      "city_id": "boston",
+      "depth_abstentions": 1,
+      "historical_reference_conflict": false,
+      "outcome_evidence_status": "ADMISSIBLE_RESEARCH_METADATA",
+      "point_score_authorized": false,
+      "same_date_cluster": "2026-10-10",
+      "target_date": "2026-10-10"
+    },
+    {
+      "capture_state": "CAPTURED",
+      "city_id": "miami",
+      "depth_abstentions": 2,
+      "historical_reference_conflict": false,
+      "outcome_evidence_status": "UNVERIFIED",
+      "point_score_authorized": false,
+      "same_date_cluster": "2026-10-10",
+      "target_date": "2026-10-10"
+    },
+    {
+      "capture_state": "CAPTURED",
+      "city_id": "denver",
+      "depth_abstentions": 1,
+      "historical_reference_conflict": false,
+      "outcome_evidence_status": "UNVERIFIED",
+      "point_score_authorized": false,
+      "same_date_cluster": "2026-10-10",
+      "target_date": "2026-10-10"
+    },
+    {
+      "capture_state": "CAPTURED",
+      "city_id": "los_angeles",
+      "depth_abstentions": 2,
+      "historical_reference_conflict": false,
+      "outcome_evidence_status": "ADMISSIBLE_RESEARCH_METADATA",
+      "point_score_authorized": false,
+      "same_date_cluster": "2026-10-10",
+      "target_date": "2026-10-10"
+    },
+    {
+      "capture_state": "CAPTURED",
+      "city_id": "seattle",
+      "depth_abstentions": 1,
+      "historical_reference_conflict": false,
+      "outcome_evidence_status": "ADMISSIBLE_RESEARCH_METADATA",
+      "point_score_authorized": false,
+      "same_date_cluster": "2026-10-10",
+      "target_date": "2026-10-10"
+    },
+    {
+      "capture_state": "CAPTURED",
+      "city_id": "boston",
+      "depth_abstentions": 1,
+      "historical_reference_conflict": false,
+      "outcome_evidence_status": "ADMISSIBLE_RESEARCH_METADATA",
+      "point_score_authorized": false,
+      "same_date_cluster": "2026-10-11",
+      "target_date": "2026-10-11"
+    },
+    {
+      "capture_state": "CAPTURED",
+      "city_id": "miami",
+      "depth_abstentions": 2,
+      "historical_reference_conflict": false,
+      "outcome_evidence_status": "ADMISSIBLE_RESEARCH_METADATA",
+      "point_score_authorized": false,
+      "same_date_cluster": "2026-10-11",
+      "target_date": "2026-10-11"
+    },
+    {
+      "capture_state": "CAPTURED",
+      "city_id": "denver",
+      "depth_abstentions": 0,
+      "historical_reference_conflict": false,
+      "outcome_evidence_status": "UNVERIFIED",
+      "point_score_authorized": false,
+      "same_date_cluster": "2026-10-11",
+      "target_date": "2026-10-11"
+    },
+    {
+      "capture_state": "CAPTURED",
+      "city_id": "los_angeles",
+      "depth_abstentions": 3,
+      "historical_reference_conflict": false,
+      "outcome_evidence_status": "UNVERIFIED",
+      "point_score_authorized": false,
+      "same_date_cluster": "2026-10-11",
+      "target_date": "2026-10-11"
+    },
+    {
+      "capture_state": "CAPTURED",
+      "city_id": "seattle",
+      "depth_abstentions": 1,
+      "historical_reference_conflict": false,
+      "outcome_evidence_status": "ADMISSIBLE_RESEARCH_METADATA",
+      "point_score_authorized": false,
+      "same_date_cluster": "2026-10-11",
+      "target_date": "2026-10-11"
+    },
+    {
+      "capture_state": "CAPTURED",
+      "city_id": "boston",
+      "depth_abstentions": 1,
+      "historical_reference_conflict": false,
+      "outcome_evidence_status": "ADMISSIBLE_RESEARCH_METADATA",
+      "point_score_authorized": false,
+      "same_date_cluster": "2026-10-12",
+      "target_date": "2026-10-12"
+    },
+    {
+      "capture_state": "CAPTURED",
+      "city_id": "miami",
+      "depth_abstentions": 1,
+      "historical_reference_conflict": false,
+      "outcome_evidence_status": "ADMISSIBLE_RESEARCH_METADATA",
+      "point_score_authorized": false,
+      "same_date_cluster": "2026-10-12",
+      "target_date": "2026-10-12"
+    },
+    {
+      "capture_state": "CAPTURED",
+      "city_id": "denver",
+      "depth_abstentions": 1,
+      "historical_reference_conflict": false,
+      "outcome_evidence_status": "ADMISSIBLE_RESEARCH_METADATA",
+      "point_score_authorized": false,
+      "same_date_cluster": "2026-10-12",
+      "target_date": "2026-10-12"
+    },
+    {
+      "capture_state": "CAPTURED",
+      "city_id": "los_angeles",
+      "depth_abstentions": 1,
+      "historical_reference_conflict": false,
+      "outcome_evidence_status": "ADMISSIBLE_RESEARCH_METADATA",
+      "point_score_authorized": false,
+      "same_date_cluster": "2026-10-12",
+      "target_date": "2026-10-12"
+    },
+    {
+      "capture_state": "CAPTURED",
+      "city_id": "seattle",
+      "depth_abstentions": 1,
+      "historical_reference_conflict": false,
+      "outcome_evidence_status": "UNVERIFIED",
+      "point_score_authorized": false,
+      "same_date_cluster": "2026-10-12",
+      "target_date": "2026-10-12"
+    },
+    {
+      "capture_state": "CAPTURED",
+      "city_id": "boston",
+      "depth_abstentions": 2,
+      "historical_reference_conflict": false,
+      "outcome_evidence_status": "UNVERIFIED",
+      "point_score_authorized": false,
+      "same_date_cluster": "2026-10-13",
+      "target_date": "2026-10-13"
+    },
+    {
+      "capture_state": "CAPTURED",
+      "city_id": "miami",
+      "depth_abstentions": 2,
+      "historical_reference_conflict": false,
+      "outcome_evidence_status": "UNVERIFIED",
+      "point_score_authorized": false,
+      "same_date_cluster": "2026-10-13",
+      "target_date": "2026-10-13"
+    },
+    {
+      "capture_state": "CAPTURED",
+      "city_id": "denver",
+      "depth_abstentions": 0,
+      "historical_reference_conflict": false,
+      "outcome_evidence_status": "UNVERIFIED",
+      "point_score_authorized": false,
+      "same_date_cluster": "2026-10-13",
+      "target_date": "2026-10-13"
+    },
+    {
+      "capture_state": "CAPTURED",
+      "city_id": "los_angeles",
+      "depth_abstentions": 1,
+      "historical_reference_conflict": false,
+      "outcome_evidence_status": "UNVERIFIED",
+      "point_score_authorized": false,
+      "same_date_cluster": "2026-10-13",
+      "target_date": "2026-10-13"
+    },
+    {
+      "capture_state": "CAPTURED",
+      "city_id": "seattle",
+      "depth_abstentions": 2,
+      "historical_reference_conflict": false,
+      "outcome_evidence_status": "UNVERIFIED",
+      "point_score_authorized": false,
+      "same_date_cluster": "2026-10-13",
+      "target_date": "2026-10-13"
+    },
+    {
+      "capture_state": "CAPTURED",
+      "city_id": "boston",
+      "depth_abstentions": 0,
+      "historical_reference_conflict": false,
+      "outcome_evidence_status": "UNVERIFIED",
+      "point_score_authorized": false,
+      "same_date_cluster": "2026-10-14",
+      "target_date": "2026-10-14"
+    },
+    {
+      "capture_state": "CAPTURED",
+      "city_id": "miami",
+      "depth_abstentions": 1,
+      "historical_reference_conflict": false,
+      "outcome_evidence_status": "UNVERIFIED",
+      "point_score_authorized": false,
+      "same_date_cluster": "2026-10-14",
+      "target_date": "2026-10-14"
+    },
+    {
+      "capture_state": "CAPTURED",
+      "city_id": "denver",
+      "depth_abstentions": 2,
+      "historical_reference_conflict": false,
+      "outcome_evidence_status": "UNVERIFIED",
+      "point_score_authorized": false,
+      "same_date_cluster": "2026-10-14",
+      "target_date": "2026-10-14"
+    },
+    {
+      "capture_state": "CAPTURED",
+      "city_id": "los_angeles",
+      "depth_abstentions": 3,
+      "historical_reference_conflict": false,
+      "outcome_evidence_status": "ADMISSIBLE_RESEARCH_METADATA",
+      "point_score_authorized": false,
+      "same_date_cluster": "2026-10-14",
+      "target_date": "2026-10-14"
+    },
+    {
+      "capture_state": "CAPTURED",
+      "city_id": "seattle",
+      "depth_abstentions": 0,
+      "historical_reference_conflict": false,
+      "outcome_evidence_status": "UNVERIFIED",
+      "point_score_authorized": false,
+      "same_date_cluster": "2026-10-14",
+      "target_date": "2026-10-14"
+    }
+  ],
+  "live_authorized": false,
+  "point_score_authorized": false,
+  "prior_429_receipts": [
+    {
+      "body_bytes": 68,
+      "body_sha256": "48f95fa1fbd68fcc35ed6d2fd91d2b17181b63463a3fc278e40f0b34e6cb5e92",
+      "envelope_sha256": "ed858a802219d96d7e13d6761b6f2e56dc7699781151ea1d7fe15874185cc795",
+      "request_path": "/trade-api/v2/events/KXHIGHDEN-26OCT13",
+      "source_envelope_filename": "events__KXHIGHDEN-26OCT13.json",
+      "status": 429
+    },
+    {
+      "body_bytes": 68,
+      "body_sha256": "48f95fa1fbd68fcc35ed6d2fd91d2b17181b63463a3fc278e40f0b34e6cb5e92",
+      "envelope_sha256": "09520925bd5c83528c5a3748f16224ee8004f1317879b3b636abd02f3d365ea8",
+      "request_path": "/trade-api/v2/events/KXHIGHTSEA-26OCT13",
+      "source_envelope_filename": "events__KXHIGHTSEA-26OCT13.json",
+      "status": 429
+    },
+    {
+      "body_bytes": 68,
+      "body_sha256": "48f95fa1fbd68fcc35ed6d2fd91d2b17181b63463a3fc278e40f0b34e6cb5e92",
+      "envelope_sha256": "9620fd280f955c1af72ca0c49f17ddc8ce7e3f8e6c0352f6c39745594b3905c2",
+      "request_path": "/trade-api/v2/events/KXHIGHTSEA-26OCT14",
+      "source_envelope_filename": "events__KXHIGHTSEA-26OCT14.json",
+      "status": 429
+    },
+    {
+      "body_bytes": 68,
+      "body_sha256": "48f95fa1fbd68fcc35ed6d2fd91d2b17181b63463a3fc278e40f0b34e6cb5e92",
+      "envelope_sha256": "f39de6d77b7d1b361e6405303dcb757a7e54a555566785c030a9cd5e90cfc604",
+      "request_path": "/trade-api/v2/markets/KXHIGHDEN-26OCT10-B84.5",
+      "source_envelope_filename": "markets__KXHIGHDEN-26OCT10-B84.5.json",
+      "status": 429
+    },
+    {
+      "body_bytes": 68,
+      "body_sha256": "48f95fa1fbd68fcc35ed6d2fd91d2b17181b63463a3fc278e40f0b34e6cb5e92",
+      "envelope_sha256": "c3038e56767160fe7c21c6359abe50e8a8deb91f4a620588528f5fd2e379389d",
+      "request_path": "/trade-api/v2/markets/KXHIGHDEN-26OCT11-B84.5",
+      "source_envelope_filename": "markets__KXHIGHDEN-26OCT11-B84.5.json",
+      "status": 429
+    },
+    {
+      "body_bytes": 68,
+      "body_sha256": "48f95fa1fbd68fcc35ed6d2fd91d2b17181b63463a3fc278e40f0b34e6cb5e92",
+      "envelope_sha256": "537959adf9c85f0776552a903dd6771948319f97825cb433205d24dbeba78aeb",
+      "request_path": "/trade-api/v2/markets/KXHIGHDEN-26OCT14-B54.5",
+      "source_envelope_filename": "markets__KXHIGHDEN-26OCT14-B54.5.json",
+      "status": 429
+    },
+    {
+      "body_bytes": 68,
+      "body_sha256": "48f95fa1fbd68fcc35ed6d2fd91d2b17181b63463a3fc278e40f0b34e6cb5e92",
+      "envelope_sha256": "4ffb2107f17c6ab722bbc486cc996e830519c83ae8d3ccabedcfb422ec9811ff",
+      "request_path": "/trade-api/v2/markets/KXHIGHLAX-26OCT11-B76.5",
+      "source_envelope_filename": "markets__KXHIGHLAX-26OCT11-B76.5.json",
+      "status": 429
+    },
+    {
+      "body_bytes": 68,
+      "body_sha256": "48f95fa1fbd68fcc35ed6d2fd91d2b17181b63463a3fc278e40f0b34e6cb5e92",
+      "envelope_sha256": "2bf199dc49ff29cfd2bc423f9b193e22bd20c8459edec3f7ae8444b8941fc5ea",
+      "request_path": "/trade-api/v2/markets/KXHIGHLAX-26OCT13-B72.5",
+      "source_envelope_filename": "markets__KXHIGHLAX-26OCT13-B72.5.json",
+      "status": 429
+    },
+    {
+      "body_bytes": 68,
+      "body_sha256": "48f95fa1fbd68fcc35ed6d2fd91d2b17181b63463a3fc278e40f0b34e6cb5e92",
+      "envelope_sha256": "403439501c0d05043c1c5bebfdd728035dfca6fa3fc56b3ac28a63f2bea2ef2d",
+      "request_path": "/trade-api/v2/markets/KXHIGHLAX-26OCT13-T68",
+      "source_envelope_filename": "markets__KXHIGHLAX-26OCT13-T68.json",
+      "status": 429
+    },
+    {
+      "body_bytes": 68,
+      "body_sha256": "48f95fa1fbd68fcc35ed6d2fd91d2b17181b63463a3fc278e40f0b34e6cb5e92",
+      "envelope_sha256": "bec4613fae39d27d95610a1dc0990dd239932e1bca6a2bc2250c0f7152f8956d",
+      "request_path": "/trade-api/v2/markets/KXHIGHMIA-26OCT10-B91.5",
+      "source_envelope_filename": "markets__KXHIGHMIA-26OCT10-B91.5.json",
+      "status": 429
+    },
+    {
+      "body_bytes": 68,
+      "body_sha256": "48f95fa1fbd68fcc35ed6d2fd91d2b17181b63463a3fc278e40f0b34e6cb5e92",
+      "envelope_sha256": "e1201f611f5249581f9ea56010aeeb12c8fa5f6dd99a75ff35df606c63f77cbd",
+      "request_path": "/trade-api/v2/markets/KXHIGHMIA-26OCT13-B87.5",
+      "source_envelope_filename": "markets__KXHIGHMIA-26OCT13-B87.5.json",
+      "status": 429
+    },
+    {
+      "body_bytes": 68,
+      "body_sha256": "48f95fa1fbd68fcc35ed6d2fd91d2b17181b63463a3fc278e40f0b34e6cb5e92",
+      "envelope_sha256": "3a95b2c28535702f9c57cceba1917d495e8d6ea905716db7bf8246ddd4e01d7f",
+      "request_path": "/trade-api/v2/markets/KXHIGHMIA-26OCT13-B91.5",
+      "source_envelope_filename": "markets__KXHIGHMIA-26OCT13-B91.5.json",
+      "status": 429
+    },
+    {
+      "body_bytes": 68,
+      "body_sha256": "48f95fa1fbd68fcc35ed6d2fd91d2b17181b63463a3fc278e40f0b34e6cb5e92",
+      "envelope_sha256": "38352af4dbd2880bc9e0ed1f267db7e4c6bad1f51d95970855d7b1120ac54d7c",
+      "request_path": "/trade-api/v2/markets/KXHIGHMIA-26OCT13-T85",
+      "source_envelope_filename": "markets__KXHIGHMIA-26OCT13-T85.json",
+      "status": 429
+    },
+    {
+      "body_bytes": 68,
+      "body_sha256": "48f95fa1fbd68fcc35ed6d2fd91d2b17181b63463a3fc278e40f0b34e6cb5e92",
+      "envelope_sha256": "7a75885938d4d086a141a682f07d695bcfd3cd14885f54a3bfb596ce8dbc6524",
+      "request_path": "/trade-api/v2/markets/KXHIGHMIA-26OCT14-B90.5",
+      "source_envelope_filename": "markets__KXHIGHMIA-26OCT14-B90.5.json",
+      "status": 429
+    },
+    {
+      "body_bytes": 68,
+      "body_sha256": "48f95fa1fbd68fcc35ed6d2fd91d2b17181b63463a3fc278e40f0b34e6cb5e92",
+      "envelope_sha256": "e16c442e2fad2438eb697c31183f83078e7fbea8031ab34a0119a330ccd50a92",
+      "request_path": "/trade-api/v2/markets/KXHIGHTBOS-26OCT13-B60.5",
+      "source_envelope_filename": "markets__KXHIGHTBOS-26OCT13-B60.5.json",
+      "status": 429
+    },
+    {
+      "body_bytes": 68,
+      "body_sha256": "48f95fa1fbd68fcc35ed6d2fd91d2b17181b63463a3fc278e40f0b34e6cb5e92",
+      "envelope_sha256": "218b45d0893adbb2eacfe201b1bfb3bc6287178c1040bbf4b955d1b81fc4534f",
+      "request_path": "/trade-api/v2/markets/KXHIGHTBOS-26OCT13-B62.5",
+      "source_envelope_filename": "markets__KXHIGHTBOS-26OCT13-B62.5.json",
+      "status": 429
+    },
+    {
+      "body_bytes": 68,
+      "body_sha256": "48f95fa1fbd68fcc35ed6d2fd91d2b17181b63463a3fc278e40f0b34e6cb5e92",
+      "envelope_sha256": "dd00012050670fe07a02f06637d393e5be558cae735a2e3bc6a7e441972b7cfb",
+      "request_path": "/trade-api/v2/markets/KXHIGHTBOS-26OCT13-T67",
+      "source_envelope_filename": "markets__KXHIGHTBOS-26OCT13-T67.json",
+      "status": 429
+    },
+    {
+      "body_bytes": 68,
+      "body_sha256": "48f95fa1fbd68fcc35ed6d2fd91d2b17181b63463a3fc278e40f0b34e6cb5e92",
+      "envelope_sha256": "a7f3d5cb0503e3e5f07fdc1f8b5b96f2eb0bbd741883966bc748b8ccfa6e09ae",
+      "request_path": "/trade-api/v2/markets/KXHIGHTBOS-26OCT14-T73",
+      "source_envelope_filename": "markets__KXHIGHTBOS-26OCT14-T73.json",
+      "status": 429
+    },
+    {
+      "body_bytes": 68,
+      "body_sha256": "48f95fa1fbd68fcc35ed6d2fd91d2b17181b63463a3fc278e40f0b34e6cb5e92",
+      "envelope_sha256": "2fc4c98f95db7a5ae2da1d375ef2dfb6ccce1bc30bda67fd269e97222261e644",
+      "request_path": "/trade-api/v2/markets/KXHIGHTSEA-26OCT12-B62.5",
+      "source_envelope_filename": "markets__KXHIGHTSEA-26OCT12-B62.5.json",
+      "status": 429
+    }
+  ],
+  "record_type": "WN_OCTOBER_SETTLEMENT_RECOVERY_FROZEN_REQUEST_ROSTER_V1",
+  "research_only": true,
+  "source_identities": [
+    {
+      "bytes": 17997,
+      "path": "/Users/ksyme/wn_october_admissibility_audit_20261102T190000Z/REPORT.md",
+      "sha256": "b9e29e503a34ff7ca1a7c5674226aa8e8d8a85f0ed656416e913e0e89908ba1a"
+    },
+    {
+      "bytes": 792997,
+      "path": "/Users/ksyme/wn_october_admissibility_audit_20261102T190000Z/SHA256SUMS.json",
+      "sha256": "943ac945b8d8e958185ce6298c6688516eeb480e91d5fdf92c0b75cde48dca3c"
+    },
+    {
+      "bytes": 19589,
+      "path": "/Users/ksyme/wn_october_admissibility_audit_20261102T190000Z/evidence/city_day_inventory.csv",
+      "sha256": "5cbca29f9a1be4cbefc84c6bf8902b8b0bb0d2f5e2b232594e1468e025c57378"
+    },
+    {
+      "bytes": 17041,
+      "path": "/Users/ksyme/wn_october_p0_adjudication_20261102T221037Z/REPORT.md",
+      "sha256": "3366b8af5b5f16c8e01c2284686f271b82b36d8ae23e7716d98d812a99568629"
+    },
+    {
+      "bytes": 7615,
+      "path": "/Users/ksyme/wn_october_p0_adjudication_20261102T221037Z/SHA256SUMS.json",
+      "sha256": "3a0672913e7978b9d18c1f5715b3b0399c48c16453c1203cae2539ecfaf4b04e"
+    },
+    {
+      "bytes": 9045,
+      "path": "/Users/ksyme/wn_october_p0_adjudication_20261102T221037Z/evidence/city_day_p0_adjudication.csv",
+      "sha256": "4781ed83ac9c5a113b18e670854cc38be9bbae5d6a510c54ba3f74c7aa7220b4"
+    },
+    {
+      "bytes": 344592,
+      "path": "/Users/ksyme/Downloads/wn_october_settlement_evidence_20261029.zip",
+      "sha256": "f7ad1882b920f8cc94b4936e2eb3123d2a3f43431329dea65d2dc5f6fee36176"
+    },
+    {
+      "bytes": 17641,
+      "path": "/Users/ksyme/wn_october_settlement_recovery_candidate_20261102T234100Z/repo/docs/reviews/WN_OCTOBER_SETTLEMENT_EVIDENCE_ADMISSIBILITY_V1.md",
+      "sha256": "e9fa12dcdd12a8ebf65a624549bf22ca10e8e17e1224191d5acf2decc89e4a33"
+    }
+  ]
+}
