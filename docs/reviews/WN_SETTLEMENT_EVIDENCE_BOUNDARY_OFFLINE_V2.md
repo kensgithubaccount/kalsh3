@@ -86,7 +86,8 @@ External attestation and trustworthy first-acquisition chronology remain open.
 wall timestamps converted to UTC. DNS → TLS → headers → body share one
 absolute request deadline capped by the original total deadline. Phase changes
 never renew either deadline. Equality is expiration. Cancellation, invalid
-clock samples and monotonic/wall rollback terminate the model. Request count,
+sample/cancellation types, UTC conversion overflow, every invalid transition
+and monotonic/wall rollback terminate the model. Request count,
 single activity, phase order and start pacing are bounded.
 
 **Supplied-clock simulations do not interrupt a real blocked DNS resolver,

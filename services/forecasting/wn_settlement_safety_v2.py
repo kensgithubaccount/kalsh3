@@ -6,7 +6,7 @@ import hashlib
 import re
 from dataclasses import dataclass
 from datetime import UTC, datetime
-from typing import Literal, cast
+from typing import Literal, Never, cast
 
 from . import wn_october_settlement_recovery as frozen
 
@@ -59,10 +59,10 @@ class ClockSample:
         require(type(self.wall_utc) is str and len(self.wall_utc) <= 64, "WALL_TYPE")
         try:
             value = datetime.fromisoformat(self.wall_utc.replace("Z", "+00:00"))
-        except ValueError as exc:
+            require(value.tzinfo is not None and value.utcoffset() is not None, "WALL_ZONE")
+            return value.astimezone(UTC)
+        except (ValueError, OverflowError) as exc:
             raise BoundaryError("WALL_FORMAT") from exc
-        require(value.tzinfo is not None and value.utcoffset() is not None, "WALL_ZONE")
-        return value.astimezone(UTC)
 
 
 class AbsoluteDeadlineModel:
@@ -85,14 +85,18 @@ class AbsoluteDeadlineModel:
         self._phase = -1
         self.halt_reason: str | None = None
 
-    def _halt(self, reason: str) -> None:
+    def _halt(self, reason: str) -> Never:
         self.halt_reason = reason
         raise BoundaryError(reason)
 
+    def _guard(self, ok: bool, code: str) -> None:
+        if not ok:
+            self._halt(code)
+
     def _sample(self, sample: ClockSample, cancelled: bool) -> None:
-        require(type(sample) is ClockSample and type(cancelled) is bool, "SAMPLE_TYPE")
         if self.halt_reason is not None:
             raise BoundaryError("ALREADY_HALTED")
+        self._guard(type(sample) is ClockSample and type(cancelled) is bool, "SAMPLE_TYPE")
         try:
             sample.wall()
         except BoundaryError:
@@ -111,9 +115,9 @@ class AbsoluteDeadlineModel:
 
     def begin(self, sample: ClockSample, *, cancelled: bool = False) -> int:
         self._sample(sample, cancelled)
-        require(self.request_end_ns is None, "ONE_ACTIVE_REQUEST")
-        require(sample.monotonic_ns >= self.next_start_ns, "START_PACING")
-        require(self.started_requests < frozen.MAX_REQUESTS, "REQUEST_CAP")
+        self._guard(self.request_end_ns is None, "ONE_ACTIVE_REQUEST")
+        self._guard(sample.monotonic_ns >= self.next_start_ns, "START_PACING")
+        self._guard(self.started_requests < frozen.MAX_REQUESTS, "REQUEST_CAP")
         self.started_requests += 1
         self.next_start_ns = sample.monotonic_ns + frozen.MIN_START_INTERVAL_MS * 1_000_000
         self.request_end_ns = min(
@@ -124,16 +128,16 @@ class AbsoluteDeadlineModel:
 
     def phase(self, name: str, sample: ClockSample, *, cancelled: bool = False) -> int:
         self._sample(sample, cancelled)
-        require(type(name) is str, "PHASE_TYPE")
-        require(self.request_end_ns is not None, "NO_ACTIVE_REQUEST")
-        require(self._phase + 1 < len(self.PHASES), "PHASE_COMPLETE")
-        require(name == self.PHASES[self._phase + 1], "PHASE_ORDER")
+        self._guard(type(name) is str, "PHASE_TYPE")
+        self._guard(self.request_end_ns is not None, "NO_ACTIVE_REQUEST")
+        self._guard(self._phase + 1 < len(self.PHASES), "PHASE_COMPLETE")
+        self._guard(name == self.PHASES[self._phase + 1], "PHASE_ORDER")
         self._phase += 1
         return cast(int, self.request_end_ns) - sample.monotonic_ns
 
     def finish(self, sample: ClockSample, *, cancelled: bool = False) -> None:
         self._sample(sample, cancelled)
-        require(self.request_end_ns is not None and self._phase == 3, "BODY_NOT_COMPLETE")
+        self._guard(self.request_end_ns is not None and self._phase == 3, "BODY_NOT_COMPLETE")
         self.request_end_ns = None
 
 

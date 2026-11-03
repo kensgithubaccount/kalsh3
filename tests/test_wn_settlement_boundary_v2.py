@@ -137,17 +137,9 @@ def test_cancel_or_deadline_in_every_phase(phase: int, failure: str) -> None:
 def test_cap_pacing_order_single_active_and_total_deadline() -> None:
     model = safety.AbsoluteDeadlineModel(sample(0))
     model.begin(sample(0))
-    with pytest.raises(safety.BoundaryError, match="ONE_ACTIVE"):
-        model.begin(sample(0))
-    with pytest.raises(safety.BoundaryError, match="PHASE_ORDER"):
-        model.phase("BODY", sample(0))
-    with pytest.raises(safety.BoundaryError, match="BODY_NOT_COMPLETE"):
-        model.finish(sample(0))
     for name in model.PHASES:
         model.phase(name, sample(0))
     model.finish(sample(0))
-    with pytest.raises(safety.BoundaryError, match="START_PACING"):
-        model.begin(sample(2999))
     for i in range(1, 85):
         model.begin(sample(i * 3000))
         for name in model.PHASES:
@@ -155,6 +147,15 @@ def test_cap_pacing_order_single_active_and_total_deadline() -> None:
         model.finish(sample(i * 3000))
     with pytest.raises(safety.BoundaryError, match="REQUEST_CAP"):
         model.begin(sample(85 * 3000))
+    assert model.halt_reason == "REQUEST_CAP"
+    paced = safety.AbsoluteDeadlineModel(sample(0))
+    paced.begin(sample(0))
+    for name in paced.PHASES:
+        paced.phase(name, sample(0))
+    paced.finish(sample(0))
+    with pytest.raises(safety.BoundaryError, match="START_PACING"):
+        paced.begin(sample(2999))
+    assert paced.halt_reason == "START_PACING"
     near = safety.AbsoluteDeadlineModel(sample(0))
     assert near.begin(sample(899999)) == 900_000_000_000
     with pytest.raises(safety.BoundaryError, match="TOTAL_DEADLINE"):
@@ -556,3 +557,39 @@ def test_orphan_routing_and_missing_ledger_never_resume(tmp_path: Path) -> None:
     assert result.reason == "INCOMPLETE_NO_FINAL_LEDGER" and not result.acquisition_resume_allowed
     (root / "routing.sealed").write_bytes(b"{}")
     assert journal.inspect_recovery(root).integrity == "UNVERIFIED_INCOMPLETE_OR_CORRUPT"
+
+
+@pytest.mark.parametrize(
+    "bad", [None, sample(1, "9999-12-31T23:59:59-01:00"), sample(1, "0001-01-01T00:00:00+01:00")]
+)
+def test_invalid_clock_shapes_and_utc_overflow_are_terminal(bad: safety.ClockSample | None) -> None:
+    model = safety.AbsoluteDeadlineModel(sample(0))
+    model.begin(sample(0))
+    with pytest.raises(safety.BoundaryError):
+        model.phase("DNS", bad)  # type: ignore[arg-type]
+    assert model.halt_reason is not None
+    with pytest.raises(safety.BoundaryError, match="ALREADY_HALTED"):
+        model.phase("DNS", sample(2))
+
+
+@pytest.mark.parametrize("bad", ["active", "order", "finish", "name", "cancel_type", "no_request"])
+def test_every_invalid_deadline_transition_is_terminal(bad: str) -> None:
+    model = safety.AbsoluteDeadlineModel(sample(0))
+    if bad != "no_request":
+        model.begin(sample(0))
+    with pytest.raises(safety.BoundaryError):
+        if bad == "active":
+            model.begin(sample(0))
+        elif bad == "finish":
+            model.finish(sample(0))
+        elif bad == "name":
+            model.phase(123, sample(0))  # type: ignore[arg-type]
+        elif bad == "cancel_type":
+            model.phase("DNS", sample(0), cancelled=1)  # type: ignore[arg-type]
+        elif bad == "no_request":
+            model.phase("DNS", sample(0))
+        else:
+            model.phase("BODY", sample(0))
+    assert model.halt_reason is not None
+    with pytest.raises(safety.BoundaryError, match="ALREADY_HALTED"):
+        model.begin(sample(1))
