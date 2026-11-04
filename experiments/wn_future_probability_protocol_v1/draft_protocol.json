@@ -1,0 +1,425 @@
+{
+  "experiment_id": "WN-FUTURE-PROB-AFTERCOST-20270101-20270731-DRAFT-V1",
+  "status": "DRAFT_NOT_REGISTERED_NOT_FROZEN",
+  "baseline": "3cd2695592e10132ed54773ccb9d0fbfbcbe635f",
+  "design_as_of": "2026-11-04",
+  "authority": {
+    "offline_design_only": true,
+    "registered": false,
+    "frozen": false,
+    "live_authorized": false,
+    "scientific_scoring_authorized": false,
+    "trading_authority": "NONE",
+    "production_influence": 0
+  },
+  "registration_deadline_utc": "2026-12-15T00:00:00Z",
+  "cohort": {
+    "start": "2027-01-01",
+    "end_inclusive": "2027-07-31",
+    "date_clusters": 212,
+    "cities_per_date": 5,
+    "city_days": 1060,
+    "declared_sibling_slots_per_event": 6,
+    "side_alternatives_per_sibling": 2,
+    "contract_slots": 6360,
+    "side_alternative_slots": 12720,
+    "independence_unit": "TARGET_DATE_CLUSTER",
+    "city_days_independent": false
+  },
+  "partitions": [
+    {
+      "role": "TRAIN",
+      "start": "2027-01-01",
+      "end_inclusive": "2027-02-28",
+      "date_clusters": 59,
+      "city_days": 295
+    },
+    {
+      "role": "EMBARGO_TRAIN_FREEZE",
+      "start": "2027-03-01",
+      "end_inclusive": "2027-03-14",
+      "date_clusters": 14,
+      "city_days": 70
+    },
+    {
+      "role": "CALIBRATION",
+      "start": "2027-03-15",
+      "end_inclusive": "2027-04-14",
+      "date_clusters": 31,
+      "city_days": 155
+    },
+    {
+      "role": "EMBARGO_CALIBRATION_FREEZE",
+      "start": "2027-04-15",
+      "end_inclusive": "2027-04-30",
+      "date_clusters": 16,
+      "city_days": 80
+    },
+    {
+      "role": "UNTOUCHED_HOLDOUT",
+      "start": "2027-05-01",
+      "end_inclusive": "2027-07-31",
+      "date_clusters": 92,
+      "city_days": 460
+    }
+  ],
+  "fit_artifact_deadlines": {
+    "training_parameters": "2027-03-10T00:00:00Z",
+    "calibration_parameters": "2027-04-25T00:00:00Z",
+    "late_artifact_policy": "NO_BACKFILL_NO_DATE_SHIFT_NEW_EXPERIMENT_REQUIRED"
+  },
+  "cities": [
+    {
+      "city_id": "boston",
+      "station_icao": "KBOS",
+      "station_location": "Boston Logan International Airport",
+      "station_lonlat": [
+        -71.01056,
+        42.36056
+      ],
+      "cli_product": "CLIBOS",
+      "series_ticker": "KXHIGHTBOS",
+      "timezone": "America/New_York",
+      "fixed_standard_utc_offset_hours": -5,
+      "reviewed_grid_lonlat": [
+        -71.0,
+        42.35
+      ],
+      "identity_status": "PROPOSED_REUSE_OF_ARCHIVED_IDENTITY_REQUIRES_FUTURE_RULE_BINDING",
+      "settlement_source": "The Weather Company IF exact future rules confirm; conflicting NWS identity means ABSTAIN",
+      "window_status": "PROPOSED_FIXED_STANDARD_24H_NOT_ESTABLISHED_FOR_FUTURE_TWC_RULES",
+      "event_template": "KXHIGHTBOS-{YY}{MON}{DD}"
+    },
+    {
+      "city_id": "miami",
+      "station_icao": "KMIA",
+      "station_location": "Miami International Airport",
+      "station_lonlat": [
+        -80.31639,
+        25.79056
+      ],
+      "cli_product": "CLIMIA",
+      "series_ticker": "KXHIGHMIA",
+      "timezone": "America/New_York",
+      "fixed_standard_utc_offset_hours": -5,
+      "reviewed_grid_lonlat": [
+        -80.3,
+        25.8
+      ],
+      "identity_status": "PROPOSED_REUSE_OF_ARCHIVED_IDENTITY_REQUIRES_FUTURE_RULE_BINDING",
+      "settlement_source": "The Weather Company IF exact future rules confirm; conflicting NWS identity means ABSTAIN",
+      "window_status": "PROPOSED_FIXED_STANDARD_24H_NOT_ESTABLISHED_FOR_FUTURE_TWC_RULES",
+      "event_template": "KXHIGHMIA-{YY}{MON}{DD}"
+    },
+    {
+      "city_id": "denver",
+      "station_icao": "KDEN",
+      "station_location": "Denver International Airport",
+      "station_lonlat": [
+        -104.65622,
+        39.84658
+      ],
+      "cli_product": "CLIDEN",
+      "series_ticker": "KXHIGHDEN",
+      "timezone": "America/Denver",
+      "fixed_standard_utc_offset_hours": -7,
+      "reviewed_grid_lonlat": [
+        -104.65,
+        39.85
+      ],
+      "identity_status": "PROPOSED_REUSE_OF_ARCHIVED_IDENTITY_REQUIRES_FUTURE_RULE_BINDING",
+      "settlement_source": "The Weather Company IF exact future rules confirm; conflicting NWS identity means ABSTAIN",
+      "window_status": "PROPOSED_FIXED_STANDARD_24H_NOT_ESTABLISHED_FOR_FUTURE_TWC_RULES",
+      "event_template": "KXHIGHDEN-{YY}{MON}{DD}"
+    },
+    {
+      "city_id": "los_angeles",
+      "station_icao": "KLAX",
+      "station_location": "Los Angeles International Airport",
+      "station_lonlat": [
+        -118.38889,
+        33.93806
+      ],
+      "cli_product": "CLILAX",
+      "series_ticker": "KXHIGHLAX",
+      "timezone": "America/Los_Angeles",
+      "fixed_standard_utc_offset_hours": -8,
+      "reviewed_grid_lonlat": [
+        -118.4,
+        33.95
+      ],
+      "identity_status": "PROPOSED_REUSE_OF_ARCHIVED_IDENTITY_REQUIRES_FUTURE_RULE_BINDING",
+      "settlement_source": "The Weather Company IF exact future rules confirm; conflicting NWS identity means ABSTAIN",
+      "window_status": "PROPOSED_FIXED_STANDARD_24H_NOT_ESTABLISHED_FOR_FUTURE_TWC_RULES",
+      "event_template": "KXHIGHLAX-{YY}{MON}{DD}"
+    },
+    {
+      "city_id": "seattle",
+      "station_icao": "KSEA",
+      "station_location": "Seattle Tacoma International Airport",
+      "station_lonlat": [
+        -122.31361,
+        47.44472
+      ],
+      "cli_product": "CLISEA",
+      "series_ticker": "KXHIGHTSEA",
+      "timezone": "America/Los_Angeles",
+      "fixed_standard_utc_offset_hours": -8,
+      "reviewed_grid_lonlat": [
+        -122.3,
+        47.45
+      ],
+      "identity_status": "PROPOSED_REUSE_OF_ARCHIVED_IDENTITY_REQUIRES_FUTURE_RULE_BINDING",
+      "settlement_source": "The Weather Company IF exact future rules confirm; conflicting NWS identity means ABSTAIN",
+      "window_status": "PROPOSED_FIXED_STANDARD_24H_NOT_ESTABLISHED_FOR_FUTURE_TWC_RULES",
+      "event_template": "KXHIGHTSEA-{YY}{MON}{DD}"
+    }
+  ],
+  "decision_times": {
+    "forecast_init": "D 00:00:00Z",
+    "source_complete_deadline": "D 08:55:00Z",
+    "probability_seal_deadline": "D 08:58:00Z",
+    "contract_binding_deadline": "D 08:50:00Z",
+    "decision": "D 09:00:00Z",
+    "quote_age_max_ms": 1000,
+    "clock_uncertainty_max_ms": 100,
+    "close_guard_seconds": 900,
+    "source_fallback": false,
+    "retry": false,
+    "backfill": false,
+    "schedule_activated": false
+  },
+  "weather_source": {
+    "model": "weathernext_3_0_0",
+    "variable": "station_head_temperature_2m",
+    "units": "K",
+    "joint_member_ids": [
+      0,
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7,
+      8,
+      9,
+      10,
+      11,
+      12,
+      13,
+      14,
+      15,
+      16,
+      17,
+      18,
+      19,
+      20,
+      21,
+      22,
+      23,
+      24,
+      25,
+      26,
+      27,
+      28,
+      29,
+      30,
+      31,
+      32,
+      33,
+      34,
+      35,
+      36,
+      37,
+      38,
+      39,
+      40,
+      41,
+      42,
+      43,
+      44,
+      45,
+      46,
+      47,
+      48,
+      49,
+      50,
+      51,
+      52,
+      53,
+      54,
+      55,
+      56,
+      57,
+      58,
+      59,
+      60,
+      61,
+      62,
+      63
+    ],
+    "required_hours_per_member": 24,
+    "primary_candidate_locator": "gs://weathernext3_spatial/weathernext_3_0_0/zarr/2026_to_present/{YYYYMMDD}_00hr_{documented_member_component}_preds/predictions.zarr/",
+    "locator_status": "DOCUMENTED_PREFIX_NOT_OBJECT_ACCESS_PROOF_MEMBER_COMPONENT_MUST_BE_BOUND",
+    "earth_engine_summary_asset": "projects/gcp-public-data-weathernext/assets/weathernext_3_0_0_0p05deg",
+    "summary_is_joint": false,
+    "bounded_five_city_access_demonstrated": false,
+    "known_cap_must_not_be_bypassed_bytes": 2147483648
+  },
+  "methods": {
+    "primary_candidate": "M1_EMOS_ON_FULL_MEMBER_DAILY_MAX_PROXY_WITH_PREDECLARED_CALIBRATION",
+    "raw_baseline": "M0_64_MEMBER_EMPIRICAL_DAILY_MAX_PROXY",
+    "second_baseline": "M2_TRAINING_ONLY_CITY_CLIMATOLOGY_CDF",
+    "p50_only_fallback": false,
+    "hourly_marginals_to_joint_inference": false,
+    "all_model_code_and_fit_artifacts_exist": false
+  },
+  "execution_design": {
+    "actions": [
+      "BUY_YES",
+      "BUY_NO"
+    ],
+    "integer_contracts_per_selected_attempt": 1,
+    "order_type_required": "FOK_LIMIT",
+    "orders_sent": false,
+    "max_selected_actions_per_city_day": 1,
+    "declared_candidates_per_city_day": 12,
+    "maker_model": "EXCLUDED",
+    "unidentified_fill_distribution": "ABSTAIN",
+    "partial_fill": "ABSTAIN_AND_PROTOCOL_CONFLICT",
+    "minimum_robust_lower_bound_usd": "0.02",
+    "scenarios": [
+      {
+        "id": "BASE",
+        "latency_ms": 250,
+        "price_stress_usd": "0.01",
+        "probability_stress": "0"
+      },
+      {
+        "id": "CONSERVATIVE",
+        "latency_ms": 1000,
+        "price_stress_usd": "0.02",
+        "probability_stress": "0.02"
+      },
+      {
+        "id": "ADVERSE",
+        "latency_ms": 2000,
+        "price_stress_usd": "0.03",
+        "probability_stress": "0.05"
+      }
+    ],
+    "fee_policy": "UNKNOWN_FUTURE_EFFECTIVE_SCHEDULE_SERIES_RULES_AND_ROUNDING_REQUIRE_PROOF",
+    "unknown_fee": "ABSTAIN",
+    "maximum_supported_fee_usd": "0.05",
+    "maximum_supported_selected_loss_usd": "1.04"
+  },
+  "evidence_standards": {
+    "training_min_complete_clusters": 50,
+    "calibration_min_complete_clusters": 25,
+    "holdout_min_complete_clusters": 83,
+    "holdout_planned_clusters": 92,
+    "after_cost_min_selected_attempts": 60,
+    "after_cost_min_distinct_dates": 30,
+    "after_cost_min_attempts_per_city": 10,
+    "primary_metric": "DATE_EQUAL_CITY_EQUAL_SIX_CATEGORY_BRIER",
+    "confirmatory_comparisons": 2,
+    "familywise_alpha": "0.05",
+    "multiple_testing": "HOLM_TWO_FIXED_BASELINE_COMPARISONS",
+    "bootstrap_replicates": 10000,
+    "bootstrap_seed": 20261104,
+    "serial_block_days": 7,
+    "missing_cluster_primary_loss_difference_worst_case": "2",
+    "verdicts": [
+      "FORECASTING_SKILL",
+      "EXECUTABILITY",
+      "AFTER_COST_RESEARCH_EXPECTANCY",
+      "PRODUCTION_ELIGIBILITY"
+    ],
+    "current_all_scientific_verdicts": "NOT_AUTHORIZED_NOT_COMPUTED",
+    "minimum_meaningful_brier_improvement": "0.02",
+    "independent_blind_power_analysis_required": true
+  },
+  "checklist": [
+    {
+      "id": 1,
+      "status": "OPEN_NO_AUTHORITY",
+      "requirement": "Independent pre-outcome registration of full protocol and cohort"
+    },
+    {
+      "id": 2,
+      "status": "OPEN_NO_AUTHORITY",
+      "requirement": "Exact model/evaluator code and dependency hashes before any cohort outcome"
+    },
+    {
+      "id": 3,
+      "status": "OPEN_NO_AUTHORITY",
+      "requirement": "Proven lawful affordable full joint-member acquisition before source deadline"
+    },
+    {
+      "id": 4,
+      "status": "OPEN_NO_AUTHORITY",
+      "requirement": "Exact future contract station source precision and measurement window"
+    },
+    {
+      "id": 5,
+      "status": "OPEN_NO_AUTHORITY",
+      "requirement": "All six sibling rules and lifecycle identities bound before decision"
+    },
+    {
+      "id": 6,
+      "status": "OPEN_NO_AUTHORITY",
+      "requirement": "Training artifact frozen by March 10"
+    },
+    {
+      "id": 7,
+      "status": "OPEN_NO_AUTHORITY",
+      "requirement": "Calibration artifact frozen by April 25"
+    },
+    {
+      "id": 8,
+      "status": "OPEN_NO_AUTHORITY",
+      "requirement": "Independent evaluator holdout custody and authorized scoring"
+    },
+    {
+      "id": 9,
+      "status": "OPEN_NO_AUTHORITY",
+      "requirement": "Effective fee policy with series multipliers rounding and version"
+    },
+    {
+      "id": 10,
+      "status": "OPEN_NO_AUTHORITY",
+      "requirement": "Side-specific executable depth sequence timing and quote provenance"
+    },
+    {
+      "id": 11,
+      "status": "OPEN_NO_AUTHORITY",
+      "requirement": "Identified fill/selection uncertainty or ABSTAIN"
+    },
+    {
+      "id": 12,
+      "status": "OPEN_NO_AUTHORITY",
+      "requirement": "Create-once complete denominator and no backfill ledger"
+    },
+    {
+      "id": 13,
+      "status": "OPEN_NO_AUTHORITY",
+      "requirement": "Clock power disk transport and cancellation live-integration gates"
+    },
+    {
+      "id": 14,
+      "status": "OPEN_NO_AUTHORITY",
+      "requirement": "Independent design review and exact-head CI"
+    },
+    {
+      "id": 15,
+      "status": "OPEN_NO_AUTHORITY",
+      "requirement": "Separate explicit live-acquisition authorization"
+    },
+    {
+      "id": 16,
+      "status": "OPEN_NO_AUTHORITY",
+      "requirement": "Separate explicit scientific-scoring authorization"
+    }
+  ]
+}
