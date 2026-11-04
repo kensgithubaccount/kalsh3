@@ -273,7 +273,9 @@
     "second_baseline": "M2_TRAINING_ONLY_CITY_CLIMATOLOGY_CDF",
     "p50_only_fallback": false,
     "hourly_marginals_to_joint_inference": false,
-    "all_model_code_and_fit_artifacts_exist": false
+    "all_model_code_and_fit_artifacts_exist": false,
+    "predictive_family": "PROPOSED_GAUSSIAN_NORMAL_NOT_VALIDATED",
+    "calibration_scale_applies_to": "STANDARD_DEVIATION"
   },
   "execution_design": {
     "actions": [

@@ -456,6 +456,7 @@ def preserve_draft_denominator(
     for day, city, state in states:
         require((day, city) in expected and (day, city) not in observed, "EXTRA_OR_DUPLICATE_SLOT")
         require(state in allowed, "NEGATIVE_OR_SYNTHETIC_STATES_ONLY")
+        require(state != "EMBARGO" or role(day).startswith("EMBARGO"), "IMMUTABLE_ROLE")
         observed[day, city] = state
     return tuple(
         (

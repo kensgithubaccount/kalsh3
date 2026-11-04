@@ -34,6 +34,7 @@ future contracts exist. Maximum one selected one-contract action per city-day;
 all twelve alternatives and all non-selections remain in the ledger. Embargo
 rows are retained; any unexpected attempt/failure is not overwritten by an
 embargo label. Five cities on one date are correlated, not independent trials.
+Caller labels cannot convert a training, calibration or holdout date to embargo.
 
 Proposed identities are copied from archived metadata without promoting it to
 future proof. Station coordinates are longitude/latitude; grid points are
@@ -114,10 +115,15 @@ outcome observations. Missing members/hours, mixed initializations or unknown
 daily-window/precision mappings invalidate the result; do not subset or renormalize.
 
 **Proposed primary M1:** an EMOS-style distribution for the official target,
-using all 64 member-max proxies. Candidate mean is `a_city + b*ensemble_mean`;
+using all 64 member-max proxies. The proposed family is Gaussian
+`Normal(mu,sigma_squared)`, with CDF `Phi((h-mu)/sigma)`; this assumption is
+unvalidated and does not follow from p50 or two moments alone.
+Candidate mean is `a_city + b*ensemble_mean`;
 variance is `c + d*ensemble_variance`, with b,d nonnegative and c at least
 0.01 square Fahrenheit. Proposed bounds are each city intercept [-30,30] F,
-b in [0,2], c in [0.01,400] F squared and d in [0,4]. Fit only on eligible future training dates with
+b in [0,2], c in [0.01,400] F squared and d in [0,4]. Ensemble variance is the
+descriptive mean squared deviation with denominator 64, not an assertion of
+independent members. Fit only on eligible future training dates with
 date-equal/city-equal CRPS weighting. Proposed deterministic bounded optimizer:
 L-BFGS-B, max 2,000 iterations, tolerance 1e-9, fixed starts (city intercepts 0,
 b=1,c=1,d=1); no algorithm search on holdout. Non-convergence means ABSTAIN.
@@ -128,6 +134,8 @@ that paper provides no validation of this source/station/contract experiment.
 
 Calibration is a single shared scale multiplier selected only on the calibration
 partition from {0.5,0.75,1,1.25,1.5,2} using date/city-equal categorical log loss.
+It multiplies standard deviation, so calibrated variance is kappa squared
+times the fitted variance; mean is unchanged.
 Ties choose closest to 1, then smaller. No city-specific calibration search.
 Freeze fitted artifacts independently by the deadlines; no holdout updating.
 The second baseline M2 is each city's training-only empirical target CDF,

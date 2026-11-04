@@ -383,3 +383,29 @@ def test_no_network_loader_fit_cli_old_scorer_or_order_client() -> None:
         elif isinstance(node, ast.ImportFrom):
             assert (node.module or "").split(".")[0] not in forbidden
     assert "__main__" not in source and "wn_multicity_evaluation_spec" not in source
+
+
+@pytest.mark.parametrize("day", [date(2027, 1, 1), date(2027, 3, 15), date(2027, 5, 1)])
+def test_caller_cannot_reclassify_train_calibration_or_holdout_as_embargo(day: date) -> None:
+    with pytest.raises(rehearsal.DesignError, match="IMMUTABLE_ROLE"):
+        rehearsal.preserve_draft_denominator(((day, "boston", "EMBARGO"),))
+
+
+def test_all_holdout_rows_cannot_be_removed_from_evaluation_denominator() -> None:
+    supplied = tuple(
+        (slot.target_date, slot.city, "EMBARGO")
+        for slot in rehearsal.draft_slots()
+        if slot.role == "UNTOUCHED_HOLDOUT"
+    )
+    assert len(supplied) == 460
+    with pytest.raises(rehearsal.DesignError):
+        rehearsal.preserve_draft_denominator(supplied)
+
+
+def test_draft_distribution_family_is_explicit_and_not_validation() -> None:
+    plan = json.loads(
+        (ROOT / "experiments/wn_future_probability_protocol_v1/draft_protocol.json").read_bytes()
+    )
+    assert plan["methods"]["predictive_family"] == "PROPOSED_GAUSSIAN_NORMAL_NOT_VALIDATED"
+    assert plan["methods"]["calibration_scale_applies_to"] == "STANDARD_DEVIATION"
+    assert plan["methods"]["all_model_code_and_fit_artifacts_exist"] is False
