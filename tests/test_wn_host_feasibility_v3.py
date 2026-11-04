@@ -14,6 +14,7 @@ import sys
 import threading
 import time
 from dataclasses import replace
+from multiprocessing.process import BaseProcess
 from pathlib import Path
 
 import pytest
@@ -497,3 +498,42 @@ with GeneratedRegistry.create(Path(sys.argv[1]),bytes.fromhex(sys.argv[2])) as r
     negative(registry.inspect_registry(parent))
     with pytest.raises(FileExistsError):
         registry.GeneratedRegistry.create(parent, CUTOFF)
+
+
+@pytest.mark.parametrize("interruption", [False, True])
+def test_failure_after_actual_child_start_still_kills_and_reaps(
+    monkeypatch: pytest.MonkeyPatch, interruption: bool
+) -> None:
+    actual_start = BaseProcess.start
+    created: list[BaseProcess] = []
+
+    def start_then_fail(process: BaseProcess) -> None:
+        actual_start(process)
+        created.append(process)
+        if interruption:
+            raise KeyboardInterrupt("SIMULATED_INTERRUPTION_AFTER_START")
+        raise OSError(errno.EIO, "SIMULATED_FAILURE_AFTER_START")
+
+    monkeypatch.setattr(BaseProcess, "start", start_then_fail)
+    try:
+        if interruption:
+            with pytest.raises(KeyboardInterrupt):
+                host.probe_generated(host.GeneratedScenario(ipc_fault="PARTIAL"))
+        else:
+            result = host.probe_generated(host.GeneratedScenario(ipc_fault="PARTIAL"))
+            assert result.reason == "HOST_FAILURE" and result.pid is not None and result.reaped
+        assert len(created) == 1
+        assert created[0]._closed  # A closed Process has first been joined, never left running.
+    finally:
+        for process in created:
+            if not process._closed:
+                if process.is_alive():
+                    process.kill()
+                process.join(timeout=5)
+                process.close()
+
+
+@pytest.mark.parametrize("field", ["rollback_phase", "exit_phase"])
+def test_unsupported_exit_fault_fields_are_rejected(field: str) -> None:
+    with pytest.raises(BoundaryError):
+        host.GeneratedScenario(**{field: "EXIT"})

@@ -36,6 +36,10 @@ The parent requests termination, waits at most 50 ms, escalates to process
 kill, and bounds its remaining join allowance. It records PID, monotonic
 start/stop, last phase, cleanup/reaping state, force-kill use, raw prefixes,
 status/completeness and peak IPC buffer. Unreaped workers fail closed. Both
+startup failure and asynchronous interruption after actual child creation
+still clean up the available process handle, even if start never returned.
+Unsupported exit/rollback recipes at EXIT are rejected before launch; EXIT
+is supported only as a hang boundary to probe cleanup. Both
 parent monotonic rollback detection and explicit synthetic rollback markers
 produce negative outcomes. No worker-supplied timestamp establishes host time.
 UTC synchronization and uncertainty are not attested here.

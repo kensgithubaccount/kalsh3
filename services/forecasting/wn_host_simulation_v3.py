@@ -53,7 +53,9 @@ class GeneratedScenario:
             type(self.body_size) is int and 0 <= self.body_size <= frozen.MAX_BODY_BYTES + 1,
             "BODY_RECIPE",
         )
-        for phase in (self.hang_phase, self.exit_phase, self.rollback_phase):
+        for phase in (self.exit_phase, self.rollback_phase):
+            require(phase is None or (type(phase) is str and phase in PHASES), "PHASE")
+        for phase in (self.hang_phase,):
             require(phase is None or (type(phase) is str and phase in (*PHASES, "EXIT")), "PHASE")
         for delay in (self.phase_delay_ms, self.chunk_delay_ms):
             require(type(delay) is int and 0 <= delay <= 5000, "DELAY")
@@ -189,7 +191,6 @@ def probe_generated(
     incoming, outgoing = context.Pipe(duplex=False)
     ack_read, ack_write = context.Pipe(duplex=False)
     process = context.Process(target=_worker, args=(outgoing, ack_read, recipe, os.getpid()))
-    launched = False
     try:
         if cancelled is not None and cancelled.is_set():
             reason = "CANCELLED"
@@ -197,7 +198,6 @@ def probe_generated(
             reason = "TOTAL_DEADLINE"
         else:
             process.start()
-            launched = True
             pid = process.pid
             outgoing.close()
             ack_read.close()
@@ -296,7 +296,10 @@ def probe_generated(
     except (OSError, EOFError, ValueError):
         reason = "HOST_FAILURE"
     finally:
-        if launched:
+        # start() can raise or be interrupted after creating a child. The
+        # actual process handle, not a post-return flag, owns cleanup.
+        if process.pid is not None:
+            pid = process.pid
             cleanup_end = time.monotonic_ns() + cleanup_ms * 1_000_000
             if process.is_alive():
                 process.terminate()
