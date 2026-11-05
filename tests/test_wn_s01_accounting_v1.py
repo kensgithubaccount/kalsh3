@@ -295,7 +295,8 @@ def test_budget_assessment_cannot_confer_authority_or_turn_unknowns_into_within(
     field: str, value: object
 ) -> None:
     with pytest.raises(accounting.AccountingInputError):
-        replace(accounting.assess_budget(unknown()), **{field: value})
+        # Deliberately invalid Literal values: verify runtime rejection.
+        replace(accounting.assess_budget(unknown()), **{field: value})  # type: ignore[arg-type]
 
 
 def test_module_has_no_source_client_file_loader_credentials_scheduler_or_scorer() -> None:
