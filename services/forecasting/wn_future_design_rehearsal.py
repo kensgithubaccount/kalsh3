@@ -314,6 +314,7 @@ class ToyQuote:
     market_status: str = "OPEN"
     rules_and_source_consistent: bool = True
     siblings_complete: bool = True
+    operational_cost_usd: Decimal | None = None
 
     def __post_init__(self) -> None:
         fixture_id(self.fixture)
@@ -321,6 +322,8 @@ class ToyQuote:
         number(self.ask, low=CENT, high=D("0.99"))
         number(self.available_units, low=D(0), high=D(100))
         number(self.requested_units, low=D(0), high=D(100))
+        if self.operational_cost_usd is not None:
+            number(self.operational_cost_usd, low=D(0), high=D(1000000))
         require(self.ask % CENT == 0, "CENT_TICK")
         for value in (self.acquired_at, self.decision_at, self.close_at):
             aware(value)
@@ -341,9 +344,12 @@ class ToyEconomics:
     reason: str
     scenario_lower_bounds: tuple[Decimal, ...] = ()
     authority: NoAuthority = field(default_factory=NoAuthority)
+    operational_cost_usd: Decimal | None = None
 
     def __post_init__(self) -> None:
         fixture_id(self.fixture)
+        if self.operational_cost_usd is not None:
+            number(self.operational_cost_usd, low=D(0), high=D(1000000))
         require(
             type(self.authority) is NoAuthority
             and self.decision in ("ABSTAIN", "SYNTHETIC_CANDIDATE_ONLY"),
@@ -363,6 +369,17 @@ class ToyEconomics:
             ),
             "TOY_CANDIDATE_INEQUALITY",
         )
+        require(
+            self.decision != "SYNTHETIC_CANDIDATE_ONLY"
+            or (self.operational_cost_usd is not None and self.operational_cost_usd <= D("0.05")),
+            "TOY_CANDIDATE_REQUIRES_OPERATIONAL_COST",
+        )
+
+    @property
+    @arithmetic
+    def no_action_net_usd(self) -> Decimal | None:
+        """Toy allocated expense persists even when the decision is ABSTAIN."""
+        return None if self.operational_cost_usd is None else -self.operational_cost_usd
 
 
 @arithmetic
@@ -375,8 +392,14 @@ def after_cost_toy(
     require(type(quote) is ToyQuote, "TOY_QUOTE_REQUIRED")
 
     def abstain(reason: str) -> ToyEconomics:
-        return ToyEconomics(quote.fixture, "ABSTAIN", reason)
+        return ToyEconomics(
+            quote.fixture, "ABSTAIN", reason, operational_cost_usd=quote.operational_cost_usd
+        )
 
+    if quote.operational_cost_usd is None:
+        return abstain("MISSING_OPERATIONAL_COST")
+    if quote.operational_cost_usd > D("0.05"):
+        return abstain("OPERATIONAL_COST_EXCEEDS_DRAFT_BUDGET")
     if yes_probability is None:
         return abstain("MISSING_MODEL_PROBABILITY")
     for bounds in (yes_probability, fill_probability):
@@ -430,13 +453,24 @@ def after_cost_toy(
         if qlo <= kink <= qhi:
             candidates.append(kink)
         # Frechet lower joint bound: do not assume fills independent of outcomes.
-        lower_bounds.append(min(max(D(0), lower_p + q - 1) - q * cost for q in candidates))
+        lower_bounds.append(
+            min(max(D(0), lower_p + q - 1) - q * cost for q in candidates)
+            - quote.operational_cost_usd
+        )
     if min(lower_bounds) < D("0.02"):
         return ToyEconomics(
-            quote.fixture, "ABSTAIN", "NO_ROBUST_AFTER_COST_ADVANTAGE", tuple(lower_bounds)
+            quote.fixture,
+            "ABSTAIN",
+            "NO_ROBUST_AFTER_COST_ADVANTAGE",
+            tuple(lower_bounds),
+            operational_cost_usd=quote.operational_cost_usd,
         )
     return ToyEconomics(
-        quote.fixture, "SYNTHETIC_CANDIDATE_ONLY", "TOY_INEQUALITY_SATISFIED", tuple(lower_bounds)
+        quote.fixture,
+        "SYNTHETIC_CANDIDATE_ONLY",
+        "TOY_INEQUALITY_SATISFIED",
+        tuple(lower_bounds),
+        operational_cost_usd=quote.operational_cost_usd,
     )
 
 

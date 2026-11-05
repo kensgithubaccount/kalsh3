@@ -314,7 +314,36 @@
     "fee_policy": "UNKNOWN_FUTURE_EFFECTIVE_SCHEDULE_SERIES_RULES_AND_ROUNDING_REQUIRE_PROOF",
     "unknown_fee": "ABSTAIN",
     "maximum_supported_fee_usd": "0.05",
-    "maximum_supported_selected_loss_usd": "1.04"
+    "maximum_supported_selected_loss_usd": "1.09",
+    "maximum_supported_trade_only_loss_usd": "1.04",
+    "operational_cost_policy": {
+      "unknown_or_unbounded": "ABSTAIN_AND_FULL_ECONOMICS_UNVERIFIED",
+      "maximum_allocated_usd_per_city_day": "0.05",
+      "budget_is_verified_provider_price": false,
+      "direct_expenses": "CHARGE_IDENTIFIABLE_CITY_DAY",
+      "shared_expenses": "EQUAL_ALLOCATION_ACROSS_ALL_1060_CITY_DAYS_INCLUDING_FAILURES_AND_ABSTENTIONS",
+      "coverage": [
+        "data_access",
+        "egress",
+        "storage",
+        "compute",
+        "monitoring",
+        "retention",
+        "all_other_incremental_research_expense",
+        "licensing",
+        "research_labor",
+        "allocated_fixed_and_shared_infrastructure",
+        "applicable_financing_capital_taxes_and_other_charges"
+      ],
+      "deduct_outside_fill_probability": true,
+      "charge_once_per_city_day_not_per_alternative": true,
+      "no_action_net": "NEGATIVE_ALLOCATED_EXPENSE_NOT_ZERO",
+      "retain_actual_invoices_and_accrued_liabilities": true,
+      "whole_experiment_all_1060_costs_required": true,
+      "actual_accounting_implemented": false,
+      "exclusions": "NONE_WITHOUT_INDEPENDENT_PRE_REGISTRATION_REVIEW_OF_ESTIMAND",
+      "post_registration_budget_change": "NEW_FUTURE_COHORT_REQUIRED"
+    }
   },
   "evidence_standards": {
     "training_min_complete_clusters": 50,

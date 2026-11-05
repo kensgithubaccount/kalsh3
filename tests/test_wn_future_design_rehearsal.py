@@ -60,6 +60,7 @@ def quote(**kwargs: object) -> rehearsal.ToyQuote:
             AT - timedelta(milliseconds=500),
             AT,
             AT + timedelta(hours=8),
+            operational_cost_usd=D("0.01"),
         ),
         **kwargs,
     )
@@ -409,3 +410,53 @@ def test_draft_distribution_family_is_explicit_and_not_validation() -> None:
     assert plan["methods"]["predictive_family"] == "PROPOSED_GAUSSIAN_NORMAL_NOT_VALIDATED"
     assert plan["methods"]["calibration_scale_applies_to"] == "STANDARD_DEVIATION"
     assert plan["methods"]["all_model_code_and_fit_artifacts_exist"] is False
+
+
+def test_unknown_operational_cost_cannot_be_synthetic_candidate() -> None:
+    supplied = rehearsal.ToyQuote(FIXTURE, "YES", D("0.20"), D(1), AT, AT, AT + timedelta(hours=8))
+    result = rehearsal.after_cost_toy(supplied, fee(), (D("0.99"), D("0.99")), (D(1), D(1)))
+    assert result.decision == "ABSTAIN"
+    assert result.reason == "MISSING_OPERATIONAL_COST"
+
+
+@pytest.mark.parametrize("fill", [(D(0), D(0)), (D("0.2"), D("0.7")), (D(1), D(1))])
+def test_operational_cost_deducted_outside_fill_probability(fill: tuple[Decimal, Decimal]) -> None:
+    free = rehearsal.after_cost_toy(
+        quote(operational_cost_usd=D(0)), fee(), (D("0.85"), D("0.95")), fill
+    )
+    paid = rehearsal.after_cost_toy(
+        quote(operational_cost_usd=D("0.03")), fee(), (D("0.85"), D("0.95")), fill
+    )
+    assert paid.scenario_lower_bounds == tuple(v - D("0.03") for v in free.scenario_lower_bounds)
+    assert paid.operational_cost_usd == D("0.03")
+    assert paid.no_action_net_usd == D("-0.03")
+
+
+@pytest.mark.parametrize("changes", [{"available_units": D(0)}, {"market_status": "CLOSED"}])
+def test_early_abstention_retains_allocated_expense(changes: dict[str, object]) -> None:
+    result = rehearsal.after_cost_toy(quote(**changes), fee(), None, None)
+    assert result.decision == "ABSTAIN"
+    assert result.operational_cost_usd == D("0.01")
+    assert result.no_action_net_usd == D("-0.01")
+
+
+def test_operational_budget_is_not_a_zero_cost_fallback() -> None:
+    result = rehearsal.after_cost_toy(
+        quote(operational_cost_usd=D("0.050001")), fee(), (D(1), D(1)), (D(1), D(1))
+    )
+    assert result.decision == "ABSTAIN" and result.reason == "OPERATIONAL_COST_EXCEEDS_DRAFT_BUDGET"
+    assert result.no_action_net_usd == D("-0.050001")
+
+
+def test_operational_cost_can_remove_apparent_trade_advantage() -> None:
+    args = fee(), (D("0.35"), D("0.35")), (D(1), D(1))
+    free = rehearsal.after_cost_toy(quote(operational_cost_usd=D(0)), *args)
+    paid = rehearsal.after_cost_toy(quote(operational_cost_usd=D("0.05")), *args)
+    assert free.decision == "SYNTHETIC_CANDIDATE_ONLY"
+    assert paid.decision == "ABSTAIN"
+
+
+@pytest.mark.parametrize("value", [D("-0.01"), D("NaN"), D("Infinity")])
+def test_invalid_operational_cost_rejected(value: Decimal) -> None:
+    with pytest.raises(rehearsal.DesignError):
+        quote(operational_cost_usd=value)

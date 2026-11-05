@@ -192,7 +192,30 @@ The [official PDF](https://kalshi.com/docs/kalshi-fee-schedule.pdf) and
 direct PDF reviewed was labeled July 7, 2026. No current coefficient or exemption
 is assumed for this cohort. Missing/changed fees mean ABSTAIN. Proposed supported
 fee cap is $0.05 per filled one-unit action; higher/unknown fees are unsupported.
-With the $0.99 price cap, maximum supported loss is $1.04 per selected attempt.
+With the $0.99 price cap, the supported trade-only loss bound is $1.04.
+
+Full economics also deducts data access/licensing, egress, storage, compute,
+monitoring, retention, research labor and allocated fixed/shared infrastructure.
+Account for applicable financing/capital costs, taxes and other charges too;
+any proposed exclusion and its estimand effect needs independent pre-registration
+review. The draft silently excludes nothing. Freeze the allocation
+before outcomes: charge identifiable direct expenses to their city-day, and
+allocate shared whole-experiment expenses equally across all 1,060 registered
+city-days, including training, calibration, embargo, missing, failed and
+abstained rows. Do not allocate costs only to favorable selections, omit sunk
+expenses, or dilute them by hypothetical future order size. Preserve independently
+bounded pre-decision allocations and subsequent invoices/accrued liabilities
+separately; actual cost accounting is not implemented by this toy helper.
+
+The proposed admission budget is $0.05 allocated operational expense per
+city-day. This is a design limit, not measured provider pricing or proof that
+five-city acquisition can meet it. A budget change after registration requires
+a new future cohort, not a retrospective adjustment. Unknown/unbounded or above-budget expense
+means ABSTAIN and blocks full after-cost inference; it never becomes zero.
+Within these assumed bounds, selected total loss is at most $1.09. No-action
+rows can still incur their allocated expense. Report all 1,060 allocations
+and whole-experiment expenses alongside holdout-only action diagnostics;
+positive conditional trade utility cannot establish total research profitability.
 
 Predeclare scenarios before outcomes:
 
@@ -207,11 +230,15 @@ Stress prices must remain supported; compute maximum rounded cost over all
 permitted cent prices, not an assumed monotone fee. Spread is paid through the
 correct ask; do not double-count it as an additional independent fee.
 
-Fill uncertainty is mandatory. No-fill contributes zero attempt utility, but
-fills may be adversely selected. Do not multiply unconditional outcome probability
+Fill uncertainty is mandatory. No-fill has zero trade payoff but retains
+allocated operational expense, and fills may be adversely selected. Do not multiply unconditional outcome probability
 by fill probability as if independent. For selected-side probability lower p,
 fill q and per-filled-unit cost c, the rehearsal checks the Fréchet lower bound
-`max(0,p+q-1) - q*c`, minimized over the declared q interval including its kink.
+`max(0,p+q-1) - q*c - c_ops`, minimized over the declared q interval including
+its kink. The synthetic city-day allocation `c_ops` is deducted outside q,
+once for whichever of the twelve alternatives is selected. Rejected alternatives
+do not each incur another allocation; the retained no-action row has net
+`-c_ops`. Unknown expense remains unverified even for ABSTAIN.
 Unknown fill interval [0,1], missing depth/arrival proof or unidentified model
 uncertainty requires ABSTAIN. Observational orderbooks do not identify real
 fill/outcome dependence without additional evidence; this gap can keep the
@@ -277,7 +304,8 @@ The complete machine checklist remains OPEN. Before any cohort activation:
 - Segregate holdout custody; independently attest fitted artifacts on the two
   deadlines, before calibration/holdout respectively. No October training.
 - Validate native host/transport safety, create-once all-attempt evidence and
-  cost/retention rights; no retry, backfill, deadline renewal or substitutions.
+  cost/retention rights and independently bounded full-cohort expense allocations;
+  no retry, backfill, deadline renewal or substitutions.
 - Obtain independent exact-head review/CI and distinct explicit approvals for
   live acquisition and, later, scientific scoring. Neither is requested here.
 
