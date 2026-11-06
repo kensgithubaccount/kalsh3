@@ -68,7 +68,7 @@ do
       if [[ "$MODE" == *-traced ]]; then
         test -s "$OUT/$LABEL-$MODE.json"
       fi
-      rg '[0-9]+ (passed|failed)' "$OUT/$LABEL-$MODE.log" > /dev/null
+      grep -E '[0-9]+ (passed|failed)' "$OUT/$LABEL-$MODE.log" > /dev/null
     done
     git status --porcelain > "$OUT/$LABEL-after-status.txt"
   )
