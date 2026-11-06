@@ -10,13 +10,28 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - uses: astral-sh/setup-uv@v6
         with:
           enable-cache: true
       - run: uv sync --locked --all-groups
       - name: Install CI verification tools
         run: uv pip install ruff mypy pytest
-      - run: make verify
+      - name: Frozen V3 high-FD negative control
+        run: |
+          git worktree add --detach "$RUNNER_TEMP/wn-v3-baseline" 3cd2695592e10132ed54773ccb9d0fbfbcbe635f
+          git -C "$RUNNER_TEMP/wn-v3-baseline" rev-parse HEAD HEAD^{tree}
+          set +e
+          (cd "$RUNNER_TEMP/wn-v3-baseline" && sh "$GITHUB_WORKSPACE/scripts/ci_offline_tests.sh" "$GITHUB_WORKSPACE/.venv/bin/python" "$GITHUB_WORKSPACE/scripts/wn_v3_high_fd_suite.py") > "$RUNNER_TEMP/wn-v3-baseline.log" 2>&1
+          result=$?
+          set -e
+          cat "$RUNNER_TEMP/wn-v3-baseline.log"
+          test "$result" = 1
+          grep -F '36 failed, 40 passed' "$RUNNER_TEMP/wn-v3-baseline.log"
+      - run: sh scripts/ci_offline_tests.sh make verify
+      - name: V3 unchanged suite with real high descriptors
+        run: sh scripts/ci_offline_tests.sh uv run python scripts/wn_v3_high_fd_suite.py
       - name: Validate effective deployment configuration
         env:
           KPV3_HOSTNAME: ci.invalid
@@ -33,6 +48,8 @@ jobs:
     services:
       postgres:
         image: postgres:16
+        volumes:
+          - /tmp/wn-ci-postgres-socket:/var/run/postgresql
         env:
           POSTGRES_PASSWORD: postgres
           POSTGRES_DB: kalsh3_test
@@ -46,9 +63,10 @@ jobs:
       - run: uv sync --locked --all-groups
       - name: Install PostgreSQL test runner
         run: uv pip install pytest
-      - run: uv run pytest -q -m postgres
+      - run: test -S /tmp/wn-ci-postgres-socket/.s.PGSQL.5432
+      - run: sh scripts/ci_offline_tests.sh uv run pytest -q -m postgres
         env:
-          KALSH3_TEST_POSTGRES_DSN: postgresql://postgres:postgres@localhost:5432/kalsh3_test
+          KALSH3_TEST_POSTGRES_DSN: host=/tmp/wn-ci-postgres-socket dbname=kalsh3_test user=postgres password=postgres
   security-and-supply-chain:
     runs-on: ubuntu-latest
     permissions:

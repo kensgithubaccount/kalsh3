@@ -5,7 +5,7 @@ from __future__ import annotations
 import contextlib
 import multiprocessing
 import os
-import select
+import selectors
 import signal
 import struct
 import threading
@@ -191,6 +191,7 @@ def probe_generated(
     incoming, outgoing = context.Pipe(duplex=False)
     ack_read, ack_write = context.Pipe(duplex=False)
     process = context.Process(target=_worker, args=(outgoing, ack_read, recipe, os.getpid()))
+    selector: selectors.BaseSelector | None = None
     try:
         if cancelled is not None and cancelled.is_set():
             reason = "CANCELLED"
@@ -202,6 +203,8 @@ def probe_generated(
             outgoing.close()
             ack_read.close()
             os.set_blocking(incoming.fileno(), False)
+            selector = selectors.DefaultSelector()
+            selector.register(incoming, selectors.EVENT_READ)
             ended = False
             while True:
                 now = _clock_ns()
@@ -226,9 +229,7 @@ def probe_generated(
                         break
                     time.sleep(min(0.005, (deadline - now) / 1_000_000_000))
                     continue
-                ready, _, _ = select.select(
-                    [incoming.fileno()], [], [], min(0.01, (deadline - now) / 1_000_000_000)
-                )
+                ready = selector.select(min(0.01, (deadline - now) / 1_000_000_000))
                 if not ready:
                     continue
                 chunk = os.read(incoming.fileno(), min(CHUNK, MAX_WIRE + 4 - len(buffered)))
@@ -296,27 +297,33 @@ def probe_generated(
     except (OSError, EOFError, ValueError):
         reason = "HOST_FAILURE"
     finally:
-        # start() can raise or be interrupted after creating a child. The
-        # actual process handle, not a post-return flag, owns cleanup.
-        if process.pid is not None:
-            pid = process.pid
-            cleanup_end = time.monotonic_ns() + cleanup_ms * 1_000_000
-            if process.is_alive():
-                process.terminate()
-                process.join(min(0.05, cleanup_ms / 2000))
-            if process.is_alive():
-                forced = True
-                process.kill()
-                process.join(max(0, cleanup_end - time.monotonic_ns()) / 1_000_000_000)
-            reaped = not process.is_alive()
-            if reaped:
-                process.join(0)
-                process.close()
-            else:
-                reason = "WORKER_UNREAPED"
-        for connection in (incoming, outgoing, ack_read, ack_write):
-            with contextlib.suppress(OSError):
-                connection.close()
+        try:
+            if selector is not None:
+                selector.close()
+        except (OSError, ValueError):
+            reason = "HOST_FAILURE"
+        finally:
+            # start() can raise or be interrupted after creating a child. The
+            # actual process handle, not a post-return flag, owns cleanup.
+            if process.pid is not None:
+                pid = process.pid
+                cleanup_end = time.monotonic_ns() + cleanup_ms * 1_000_000
+                if process.is_alive():
+                    process.terminate()
+                    process.join(min(0.05, cleanup_ms / 2000))
+                if process.is_alive():
+                    forced = True
+                    process.kill()
+                    process.join(max(0, cleanup_end - time.monotonic_ns()) / 1_000_000_000)
+                reaped = not process.is_alive()
+                if reaped:
+                    process.join(0)
+                    process.close()
+                else:
+                    reason = "WORKER_UNREAPED"
+            for connection in (incoming, outgoing, ack_read, ack_write):
+                with contextlib.suppress(OSError):
+                    connection.close()
     complete = reason == "HTTP_200_UNVERIFIED" and reaped
     return HostProbe(
         reason,
