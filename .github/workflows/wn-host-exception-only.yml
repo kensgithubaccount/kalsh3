@@ -1,0 +1,81 @@
+name: PR268 exception-only diagnostic
+on:
+  push:
+    branches: [research/pr268-exception-only-20261106]
+permissions:
+  contents: read
+jobs:
+  exception-only:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+      - uses: astral-sh/setup-uv@v6
+      - run: uv sync --locked --all-groups
+      - run: uv pip install ruff mypy pytest
+      - run: |
+          uv run ruff check diagnostics/pr268
+          uv run ruff format --check diagnostics/pr268
+          uv run mypy --strict diagnostics/pr268/exception_only_plugin.py
+      - name: Fresh isolated and full-suite controls without pre-probe tracing
+        run: |
+          set -euo pipefail
+          ROOT="$PWD"
+          OUT="$ROOT/exception-results"
+          mkdir "$OUT"
+          git rev-parse HEAD HEAD^{tree} > "$OUT/diagnostic-identity.txt"
+          env | sort | sed -n '/^ImageOS=/p; /^ImageVersion=/p' > "$OUT/image.txt"
+          uname -a >> "$OUT/image.txt"
+          id >> "$OUT/image.txt"
+          uv pip freeze > "$OUT/packages.txt"
+          UV_BIN="$(command -v uv)"
+          USER_ID="$(id -u)"
+          GROUP_ID="$(id -g)"
+          cat > "$OUT/namespace.sh" <<'NAMESPACE'
+          set -euo pipefail
+          ip link set lo up
+          ip -brief address
+          ip route
+          exec setpriv --reuid="$1" --regid="$2" --init-groups env PYTHONPATH="$3" WN_EXCEPTION_ONLY_OUTPUT="$4" UV_PROJECT_ENVIRONMENT="$5" "${@:6}"
+          NAMESPACE
+          INDEX=0
+          for MODE in isolated untraced exception
+          do
+            TARGET="$RUNNER_TEMP/exception-control-$INDEX"
+            INDEX=$((INDEX+1))
+            git worktree add --detach "$TARGET" 5fef4fb384b7173476f75b315b92114fdf5287e6
+            (
+              cd "$TARGET"
+              git rev-parse HEAD HEAD^{tree} > "$OUT/$MODE-identity.txt"
+              git status --porcelain > "$OUT/$MODE-before-status.txt"
+              sha256sum services/forecasting/wn_host_simulation_v3.py tests/test_wn_host_feasibility_v3.py > "$OUT/$MODE-source-sha256.txt"
+              ARGS=()
+              if [ "$MODE" = isolated ]; then
+                ARGS+=(tests/test_wn_host_feasibility_v3.py::test_incremental_stream_exact_caps_and_reaped_worker)
+              elif [ "$MODE" = exception ]; then
+                ARGS+=(-p exception_only_plugin)
+              fi
+              printf '%s\n' "$UV_BIN run --no-sync --offline pytest ${ARGS[*]}" > "$OUT/$MODE-command.txt"
+              set +e
+              sudo unshare --net -- bash "$OUT/namespace.sh" "$USER_ID" "$GROUP_ID" \
+                "$ROOT/diagnostics/pr268" "$OUT/$MODE.json" "$ROOT/.venv" \
+                "$UV_BIN" run --no-sync --offline pytest "${ARGS[@]}" > "$OUT/$MODE.log" 2>&1
+              RESULT=$?
+              set -e
+              printf '%s\n' "$RESULT" > "$OUT/$MODE-exit.txt"
+              test "$RESULT" -le 1
+              grep -E '[0-9]+ (passed|failed)' "$OUT/$MODE.log" > /dev/null
+              if [ "$MODE" = exception ]; then test -s "$OUT/$MODE.json"; fi
+              git status --porcelain > "$OUT/$MODE-after-status.txt"
+            )
+          done
+          sha256sum "$OUT"/* > "$OUT/SHA256SUMS.txt"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: pr268-exception-only
+          path: exception-results/
+          if-no-files-found: error
+
