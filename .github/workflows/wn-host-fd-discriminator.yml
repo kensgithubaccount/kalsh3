@@ -1,0 +1,76 @@
+name: PR268 synthetic FD discriminator
+on:
+  push:
+    branches: [research/pr268-host-fd-discriminator-20261106]
+permissions:
+  contents: read
+jobs:
+  fixed-synthetic-controls:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+      - uses: astral-sh/setup-uv@v6
+      - run: uv sync --locked --all-groups
+      - run: uv pip install ruff mypy pytest
+      - run: |
+          uv run ruff check diagnostics/pr268
+          uv run ruff format --check diagnostics/pr268
+          uv run mypy --strict diagnostics/pr268/host_exception_plugin.py diagnostics/pr268/fd_pressure_plugin.py
+      - name: Fixed low and high descriptor inputs, no external network
+        run: |
+          set -euo pipefail
+          ROOT="$PWD"
+          OUT="$ROOT/fd-results"
+          mkdir "$OUT"
+          git rev-parse HEAD HEAD^{tree} > "$OUT/diagnostic-identity.txt"
+          env | sort | sed -n '/^ImageOS=/p; /^ImageVersion=/p' > "$OUT/image.txt"
+          uname -a >> "$OUT/image.txt"
+          id >> "$OUT/image.txt"
+          uv pip freeze > "$OUT/packages.txt"
+          cat > "$OUT/namespace.sh" <<'NAMESPACE'
+          set -euo pipefail
+          ip link set lo up
+          ip -brief address
+          ip route
+          exec setpriv --reuid="$1" --regid="$2" --init-groups env PYTHONPATH="$3" WN_DIAGNOSTIC_OUTPUT="$4" WN_DESCRIPTOR_PRESSURE="$5" "${@:6}"
+          NAMESPACE
+          USER_ID="$(id -u)"
+          GROUP_ID="$(id -g)"
+          for PAIR in pr268:5fef4fb384b7173476f75b315b92114fdf5287e6 base:3cd2695592e10132ed54773ccb9d0fbfbcbe635f passing:cbed8119f6505fd9d2fbe9c70595ee2019ae7893
+          do
+            LABEL="${PAIR%%:*}"
+            SHA="${PAIR#*:}"
+            TARGET="$RUNNER_TEMP/synthetic-$LABEL"
+            git worktree add --detach "$TARGET" "$SHA"
+            (
+              cd "$TARGET"
+              git rev-parse HEAD HEAD^{tree} > "$OUT/$LABEL-identity.txt"
+              sha256sum services/forecasting/wn_host_simulation_v3.py tests/test_wn_host_feasibility_v3.py > "$OUT/$LABEL-source-sha256.txt"
+              for MODE in low high
+              do
+                set +e
+                sudo unshare --net -- bash "$OUT/namespace.sh" "$USER_ID" "$GROUP_ID" \
+                  "$ROOT/diagnostics/pr268" "$OUT/$LABEL-$MODE.json" "$MODE" \
+                  "$ROOT/.venv/bin/pytest" -q -s -p host_exception_plugin -p fd_pressure_plugin \
+                  tests/test_wn_host_feasibility_v3.py::test_incremental_stream_exact_caps_and_reaped_worker \
+                  > "$OUT/$LABEL-$MODE.log" 2>&1
+                RESULT=$?
+                set -e
+                printf '%s\n' "$RESULT" > "$OUT/$LABEL-$MODE-exit.txt"
+                test -s "$OUT/$LABEL-$MODE.json"
+                if [ "$MODE" = low ]; then test "$RESULT" = 0; else test "$RESULT" = 1; fi
+              done
+              git status --porcelain > "$OUT/$LABEL-after-status.txt"
+            )
+          done
+          sha256sum "$OUT"/* > "$OUT/SHA256SUMS.txt"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: pr268-synthetic-fd-discriminator
+          path: fd-results/
+          if-no-files-found: error
+
