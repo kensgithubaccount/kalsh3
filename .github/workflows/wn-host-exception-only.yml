@@ -59,7 +59,7 @@ jobs:
               fi
               printf '%s\n' "$UV_BIN run --no-sync --offline pytest ${ARGS[*]}" > "$OUT/$MODE-command.txt"
               set +e
-              sudo unshare --net -- bash "$OUT/namespace.sh" "$USER_ID" "$GROUP_ID" \
+              sudo --preserve-env=HOME,UV_CACHE_DIR unshare --net -- bash "$OUT/namespace.sh" "$USER_ID" "$GROUP_ID" \
                 "$ROOT/diagnostics/pr268" "$OUT/$MODE.json" "$ROOT/.venv" \
                 "$UV_BIN" run --no-sync --offline pytest "${ARGS[@]}" > "$OUT/$MODE.log" 2>&1
               RESULT=$?

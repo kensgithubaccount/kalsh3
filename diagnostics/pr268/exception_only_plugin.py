@@ -56,7 +56,7 @@ def handled(code: CodeType, offset: int, exception: BaseException) -> None:
     import resource
     import traceback
 
-    _CAPTURE["traceback"] = "".join(traceback.format_exception(exception))
+    _CAPTURE["nodeid_at_failure"] = os.environ.get("PYTEST_CURRENT_TEST")
     _CAPTURE["nofile"] = list(resource.getrlimit(resource.RLIMIT_NOFILE))
     _CAPTURE["nproc"] = list(resource.getrlimit(resource.RLIMIT_NPROC))
     targets = {}
@@ -71,6 +71,7 @@ def handled(code: CodeType, offset: int, exception: BaseException) -> None:
             targets[name] = "UNAVAILABLE_AFTER_EXCEPTION"
     _CAPTURE["fd_targets_after_exception"] = targets
     _CAPTURE["fd_scan_truncated"] = len(names) > 4096
+    _CAPTURE["traceback"] = "".join(traceback.format_exception(exception))
     sys.monitoring.set_local_events(
         _TOOL, code, sys.monitoring.events.LINE | sys.monitoring.events.PY_RETURN
     )
