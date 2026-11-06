@@ -62,4 +62,11 @@ remain unchanged.
 
 No merge during this task. Require all4 exact-head CI jobs and a fresh independent
 adversarial verdict before recommending any later merge.
+
+The first exact-head CI passed verification, runtime smoke and PostgreSQL tests,
+but Trivy rejected the existing optional oauthlib4.0.0 lock record for
+CVE-2026-49272. The narrowly scoped security refresh updates only that package's
+lock record to the upstream4.0.1 fix; other package records and the lock revision
+are preserved. No scanner suppression or source authentication is enabled. This
+changes the new candidate lock, not any historical lock/evidence receipt.
 LIVE NOT AUTHORIZED. SCIENTIFIC SCORING NOT AUTHORIZED. TRADING AUTHORITY NONE.

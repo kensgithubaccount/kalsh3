@@ -66,7 +66,7 @@ jobs:
       - run: test -S /tmp/wn-ci-postgres-socket/.s.PGSQL.5432
       - run: sh scripts/ci_offline_tests.sh uv run pytest -q -m postgres
         env:
-          KALSH3_TEST_POSTGRES_DSN: host=/tmp/wn-ci-postgres-socket dbname=kalsh3_test user=postgres password=postgres
+          KALSH3_TEST_POSTGRES_DSN: host=/tmp/wn-ci-postgres-socket dbname=kalsh3_test user=postgres
   security-and-supply-chain:
     runs-on: ubuntu-latest
     permissions:
